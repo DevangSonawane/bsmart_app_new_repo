@@ -1,0 +1,163 @@
+📘 Bsmart API Documentation – Users Module
+Overview
+The Users API in Bsmart is responsible for:
+Fetching a user profile along with their posts and media
+Updating a user profile (authenticated)
+Deleting a user and their posts (authenticated)
+✅ Base URL: /api/users
+✅ Auth Type: Bearer Token (required for update & delete)
+
+🔐 Authentication
+For protected routes (PUT, DELETE), send a Bearer token in headers:
+Header
+Authorization: Bearer <token>
+
+If token is missing/invalid, API returns 403 Not Authorized (as per swagger docs).
+
+📦 Response Structure (GET Profile)
+GET returns:
+user object (User details)
+posts array (Posts created by the user)
+Each post can include media[]
+Each media item includes fileUrl
+
+
+1) Get User Profile + Posts
+GET /api/users/{id}
+Fetches user details and their posts.
+Path Parameter
+Param
+Type
+Required
+Description
+id
+string
+✅
+User ID
+
+Success Response (200)
+{
+  "user": {
+    "id": "u123",
+    "full_name": "John Doe",
+    "username": "john_doe",
+    "bio": "Hello",
+    "avatar_url": "https://..."
+  },
+  "posts": [
+    {
+      "id": "p1",
+      "caption": "My post",
+      "media": [
+        {
+          "id": "m1",
+          "fileUrl": "https://..."
+        }
+      ]
+    }
+  ]
+}
+
+Error Responses
+404
+{ "message": "User not found" }
+
+500
+{ "error": "Server error" }
+
+
+2) Update User Profile (Protected)
+PUT /api/users/{id}
+Updates user details.
+Security
+✅ Requires Bearer token (Authorization: Bearer <token>)
+Path Parameter
+Param
+Type
+Required
+id
+string
+✅
+
+Request Body (JSON)
+All fields are optional — send only what you want to update.
+Field
+Type
+full_name
+string
+bio
+string
+avatar_url
+string
+phone
+string
+username
+string
+
+Example Request
+{
+  "full_name": "John Updated",
+  "bio": "Updated bio",
+  "avatar_url": "https://cdn.com/avatar.png",
+  "phone": "9999999999",
+  "username": "john_updated"
+}
+
+Success Response (200)
+Returns updated user object:
+{
+  "id": "u123",
+  "full_name": "John Updated",
+  "username": "john_updated",
+  "bio": "Updated bio",
+  "avatar_url": "https://cdn.com/avatar.png",
+  "phone": "9999999999"
+}
+
+Error Responses
+403
+{ "message": "Not authorized" }
+
+404
+{ "message": "User not found" }
+
+500
+{ "error": "Server error" }
+
+
+3) Delete User + Their Posts (Protected)
+DELETE /api/users/{id}
+Deletes a user and their posts.
+Security
+✅ Requires Bearer token
+Path Parameter
+Param
+Type
+Required
+id
+string
+✅
+
+Success Response (200)
+{ "message": "User deleted successfully" }
+
+Error Responses
+403
+{ "message": "Not authorized" }
+
+404
+{ "message": "User not found" }
+
+500
+{ "error": "Server error" }
+
+
+✅ Notes (Based on Your Code)
+GET /api/users/:id is public (no auth middleware)
+PUT and DELETE are protected with auth middleware
+The controller functions used:
+getUserProfile
+updateUser
+deleteUser
+
+

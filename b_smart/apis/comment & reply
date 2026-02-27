@@ -1,0 +1,340 @@
+Bsmart API Documentation for your Comments & Replies module, based exactly on the routes + Swagger you shared.
+
+📘 Bsmart API Documentation – Comments Module
+Overview
+The Comments API in Bsmart supports:
+Adding comments to a post
+
+
+Replying to an existing comment (nested comments using parent_id)
+
+
+Fetching comments for a post (paginated)
+
+
+Deleting a comment (authenticated)
+
+
+Liking / unliking a comment (authenticated)
+
+
+Fetching replies for a comment (paginated)
+
+
+✅ Base URL: /api
+ ✅ Auth Required: Only for create/delete/like/unlike (Bearer Token)
+
+🔐 Authentication
+Protected routes require a bearer token:
+Header
+Authorization: Bearer <token>
+
+Protected endpoints:
+POST /api/posts/:postId/comments
+
+
+DELETE /api/comments/:id
+
+
+POST /api/comments/:commentId/like
+
+
+POST /api/comments/:commentId/unlike
+
+
+
+📦 Comment Schema
+Comment Object
+Field
+Type
+Notes
+_id
+string
+Comment ID
+post_id
+string
+Post ID
+parent_id
+string | null
+If reply, parent comment ID
+user
+object
+Comment author
+user.id
+string
+User ID
+user.username
+string
+Username
+user.avatar_url
+string
+Avatar URL
+text
+string
+Comment text
+likes_count
+number
+Number of likes
+createdAt
+datetime
+Timestamp
+
+Example Comment
+{
+  "_id": "64f8b1234567890abcdef456",
+  "post_id": "64f8a1234567890abcdef123",
+  "parent_id": null,
+  "user": {
+    "id": "64f8c1234567890abcdef789",
+    "username": "johndoe",
+    "avatar_url": "https://example.com/avatar.jpg"
+  },
+  "text": "Nice post!",
+  "likes_count": 2,
+  "createdAt": "2023-09-06T12:00:00.000Z"
+}
+
+
+1) Add Comment / Reply to a Post
+POST /api/posts/{postId}/comments
+Adds a comment to a post.
+ If parent_id is passed, it becomes a reply to that comment.
+Security
+✅ Bearer token required
+Path Parameter
+Param
+Type
+Required
+postId
+string
+✅
+
+Request Type
+application/json
+Request Body
+Field
+Type
+Required
+Description
+text
+string
+✅
+Comment text
+parent_id
+string
+❌
+Parent comment ID (for replies)
+
+Example Request (comment)
+{
+  "text": "Nice post!"
+}
+
+Example Request (reply)
+{
+  "text": "This is a reply",
+  "parent_id": "64f8a1234567890abcdef123"
+}
+
+Success Response (201)
+Returns created comment:
+{
+  "_id": "64f8b1234567890abcdef456",
+  "post_id": "64f8a1234567890abcdef123",
+  "parent_id": "64f8a1234567890abcdef123",
+  "user": {
+    "id": "64f8c1234567890abcdef789",
+    "username": "johndoe",
+    "avatar_url": "https://example.com/avatar.jpg"
+  },
+  "text": "This is a reply",
+  "likes_count": 0,
+  "createdAt": "2023-09-06T12:00:00.000Z"
+}
+
+Errors
+400 Invalid input
+
+
+404 Post or User not found
+
+
+
+2) Get Comments for a Post (Paginated)
+GET /api/posts/{postId}/comments
+Fetches comments for a post.
+Path Parameter
+Param
+Type
+Required
+postId
+string
+✅
+
+Query Parameters
+Param
+Type
+Default
+Description
+page
+integer
+1
+Page number
+limit
+integer
+10
+Items per page
+
+Success Response (200)
+{
+  "page": 1,
+  "limit": 10,
+  "total": 23,
+  "comments": [
+    {
+      "_id": "c1",
+      "text": "Nice!",
+      "likes_count": 1
+    }
+  ]
+}
+
+Error
+404 Post not found
+
+
+✅ Note: This route is public (no token required).
+
+3) Delete a Comment
+DELETE /api/comments/{id}
+Deletes a comment (only allowed if authorized).
+Security
+✅ Bearer token required
+Path Parameter
+Param
+Type
+Required
+id
+string
+✅
+
+Success Response (200)
+{ "message": "Comment deleted successfully" }
+
+Errors
+403
+{ "message": "Not authorized" }
+
+404
+{ "message": "Comment not found" }
+
+
+4) Like a Comment
+POST /api/comments/{commentId}/like
+Likes a comment.
+Security
+✅ Bearer token required
+Path Parameter
+Param
+Type
+Required
+commentId
+string
+✅
+
+Success Response (200)
+{
+  "liked": true,
+  "likes_count": 5
+}
+
+Errors
+400 Already liked
+
+
+404 Comment not found
+
+
+
+5) Unlike a Comment
+POST /api/comments/{commentId}/unlike
+Unlikes a comment.
+Security
+✅ Bearer token required
+Path Parameter
+Param
+Type
+Required
+commentId
+string
+✅
+
+Success Response (200)
+{
+  "liked": false,
+  "likes_count": 4
+}
+
+Errors
+400 Not liked
+
+
+404 Comment not found
+
+
+
+6) Get Replies for a Comment (Paginated)
+GET /api/comments/{commentId}/replies
+Fetches replies under a comment.
+Path Parameter
+Param
+Type
+Required
+commentId
+string
+✅
+
+Query Parameters
+Param
+Type
+Default
+page
+integer
+1
+limit
+integer
+10
+
+Success Response (200)
+{
+  "page": 1,
+  "limit": 10,
+  "total": 6,
+  "replies": [
+    {
+      "_id": "r1",
+      "parent_id": "c1",
+      "text": "Totally agree",
+      "likes_count": 0
+    }
+  ]
+}
+
+Error
+500 Server error
+
+
+✅ Note: This route is public (no token required).
+
+✅ Notes (Based on Your Code)
+Add comment uses: POST /posts/:postId/comments (token required)
+
+
+Get comments uses: GET /posts/:postId/comments (public)
+
+
+Replies are retrieved via: GET /comments/:commentId/replies (public)
+
+
+Like/unlike/delete are protected by verifyToken
+

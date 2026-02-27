@@ -1,0 +1,397 @@
+Perfect. I’ll give you a **clear, production-level prompt** you can directly give to Trae so it builds the Stories UI exactly aligned with this API and behaves like Instagram.
+
+You can copy-paste this.
+
+---
+
+# 🔥 PROMPT FOR TRAE – Build Instagram-like Stories UI (Fully API Integrated)
+
+We are integrating an Instagram-like Stories feature using the provided Stories API. Some base UI is already built. Now we need to fully implement and connect everything properly.
+
+Follow this spec strictly.
+
+---
+
+# 1️⃣ STORIES FEED (Top Horizontal Bar – Like Instagram)
+
+### 🎯 Objective:
+
+Display stories horizontally at the top of Home screen using:
+
+GET `/api/stories/feed`
+
+### API returns:
+
+```
+[
+  {
+    _id,
+    user:{ username, avatar_url },
+    items_count,
+    views_count,
+    preview_item,
+    seen:boolean
+  }
+]
+```
+
+### ✅ UI Requirements:
+
+1. Horizontal scroll container.
+2. First item = "Your Story"
+
+   * If user has active story → show preview ring
+   * If not → show "+" icon overlay
+3. Other users:
+
+   * Avatar
+   * Username below
+   * Ring behavior:
+
+     * If `seen: false` → gradient border
+     * If `seen: true` → grey border
+
+### 🎨 Styling:
+
+* Circular avatars
+* 3px gradient border (pink/orange)
+* Grey border for seen stories
+* Small font username (max 10 chars)
+
+### ⚙️ Logic:
+
+* Call feed API on:
+
+  * Home load
+  * Pull to refresh
+* Sort:
+
+  * Unseen first
+  * Seen after
+
+---
+
+# 2️⃣ STORY VIEWER (Full Screen Modal)
+
+### 🎯 On clicking a story:
+
+1. Open fullscreen modal
+2. Fetch items:
+
+GET `/api/stories/{storyId}/items`
+
+3. Items should be ordered by `order` field
+
+---
+
+## 📱 Viewer Behavior
+
+### Top:
+
+* Progress bars (one per item)
+* Username + avatar
+* Close button
+
+### Middle:
+
+Render media:
+
+* If `media.type === "image"` → display image
+* If `media.type === "reel"` → video player auto-play
+
+### Overlay:
+
+Render:
+
+* texts[]
+* mentions[]
+
+Using:
+
+```
+transform
+filter
+texts[].x/y
+mentions[].x/y
+```
+
+Coordinates are normalized (0–1).
+Convert to absolute position:
+
+```
+left = x * containerWidth
+top = y * containerHeight
+```
+
+---
+
+## ⏱ Story Timing Logic
+
+* Image → 5 seconds default
+* Reel → use `durationSec`
+* Progress auto-advances
+* Tap right → next
+* Tap left → previous
+* Swipe down → close
+
+---
+
+# 3️⃣ VIEW TRACKING (Important)
+
+When item becomes visible:
+
+POST `/api/stories/items/{itemId}/view`
+
+Rules:
+
+* Only call once per item
+* Do NOT call repeatedly on re-render
+* Use a Set to track viewed itemIds locally
+
+Backend already prevents duplicates via unique index.
+
+---
+
+# 4️⃣ STORY CREATION SCREEN
+
+We must support:
+
+POST `/api/stories`
+
+With:
+
+```
+{
+  items: [StoryItemPayload]
+}
+```
+
+---
+
+## 🎯 Create Story Flow
+
+### Step 1: Select Media
+
+* Camera or Gallery
+* Upload first → get URL
+* Then create StoryItemPayload
+
+### Step 2: Editor Screen
+
+Allow:
+
+* Move/scale/rotate media
+* Add text overlays
+* Add mentions
+* Apply filter
+* Add multiple items before posting
+
+Maintain array:
+
+```
+draftItems: StoryItemPayload[]
+```
+
+---
+
+## 📦 On Submit:
+
+Call:
+
+```
+POST /api/stories
+{
+  items: draftItems
+}
+```
+
+After success:
+
+* Close editor
+* Refresh feed
+* Optimistically add to UI
+
+---
+
+# 5️⃣ MENTIONS UI
+
+Mentions format:
+
+```
+mentions: [{ user_id, username, x, y }]
+```
+
+### Requirements:
+
+* When typing @ → show user search dropdown
+* On select → insert mention
+* Position mention badge visually
+* Store x/y normalized
+
+Mention style:
+
+* Rounded tag
+* Background with slight opacity
+* Click → navigate to user profile
+
+---
+
+# 6️⃣ TEXT OVERLAY EDITOR
+
+texts:
+
+```
+{
+  content,
+  x,
+  y,
+  fontSize,
+  fontFamily,
+  color,
+  align,
+  rotation,
+  background
+}
+```
+
+### UI:
+
+* Draggable
+* Resizable
+* Rotation support
+* Font switcher
+* Color picker
+* Background toggle
+
+Store all values normalized.
+
+---
+
+# 7️⃣ OWNER VIEWERS LIST
+
+When viewing own story:
+
+Show "Seen by X" at bottom.
+
+On tap:
+
+GET `/api/stories/{storyId}/views`
+
+Display:
+
+```
+viewer avatar
+username
+viewedAt
+```
+
+Only visible if user is owner.
+
+---
+
+# 8️⃣ ARCHIVE SCREEN
+
+GET `/api/stories/archive`
+
+Show:
+
+* Grid layout
+* Sorted by newest
+* Click → open in viewer mode
+* Mark archived visually
+
+---
+
+# 9️⃣ DELETE STORY
+
+If owner:
+Show 3-dot menu:
+
+* Delete Story
+
+Call:
+DELETE `/api/stories/{storyId}`
+
+After success:
+
+* Close viewer
+* Refresh feed
+
+---
+
+# 🔟 IMPORTANT STATE MANAGEMENT RULES
+
+* Keep story state centralized (Context or Redux)
+* Store:
+
+  * storiesFeed
+  * activeStoryItems
+  * viewedItemIds
+* Avoid duplicate API calls
+* Prevent race conditions in progress timer
+* Clear timers on unmount
+
+---
+
+# 🎨 Instagram-level UX Details
+
+* Smooth fade transition between items
+* Progress bar animated width
+* Pause story on long press
+* Resume on release
+* Mute toggle for video
+* Preload next item media
+* Lazy load feed avatars
+
+---
+
+# 🧠 Edge Cases to Handle
+
+* Story expired while viewing
+* Story deleted while viewing
+* Empty story items
+* Media load failure
+* Network failure on view API
+* User opens story twice quickly
+* Multiple items appended to active story
+
+---
+
+# 📁 Expected Component Structure
+
+```
+StoriesBar
+StoryBubble
+StoryViewer
+StoryProgress
+StoryItemRenderer
+StoryEditor
+StoryTextOverlay
+StoryMentionTag
+StoryArchiveScreen
+StoryViewersList
+```
+
+---
+
+# 🚀 Final Requirement
+
+Everything must:
+
+* Match API schema exactly
+* Handle expiresAt properly
+* Support one active story per user
+* Fully replicate Instagram behavior
+* Be production-ready (no hacks)
+
+---
+
+If something is missing in API response, adapt UI to current schema only. Do not invent backend fields.
+
+---
+
+If you want, I can now give you:
+
+• A **state architecture diagram**
+• A **database flow explanation**
+• Or a **step-by-step implementation order** so you don’t get overwhelmed**

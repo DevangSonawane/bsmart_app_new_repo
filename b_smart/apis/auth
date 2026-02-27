@@ -1,0 +1,236 @@
+📘 Bsmart API Documentation – Authentication (Auth Module)
+Overview
+The Auth API in Bsmart handles:
+User registration (email/password)
+
+
+User login (email/password)
+
+
+Fetching the currently logged-in user (/me)
+
+
+Google OAuth login flow (redirect-based)
+
+
+✅ Base URL: /api/auth
+ ✅ Auth Type: JWT Bearer Token
+ ✅ Token Expiry: (depends on controller; Google callback uses 30d)
+
+🔐 Authentication
+Protected endpoints require a bearer token:
+Header
+Authorization: Bearer <token>
+
+Used for:
+GET /api/auth/me
+
+
+
+👤 User Schema (Response Object)
+Field
+Type
+Notes
+id
+string
+User id
+username
+string
+Username
+email
+string
+Email
+full_name
+string
+Full name
+avatar_url
+string
+Avatar URL
+phone
+string
+Phone
+role
+string
+member / vendor / admin
+wallet
+object
+Wallet info
+wallet.balance
+number
+Balance
+wallet.currency
+string
+Currency
+createdAt
+datetime
+Created
+updatedAt
+datetime
+Updated
+
+
+1) Register a New User
+POST /api/auth/register
+Registers a new user with email + password.
+Request Type
+application/json
+Required Fields
+email
+
+
+password (min length 6)
+
+
+username
+
+
+Optional Fields
+full_name
+
+
+phone
+
+
+role (allowed: member, vendor; default: member)
+
+
+✅ Note: “admin” registration is not allowed (per Swagger description)
+
+
+Example Request
+{
+  "email": "john@example.com",
+  "password": "secret123",
+  "username": "john_doe",
+  "full_name": "John Doe",
+  "phone": "9999999999",
+  "role": "member"
+}
+
+Success Response (201)
+{
+  "token": "jwt_token_here",
+  "user": {
+    "id": "u123",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "full_name": "John Doe",
+    "role": "member"
+  }
+}
+
+Error Responses
+400 – User already exists or invalid role
+ 500 – Server error
+
+2) Login User
+POST /api/auth/login
+Logs user in using email + password.
+Request Type
+application/json
+Required Fields
+email
+
+
+password
+
+
+Example Request
+{
+  "email": "john@example.com",
+  "password": "secret123"
+}
+
+Success Response (200)
+{
+  "token": "jwt_token_here",
+  "user": {
+    "id": "u123",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "role": "member"
+  }
+}
+
+Error Responses
+400 – Invalid credentials
+ 500 – Server error
+
+3) Get Current Logged-in User
+GET /api/auth/me
+Returns the profile of the currently authenticated user.
+Security
+✅ Bearer token required
+Success Response (200)
+Returns User object:
+{
+  "id": "u123",
+  "username": "john_doe",
+  "email": "john@example.com",
+  "full_name": "John Doe",
+  "role": "member",
+  "wallet": {
+    "balance": 0,
+    "currency": "INR"
+  }
+}
+
+Error Responses
+401 – Not authorized
+ 404 – User not found
+ 500 – Server error
+
+4) Google OAuth Login
+This module supports Google login using Passport.
+GET /api/auth/google
+Starts the Google OAuth flow.
+What it does
+Redirects user to Google consent page with scopes:
+profile
+
+
+email
+
+
+✅ No request body required.
+
+GET /api/auth/google/callback
+Google callback URL after user authorizes.
+Behavior
+Passport authenticates the Google user
+
+
+Server generates JWT token:
+
+
+Payload: { id: req.user._id }
+
+
+Expiry: 30 days
+
+
+Redirects user to frontend client with token in query string
+
+
+Redirect Format
+{CLIENT_URL}/auth/google/success?token=<jwt>
+
+Default CLIENT_URL
+If process.env.CLIENT_URL not set:
+http://localhost:5173
+
+Failure Redirect
+If Google auth fails:
+redirects to /login
+
+
+
+✅ Notes (Based on Your Code)
+Token generation for Google uses process.env.JWT_SECRET
+
+
+Google authentication is stateless (session: false)
+
+
+/me uses auth middleware (JWT verification)
+

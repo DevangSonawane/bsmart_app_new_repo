@@ -1,0 +1,907 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
+import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../api/api.dart';
+
+class StoryEditingScreen extends StatefulWidget {
+  final List<ImageProvider> media;
+  const StoryEditingScreen({super.key, required this.media});
+
+  @override
+  State<StoryEditingScreen> createState() => _StoryEditingScreenState();
+}
+
+class _StoryEditingScreenState extends State<StoryEditingScreen> {
+  int _currentIndex = 0;
+  final List<_OverlayElement> _elements = [];
+  bool _showTrash = false;
+  _OverlayElement? _activeElement;
+  String _textStyle = 'Classic';
+  Color _currentColor = Colors.white;
+  double _brushSize = 8.0;
+  final List<_Stroke> _strokes = [];
+  final List<_Stroke> _redo = [];
+  bool _drawingMode = false;
+  bool _textMode = false;
+  bool _stickerMode = false;
+  final GlobalKey _repaintKey = GlobalKey();
+  bool _imageReady = false;
+  bool _imageError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _precacheCurrent();
+  }
+
+  // FIXED: Improved image precaching with proper error handling
+  void _precacheCurrent() async {
+    final img = widget.media[_currentIndex];
+    try {
+      // Precache with proper configuration for story aspect ratio
+      await precacheImage(
+        img,
+        context,
+        size: const Size(1080, 1920),
+      );
+      if (mounted) {
+        setState(() {
+          _imageReady = true;
+          _imageError = false;
+        });
+      }
+    } catch (e) {
+      print('Image precache error: $e');
+      if (mounted) {
+        setState(() {
+          _imageReady = false;
+          _imageError = true;
+        });
+      }
+    }
+  }
+
+  void _addText() {
+    setState(() {
+      _textMode = true;
+      _elements.add(_OverlayElement.text('Tap to edit', style: _textStyle, color: _currentColor));
+    });
+  }
+
+  void _addSticker(String label) {
+    setState(() {
+      _elements.add(_OverlayElement.sticker(label));
+      _stickerMode = false;
+    });
+  }
+
+  void _startStroke(Offset pos) {
+    if (!_drawingMode) return;
+    setState(() {
+      _strokes.add(_Stroke(color: _currentColor, size: _brushSize, points: [pos]));
+      _redo.clear();
+    });
+  }
+
+  void _appendStroke(Offset pos) {
+    if (!_drawingMode || _strokes.isEmpty) return;
+    setState(() {
+      _strokes.last.points.add(pos);
+    });
+  }
+
+  void _undo() {
+    if (_strokes.isEmpty) return;
+    setState(() {
+      _redo.add(_strokes.removeLast());
+    });
+  }
+
+  void _redoStroke() {
+    if (_redo.isEmpty) return;
+    setState(() {
+      _strokes.add(_redo.removeLast());
+    });
+  }
+
+  void _save() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved to camera roll')));
+  }
+
+  void _crop() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Crop/Rotate coming soon')));
+  }
+
+  void _sendTo() async {
+    final selected = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => const _RecipientsSheet(),
+    );
+    if (selected != null && selected.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sent to ${selected.length} recipients')));
+    }
+  }
+
+  Future<void> _postYourStory() async {
+    await _postToApi();
+  }
+
+  Future<void> _postCloseFriends() async {
+    await _postToApi();
+  }
+
+  // FIXED: Improved error handling and payload structure
+  Future<void> _postToApi() async {
+    try {
+      // Validation
+      if (!_imageReady) {
+        _showError('Image is still loading');
+        return;
+      }
+
+      if (_imageError) {
+        _showError('Image failed to load. Please try again.');
+        return;
+      }
+
+      // Check network connectivity
+      if (!await _checkConnectivity()) {
+        _showError('No internet connection. Please check your network.');
+        return;
+      }
+
+      final boundary = _repaintKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) {
+        _showError('Unable to capture story');
+        return;
+      }
+
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                ),
+                SizedBox(width: 16),
+                Text('Posting story...'),
+              ],
+            ),
+            duration: Duration(seconds: 30),
+          ),
+        );
+      }
+
+      // Capture image
+      final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+      if (byteData == null) {
+        _showError('Failed to capture image');
+        return;
+      }
+
+      final bytes = byteData.buffer.asUint8List();
+
+      // Upload with retry
+      print('📤 Uploading story image...');
+      final upload = await _uploadWithRetry(
+        bytes.toList(),
+        'story_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+
+      print('Upload response: $upload');
+
+      // Extract URL with validation
+      String? url;
+      if (upload is Map) {
+        url = upload['fileUrl'] as String? ??
+            upload['url'] as String? ??
+            upload['file_url'] as String?;
+
+        // Check nested data object
+        if (url == null && upload['data'] is Map) {
+          final data = upload['data'] as Map;
+          url = data['url'] as String? ??
+              data['fileUrl'] as String? ??
+              data['file_url'] as String?;
+        }
+      }
+
+      // Validate URL
+      if (url == null || url.isEmpty) {
+        print('❌ Upload failed - no URL in response: $upload');
+        _showError('Upload failed: No URL returned');
+        return;
+      }
+
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        print('❌ Invalid URL format: $url');
+        _showError('Upload failed: Invalid URL format');
+        return;
+      }
+
+      print('✅ Image uploaded: $url');
+
+      // Get screen size for calculating relative positions
+      final screenSize = MediaQuery.of(context).size;
+
+      // Create payload matching API documentation
+      final payload = {
+        'media': {
+          'url': url,
+          'type': 'image',
+          'width': image.width,
+          'height': image.height,
+        },
+        'transform': {
+          'x': 0.5,
+          'y': 0.5,
+          'scale': 1.0,
+          'rotation': 0.0,
+        },
+        'filter': {
+          'name': 'none',
+          'intensity': 0,
+        },
+        'texts': _elements
+            .where((e) => e.type == _ElementType.text)
+            .map((e) {
+              // Convert color to hex format
+              final colorHex = '#${(e.color ?? Colors.white).value.toRadixString(16).substring(2, 8).toUpperCase()}';
+              return {
+                'content': e.text ?? '',
+                'fontSize': 24,
+                'fontFamily': (e.style ?? 'classic').toLowerCase(),
+                'color': colorHex,
+                'align': 'center',
+                'x': e.position.dx / screenSize.width,
+                'y': e.position.dy / screenSize.height,
+              };
+            })
+            .toList(),
+        'mentions': [],
+      };
+
+      print('📤 Posting to API with payload: $payload');
+
+      // Post to API
+      final response = await StoriesApi().create([payload]);
+
+      print('✅ Story posted successfully: $response');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Posted to story ✓'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true);
+      }
+    } on SocketException {
+      print('❌ Network error');
+      _showError('No internet connection');
+    } on TimeoutException {
+      print('❌ Timeout error');
+      _showError('Request timed out. Please try again.');
+    } catch (e, stackTrace) {
+      print('❌ Error posting story: $e');
+      print('Stack trace: $stackTrace');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        String errorMessage = 'Failed to post story';
+
+        if (e is ApiException) {
+          errorMessage = e.message;
+        }
+
+        _showError(errorMessage);
+      }
+    }
+  }
+
+  // FIXED: Added upload retry logic
+  Future<Map<String, dynamic>> _uploadWithRetry(
+    List<int> bytes,
+    String filename, {
+    int maxRetries = 3,
+  }) async {
+    int attempts = 0;
+    Exception? lastException;
+
+    while (attempts < maxRetries) {
+      try {
+        attempts++;
+        print('Upload attempt $attempts of $maxRetries');
+        
+        final upload = await UploadApi().uploadFileBytes(
+          bytes: bytes,
+          filename: filename,
+        );
+        
+        return upload;
+      } catch (e) {
+        print('Upload attempt $attempts failed: $e');
+        lastException = e as Exception;
+
+        if (attempts < maxRetries) {
+          // Exponential backoff
+          final delaySeconds = attempts * 2;
+          print('Retrying in $delaySeconds seconds...');
+          await Future.delayed(Duration(seconds: delaySeconds));
+        }
+      }
+    }
+
+    throw lastException ?? Exception('Upload failed after $maxRetries attempts');
+  }
+
+  // FIXED: Added connectivity check
+  Future<bool> _checkConnectivity() async {
+    try {
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(const Duration(seconds: 5));
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // FIXED: Improved error display with retry option
+  void _showError(String message) {
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Retry',
+          textColor: Colors.white,
+          onPressed: _postToApi,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentImage = widget.media[_currentIndex];
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('Edit Story'),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_horiz, color: Colors.white),
+            itemBuilder: (ctx) => const [
+              PopupMenuItem(value: 'save', child: Text('Save to camera roll')),
+              PopupMenuItem(value: 'settings', child: Text('Story settings')),
+              PopupMenuItem(value: 'archive', child: Text('Archive')),
+            ],
+            onSelected: (v) {
+              if (v == 'save') _save();
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Stack(
+              children: [
+                GestureDetector(
+                  onPanStart: (d) => _startStroke(d.localPosition),
+                  onPanUpdate: (d) => _appendStroke(d.localPosition),
+                  child: Container(
+                    color: Colors.black,
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: 9 / 16,
+                        child: Stack(
+                          children: [
+                            RepaintBoundary(
+                              key: _repaintKey,
+                              child: Stack(
+                                children: [
+                                  // FIXED: Added loading and error states
+                                  Positioned.fill(
+                                    child: _imageError
+                                        ? Container(
+                                            color: Colors.black,
+                                            child: const Center(
+                                              child: Column(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.error_outline,
+                                                    color: Colors.white,
+                                                    size: 48,
+                                                  ),
+                                                  SizedBox(height: 16),
+                                                  Text(
+                                                    'Failed to load image',
+                                                    style: TextStyle(color: Colors.white),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          )
+                                        : _imageReady
+                                            ? Image(
+                                                image: currentImage,
+                                                fit: BoxFit.cover,
+                                              )
+                                            : Container(
+                                                color: Colors.black,
+                                                child: const Center(
+                                                  child: Column(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: [
+                                                      CircularProgressIndicator(
+                                                        color: Colors.white,
+                                                      ),
+                                                      SizedBox(height: 16),
+                                                      Text(
+                                                        'Loading image...',
+                                                        style: TextStyle(color: Colors.white),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                  ),
+                                  // Only show drawing and elements if image is ready
+                                  if (_imageReady && !_imageError) ...[
+                                    CustomPaint(painter: _DrawingPainter(_strokes)),
+                                    ..._elements.map((e) => _ElementWidget(
+                                          element: e,
+                                          onChanged: (updated) {
+                                            setState(() {
+                                              final idx = _elements.indexOf(e);
+                                              _elements[idx] = updated;
+                                            });
+                                          },
+                                          onStartDrag: () => setState(() => _showTrash = true),
+                                          onEndDrag: (pos) {
+                                            setState(() => _showTrash = false);
+                                            if (pos.dy > MediaQuery.of(context).size.height - 140) {
+                                              setState(() {
+                                                _elements.remove(e);
+                                              });
+                                            }
+                                          },
+                                          onTap: () {
+                                            if (e.type == _ElementType.text) {
+                                              _editText(e);
+                                            }
+                                          },
+                                        )),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Rest of UI remains the same...
+                // (Trash indicator, bottom toolbar, etc.)
+                if (_showTrash)
+                  Positioned(
+                    bottom: 80,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.delete, color: Colors.white, size: 32),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          // Bottom controls
+          Container(
+            color: Colors.black,
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _ToolButton(icon: Icons.text_fields, label: 'Aa', onTap: _addText),
+                _ToolButton(icon: Icons.brush, label: 'Draw', onTap: () => setState(() => _drawingMode = !_drawingMode)),
+                _ToolButton(icon: Icons.emoji_emotions, label: 'Sticker', onTap: () => setState(() => _stickerMode = !_stickerMode)),
+              ],
+            ),
+          ),
+          // Post buttons
+          Container(
+            color: Colors.black,
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _imageReady && !_imageError ? _postYourStory : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('Your Story'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _imageReady && !_imageError ? _postCloseFriends : null,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('Close Friends'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _editText(_OverlayElement element) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        String newText = element.text ?? '';
+        return AlertDialog(
+          title: const Text('Edit Text'),
+          content: TextField(
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Enter text'),
+            onChanged: (v) => newText = v,
+            controller: TextEditingController(text: newText),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  final idx = _elements.indexOf(element);
+                  _elements[idx] = element.copyWith(text: newText);
+                });
+                Navigator.pop(ctx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// Rest of the helper classes remain the same...
+class _ToolButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _ToolButton({required this.icon, required this.label, required this.onTap});
+  
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        InkWell(
+          onTap: onTap,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
+            child: Icon(icon, color: Colors.white),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+      ],
+    );
+  }
+}
+
+enum _ElementType { text, sticker }
+
+class _OverlayElement {
+  final _ElementType type;
+  final String? text;
+  final String? style;
+  final Color? color;
+  final String? sticker;
+  final Offset position;
+  final double scale;
+  final double rotation;
+  
+  _OverlayElement._({
+    required this.type,
+    this.text,
+    this.style,
+    this.color,
+    this.sticker,
+    required this.position,
+    required this.scale,
+    required this.rotation,
+  });
+  
+  factory _OverlayElement.text(String text, {String style = 'Classic', Color color = Colors.white}) {
+    return _OverlayElement._(
+      type: _ElementType.text,
+      text: text,
+      style: style,
+      color: color,
+      position: const Offset(100, 100),
+      scale: 1.0,
+      rotation: 0.0,
+    );
+  }
+  
+  factory _OverlayElement.sticker(String label) {
+    return _OverlayElement._(
+      type: _ElementType.sticker,
+      sticker: label,
+      position: const Offset(120, 120),
+      scale: 1.0,
+      rotation: 0.0,
+    );
+  }
+  
+  _OverlayElement copyWith({
+    String? text,
+    String? style,
+    Color? color,
+    Offset? position,
+    double? scale,
+    double? rotation,
+  }) {
+    return _OverlayElement._(
+      type: type,
+      text: text ?? this.text,
+      style: style ?? this.style,
+      color: color ?? this.color,
+      sticker: sticker,
+      position: position ?? this.position,
+      scale: scale ?? this.scale,
+      rotation: rotation ?? this.rotation,
+    );
+  }
+}
+
+class _ElementWidget extends StatefulWidget {
+  final _OverlayElement element;
+  final void Function(_OverlayElement updated) onChanged;
+  final VoidCallback onStartDrag;
+  final void Function(Offset endPosition) onEndDrag;
+  final VoidCallback onTap;
+  
+  const _ElementWidget({
+    super.key,
+    required this.element,
+    required this.onChanged,
+    required this.onStartDrag,
+    required this.onEndDrag,
+    required this.onTap,
+  });
+  
+  @override
+  State<_ElementWidget> createState() => _ElementWidgetState();
+}
+
+class _ElementWidgetState extends State<_ElementWidget> {
+  Offset _initialFocal = Offset.zero;
+  double _initialScale = 1.0;
+  double _initialRotation = 0.0;
+  Offset _lastGlobalPos = Offset.zero;
+
+  @override
+  Widget build(BuildContext context) {
+    final e = widget.element;
+    return Positioned(
+      left: e.position.dx,
+      top: e.position.dy,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onScaleStart: (d) {
+          widget.onStartDrag();
+          _initialFocal = d.focalPoint;
+          _initialScale = e.scale;
+          _initialRotation = e.rotation;
+          _lastGlobalPos = d.focalPoint;
+        },
+        onScaleUpdate: (d) {
+          _lastGlobalPos = d.focalPoint;
+          final isSingleFinger = d.pointerCount == 1;
+          if (isSingleFinger && d.rotation.abs() < 0.001 && (d.scale - 1.0).abs() < 0.001) {
+            final delta = d.focalPoint - _initialFocal;
+            final updated = e.copyWith(position: e.position + delta);
+            widget.onChanged(updated);
+            _initialFocal = d.focalPoint;
+          } else {
+            final updated = e.copyWith(
+              scale: _initialScale * d.scale,
+              rotation: _initialRotation + d.rotation,
+            );
+            widget.onChanged(updated);
+          }
+        },
+        onScaleEnd: (d) => widget.onEndDrag(_lastGlobalPos),
+        child: Transform.rotate(
+          angle: e.rotation,
+          child: Transform.scale(
+            scale: e.scale,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: e.type == _ElementType.text ? Colors.black26 : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: e.type == _ElementType.text
+                  ? Text(
+                      e.text ?? '',
+                      style: TextStyle(
+                        color: e.color ?? Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  : Text(
+                      e.sticker ?? '',
+                      style: const TextStyle(fontSize: 32),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Stroke {
+  final Color color;
+  final double size;
+  final List<Offset> points;
+  _Stroke({required this.color, required this.size, required this.points});
+}
+
+class _DrawingPainter extends CustomPainter {
+  final List<_Stroke> strokes;
+  _DrawingPainter(this.strokes);
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final s in strokes) {
+      final paint = Paint()
+        ..color = s.color
+        ..strokeWidth = s.size
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+      for (var i = 0; i < s.points.length - 1; i++) {
+        canvas.drawLine(s.points[i], s.points[i + 1], paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DrawingPainter oldDelegate) => oldDelegate.strokes != strokes;
+}
+
+class _RecipientsSheet extends StatefulWidget {
+  const _RecipientsSheet();
+  
+  @override
+  State<_RecipientsSheet> createState() => _RecipientsSheetState();
+}
+
+class _RecipientsSheetState extends State<_RecipientsSheet> {
+  final List<Map<String, dynamic>> _followers = List.generate(
+    20,
+    (i) => {'id': 'u$i', 'name': 'User $i'},
+  );
+  final Set<String> _selected = {};
+  
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Search',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(onPressed: () {}, child: const Text('Close Friends')),
+                const SizedBox(width: 8),
+                OutlinedButton(onPressed: () {}, child: const Text('Groups')),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _followers.length,
+                itemBuilder: (_, i) {
+                  final f = _followers[i];
+                  final id = f['id'] as String;
+                  final selected = _selected.contains(id);
+                  return CheckboxListTile(
+                    title: Text(f['name'] as String),
+                    value: selected,
+                    onChanged: (v) {
+                      setState(() {
+                        if (v == true) {
+                          _selected.add(id);
+                        } else {
+                          _selected.remove(id);
+                        }
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _selected.isEmpty
+                    ? null
+                    : () => Navigator.pop(context, _selected.toList()),
+                child: const Text('Send'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

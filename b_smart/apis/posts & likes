@@ -1,0 +1,360 @@
+Bsmart API Documentation for your Posts + Likes module, based exactly on the routes and Swagger definitions you shared.
+
+📘 Bsmart API Documentation – Posts & Likes Module
+Overview
+The Posts API in Bsmart manages:
+Creating posts (post/reel/promote/advertise)
+
+
+Fetching a feed (paginated)
+
+
+Fetching a single post
+
+
+Deleting a post
+
+
+Liking / unliking posts
+
+
+Getting users who liked a post
+
+
+✅ Base URL: /api/posts
+ ✅ Auth Required: Yes (Bearer Token for all routes)
+
+🔐 Authentication
+All endpoints require a bearer token:
+Header
+Authorization: Bearer <token>
+
+If token is missing/invalid → request is blocked by verifyToken.
+
+📦 Data Schemas
+MediaItem
+Field
+Type
+Notes
+fileName
+string
+Stored file name
+ratio
+number
+Media aspect ratio
+filter
+string
+Applied filter name
+type
+string
+Default: image (can represent video too depending on your app)
+fileUrl
+string
+Computed URL (response only)
+
+Example
+{
+  "fileName": "abc.jpg",
+  "ratio": 1.33,
+  "filter": "clarendon",
+  "type": "image",
+  "fileUrl": "https://..."
+}
+
+
+Post
+Field
+Type
+Notes
+_id
+string
+Post ID
+user_id
+object
+Populated user details
+caption
+string
+Post caption
+location
+string
+Location text
+media
+array
+Array of MediaItem
+tags
+array
+Array of strings
+likes_count
+number
+Total likes
+is_liked_by_me
+boolean
+Whether current user liked it
+comments
+array
+Comments list (if included in response)
+createdAt
+datetime
+Creation timestamp
+
+user_id object includes:
+username
+
+
+full_name
+
+
+avatar_url
+
+
+
+1) Create a Post
+POST /api/posts
+Creates a new post.
+Security
+✅ Bearer token required
+Request Type
+application/json
+Required
+media (array)
+
+
+Request Body
+Field
+Type
+Required
+caption
+string
+❌
+location
+string
+❌
+media
+array(MediaItem)
+✅
+tags
+array(string)
+❌
+hide_likes_count
+boolean
+❌
+turn_off_commenting
+boolean
+❌
+type
+string
+❌ (enum below)
+
+type allowed values
+post, reel, promote, advertise
+Example Request
+{
+  "caption": "New post",
+  "location": "Mumbai",
+  "type": "post",
+  "tags": ["travel", "night"],
+  "media": [
+    { "fileName": "img1.jpg", "ratio": 1.0, "filter": "none", "type": "image" }
+  ],
+  "hide_likes_count": false,
+  "turn_off_commenting": false
+}
+
+Success Response (201)
+Returns the created Post object.
+
+2) Get Feed (Paginated)
+GET /api/posts/feed
+Fetches the post feed with pagination.
+Security
+✅ Bearer token required
+Query Parameters
+Param
+Type
+Required
+Description
+page
+integer
+❌
+Page number
+limit
+integer
+❌
+Items per page
+
+Success Response (200)
+{
+  "page": 1,
+  "limit": 10,
+  "total": 100,
+  "posts": [
+    {
+      "_id": "p1",
+      "caption": "Hello",
+      "likes_count": 5,
+      "is_liked_by_me": false,
+      "media": []
+    }
+  ]
+}
+
+
+3) Get a Single Post
+GET /api/posts/{id}
+Fetches post details by post ID.
+Security
+✅ Bearer token required
+Path Parameter
+Param
+Type
+Required
+id
+string
+✅
+
+Success Response (200)
+Returns full Post object.
+Error (404)
+{ "message": "Post not found" }
+
+
+4) Delete a Post
+DELETE /api/posts/{id}
+Deletes a post (only allowed if authorized).
+Security
+✅ Bearer token required
+Path Parameter
+Param
+Type
+Required
+id
+string
+✅
+
+Success Response (200)
+{ "message": "Post deleted successfully" }
+
+Errors
+403
+{ "message": "Not authorized" }
+
+404
+{ "message": "Post not found" }
+
+
+5) Like a Post
+POST /api/posts/{id}/like
+Likes a post.
+Security
+✅ Bearer token required
+Path Parameter
+Param
+Type
+Required
+id
+string
+✅
+
+Success Response (200)
+{
+  "message": "Liked successfully",
+  "likes_count": 12,
+  "liked": true
+}
+
+Errors
+400 (Already liked)
+{ "message": "Already liked" }
+
+404
+{ "message": "Post not found" }
+
+
+6) Unlike a Post
+POST /api/posts/{id}/unlike
+Unlikes a post.
+Security
+✅ Bearer token required
+Path Parameter
+Param
+Type
+Required
+id
+string
+✅
+
+Success Response (200)
+{
+  "message": "Unliked successfully",
+  "likes_count": 11,
+  "liked": false
+}
+
+Errors
+400 (Not liked yet)
+{ "message": "Not liked yet" }
+
+404
+{ "message": "Post not found" }
+
+
+7) Get Users Who Liked a Post
+GET /api/posts/{id}/likes
+Returns list of users who liked the post.
+Security
+✅ Bearer token required
+Path Parameter
+Param
+Type
+Required
+id
+string
+✅
+
+Success Response (200)
+{
+  "total": 3,
+  "users": [
+    {
+      "_id": "u1",
+      "username": "john",
+      "full_name": "John Doe",
+      "avatar_url": "https://..."
+    }
+  ]
+}
+
+Error (404)
+{ "message": "Post not found" }
+
+
+✅ Notes (Based on Your Code)
+Every route uses verifyToken → fully protected
+
+
+Likes are handled by separate controllers:
+
+
+likePost
+
+
+unlikePost
+
+
+getPostLikes
+
+
+Post actions handled in:
+
+
+createPost
+
+
+getFeed
+
+
+getPost
+
+
+deletePost
+

@@ -1,0 +1,72 @@
+Bsmart API Documentation for your Upload API (exactly as per the code).
+
+📘 Bsmart API Documentation – Upload Module
+Overview
+The Upload API in Bsmart allows authenticated users to upload a single file (image/video).
+It returns:
+the stored fileName
+a public fileUrl to access the uploaded file
+✅ Base URL: /api/upload
+✅ Method: POST
+✅ Auth Required: Yes (Bearer Token)
+✅ Upload Type: multipart/form-data
+✅ Field Name: file
+
+🔐 Authentication
+This endpoint is protected using verifyToken.
+Required Header
+Authorization: Bearer <token>
+
+If the token is missing/invalid, it will be blocked by middleware.
+
+1) Upload File (Image/Video)
+POST /api/upload
+Uploads a file and returns the filename + public URL.
+Request Type
+multipart/form-data
+Form Field
+Field
+Type
+Required
+Description
+file
+File (binary)
+✅
+Image or video file
+
+
+✅ Success Response (200)
+{
+  "fileName": "abc123.png",
+  "fileUrl": "http://localhost:5000/uploads/abc123.png"
+}
+
+How fileUrl is generated
+The server builds it dynamically:
+baseUrl = req.protocol + "://" + req.get("host")
+then returns:
+baseUrl + "/uploads/" + filename
+So in production it becomes something like:
+https://api.bsmart.com/uploads/<filename>
+
+❌ Error Responses
+400 – No file uploaded
+{
+  "message": "Please upload a file"
+}
+
+500 – Server error
+{
+  "message": "Server error",
+  "error": "error message here"
+}
+
+
+📌 Notes (Based on Your Code)
+Uploads a single file only (upload.single('file'))
+File validation (type/size) depends on your ../config/multer config
+To access uploaded files, your server must expose /uploads as static:
+app.use('/uploads', express.static('uploads'));
+
+
+
