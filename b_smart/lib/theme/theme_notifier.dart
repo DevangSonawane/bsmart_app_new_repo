@@ -12,24 +12,33 @@ class ThemeNotifier extends ChangeNotifier {
   bool get isDark => _isDark;
 
   static Future<ThemeNotifier> create() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getBool(_kDarkModeKey);
-    bool initial;
-    if (stored != null) {
-      initial = stored;
-    } else {
-      final brightness = ui.PlatformDispatcher.instance.platformBrightness;
-      initial = brightness == ui.Brightness.dark;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getBool(_kDarkModeKey);
+      bool initial;
+      if (stored != null) {
+        initial = stored;
+      } else {
+        final brightness = ui.PlatformDispatcher.instance.platformBrightness;
+        initial = brightness == ui.Brightness.dark;
+      }
+      return ThemeNotifier(initialDark: initial);
+    } catch (e) {
+      debugPrint('Error initializing ThemeNotifier: $e');
+      return ThemeNotifier(initialDark: false);
     }
-    return ThemeNotifier(initialDark: initial);
   }
 
   Future<void> setDark(bool value) async {
     if (_isDark == value) return;
     _isDark = value;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kDarkModeKey, value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kDarkModeKey, value);
+    } catch (e) {
+      debugPrint('Error saving theme preference: $e');
+    }
   }
 
   Future<void> toggle() => setDark(!_isDark);

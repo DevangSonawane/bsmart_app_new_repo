@@ -1,22 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Home, PlusSquare, Clapperboard, ShoppingBag, User, Menu, Image, Video, Target, Megaphone, Moon, Sun, Search } from 'lucide-react';
+import { Home, PlusSquare, Clapperboard, ShoppingBag, User, Menu, Image, Video, Target, Megaphone, Moon, Sun, Search, Heart, Bell, MessageCircle } from 'lucide-react';
 import { toggleTheme } from '../store/themeSlice';
 import CreatePostModal from './CreatePostModal';
 
 const Sidebar = ({ onOpenCreateModal }) => {
   const location = useLocation();
-  const navigate = useNavigate();
   const dispatch = useDispatch();
   const { mode } = useSelector((state) => state.theme);
   const { userObject } = useSelector((state) => state.auth);
   const [isHovered, setIsHovered] = useState(false);
   const [isCreateDropdownOpen, setIsCreateDropdownOpen] = useState(false);
   const [isMoreDropdownOpen, setIsMoreDropdownOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [showVendorNotValidated, setShowVendorNotValidated] = useState(false);
   const dropdownRef = useRef(null);
   const moreDropdownRef = useRef(null);
+  const notificationsRef = useRef(null);
+  const isVendor = userObject?.role === 'vendor';
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -26,6 +28,9 @@ const Sidebar = ({ onOpenCreateModal }) => {
       if (moreDropdownRef.current && !moreDropdownRef.current.contains(event.target)) {
         setIsMoreDropdownOpen(false);
       }
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -34,12 +39,15 @@ const Sidebar = ({ onOpenCreateModal }) => {
     };
   }, []);
 
-  const navItems = [
+  const navItems = isVendor ? [
     { icon: Home, label: 'Home', path: '/' },
-    { icon: Search, label: 'Search', path: '/search' },
     { icon: Target, label: 'Ads', path: '/ads' },
     { icon: PlusSquare, label: 'Create', path: null, action: () => setIsCreateDropdownOpen(!isCreateDropdownOpen) },
-    { icon: Megaphone, label: 'Promote', path: '/promote' },
+    { icon: User, label: 'Profile', path: '/profile' },
+  ] : [
+    { icon: Home, label: 'Home', path: '/' },
+    { icon: Search, label: 'Search', path: '/search' },
+    { icon: PlusSquare, label: 'Create', path: null, action: () => setIsCreateDropdownOpen(!isCreateDropdownOpen) },
     { icon: Clapperboard, label: 'Reels', path: '/reels' },
     { icon: User, label: 'Profile', path: '/profile' },
   ];
@@ -97,33 +105,37 @@ const Sidebar = ({ onOpenCreateModal }) => {
                   {/* Dropdown Menu */}
                   {isCreateDropdownOpen && (
                     <div className={`absolute left-0 top-full mt-2 w-48 bg-white dark:bg-[#262626] rounded-lg shadow-lg border border-gray-100 dark:border-gray-800 py-2 z-[60] overflow-hidden ${isHovered ? 'translate-x-0' : 'translate-x-14'}`}>
-                      <button
-                        onClick={() => {
-                          onOpenCreateModal('post');
-                          setIsCreateDropdownOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-200"
-                      >
-                        <Image size={18} />
-                        Create Post
-                      </button>
-                      <button
-                        onClick={() => {
-                          onOpenCreateModal('reel');
-                          setIsCreateDropdownOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-200"
-                      >
-                        <Video size={18} />
-                        Upload Reel
-                      </button>
-                      {userObject?.role === 'vendor' && (
+                      {!isVendor && (
+                        <>
+                          <button
+                            onClick={() => {
+                              onOpenCreateModal('post');
+                              setIsCreateDropdownOpen(false);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-200"
+                          >
+                            <Image size={18} />
+                            Create Post
+                          </button>
+                          <button
+                            onClick={() => {
+                              onOpenCreateModal('reel');
+                              setIsCreateDropdownOpen(false);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-200"
+                          >
+                            <Video size={18} />
+                            Upload Reel
+                          </button>
+                        </>
+                      )}
+                      {isVendor && (
                         <button
-                          onClick={() => {
-                            if (!userObject.vendor_validated) {
+                           onClick={() => {
+                            if (!userObject?.is_active) {
                               setShowVendorNotValidated(true);
                             } else {
-                              navigate('/ads');
+                              onOpenCreateModal('ad');
                             }
                             setIsCreateDropdownOpen(false);
                           }}
@@ -160,6 +172,59 @@ const Sidebar = ({ onOpenCreateModal }) => {
               </Link>
             );
           })}
+          <div className="relative" ref={notificationsRef}>
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className={`group w-full flex items-center gap-4 p-3 rounded-xl transition-all duration-200 ${showNotifications ? 'bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange text-white shadow-md' : 'hover:bg-gray-50 dark:hover:bg-gray-900 text-gray-900 dark:text-white'}`}
+            >
+              <div className="min-w-[24px] relative">
+                <Heart
+                  size={24}
+                  className={`${showNotifications ? 'text-white' : 'text-gray-900 dark:text-white'} transition-transform duration-150 group-hover:scale-110 ${!showNotifications && 'group-hover:text-black dark:group-hover:text-white'}`}
+                  strokeWidth={showNotifications ? 2.5 : 2}
+                />
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#fa3f5e] rounded-full border border-white dark:border-black"></span>
+              </div>
+              <span
+                className={`text-base font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${!showNotifications && 'group-hover:text-black dark:group-hover:text-white'} ${isHovered ? 'opacity-100 w-auto' : 'opacity-0 w-0'} ${showNotifications ? 'text-white font-bold' : ''}`}
+              >
+                Notifications
+              </span>
+            </button>
+            {showNotifications && (
+              <div className={`absolute left-full top-1/2 -translate-y-1/2 ml-3 w-80 z-[60] animate-fade-in ${isHovered ? 'translate-x-0' : 'translate-x-2'}`}>
+                <div className="bg-white dark:bg-[#262626] rounded-xl shadow-xl border border-gray-100 dark:border-gray-800 py-2 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-800 flex justify-between items-center">
+                    <h3 className="font-semibold text-sm dark:text-white">Notifications</h3>
+                    <span className="text-xs text-[#fa3f5e] font-medium cursor-pointer">Mark all read</span>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    <div className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex gap-3 items-center cursor-pointer transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 flex items-center justify-center flex-shrink-0"><Bell size={14} /></div>
+                      <div>
+                        <p className="text-sm text-gray-900 dark:text-gray-200">New follower: <span className="font-bold">Sarah</span></p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">2 min ago</p>
+                      </div>
+                    </div>
+                    <div className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex gap-3 items-center cursor-pointer transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-pink-50 dark:bg-pink-900/20 text-pink-500 flex items-center justify-center flex-shrink-0"><Heart size={14} /></div>
+                      <div>
+                        <p className="text-sm text-gray-900 dark:text-gray-200">Mike liked your post</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">1 hour ago</p>
+                      </div>
+                    </div>
+                    <div className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex gap-3 items-center cursor-pointer transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-500 flex items-center justify-center flex-shrink-0"><MessageCircle size={14} /></div>
+                      <div>
+                        <p className="text-sm text-gray-900 dark:text-gray-200">Anna commented: "Amazing!"</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">2 hours ago</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Extra items commonly found in sidebar */}
           <div className={`mt-auto pb-4 relative`} ref={moreDropdownRef}>
@@ -205,10 +270,10 @@ const Sidebar = ({ onOpenCreateModal }) => {
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 dark:border-gray-800">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">
-              Vendor verification pending
+              Vendor account inactive
             </h3>
             <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center">
-              Your vendor account is not yet validated. Please refresh this page or wait 2–3 working days for verification before uploading ads.
+              Your vendor account is inactive. Please contact support or wait for activation before uploading ads.
             </p>
             <div className="flex justify-center">
               <button

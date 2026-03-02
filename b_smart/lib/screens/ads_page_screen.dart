@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import '../utils/current_user.dart';
 import '../models/ad_model.dart';
 import '../models/ad_category_model.dart';
 import '../services/ad_category_service.dart';
 import '../services/ad_eligibility_service.dart';
 import '../services/wallet_service.dart';
-import '../services/notification_service.dart';
-import '../models/notification_model.dart';
-import 'ad_company_detail_screen.dart';
 import '../theme/instagram_theme.dart';
-import '../widgets/clay_container.dart';
 
 class AdsPageScreen extends StatefulWidget {
   const AdsPageScreen({super.key});
@@ -20,63 +18,35 @@ class AdsPageScreen extends StatefulWidget {
   State<AdsPageScreen> createState() => _AdsPageScreenState();
 }
 
-class _AdsPageScreenState extends State<AdsPageScreen>
-    with WidgetsBindingObserver {
+class _AdsPageScreenState extends State<AdsPageScreen> {
   final AdCategoryService _categoryService = AdCategoryService();
+  // ignore: unused_field
   final AdEligibilityService _eligibilityService = AdEligibilityService();
+  // ignore: unused_field
   final WalletService _walletService = WalletService();
-  final NotificationService _notificationService = NotificationService();
-  String _userId = 'user-1';
 
   List<AdCategory> _categories = [];
   String _selectedCategoryId = 'all';
   List<Ad> _ads = [];
-  Ad? _currentAd;
-  AdWatchSession? _watchSession;
-  Timer? _watchTimer;
   
   bool _isLoading = true;
-  bool _isPaused = false;
-  bool _isMuted = false;
-  int _pauseCount = 0;
-  int _totalPauseDuration = 0;
-  DateTime? _pauseStartTime;
-  bool _isInForeground = true;
-  int _views = 0;
-  bool _isLiked = false;
+  final PageController _pageController = PageController();
+  int _focusedIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _init();
-  }
-
-  Future<void> _init() async {
-    final uid = await CurrentUser.id;
-    if (mounted && uid != null) {
-      setState(() => _userId = uid);
-    }
-    _loadCategoriesAndAds();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _watchTimer?.cancel();
+    _pageController.dispose();
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    final wasInForeground = _isInForeground;
-    _isInForeground = state == AppLifecycleState.resumed;
-    if (!_isInForeground && _watchSession != null) {
-      _pauseAd();
-    } else if (_isInForeground && !wasInForeground && _watchSession != null && _isPaused) {
-      _resumeAd();
-    }
+  Future<void> _init() async {
+    _loadCategoriesAndAds();
   }
 
   void _loadCategoriesAndAds() {
@@ -85,876 +55,152 @@ class _AdsPageScreenState extends State<AdsPageScreen>
     });
 
     _categories = _categoryService.getCategories();
+    
+    // Mocking/Loading ads
     _ads = _categoryService.getAdsByCategory(
       categoryId: _selectedCategoryId,
       userLanguages: ['en'],
       userPreferences: ['technology', 'fashion'],
       userLocation: 'US',
     );
-
-    if (_ads.isNotEmpty) {
-      _currentAd = _ads[0];
-      _loadAdDetails();
-      _startWatchingAd();
-    }
-
+    
     setState(() {
       _isLoading = false;
-    });
-  }
-
-  void _loadAdDetails() {
-    if (_currentAd == null) return;
-    
-    // Load ad engagement data (dummy)
-    setState(() {
-      _views = _currentAd!.currentViews + 100;
-      _isLiked = false;
     });
   }
 
   void _onCategorySelected(String categoryId) {
     if (_selectedCategoryId == categoryId) return;
 
-    _watchTimer?.cancel();
     setState(() {
       _selectedCategoryId = categoryId;
-      _isPaused = false;
-      _pauseCount = 0;
-      _totalPauseDuration = 0;
+      _isLoading = true;
     });
 
-    _loadCategoriesAndAds();
-  }
-
-  void _startWatchingAd() {
-    if (_currentAd == null) return;
-
-    final eligibility = _eligibilityService.checkEligibility(_userId, _currentAd!);
-    if (!eligibility.isEligible) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(eligibility.reason ?? 'Not eligible'),
-          backgroundColor: InstagramTheme.surfaceWhite,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _watchSession = AdWatchSession(
-        adId: _currentAd!.id,
-        startTime: DateTime.now(),
-        totalDuration: _currentAd!.watchDurationSeconds,
-      );
-      _isPaused = false;
-      _isInForeground = true;
-    });
-
-    _startWatchTimer();
-  }
-
-  void _startWatchTimer() {
-    _watchTimer?.cancel();
-    int watchedSeconds = 0;
-
-    _watchTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_isPaused || !_isInForeground) {
-        return;
+    // Simulate network delay and reload
+    Future.delayed(const Duration(milliseconds: 300), () {
+      _loadCategoriesAndAds();
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(0);
       }
-
-      watchedSeconds++;
-      final percentage = (watchedSeconds / (_currentAd?.watchDurationSeconds ?? 1)) * 100;
-
       setState(() {
-        if (_watchSession != null) {
-          _watchSession = _watchSession!.copyWith(
-            watchedDuration: watchedSeconds,
-            watchPercentage: percentage,
-            isMuted: _isMuted,
-            pauseCount: _pauseCount,
-            totalPauseDuration: _totalPauseDuration,
-            isInForeground: _isInForeground,
-          );
-        }
+        _focusedIndex = 0;
       });
-
-      if (watchedSeconds >= (_currentAd?.watchDurationSeconds ?? 0)) {
-        _completeAdWatch();
-        timer.cancel();
-      }
     });
-  }
-
-  void _pauseAd() {
-    if (_isPaused) return;
-    
-    if (_pauseCount >= AdEligibilityService.maxPauseCount) {
-      return;
-    }
-
-    _watchTimer?.cancel();
-    setState(() {
-      _isPaused = true;
-      _pauseCount++;
-      _pauseStartTime = DateTime.now();
-    });
-  }
-
-  void _resumeAd() {
-    if (!_isPaused) return;
-
-    if (_pauseStartTime != null) {
-      final pauseDuration = DateTime.now().difference(_pauseStartTime!).inSeconds;
-      _totalPauseDuration += pauseDuration;
-      _pauseStartTime = null;
-    }
-
-    setState(() {
-      _isPaused = false;
-    });
-    _startWatchTimer();
-  }
-
-  void _toggleMute() {
-    setState(() {
-      _isMuted = !_isMuted;
-    });
-  }
-
-  void _toggleLike() {
-    setState(() {
-      _isLiked = !_isLiked;
-    });
-  }
-
-  void _handleComment() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: InstagramTheme.surfaceWhite,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Comments',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 20),
-            const TextField(
-              style: TextStyle(color: InstagramTheme.textBlack),
-              decoration: InputDecoration(
-                hintText: 'Add a comment...',
-                hintStyle: TextStyle(color: InstagramTheme.textGrey),
-              ),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ClayButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text('Comment added'),
-                      backgroundColor: InstagramTheme.surfaceWhite,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  );
-                },
-                child: const Text('Post Comment'),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _handleShare() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Share feature coming soon')),
-    );
-  }
-
-  Future<void> _completeAdWatch() async {
-    if (_currentAd == null || _watchSession == null) return;
-
-    final watchPercentage = _watchSession!.watchPercentage;
-    if (watchPercentage < AdEligibilityService.minWatchPercentage * 100) {
-      return;
-    }
-
-    if (_pauseCount > AdEligibilityService.maxPauseCount ||
-        _totalPauseDuration > AdEligibilityService.maxTotalPauseDuration) {
-      return;
-    }
-
-    if (!_isInForeground) {
-      return;
-    }
-
-    final eligibility = _eligibilityService.checkEligibility(_userId, _currentAd!);
-    if (!eligibility.isEligible) {
-      return;
-    }
-
-    final success = await _walletService.addCoinsViaLedger(
-      amount: _currentAd!.coinReward,
-      description: 'Watched Ad: ${_currentAd!.title}',
-      adId: _currentAd!.id,
-      metadata: {
-        'watchPercentage': watchPercentage,
-        'watchDuration': _watchSession!.watchedDuration,
-        'pauseCount': _pauseCount,
-      },
-    );
-
-    if (success) {
-      _eligibilityService.recordAdWatch(_userId, _currentAd!.id, _currentAd!.coinReward);
-
-      _notificationService.addNotification(
-        NotificationItem(
-          id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-          type: NotificationType.activity,
-          title: 'Coins Earned',
-          message: 'You earned ${_currentAd!.coinReward} coins by watching an ad',
-          timestamp: DateTime.now(),
-          isRead: false,
-        ),
-      );
-
-      if (mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          barrierColor: InstagramTheme.backgroundWhite.withValues(alpha: 0.7),
-          builder: (context) => AlertDialog(
-            backgroundColor: InstagramTheme.surfaceWhite,
-            title: Text(
-              'Success!',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            content: Text(
-              'You earned ${_currentAd!.coinReward} coins!',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  _loadNextAd();
-                },
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
-        );
-      }
-    }
-  }
-
-  void _loadNextAd() {
-    final nextAd = _categoryService.getNextEligibleAd(
-      currentAdId: _currentAd?.id ?? '',
-      categoryId: _selectedCategoryId,
-      userLanguages: ['en'],
-      userPreferences: ['technology', 'fashion'],
-      userLocation: 'US',
-    );
-
-    if (nextAd != null) {
-      _watchTimer?.cancel();
-      setState(() {
-        _currentAd = nextAd;
-        _isPaused = false;
-        _pauseCount = 0;
-        _totalPauseDuration = 0;
-        _isLiked = false;
-      });
-      _loadAdDetails();
-      _startWatchingAd();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No more ads available')),
-      );
-    }
-  }
-
-  void _loadPreviousAd() {
-    final previousAd = _categoryService.getPreviousAd(
-      currentAdId: _currentAd?.id ?? '',
-      categoryId: _selectedCategoryId,
-      userLanguages: ['en'],
-      userPreferences: ['technology', 'fashion'],
-      userLocation: 'US',
-    );
-
-    if (previousAd != null) {
-      _watchTimer?.cancel();
-      setState(() {
-        _currentAd = previousAd;
-        _isPaused = false;
-        _pauseCount = 0;
-        _totalPauseDuration = 0;
-        _isLiked = false;
-      });
-      _loadAdDetails();
-      _startWatchingAd();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: InstagramTheme.backgroundWhite,
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(InstagramTheme.primaryPink),
-              ),
-            )
-          : _currentAd == null
-              ? _buildEmptyState()
-              : GestureDetector(
-                  onVerticalDragEnd: (details) {
-                    if (details.primaryVelocity != null) {
-                      if (details.primaryVelocity! < -500) {
-                        // Swipe up
-                        _loadNextAd();
-                      } else if (details.primaryVelocity! > 500) {
-                        // Swipe down
-                        _loadPreviousAd();
-                      }
-                    }
-                  },
-                  onHorizontalDragEnd: (details) {
-                    // Horizontal swipe for tab navigation
-                    // This will be handled by the parent HomeDashboard
-                    // For now, we'll just pause the ad
-                    if (details.primaryVelocity != null && details.primaryVelocity!.abs() > 500) {
-                      _pauseAd();
-                    }
-                  },
-                  child: Column(
-                    children: [
-                      // Video Player Section
-                      Expanded(
-                        flex: 7,
-                        child: Stack(
-                          children: [
-                            _buildVideoPlayer(),
-                            _buildRightOverlay(),
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              child: SafeArea(
-                                bottom: false,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        InstagramTheme.backgroundWhite,
-                                        InstagramTheme.backgroundWhite.withValues(alpha: 0.0),
-                                      ],
-                                    ),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(top: 8),
-                                    child: _buildCategoryHeader(),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // Information Section
-                      Flexible(
-                        flex: 4,
-                        child: _buildInformationSection(),
-                      ),
-                    ],
-                  ),
-                ),
-    );
-  }
-
-  Widget _buildCategoryHeader() {
-    return Container(
-      height: 56,
-      color: InstagramTheme.backgroundWhite,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: _categories.length,
-        itemBuilder: (context, index) {
-          final category = _categories[index];
-          final isSelected = _selectedCategoryId == category.id;
-
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () => _onCategorySelected(category.id),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSelected ? InstagramTheme.primaryPink : InstagramTheme.surfaceWhite,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected ? InstagramTheme.primaryPink : InstagramTheme.borderGrey,
-                    width: 1,
-                  ),
-                ),
-                child: Center(
-                  child: Text(
-                    category.name,
-                    style: TextStyle(
-                      color: isSelected ? InstagramTheme.backgroundWhite : InstagramTheme.textBlack,
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildVideoPlayer() {
-    if (_currentAd == null) return const SizedBox();
-
-    final progress = ((_watchSession?.watchPercentage ?? 0.0) / 100).clamp(0.0, 1.0);
-
-    return Container(
-      width: double.infinity,
-      color: InstagramTheme.backgroundGrey,
-      child: Stack(
-        fit: StackFit.expand,
+      backgroundColor: Colors.black,
+      body: Stack(
         children: [
-          // Ad Image/Video Display
-          if (_currentAd!.imageUrl != null)
-            Image.network(
-              _currentAd!.imageUrl!,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
-            )
-          else if (_currentAd!.videoUrl != null)
-            Container(
-              color: InstagramTheme.backgroundGrey,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.play_circle_filled,
-                      size: 80,
-                      color: InstagramTheme.primaryPink.withValues(alpha: 0.8),
+          // Layer 1: Main Content (Video Feed)
+          _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : _ads.isEmpty
+                  ? _buildEmptyState()
+                  : PageView.builder(
+                      controller: _pageController,
+                      scrollDirection: Axis.vertical,
+                      onPageChanged: (index) {
+                        setState(() {
+                          _focusedIndex = index;
+                        });
+                      },
+                      itemCount: _ads.length,
+                      itemBuilder: (context, index) {
+                        return AdVideoItem(
+                          ad: _ads[index],
+                          isActive: index == _focusedIndex,
+                        );
+                      },
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _currentAd!.title,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: InstagramTheme.textBlack,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            _buildPlaceholder(),
-          
-          // Progress bar at bottom
+
+          // Layer 2: Top Navigation Overlay
           Positioned(
-            bottom: 0,
+            top: 0,
             left: 0,
             right: 0,
-            child: LinearProgressIndicator(
-              value: progress,
-              backgroundColor: InstagramTheme.surfaceWhite.withValues(alpha: 0.3),
-              valueColor: const AlwaysStoppedAnimation<Color>(InstagramTheme.primaryPink),
-              minHeight: 4,
+            child: SafeArea(
+              child: _buildTopBar(),
             ),
           ),
-
-          // Play/Pause overlay
-          if (_isPaused)
-            Container(
-              color: InstagramTheme.backgroundWhite.withValues(alpha: 0.7),
-              child: const Center(
-                child: Icon(
-                  Icons.play_arrow,
-                  size: 60,
-                  color: InstagramTheme.primaryPink,
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
 
-  Widget _buildPlaceholder() {
+  Widget _buildTopBar() {
     return Container(
-      color: InstagramTheme.backgroundGrey,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.ads_click,
-              size: 80,
-              color: InstagramTheme.textGrey.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            if (_currentAd != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  _currentAd!.title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: InstagramTheme.textBlack,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withOpacity(0.6),
+            Colors.transparent,
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildRightOverlay() {
-    return Positioned(
-      right: 12,
-      bottom: 100,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          // Views Count
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: InstagramTheme.surfaceWhite.withValues(alpha: 0.95),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: InstagramTheme.textBlack.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.visibility, color: InstagramTheme.textBlack, size: 18),
-                const SizedBox(height: 4),
-                Text(
-                  _formatViews(_views),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: InstagramTheme.textBlack,
+          // Back Button
+          IconButton(
+            icon: const Icon(LucideIcons.chevronLeft, color: Colors.white, size: 28),
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          
+          // Categories List
+              Expanded(
+                child: SizedBox(
+                  height: 32,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    children: _categories.map((c) => _buildCategoryChip(c.id, c.name)).toList(),
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
+              ),
 
-          // Like Button
-          _buildActionButton(
-            icon: _isLiked ? Icons.favorite : Icons.favorite_border,
-            color: _isLiked ? InstagramTheme.errorRed : InstagramTheme.textBlack,
-            onPressed: _toggleLike,
-          ),
-          const SizedBox(height: 8),
-
-          // Comment Button
-          _buildActionButton(
-            icon: Icons.comment_outlined,
-            color: InstagramTheme.textBlack,
-            onPressed: _handleComment,
-          ),
-          const SizedBox(height: 8),
-
-          // Share Button
-          _buildActionButton(
-            icon: Icons.share_outlined,
-            color: InstagramTheme.textBlack,
-            onPressed: _handleShare,
-          ),
-          const SizedBox(height: 8),
-
-          // Mute/Unmute Button
-          _buildActionButton(
-            icon: _isMuted ? Icons.volume_off : Icons.volume_up,
-            color: InstagramTheme.textBlack,
-            onPressed: _toggleMute,
+          // Search Button
+          IconButton(
+            icon: const Icon(LucideIcons.search, color: Colors.white, size: 24),
+            onPressed: () {},
           ),
         ],
       ),
     );
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required Color color,
-    required VoidCallback onPressed,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: InstagramTheme.surfaceWhite.withValues(alpha: 0.95),
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: InstagramTheme.textBlack.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+  Widget _buildCategoryChip(String id, String label) {
+    final isSelected = _selectedCategoryId == id;
+    return GestureDetector(
+      onTap: () => _onCategorySelected(id),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.black.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? Colors.white : Colors.white.withOpacity(0.2),
+            width: 1,
           ),
-        ],
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: color, size: 24),
-        onPressed: onPressed,
-        padding: const EdgeInsets.all(10),
-        constraints: const BoxConstraints(),
-      ),
-    );
-  }
-
-  String _formatViews(int views) {
-    if (views >= 1000000) {
-      return '${(views / 1000000).toStringAsFixed(1)}M';
-    } else if (views >= 1000) {
-      return '${(views / 1000).toStringAsFixed(1)}K';
-    }
-    return views.toString();
-  }
-
-  Widget _buildInformationSection() {
-    if (_currentAd == null) return const SizedBox();
-
-    return Container(
-      color: InstagramTheme.backgroundGrey,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              decoration: InstagramTheme.cardDecoration(
-                borderRadius: 16,
-                hasBorder: true,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Company Header
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => AdCompanyDetailScreen(
-                              companyId: _currentAd!.companyId,
-                            ),
-                          ),
-                        );
-                      },
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: InstagramTheme.backgroundGrey,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: _currentAd!.companyLogo != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Image.network(
-                                      _currentAd!.companyLogo!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) =>
-                                          const Icon(Icons.business, color: InstagramTheme.primaryPink),
-                                    ),
-                                  )
-                                : const Icon(Icons.business, color: InstagramTheme.primaryPink, size: 24),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        _currentAd!.companyName,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                          color: InstagramTheme.textBlack,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (_currentAd!.isVerified) ...[
-                                      const SizedBox(width: 6),
-                                      const Icon(Icons.verified, size: 18, color: InstagramTheme.primaryPink),
-                                    ],
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Tap to view company details',
-                                  style: TextStyle(
-                                    color: InstagramTheme.textGrey.withValues(alpha: 0.8),
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    
-                    // Coins and Timer Row
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              const Icon(LucideIcons.coins, color: InstagramTheme.primaryPink, size: 20),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  'Earn ${_currentAd!.coinReward} coins',
-                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: InstagramTheme.textBlack,
-                                    fontSize: 15,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: InstagramTheme.backgroundGrey,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${_watchSession?.watchedDuration ?? 0}s / ${_currentAd!.watchDurationSeconds}s',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: InstagramTheme.textBlack,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Progress Bar
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: LinearProgressIndicator(
-                        value: ((_watchSession?.watchPercentage ?? 0.0) / 100).clamp(0.0, 1.0),
-                        backgroundColor: InstagramTheme.dividerGrey,
-                        valueColor: const AlwaysStoppedAnimation<Color>(InstagramTheme.primaryPink),
-                        minHeight: 6,
-                      ),
-                    ),
-                    
-                    // Description
-                    if (_currentAd!.description.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        _currentAd!.description,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          height: 1.5,
-                          color: InstagramTheme.textBlack,
-                        ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    
-                    // Categories
-                    if (_currentAd!.targetCategories.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _currentAd!.targetCategories.take(6).map((cat) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: InstagramTheme.backgroundGrey,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: InstagramTheme.borderGrey,
-                                width: 1,
-                              ),
-                            ),
-                            child: Text(
-                              cat,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: InstagramTheme.textBlack,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ],
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.black : Colors.white.withOpacity(0.9),
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
         ),
       ),
     );
@@ -965,21 +211,531 @@ class _AdsPageScreenState extends State<AdsPageScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.ads_click,
-            size: 80,
-            color: InstagramTheme.textGrey.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: 24),
+          const Icon(LucideIcons.videoOff, color: Colors.white54, size: 64),
+          const SizedBox(height: 16),
           Text(
-            'No Ads Available',
-            style: Theme.of(context).textTheme.headlineMedium,
+            'No ads available in this category',
+            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 16),
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Check back later for more ads',
-            style: Theme.of(context).textTheme.bodyMedium,
+        ],
+      ),
+    );
+  }
+}
+
+class AdVideoItem extends StatefulWidget {
+  final Ad ad;
+  final bool isActive;
+
+  const AdVideoItem({
+    super.key,
+    required this.ad,
+    required this.isActive,
+  });
+
+  @override
+  State<AdVideoItem> createState() => _AdVideoItemState();
+}
+
+class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStateMixin {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+  bool _isLiked = false;
+  bool _isSaved = false;
+  bool _isMuted = true;
+  
+  // Animation for music disc
+  late AnimationController _discController;
+
+  @override
+  void initState() {
+    super.initState();
+    _discController = AnimationController(
+      duration: const Duration(seconds: 5),
+      vsync: this,
+    );
+    if (widget.isActive) _discController.repeat();
+    _initializeVideo();
+  }
+
+  @override
+  void didUpdateWidget(AdVideoItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive != oldWidget.isActive) {
+      if (widget.isActive) {
+        _controller?.play();
+        _discController.repeat();
+      } else {
+        _controller?.pause();
+        _discController.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    _discController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initializeVideo() async {
+    final url = widget.ad.videoUrl;
+    if (url != null && url.isNotEmpty) {
+      _controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      try {
+        await _controller!.initialize();
+        await _controller!.setLooping(true);
+        if (widget.isActive) {
+          await _controller!.play();
+        }
+        if (mounted) {
+          setState(() {
+            _isInitialized = true;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error initializing video: $e');
+      }
+    }
+  }
+
+  void _togglePlay() {
+    if (_controller == null || !_isInitialized) return;
+    setState(() {
+      if (_controller!.value.isPlaying) {
+        _controller!.pause();
+        _discController.stop();
+      } else {
+        _controller!.play();
+        _discController.repeat();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 1. Video Player
+        GestureDetector(
+          onTap: _togglePlay,
+          child: Container(
+            color: Colors.black,
+            child: _isInitialized && _controller != null
+                ? Center(
+                    child: AspectRatio(
+                      aspectRatio: _controller!.value.aspectRatio,
+                      child: VideoPlayer(_controller!),
+                    ),
+                  )
+                : widget.ad.imageUrl != null
+                    ? Image.network(
+                        widget.ad.imageUrl!,
+                        fit: BoxFit.cover,
+                      )
+                    : const Center(child: CircularProgressIndicator(color: Colors.white)),
           ),
+        ),
+
+        // Gradient Overlay
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.3),
+                  Colors.transparent,
+                  Colors.transparent,
+                  Colors.black.withOpacity(0.6),
+                ],
+                stops: const [0.0, 0.2, 0.8, 1.0],
+              ),
+            ),
+          ),
+        ),
+ 
+        // 2. Progress Bar (Top)
+        if (_isInitialized && _controller != null)
+          Positioned(
+            bottom: 60,
+            left: 0,
+            right: 0,
+            child: VideoProgressIndicator(
+              _controller!,
+              allowScrubbing: false,
+              colors: const VideoProgressColors(
+                playedColor: Colors.white,
+                bufferedColor: Colors.white24,
+                backgroundColor: Colors.white10,
+              ),
+              padding: EdgeInsets.zero,
+            ),
+          ),
+
+        // 3. Right Side Actions
+        Positioned(
+          right: 8,
+          bottom: 160,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildGlassAction(
+                icon: _isLiked ? LucideIcons.heart : LucideIcons.heart,
+                label: _formatCount(widget.ad.currentViews + (_isLiked ? 1 : 0)),
+                iconColor: _isLiked ? Colors.red : Colors.white,
+                fillColor: _isLiked ? Colors.red : null,
+                onTap: () => setState(() => _isLiked = !_isLiked),
+              ),
+              const SizedBox(height: 16),
+              _buildGlassAction(
+                icon: LucideIcons.messageCircle,
+                label: '45',
+                onTap: () {},
+              ),
+              const SizedBox(height: 16),
+              _buildGlassAction(
+                icon: LucideIcons.send,
+                label: '5',
+                onTap: () {},
+                rotate: -0.2, // ~12 degrees
+              ),
+              const SizedBox(height: 16),
+              _buildGlassAction(
+                icon: _isSaved ? LucideIcons.bookmark : LucideIcons.bookmark,
+                label: 'Save',
+                iconColor: _isSaved ? Colors.amber : Colors.white,
+                fillColor: _isSaved ? Colors.amber : null,
+                onTap: () => setState(() => _isSaved = !_isSaved),
+              ),
+              const SizedBox(height: 16),
+              _buildGlassAction(
+                icon: Icons.more_horiz,
+                label: '',
+                onTap: () {},
+              ),
+              const SizedBox(height: 24),
+              // Spinning Disc
+              _buildMusicDisc(),
+            ],
+          ),
+        ),
+
+        // 4. Mute Button (Floating)
+        Positioned(
+          right: 60,
+          bottom: 140,
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                _isMuted = !_isMuted;
+                _controller?.setVolume(_isMuted ? 0 : 1);
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+          ),
+        ),
+
+        // 5. Bottom Info Overlay
+        Positioned(
+          left: 16,
+          right: 80,
+          bottom: 84,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // User/Company Info
+              Row(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+                    ),
+                    child: CircleAvatar(
+                      radius: 16,
+                      backgroundImage: widget.ad.companyLogo != null
+                          ? NetworkImage(widget.ad.companyLogo!)
+                          : null,
+                      child: widget.ad.companyLogo == null
+                          ? Text(widget.ad.companyName[0], style: const TextStyle(fontWeight: FontWeight.bold))
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.ad.companyName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (widget.ad.coinReward > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.2),
+                              border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(LucideIcons.coins, color: Colors.amber, size: 10),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${widget.ad.coinReward}',
+                                  style: const TextStyle(
+                                    color: Colors.amberAccent,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            border: Border.all(color: Colors.white.withOpacity(0.4)),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Follow',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              
+              // Description
+              Text(
+                widget.ad.description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+              ),
+              const SizedBox(height: 4),
+              
+              // Category
+              if (widget.ad.targetCategories.isNotEmpty)
+                Text(
+                  widget.ad.targetCategories.first,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 12,
+                  ),
+                ),
+              
+              const SizedBox(height: 8),
+              
+              // Music/Audio
+              Row(
+                children: [
+                  const Icon(LucideIcons.music2, color: Colors.white70, size: 12),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: SizedBox(
+                      height: 20,
+                      child: MarqueeWidget(
+                        text: 'Original Audio - ${widget.ad.companyName}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGlassAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color iconColor = Colors.white,
+    Color? fillColor,
+    double rotate = 0,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.3),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.transparent), // React has border but it's subtle
+            ),
+            child: Transform.rotate(
+              angle: rotate,
+              child: Icon(
+                icon,
+                color: iconColor,
+                size: 22,
+                // fill: fillColor, // IconData doesn't support fill property directly in standard Icon widget usually, unless using specific icon set that supports it or fill property. LucideIcons are outline by default.
+              ),
+            ),
+          ),
+          if (label.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                shadows: [
+                  Shadow(color: Colors.black45, offset: Offset(0, 1), blurRadius: 2),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMusicDisc() {
+    return AnimatedBuilder(
+      animation: _discController,
+      builder: (context, child) {
+        return Transform.rotate(
+          angle: _discController.value * 2 * math.pi,
+          child: child,
+        );
+      },
+      child: Container(
+        width: 36,
+        height: 36,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.2), width: 8),
+        ),
+        child: CircleAvatar(
+          backgroundImage: widget.ad.companyLogo != null
+              ? NetworkImage(widget.ad.companyLogo!)
+              : null,
+          backgroundColor: Colors.grey[800],
+        ),
+      ),
+    );
+  }
+
+  String _formatCount(int count) {
+    if (count >= 1000000) {
+      return '${(count / 1000000).toStringAsFixed(1)}M';
+    } else if (count >= 1000) {
+      return '${(count / 1000).toStringAsFixed(1)}K';
+    }
+    return count.toString();
+  }
+}
+
+class MarqueeWidget extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+
+  const MarqueeWidget({
+    super.key,
+    required this.text,
+    required this.style,
+  });
+
+  @override
+  State<MarqueeWidget> createState() => _MarqueeWidgetState();
+}
+
+class _MarqueeWidgetState extends State<MarqueeWidget> with SingleTickerProviderStateMixin {
+  late ScrollController _scrollController;
+  late AnimationController _animationController;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 6),
+    );
+    _animation = Tween<double>(begin: 0, end: 1).animate(_animationController);
+
+    _animationController.addListener(() {
+      if (_scrollController.hasClients) {
+        if (_scrollController.position.maxScrollExtent > 0) {
+           double maxScroll = _scrollController.position.maxScrollExtent;
+           _scrollController.jumpTo(_animation.value * maxScroll);
+        }
+      }
+    });
+
+    // Start animation after build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _animationController.repeat();
+    });
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      physics: const NeverScrollableScrollPhysics(),
+      child: Row(
+        children: [
+          Text(widget.text, style: widget.style),
+          const SizedBox(width: 30),
+          Text(widget.text, style: widget.style), // Duplicate for smooth loop effect (simplified)
+          const SizedBox(width: 30),
+          Text(widget.text, style: widget.style),
         ],
       ),
     );

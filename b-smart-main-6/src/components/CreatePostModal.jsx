@@ -25,9 +25,9 @@ const ADJUSTMENTS = [
   { name: 'Brightness', property: 'brightness', min: -100, max: 100 },
   { name: 'Contrast', property: 'contrast', min: -100, max: 100 },
   { name: 'Saturation', property: 'saturate', min: -100, max: 100 },
-  { name: 'Temperature', property: 'sepia', min: -100, max: 100 }, // Approximate
-  { name: 'Fade', property: 'opacity', min: 0, max: 100 }, // Approximate
-  { name: 'Vignette', property: 'vignette', min: 0, max: 100 } // Custom handling
+  { name: 'Temperature', property: 'sepia', min: -100, max: 100 },
+  { name: 'Fade', property: 'opacity', min: 0, max: 100 },
+  { name: 'Vignette', property: 'vignette', min: 0, max: 100 }
 ];
 
 // Utility to create image
@@ -79,10 +79,6 @@ async function getCroppedImg(imageSrc, pixelCrop) {
 }
 
 // ─── Video Processing Utility ──────────────────────────────────────────────
-// Trims and crops a video using canvas + MediaRecorder (browser-native, no deps).
-// cropParams: { x, y, width, height, outputWidth, outputHeight } — all in NATIVE
-//             video pixel space (not screen pixels). Pass null for no crop.
-// onProgress: (0–100) called during processing.
 async function processVideoForUpload(originalFile, trimStart, trimEnd, cropParams, onProgress) {
   return new Promise((resolve) => {
     const video = document.createElement('video');
@@ -91,7 +87,6 @@ async function processVideoForUpload(originalFile, trimStart, trimEnd, cropParam
     video.muted = true;
     video.playsInline = true;
     video.preload = 'auto';
-    // Must be in DOM (hidden) for captureStream to work in some browsers
     video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
     document.body.appendChild(video);
 
@@ -113,23 +108,19 @@ async function processVideoForUpload(originalFile, trimStart, trimEnd, cropParam
       const natW = video.videoWidth  || 1280;
       const natH = video.videoHeight || 720;
 
-      // Source crop rect in native pixels
       const srcX = cropParams?.x      ?? 0;
       const srcY = cropParams?.y      ?? 0;
       const srcW = cropParams?.width  ?? natW;
       const srcH = cropParams?.height ?? natH;
 
-      // Output canvas dimensions
       const outW = cropParams?.outputWidth  ?? natW;
       const outH = cropParams?.outputHeight ?? natH;
 
-      // ── Canvas output ────────────────────────────────────────────────
       const canvas = document.createElement('canvas');
       canvas.width  = outW;
       canvas.height = outH;
       const ctx = canvas.getContext('2d');
 
-      // ── Pick best mimeType ──────────────────────────────────────────
       const mimeType =
         MediaRecorder.isTypeSupported('video/mp4;codecs=avc1') ? 'video/mp4;codecs=avc1' :
         MediaRecorder.isTypeSupported('video/mp4')             ? 'video/mp4'              :
@@ -137,14 +128,12 @@ async function processVideoForUpload(originalFile, trimStart, trimEnd, cropParam
         MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' :
         'video/webm';
 
-      // ── Set up MediaRecorder ────────────────────────────────────────
       let stream, recorder;
       try {
         stream   = canvas.captureStream(30);
         recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
       } catch {
         try {
-          // Fallback: record straight from video (no crop applied)
           const vStream = video.captureStream
             ? video.captureStream(30)
             : video.mozCaptureStream
@@ -170,34 +159,29 @@ async function processVideoForUpload(originalFile, trimStart, trimEnd, cropParam
 
       recorder.onerror = () => { cleanup(); resolve(originalFile); };
 
-      // ── Seek to trimStart, then start ───────────────────────────────
       video.currentTime = trimStart;
       await new Promise(res => {
         const onSeeked = () => { video.removeEventListener('seeked', onSeeked); res(); };
         video.addEventListener('seeked', onSeeked);
       });
 
-      recorder.start(100); // collect chunks every 100 ms
+      recorder.start(100);
       video.play().catch(() => {});
 
-      // ── Frame draw loop ─────────────────────────────────────────────
       const drawFrame = () => {
         const elapsed  = Math.max(0, video.currentTime - trimStart);
         const progress = Math.min(100, Math.round((elapsed / totalDuration) * 100));
         if (onProgress) onProgress(progress);
 
-        // Stop condition
         if (video.currentTime >= trimEnd - 0.05 || video.ended || video.paused) {
           video.pause();
           if (recorder.state === 'recording') {
-            // Draw one last frame before stopping
             ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
             recorder.stop();
           }
           return;
         }
 
-        // Draw current frame — crop from native src rect into full output canvas
         ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
 
         if (recorder.state === 'recording') requestAnimationFrame(drawFrame);
@@ -213,7 +197,7 @@ async function processVideoForUpload(originalFile, trimStart, trimEnd, cropParam
 // SuccessCountdown — thin line depletes over 5s then auto-navigates
 function SuccessCountdown({ onDone }) {
   const [elapsed, setElapsed] = React.useState(0);
-  const TOTAL = 5000; // ms
+  const TOTAL = 5000;
   const STEP  = 50;
   const onDoneRef = React.useRef(onDone);
   React.useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
@@ -222,10 +206,9 @@ function SuccessCountdown({ onDone }) {
     const t = setTimeout(() => setElapsed(e => e + STEP), STEP);
     return () => clearTimeout(t);
   }, [elapsed]);
-  const progress = Math.min(1, elapsed / TOTAL); // 0→1
+  const progress = Math.min(1, elapsed / TOTAL);
   return (
     <div className="flex flex-col items-center gap-2 w-full">
-      {/* Thin depleting bar */}
       <div className="w-full h-0.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
         <div
           className="h-full rounded-full"
@@ -241,35 +224,31 @@ function SuccessCountdown({ onDone }) {
   );
 }
 
-const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
+const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal }) => {
   const navigate = useNavigate();
   const [isDragging, setIsDragging] = useState(false);
-  const [step, setStep] = useState('select'); // 'select', 'crop', 'edit', 'share'
+  const [step, setStep] = useState('select');
   const { userObject } = useSelector((state) => state.auth);
   const [postType, setPostType] = useState(initialType);
-
+  
   useEffect(() => {
     if (isOpen) {
       setPostType(initialType);
     }
   }, [isOpen, initialType]);
 
-  // Media State
   const [media, setMedia] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  // Share Step State
   const [caption, setCaption] = useState('');
   const [location, setLocation] = useState('');
   const [hideLikes, setHideLikes] = useState(false);
   const [turnOffCommenting, setTurnOffCommenting] = useState(false);
   const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
 
-  // Tagging & Emoji State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [tags, setTags] = useState([]); // { id, x, y, user: { id, username, avatar_url } }
+  const [tags, setTags] = useState([]);
   const [showTagSearch, setShowTagSearch] = useState(false);
-  // tagCoordinates removed — tags now always spawn at center (50,50)
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
@@ -278,21 +257,67 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
   const [allUsers, setAllUsers] = useState([]);
   const [isLoadingAllUsers, setIsLoadingAllUsers] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  // Upload progress states
-  const [uploadStage, setUploadStage] = useState('idle'); // 'idle' | 'converting' | 'uploading' | 'posting' | 'done' | 'error'
-  const [uploadProgress, setUploadProgress] = useState(0); // 0-100
+  
+  const CATEGORIES = [
+    'Fashion', 'Electronics', 'Food & Dining', 'Beauty & Personal Care', 'Travel', 'Education',
+    'Real Estate', 'Automotive', 'Health & Fitness', 'Entertainment', 'Sports', 'Technology',
+    'Home & Garden', 'Pets', 'Business & Finance', 'Art & Design', 'Books & Literature',
+    'Gaming', 'Music', 'Photography', 'Science', 'Social Media', 'Other'
+  ];
+
+  const LANGUAGES = [
+    'English', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Arabic', 'Hindi', 'Portuguese', 'Russian', 'Italian', 'Korean', 'Turkish'
+  ].sort();
+
+  const COUNTRIES = [
+    'USA', 'Canada', 'UK', 'Australia', 'India', 'Germany', 'France', 'Italy', 'Spain', 'Brazil',
+    'Mexico', 'Japan', 'South Korea', 'China', 'Russia', 'South Africa', 'Nigeria', 'Egypt',
+    'Saudi Arabia', 'UAE', 'Turkey', 'Argentina', 'Chile', 'Colombia', 'Peru', 'Indonesia',
+    'Thailand', 'Vietnam', 'Malaysia', 'Philippines', 'Singapore', 'New Zealand', 'Netherlands',
+    'Belgium', 'Sweden', 'Norway', 'Denmark', 'Finland', 'Poland', 'Ukraine', 'Greece', 'Portugal',
+    'Ireland', 'Switzerland', 'Austria', 'Hungary', 'Czech Republic', 'Romania', 'Pakistan', 'Bangladesh'
+  ].sort();
+
+  const [categories, setCategories] = useState(CATEGORIES);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+  
+  // Ad multi-select states
+  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [selectedLanguages, setSelectedLanguages] = useState([]);
+  const [selectedCountries, setSelectedCountries] = useState([]);
+  const [totalBudgetCoins, setTotalBudgetCoins] = useState('');
+  
+  // Accordion state: 'category' | 'language' | 'country' | null
+  const [openAccordion, setOpenAccordion] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    setIsLoadingCategories(true);
+    api.get('/ads/categories')
+      .then((res) => {
+        const cats = res?.data?.categories || [];
+        if (!active) return;
+        if (cats.length) {
+          setCategories(cats);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (active) setIsLoadingCategories(false); });
+    return () => { active = false; };
+  }, []);
+
+  const [uploadStage, setUploadStage] = useState('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
-  // Dragging tag state
+  
   const [draggingTagId, setDraggingTagId] = useState(null);
-  // dragOffset removed — not needed
 
   const POPULAR_EMOJIS = ['😂', '😮', '😍', '😢', '👏', '🔥', '🎉', '💯', '❤️', '🤣', '🥰', '😘', '😭', '😊'];
 
-  // UI State
   const [showRatioMenu, setShowRatioMenu] = useState(false);
   const [showZoomSlider, setShowZoomSlider] = useState(false);
   const [showMultiSelect, setShowMultiSelect] = useState(false);
-  const [activeTab, setActiveTab] = useState('filters'); // 'filters', 'adjustments'
+  const [activeTab, setActiveTab] = useState('filters');
 
   const fileInputRef = useRef(null);
   const cropContainerRef = useRef(null);
@@ -309,24 +334,13 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
 
   const currentMedia = media[currentIndex];
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-
     const files = Array.from(e.dataTransfer.files);
-    if (files && files.length > 0) {
-      handleFiles(files);
-    }
+    if (files && files.length > 0) handleFiles(files);
   };
 
   useEffect(() => {
@@ -338,20 +352,12 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
       const ch = el.clientHeight;
       const videoAspect = currentMedia.originalAspect || 1;
       let vw, vh;
-      if (cw / ch > videoAspect) {
-        vh = ch;
-        vw = vh * videoAspect;
-      } else {
-        vw = cw;
-        vh = vw / videoAspect;
-      }
+      if (cw / ch > videoAspect) { vh = ch; vw = vh * videoAspect; }
+      else { vw = cw; vh = vw / videoAspect; }
       const a = currentMedia.aspect || 1;
       let w = vw;
       let h = w / a;
-      if (h > vh) {
-        h = vh;
-        w = h * a;
-      }
+      if (h > vh) { h = vh; w = h * a; }
       setOverlaySize({ w, h });
     };
     compute();
@@ -370,10 +376,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
       const a = currentMedia.aspect || 1;
       let w = cw;
       let h = w / a;
-      if (h > ch) {
-        h = ch;
-        w = h * a;
-      }
+      if (h > ch) { h = ch; w = h * a; }
       setShareBoxSize({ w, h });
     };
     compute();
@@ -392,10 +395,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
       const a = currentMedia.aspect || 1;
       let w = cw;
       let h = w / a;
-      if (h > ch) {
-        h = ch;
-        w = h * a;
-      }
+      if (h > ch) { h = ch; w = h * a; }
       setEditBoxSize({ w, h });
     };
     compute();
@@ -417,21 +417,19 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
         v.currentTime = s;
       }
     } catch { void 0; }
-  }, [step, currentMedia && currentMedia.trimStart, currentMedia && currentMedia.trimEnd]);
+  }, [step, currentMedia?.trimStart, currentMedia?.trimEnd, currentMedia?.type]);
 
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
-    if (files && files.length > 0) {
-      handleFiles(files);
-    }
+    if (files && files.length > 0) handleFiles(files);
     e.target.value = '';
   };
 
   const handleFiles = async (files) => {
-    // Process files immediately
     const validFiles = files.filter(file => {
       if (postType === 'post') return file.type.startsWith('image/');
       if (postType === 'reel') return file.type.startsWith('video/');
+      if (postType === 'ad') return file.type.startsWith('image/') || file.type.startsWith('video/');
       return file.type.startsWith('image/') || file.type.startsWith('video/');
     });
 
@@ -460,28 +458,19 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
           originalAspect,
           croppedAreaPixels: null,
           filter: 'Original',
-          adjustments: {
-            brightness: 0,
-            contrast: 0,
-            saturate: 0,
-            sepia: 0,
-            opacity: 0,
-            vignette: 0
-          }
+          adjustments: { brightness: 0, contrast: 0, saturate: 0, sepia: 0, opacity: 0, vignette: 0 }
         };
       } else {
         const video = document.createElement('video');
         video.src = url;
-        await new Promise((resolve) => {
-          video.onloadedmetadata = resolve;
-        });
+        await new Promise((resolve) => { video.onloadedmetadata = resolve; });
         const originalAspect = (video.videoWidth && video.videoHeight) ? (video.videoWidth / video.videoHeight) : 1;
         const duration = isFinite(video.duration) ? video.duration : 0;
         return {
           id: Math.random().toString(36).substr(2, 9),
           url,
-          originalFile: file, // ← store original File so we can upload with correct mime type (mp4/mov)
-          videoNaturalWidth:  video.videoWidth  || 0, // ← native video dimensions for crop calc
+          originalFile: file,
+          videoNaturalWidth:  video.videoWidth  || 0,
           videoNaturalHeight: video.videoHeight || 0,
           type: 'video',
           crop: { x: 0, y: 0 },
@@ -496,14 +485,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
           soundOn: true,
           croppedAreaPixels: null,
           filter: 'Original',
-          adjustments: {
-            brightness: 0,
-            contrast: 0,
-            saturate: 0,
-            sepia: 0,
-            opacity: 0,
-            vignette: 0
-          }
+          adjustments: { brightness: 0, contrast: 0, saturate: 0, sepia: 0, opacity: 0, vignette: 0 }
         };
       }
     }));
@@ -511,7 +493,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
     if (step === 'select') {
       setMedia(newMedia);
       setCurrentIndex(0);
-      // Force step transition
       setTimeout(() => setStep('crop'), 0);
     } else {
       setMedia(prev => [...prev, ...newMedia]);
@@ -525,41 +506,23 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
     ));
   }, [currentIndex]);
 
-  const onCropChange = (crop) => {
-    updateCurrentMedia({ crop });
-  };
-
-  const onZoomChange = (zoom) => {
-    updateCurrentMedia({ zoom });
-  };
-
-  const onCropComplete = (croppedArea, croppedAreaPixels) => {
-    updateCurrentMedia({ croppedAreaPixels });
-  };
+  const onCropChange = (crop) => updateCurrentMedia({ crop });
+  const onZoomChange = (zoom) => updateCurrentMedia({ zoom });
+  const onCropComplete = (croppedArea, croppedAreaPixels) => updateCurrentMedia({ croppedAreaPixels });
 
   useEffect(() => {
-    if (step === 'edit' && currentMedia?.type === 'video') {
-      setActiveTab('video');
-    }
+    if (step === 'edit' && currentMedia?.type === 'video') setActiveTab('video');
   }, [step, currentMedia]);
 
   const handleRemoveMedia = (index, e) => {
     e.stopPropagation();
-    if (media.length === 1) {
-      handleClose();
-      return;
-    }
-
+    if (media.length === 1) { handleClose(); return; }
     const newMedia = media.filter((_, i) => i !== index);
     setMedia(newMedia);
-    if (currentIndex >= index && currentIndex > 0) {
-      setCurrentIndex(prev => prev - 1);
-    }
+    if (currentIndex >= index && currentIndex > 0) setCurrentIndex(prev => prev - 1);
   };
 
-  const handleButtonClick = () => {
-    fileInputRef.current?.click();
-  };
+  const handleButtonClick = () => fileInputRef.current?.click();
 
   const handleBack = () => {
     if (step === 'share') {
@@ -575,11 +538,18 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
     }
   };
 
+  // ── Helper: stringify aspect ratio label ──
+  const getAspectRatioLabel = (a) => {
+    if (!a) return 'original';
+    if (Math.abs(a - 1) < 0.001) return '1:1';
+    if (Math.abs(a - (4 / 5)) < 0.001) return '4:5';
+    if (Math.abs(a - (16 / 9)) < 0.001) return '16:9';
+    if (Math.abs(a - (9 / 16)) < 0.001) return '9:16';
+    return 'custom';
+  };
+
   const handleNextStep = async () => {
     if (step === 'crop') {
-      // ── Compute croppedAreaPixels for video items ──────────────────────
-      // Videos use a visual overlay box (not react-easy-crop) so we must
-      // manually derive the crop rectangle in the video's native pixel space.
       const containerEl = cropContainerRef.current;
 
       const computeVideoCropPixels = (item) => {
@@ -591,28 +561,22 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
         const vw = item.videoNaturalWidth  || item.originalAspect ? (ch * item.originalAspect) : cw;
         const vh = item.videoNaturalHeight || ch;
 
-        // How the video is rendered inside the container (object-contain)
         const videoAspect = item.originalAspect || (vw / vh) || 1;
         let rendW, rendH;
         if (cw / ch > videoAspect) { rendH = ch; rendW = rendH * videoAspect; }
         else                        { rendW = cw; rendH = rendW / videoAspect; }
 
-        // The white overlay box dimensions on screen
         const boxW = overlaySize.w || rendW;
         const boxH = overlaySize.h || rendH;
 
-        // Center of the rendered video on screen
         const vidLeft = (cw - rendW) / 2;
         const vidTop  = (ch - rendH) / 2;
-        // Center of the overlay box (it's centered in the container)
         const boxLeft = (cw - boxW) / 2;
         const boxTop  = (ch - boxH) / 2;
 
-        // Offset of box inside the rendered video (screen pixels)
         const offsetX = boxLeft - vidLeft;
         const offsetY = boxTop  - vidTop;
 
-        // Scale factor: native pixels per screen pixel
         const scaleX = (item.videoNaturalWidth  || rendW) / rendW;
         const scaleY = (item.videoNaturalHeight || rendH) / rendH;
 
@@ -626,7 +590,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
 
       const newMedia = await Promise.all(media.map(async (item) => {
         if (item.type === 'video') {
-          // Compute and store the crop pixels for use during upload
           const cropPx = computeVideoCropPixels(item);
           return { ...item, croppedAreaPixels: cropPx, croppedUrl: item.url };
         }
@@ -642,7 +605,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
     } else if (step === 'edit') {
       setStep('share');
     } else if (step === 'share') {
-      // Submit post
       if (isSubmitting) return;
       setIsSubmitting(true);
       setUploadStage('converting');
@@ -657,17 +619,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
           return;
         }
 
-        // Helper to stringify aspect ratio label
-        const getAspectRatioLabel = (a) => {
-          if (!a) return 'original';
-          if (Math.abs(a - 1) < 0.001) return '1:1';
-          if (Math.abs(a - (4 / 5)) < 0.001) return '4:5';
-          if (Math.abs(a - (16 / 9)) < 0.001) return '16:9';
-          if (Math.abs(a - (9 / 16)) < 0.001) return '9:16';
-          return 'custom';
-        };
-
-        // ── STAGE 1: Trim + Crop + Convert each video to MP4 ───────────
+        // ── STAGE 1: Trim + Crop + Convert each video ──────────────
         const totalItems = media.length;
         const convertedMedia = await Promise.all(media.map(async (item, idx) => {
           if (item.type !== 'video' || !item.originalFile) return item;
@@ -676,14 +628,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
           const dur   = item.duration  || 0;
           const end   = (item.trimEnd && item.trimEnd > 0) ? item.trimEnd : dur;
 
-          // Build crop params from croppedAreaPixels (computed in crop step for videos)
           let cropParams = null;
           if (item.croppedAreaPixels) {
             const { x, y, width, height } = item.croppedAreaPixels;
             if (width > 0 && height > 0) {
-              // Output dimensions: match the chosen aspect ratio, capped at original size
               const aspect = item.aspect || (width / height) || 1;
-              // Keep output resolution as close to source as possible, max 1920 on long side
               const maxLong = 1920;
               let outputWidth, outputHeight;
               if (aspect >= 1) {
@@ -693,7 +642,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                 outputHeight = Math.min(height, maxLong);
                 outputWidth  = Math.round(outputHeight * aspect);
               }
-              // Ensure even dimensions (required by most video codecs)
               outputWidth  = outputWidth  % 2 === 0 ? outputWidth  : outputWidth  - 1;
               outputHeight = outputHeight % 2 === 0 ? outputHeight : outputHeight - 1;
               cropParams = { x, y, width, height, outputWidth, outputHeight };
@@ -701,10 +649,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
           }
 
           const convertedFile = await processVideoForUpload(
-            item.originalFile,
-            start,
-            end,
-            cropParams,
+            item.originalFile, start, end, cropParams,
             (pct) => {
               const base  = (idx / totalItems) * 50;
               const slice = (1 / totalItems) * 50;
@@ -714,7 +659,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
           return { ...item, convertedFile };
         }));
 
-        // ── STAGE 2: Upload files ────────────────────────────────────────
+        // ── STAGE 2: Upload files ──────────────────────────────────
         setUploadStage('uploading');
         setUploadProgress(50);
 
@@ -724,7 +669,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
 
           try {
             if (item.type === 'video') {
-              // Use converted mp4 file if available, else original
               const fileToUpload = item.convertedFile || item.originalFile;
               if (fileToUpload) {
                 blob = fileToUpload;
@@ -739,7 +683,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
               uploadMimeType = blob.type;
             }
           } catch (e) {
-            // eslint-disable-next-line no-console
             console.error('Error processing media, falling back to original', e);
             const response = await fetch(item.croppedUrl || item.url);
             blob = await response.blob();
@@ -765,7 +708,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
             }
           });
 
-          const { fileUrl, fileName: serverFileName } = uploadResponse.data;
+          const { fileName: serverFileName } = uploadResponse.data;
 
           // Generate Filter CSS
           const filterDef = FILTERS.find(f => f.name === item.filter);
@@ -778,7 +721,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
           const hue = adj.sepia < 0 ? `hue-rotate(-${Math.abs(adj.sepia)}deg)` : (adj.sepia > 0 ? `hue-rotate(${adj.sepia}deg)` : '');
           const filterCss = `${baseFilter} ${brightness} ${contrast} ${saturate} ${sepia} ${hue}`.trim();
 
-          // Upload thumbnail
+          // Upload thumbnail for video
           let uploadedThumbs = null;
           let thumbnailTime = 0;
           if (item.type === 'video') {
@@ -804,62 +747,74 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
             }
           }
 
-          let timing;
-          if (item.type === 'video') {
-            const dur = item.duration || 0;
-            const start = item.trimStart || 0;
-            const end = (item.trimEnd && item.trimEnd > 0) ? item.trimEnd : dur;
-            timing = { start, end: end || dur };
-          }
+          const dur = item.duration || 0;
+          const trimStart = item.trimStart || 0;
+          const trimEnd = (item.trimEnd && item.trimEnd > 0) ? item.trimEnd : dur;
 
-          const baseObj = {
+          // Build the media object per the API schema
+          const mediaObj = {
             fileName: serverFileName || fileName,
-            type: item.type === 'video' ? 'video' : 'image',
-            fileUrl,
-            crop: {
-              mode: 'original',
-              aspect_ratio: getAspectRatioLabel(item.aspect || item.originalAspect || 1),
-              zoom: item.zoom,
-              x: item.crop.x,
-              y: item.crop.y
-            },
-            timing,
-            thumbnail: uploadedThumbs || undefined,
-            'thumbail-time': item.type === 'video' ? thumbnailTime : undefined,
-            videoLength: item.type === 'video' ? (item.duration || 0) : undefined,
-            totalLenght: item.type === 'video' ? (item.duration || 0) : undefined,
-            'finalLength-start': item.type === 'video' ? (item.trimStart || 0) : undefined,
-            'finallength-end': item.type === 'video' ? (item.trimEnd || item.duration || 0) : undefined,
-            finalLength: item.type === 'video' ? Math.max(0, (item.trimEnd || item.duration || 0) - (item.trimStart || 0)) : undefined,
-            finallength: item.type === 'video' ? Math.max(0, (item.trimEnd || item.duration || 0) - (item.trimStart || 0)) : undefined
+            media_type: item.type === 'video' ? 'video' : 'image',
           };
 
-          if (item.type !== 'video') {
-            baseObj.filter = { name: item.filter, css: filterCss };
-            baseObj.adjustments = {
-              brightness: item.adjustments.brightness,
-              contrast: item.adjustments.contrast,
-              saturation: item.adjustments.saturate,
-              temperature: item.adjustments.sepia,
-              fade: item.adjustments.opacity,
-              vignette: item.adjustments.vignette
+          if (item.type === 'video') {
+            mediaObj.video_meta = {
+              original_length_seconds: dur,
+              selected_start: trimStart,
+              selected_end: trimEnd,
+              final_duration: Math.max(0, trimEnd - trimStart),
+              thumbnail_time: thumbnailTime
+            };
+            mediaObj.timing_window = {
+              start: trimStart,
+              end: trimEnd
+            };
+            if (uploadedThumbs) {
+              mediaObj.thumbnails = uploadedThumbs;
+            }
+          } else {
+            // Image editing data
+            mediaObj.image_editing = {
+              filter: { name: item.filter || 'Original', css: filterCss },
+              adjustments: {
+                brightness: item.adjustments.brightness,
+                contrast: item.adjustments.contrast,
+                saturation: item.adjustments.saturate,
+                temperature: item.adjustments.sepia,
+                fade: item.adjustments.opacity,
+                vignette: item.adjustments.vignette
+              }
             };
           }
 
-          return baseObj;
+          // Crop settings (for both image and video)
+          mediaObj.crop_settings = {
+            mode: 'original',
+            aspect_ratio: getAspectRatioLabel(item.aspect || item.originalAspect || 1),
+            zoom: item.zoom || 1,
+            x: item.crop?.x || 0,
+            y: item.crop?.y || 0
+          };
+
+          
+
+          return mediaObj;
         }));
 
-        // ── STAGE 3: Post to API ─────────────────────────────────────────
+        // ── STAGE 3: Post to API ──────────────────────────────────
         setUploadStage('posting');
         setUploadProgress(97);
 
         const hashtags = caption.match(/#[a-zA-Z0-9_]+/g) || [];
 
         if (postType === 'reel') {
+          // Reel — existing endpoint unchanged
           const payload = {
             caption,
             location,
-            media: processedMedia.filter(m => m.type === 'video'),
+            media: processedMedia
+              .filter(m => m.media_type === 'video')
+              .map(m => { const copy = { ...m }; delete copy._fileUrl; return copy; }),
             tags: hashtags,
             people_tags: tags.map(t => ({
               user_id: t.user.id,
@@ -871,11 +826,44 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
             turn_off_commenting: turnOffCommenting
           };
           await api.post('https://bsmart.asynk.store/api/posts/reels', payload);
+
+        } else if (postType === 'ad') {
+          // ── AD — new /api/ads endpoint with full schema ──
+          const mediaForApi = processedMedia.map(m => { const copy = { ...m }; delete copy._fileUrl; return copy; });
+
+          const adPayload = {
+            type: 'ads',
+            caption,
+            location,
+            media: mediaForApi,
+            hashtags,
+            tagged_users: tags.map(t => ({
+              user_id: t.user.id,
+              username: t.user.username,
+              position_x: t.x,
+              position_y: t.y
+            })),
+            engagement_controls: {
+              hide_likes_count: hideLikes,
+              disable_comments: turnOffCommenting
+            },
+            content_type: media.some(m => m.type === 'video') ? 'reel' : 'post',
+            category: selectedCategories,
+            tags: hashtags,
+            target_language: selectedLanguages,
+            target_location: selectedCountries,
+            product_offer: [],
+            total_budget_coins: parseFloat(totalBudgetCoins) || 0
+          };
+
+          await api.post('https://bsmart.asynk.store/api/ads', adPayload);
+
         } else {
+          // Post — existing endpoint unchanged
           const payload = {
             caption,
             location,
-            media: processedMedia,
+            media: processedMedia.map(m => { const copy = { ...m }; delete copy.fileUrl; return copy; }),
             tags: hashtags,
             people_tags: tags.map(t => ({
               user_id: t.user.id,
@@ -895,7 +883,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
         setShowSuccess(true);
 
       } catch (error) {
-        // eslint-disable-next-line no-console
         console.error('Error creating post:', error);
         setUploadStage('error');
         setUploadError(error?.response?.data?.message || error?.message || 'Failed to upload. Please try again.');
@@ -905,7 +892,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
     }
   };
 
-  // Tagging & Emoji Handlers
   const handleEmojiClick = (emoji) => {
     setCaption(prev => prev + emoji);
     setShowEmojiPicker(false);
@@ -914,7 +900,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
   const handleImageClick = (e) => {
     if (step !== 'share') return;
     if (e.target.closest('.tag-item')) return;
-    if (draggingTagId) return; // don't open search if just finished dragging
+    if (draggingTagId) return;
     setShowTagSearch(true);
     setSearchQuery('');
     fetchUsers('');
@@ -926,15 +912,13 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
       const { data } = await api.get('https://bsmart.asynk.store/api/users');
       let usersRaw = Array.isArray(data) ? data : (data.users || []);
       const users = usersRaw.map(item => item.user || item);
+      let filtered = users;
       if (query && query.trim()) {
         const q = query.trim().toLowerCase();
-        usersRaw = users.filter(u => (u.username || '').toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q));
+        filtered = users.filter(u => (u.username || '').toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q));
       }
-      const mapped = (query && query.trim() ? usersRaw : users).map(u => ({
-        id: u.id,
-        username: u.username,
-        avatar_url: u.avatar_url || '',
-        full_name: u.full_name || ''
+      const mapped = filtered.map(u => ({
+        id: u.id, username: u.username, avatar_url: u.avatar_url || '', full_name: u.full_name || ''
       }));
       setSearchResults(mapped);
     } catch {
@@ -953,10 +937,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
         const usersRaw = Array.isArray(data) ? data : (data.users || []);
         const users = usersRaw.map(item => item.user || item);
         const mapped = users.map(u => ({
-          id: u.id,
-          username: u.username,
-          avatar_url: u.avatar_url || '',
-          full_name: u.full_name || ''
+          id: u.id, username: u.username, avatar_url: u.avatar_url || '', full_name: u.full_name || ''
         }));
         setAllUsers(mapped);
       } catch {
@@ -969,13 +950,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
   }, [step]);
 
   const handleTagUser = (user) => {
-    // Always spawn at center of the media — user can drag to position
-    const newTag = {
-      id: Math.random().toString(36).substr(2, 9),
-      x: 50,
-      y: 50,
-      user
-    };
+    const newTag = { id: Math.random().toString(36).substr(2, 9), x: 50, y: 50, user };
     setTags([...tags, newTag]);
     setShowTagSearch(false);
   };
@@ -985,12 +960,9 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
     setTags(tags.filter(t => t.id !== tagId));
   };
 
-  // Search Debounce
   useEffect(() => {
     if (showTagSearch) {
-      const timer = setTimeout(() => {
-        fetchUsers(searchQuery);
-      }, 300);
+      const timer = setTimeout(() => fetchUsers(searchQuery), 300);
       return () => clearTimeout(timer);
     }
   }, [searchQuery, showTagSearch]);
@@ -999,44 +971,39 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
     setStep('select');
     setMedia([]);
     setCurrentIndex(0);
+    setCaption('');
+    
+    setSelectedCategories([]);
+    setSelectedLanguages([]);
+    setSelectedCountries([]);
+    setTotalBudgetCoins('');
+    
+    setTags([]);
     onClose();
   };
 
   const setAspect = (aspect) => {
-    updateCurrentMedia({
-      aspect,
-      zoom: 1,
-      crop: { x: 0, y: 0 }
-    });
+    updateCurrentMedia({ aspect, zoom: 1, crop: { x: 0, y: 0 } });
     setShowRatioMenu(false);
   };
 
-  const applyFilter = (filterName) => {
-    updateCurrentMedia({ filter: filterName });
-  };
+  const applyFilter = (filterName) => updateCurrentMedia({ filter: filterName });
 
   const updateAdjustment = (property, value) => {
     const currentAdjustments = currentMedia.adjustments || {};
-    updateCurrentMedia({
-      adjustments: { ...currentAdjustments, [property]: value }
-    });
+    updateCurrentMedia({ adjustments: { ...currentAdjustments, [property]: value } });
   };
 
   const getFilterStyle = (item) => {
     if (!item) return {};
     const filterDef = FILTERS.find(f => f.name === item.filter);
     const baseFilter = filterDef ? filterDef.style : '';
-
     const adj = item.adjustments;
-    // Convert adjustment values to CSS strings
-    // Brightness: 0 -> 100%, 100 -> 200%, -100 -> 0%
     const brightness = `brightness(${100 + adj.brightness}%)`;
     const contrast = `contrast(${100 + adj.contrast}%)`;
     const saturate = `saturate(${100 + adj.saturate}%)`;
-    // Sepia for temperature (warmth) - approx
     const sepia = adj.sepia !== 0 ? `sepia(${Math.abs(adj.sepia)}%)` : '';
     const hue = adj.sepia < 0 ? `hue-rotate(-${Math.abs(adj.sepia)}deg)` : (adj.sepia > 0 ? `hue-rotate(${adj.sepia}deg)` : '');
-
     return {
       filter: `${baseFilter} ${brightness} ${contrast} ${saturate} ${sepia} ${hue}`.trim(),
       opacity: (100 - adj.opacity) / 100
@@ -1046,7 +1013,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
   const applyFiltersToImage = async (item) => {
     const imageUrl = item.croppedUrl || item.url;
     if (item.type === 'video') return await (await fetch(imageUrl)).blob();
-
     return new Promise((resolve, reject) => {
       const img = new window.Image();
       img.crossOrigin = "anonymous";
@@ -1055,24 +1021,13 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
-
-        // Apply filters
         const filterStyle = getFilterStyle(item);
-        if (filterStyle.filter) {
-          ctx.filter = filterStyle.filter;
-        }
-        if (filterStyle.opacity !== undefined && filterStyle.opacity !== 1) {
-          ctx.globalAlpha = filterStyle.opacity;
-        }
-
+        if (filterStyle.filter) ctx.filter = filterStyle.filter;
+        if (filterStyle.opacity !== undefined && filterStyle.opacity !== 1) ctx.globalAlpha = filterStyle.opacity;
         ctx.drawImage(img, 0, 0, img.width, img.height);
-
         canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob);
-          } else {
-            reject(new Error('Canvas to Blob conversion failed'));
-          }
+          if (blob) resolve(blob);
+          else reject(new Error('Canvas to Blob conversion failed'));
         }, 'image/jpeg', 0.95);
       };
       img.onerror = (e) => reject(e);
@@ -1100,32 +1055,21 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
     const run = async () => {
       await new Promise(res => { v.onloadedmetadata = res; });
       const duration = isFinite(v.duration) ? v.duration : 0;
-      const frames = [];
-      // 1 frame per second, so frame[i] = second i. Max 30 frames.
-      const count = duration > 0
-        ? Math.min(30, Math.max(2, Math.ceil(duration)))
-        : 7;
-      // Use video's natural aspect ratio for sharp thumbnails
+      const count = duration > 0 ? Math.min(30, Math.max(2, Math.ceil(duration))) : 7;
       const natW = v.videoWidth  || 640;
       const natH = v.videoHeight || 360;
       const aspect = natW / natH;
-      // Fixed height of 120px (enough for filmstrip), width matches aspect
       const height = 120;
       const width  = Math.round(height * aspect);
       canvas.width  = width;
       canvas.height = height;
+      const frames = [];
       for (let i = 0; i < count; i++) {
-        // Exact second timestamp: 0s, 1s, 2s, 3s, ...
         const t = duration > 0 ? Math.min(duration - 0.01, i) : 0;
-        await new Promise(res => {
-          v.currentTime = t;
-          v.onseeked = res;
-        });
+        await new Promise(res => { v.currentTime = t; v.onseeked = res; });
         ctx.drawImage(v, 0, 0, width, height);
-        const url = canvas.toDataURL('image/jpeg', 0.92);
-        frames.push(url);
+        frames.push(canvas.toDataURL('image/jpeg', 0.92));
       }
-      // Default cover = frame at second 0
       updateCurrentMedia({ thumbnails: frames, coverUrl: frames[0] });
     };
     run();
@@ -1142,20 +1086,14 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const run = async () => {
-      await new Promise((resolve) => {
-        v.onloadedmetadata = resolve;
-      });
+      await new Promise((resolve) => { v.onloadedmetadata = resolve; });
       const w = v.videoWidth || 640;
       const h = v.videoHeight || 360;
       canvas.width = w;
       canvas.height = h;
-      await new Promise((res) => {
-        v.currentTime = 0;
-        v.onseeked = res;
-      });
+      await new Promise((res) => { v.currentTime = 0; v.onseeked = res; });
       ctx.drawImage(v, 0, 0, w, h);
-      const url = canvas.toDataURL('image/jpeg', 0.9);
-      updateCurrentMedia({ coverUrl: url });
+      updateCurrentMedia({ coverUrl: canvas.toDataURL('image/jpeg', 0.9) });
     };
     run();
   }, [step, currentMedia, updateCurrentMedia]);
@@ -1164,12 +1102,10 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-0 md:p-8">
-      {/* Close Button (Top Right) */}
       <button onClick={handleClose} className="absolute top-4 right-4 text-white z-50 md:block hidden">
         <X size={32} />
       </button>
 
-      {/* Main Container */}
       <div className={`bg-white dark:bg-[#262626] md:max-h-[85vh] md:rounded-xl overflow-hidden flex flex-col transition-all duration-300 shadow-2xl ${step === 'select'
         ? 'w-full h-full md:w-[500px] md:h-[550px]'
         : step === 'crop'
@@ -1181,12 +1117,10 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
         <div className="h-[45px] border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 bg-white dark:bg-[#262626] sticky top-0 z-40">
           {step === 'select' ? (
             <>
-              <div className="w-10"></div> {/* Spacer */}
-              <h2 className="font-semibold text-base text-center dark:text-white flex-1">Create new {postType === 'reel' ? 'reel' : 'post'}</h2>
-              <button onClick={handleClose} className="text-black dark:text-white md:hidden">
-                <X size={24} />
-              </button>
-              <div className="w-10 md:block hidden"></div> {/* Spacer */}
+              <div className="w-10"></div>
+              <h2 className="font-semibold text-base text-center dark:text-white flex-1">Create new {postType === 'reel' ? 'reel' : postType === 'ad' ? 'ad' : 'post'}</h2>
+              <button onClick={handleClose} className="text-black dark:text-white md:hidden"><X size={24} /></button>
+              <div className="w-10 md:block hidden"></div>
             </>
           ) : (
             <>
@@ -1195,9 +1129,15 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                   <ArrowLeft size={24} />
                 </button>
               </div>
-              <h2 className="font-semibold text-base text-center dark:text-white flex-1">{step === 'crop' ? 'Crop' : step === 'cover' ? 'Cover' : step === 'edit' ? 'Edit' : 'Create new post'}</h2>
+              <h2 className="font-semibold text-base text-center dark:text-white flex-1">
+                {step === 'crop' ? 'Crop' : step === 'cover' ? 'Cover' : step === 'edit' ? 'Edit' : step === 'details' ? 'Ad Details' : 'Share'}
+              </h2>
               <div className="w-20 flex justify-end">
-                <button onClick={handleNextStep} className="text-[#0095f6] hover:text-[#00376b] dark:hover:text-blue-400 font-semibold text-sm transition-colors">
+                <button
+                  onClick={handleNextStep}
+                  className="text-[#0095f6] hover:text-[#00376b] dark:hover:text-blue-400 font-semibold text-sm transition-colors disabled:opacity-40"
+                  disabled={step === 'share' && postType === 'ad' && (!totalBudgetCoins)}
+                >
                   {step === 'share' ? 'Share' : 'Next'}
                 </button>
               </div>
@@ -1218,10 +1158,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
               <div className="relative flex items-center justify-center w-24 h-24 rounded-xl bg-gray-100 dark:bg-gray-800">
                 <Images size={56} className="text-gray-800 dark:text-white" />
               </div>
-              <svg aria-label="Icon to represent media such as images or videos" className="hidden" color="currentColor" fill="currentColor" height="77" role="img" viewBox="0 0 97.6 77.3" width="96">
-                <path d="M16.3 24h.3c2.8-.2 4.9-2.6 4.8-5.4-.2-2.8-2.6-4.9-5.4-4.8s-4.9 2.6-4.8 5.4c.1 2.7 2.4 4.8 5.1 4.8zm-2.4-7.2c.5-.6 1.3-1 2.1-1h.2c1.7 0 3.1 1.4 3.1 3.1 0 1.7-1.4 3.1-3.1 3.1-1.7 0-3.1-1.4-3.1-3.1 0-.8.3-1.5.8-2.1z" fill="currentColor"></path>
-                <path d="M84.7 18.4 58 16.9l-.2-3c-.3-5.7-5.2-10.1-11-9.8L12.9 6c-5.7.3-10.1 5.3-9.8 11L5 51v.8c.7 5.2 5.1 9.1 10.3 9.1h.6l21.7-1.2v.6c-.3 5.7 4 10.7 9.8 11l34 2h.6c5.5 0 10.1-4.3 10.4-9.8l2-34c.4-5.8-4-10.7-9.7-11.1zM7.2 10.8C8.7 9.1 10.8 8.1 13 8l34-1.9c4.6-.3 8.6 3.3 8.9 7.9l.2 2.8-5.3-.3c-5.7-.3-10.7 4-11 9.8l-.6 9.5-9.5 10.7c-.2.3-.6.4-1 .5-.4 0-.7-.1-1-.4l-7.8-7c-1.4-1.3-3.5-1.1-4.9.3L7 45.5c-1.7-3.5-1.5-7.5.9-10.8l1.4-1.8c.5-.7.4-1.6-.2-2.2-.7-.5-1.6-.4-2.2.2L6 32.1c-2.6-3.3-3.6-7.6-2.5-11.7.9-3.7 3.2-7 6.6-8.9l-.9-1.3c-.6-.7-.5-1.6.2-2.2.6-.5 1.5-.5 2.1.2l1.6 1.8c.8.8 1.9 1.2 3.1 1.2.4 0 .9-.1 1.3-.2.9-.2 1.5-1 1.5-1.9 0-1.1-.9-2-2-1.9zm-2.1 7.2c.4-.4.7-1 1-1.6.1-.2.2-.4.4-.5.3-.2.6-.3.9-.2.2.1.3.2.3.4 0 .2-.1.3-.2.4-.1.1-.2.2-.3.3-.3.4-.6.9-.9 1.3-.1.1-.1.2-.1.3 0 .1.1.2.2.2.1 0 .2 0 .3-.1 1.1-.7 2.3-1.2 3.6-1.4 2.8-.4 5.6.5 7.6 2.4s2.9 4.7 2.5 7.5c-.2 1.3-.8 2.5-1.5 3.5-.1.1-.2.2-.2.3 0 .1.1.2.2.2.1 0 .2 0 .3-.1 1.3-.8 2.7-1.3 4.2-1.5 1.5-.2 3.1-.1 4.5.4 1.5.5 2.8 1.4 3.8 2.6s1.6 2.6 1.9 4.1c.1.7.1 1.4 0 2.1-.1.4-.2.8-.3 1.2-.1.3-.1.5.1.7.2.2.5.2.7.1.5-.3.9-.7 1.3-1.1.8-.9 1.5-2 1.9-3.1.2-.4.4-.8.5-1.3 0-.1.1-.2.2-.3.1 0 .2 0 .3.1.5.4 1 .9 1.3 1.4.3.5.6 1.1.7 1.6.1.4.3.7.6.9.3.2.7.2 1-.1.4-.5.8-1 1.1-1.6.3-.5.5-1.1.7-1.7.1-.5.6-.9 1.1-.8.5.1.9.6.8 1.1-.2.8-.4 1.5-.8 2.2-.3.7-.8 1.4-1.3 2-.2.2-.3.5-.3.8 0 .3.2.5.5.6.8.2 1.5.6 2.2 1.1.7.5 1.3 1.1 1.8 1.8.2.3.5.5.9.5.1 0 .2 0 .3-.1.4-.2.6-.7.5-1.1-.3-.9-.7-1.7-1.3-2.5-.5-.8-1.2-1.5-1.9-2.1-.3-.2-.5-.6-.5-.9 0-.3.2-.6.5-.7.8-.3 1.6-.5 2.4-.6.8-.1 1.6-.1 2.4.1.4.1.7-.1.9-.5.1-.4-.1-.8-.5-.9-.9-.3-1.9-.4-2.8-.3-1 .1-1.9.3-2.8.7-.3.1-.6.1-.8-.2-.3-.3-.4-.7-.2-1 .5-.9 1.1-1.7 1.9-2.4.7-.6 1.6-1.1 2.5-1.4.4-.1.6-.5.5-.9-.1-.4-.5-.6-.9-.5-1.1.3-2.1.8-2.9 1.5-.9.7-1.6 1.6-2.1 2.6-.2.3-.5.4-.8.4-.1 0-.2 0-.3-.1-.4-.2-.6-.6-.5-1 .3-1.1.8-2.1 1.5-2.9.7-.9 1.6-1.6 2.6-2.1.4-.2.5-.6.3-1-.2-.4-.6-.5-1-.3-1.1.5-2.1 1.3-2.9 2.3-.8.9-1.4 2-1.8 3.2-.1.4-.5.6-.9.5-.4-.1-.6-.5-.5-.9.4-1.2 1-2.3 1.9-3.2.8-1 1.9-1.7 3-2.2.4-.2.6-.6.4-1-.2-.4-.6-.6-1-.4-1.3.5-2.4 1.3-3.4 2.4-.9 1.1-1.6 2.3-2 3.6-.1.4-.5.6-.9.5-.4-.1-.6-.5-.5-.9.5-1.3 1.2-2.5 2.2-3.6 1-1 2.2-1.8 3.5-2.3.4-.2.6-.6.4-1-.2-.4-.6-.6-1-.4-1.5.6-2.8 1.4-3.9 2.6-1.1 1.1-1.9 2.5-2.5 3.9-.2.4-.6.6-1 .4-.4-.2-.6-.6-.4-1 .7-1.6 1.6-3.1 2.9-4.3 1.2-1.2 2.7-2.1 4.3-2.7.4-.2.6-.6.4-1-.2-.4-.6-.6-1-.4-1.8.6-3.4 1.6-4.8 2.9-1.4 1.4-2.4 3-3 4.8-.1.4-.5.6-.9.5-.4-.1-.6-.5-.5-.9.7-2 1.9-3.7 3.4-5.2 1.6-1.4 3.4-2.5 5.5-3.2.4-.1.7.1.8.5.1.4-.1.7-.5.8-1.8.6-3.4 1.6-4.8 2.8-1.4 1.3-2.4 2.9-3 4.6-.1.4-.5.6-.9.5-.4-.1-.6-.5-.5-.9.7-1.9 1.8-3.6 3.2-5 .2-.2.4-.4.6-.6.3-.2.7-.2.9.1.2.3.2.7-.1.9zm-8.8 32.6-3.7 3.3c-.1.1-.2.2-.4.2-.2 0-.3-.1-.4-.2l-5.6-6.3c-.6-.7-1.7-.7-2.3 0L37.7 54h35.7l-15.1-17.8c-.7-.8-1.9-.8-2.6 0z" fill="currentColor"></path>
-              </svg>
             </div>
             <h3 className="text-xl font-normal mb-6 text-gray-800 dark:text-gray-200">Drag photos and videos here</h3>
             <button
@@ -1252,8 +1188,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                       if (!userObject.vendor_validated) {
                         setShowVendorNotValidated(true);
                       } else {
-                        onClose();
-                        navigate('/ads');
+                        if (onOpenAdModal) onOpenAdModal();
+                        else onClose();
                       }
                     }}
                     className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/10"
@@ -1274,10 +1210,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                     <video
                       src={currentMedia.url}
                       className="absolute inset-0 w-full h-full object-contain"
-                      autoPlay
-                      muted
-                      playsInline
-                      controls
+                      autoPlay muted playsInline controls
                     />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div
@@ -1322,7 +1255,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                 )}
               </div>
             )}
-            {/* ... Navigation Arrows & Controls (omitted for brevity, assume same as before but keeping concise here) ... */}
             {media.length > 1 && (
               <>
                 {currentIndex > 0 && (
@@ -1374,65 +1306,21 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
               </div>
             </div>
           </div>
-        ) : step === 'cover' ? (
-          <div className="flex-1 flex lg:flex-row flex-col lg:overflow-hidden overflow-y-auto overflow-x-hidden">
-            <div className="relative bg-[#f0f0f0] dark:bg-[#121212] flex items-center justify-center w-full flex-1 h-auto">
-              {currentMedia && currentMedia.type === 'video' && (
-                <div className="relative w-full h-full flex items-center justify-center">
-                  <img
-                    src={currentMedia.coverUrl || (currentMedia.thumbnails && currentMedia.thumbnails[0]) || ''}
-                    className="max-w-full max-h-full object-contain"
-                    alt=""
-                  />
-                  {currentMedia.duration !== undefined && (
-                    <div className="absolute bottom-3 left-3 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                      {formatDuration(currentMedia.duration)}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 flex flex-col lg:w-[340px] w-full min-w-[340px] flex-none">
-              <div className="p-4">
-                <div className="flex gap-3 overflow-x-auto py-1">
-                  {(currentMedia?.thumbnails || []).map((thumb, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => updateCurrentMedia({ coverUrl: thumb })}
-                      className={`relative flex-none w-16 h-16 rounded-lg overflow-hidden ring-2 ${currentMedia.coverUrl === thumb ? 'ring-[#0095f6]' : 'ring-transparent'}`}
-                    >
-                      <img src={thumb} className="w-full h-full object-cover" alt="" />
-                    </button>
-                  ))}
-                </div>
-                {!currentMedia?.thumbnails && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-gray-400 dark:border-gray-500 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">Generating thumbnails...</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
         ) : step === 'edit' ? (
           /* EDIT STEP */
           <div className="flex-1 flex lg:flex-row flex-col lg:overflow-hidden overflow-y-auto overflow-x-hidden">
-            {/* Left: Image Preview */}
+            {/* Left: Image/Video Preview */}
             <div ref={editContainerRef} className="relative bg-[#f0f0f0] dark:bg-[#121212] flex items-center justify-center w-full flex-1 h-auto">
               {currentMedia && (
                 currentMedia.type === 'video' ? (
-                  /* Show cover thumbnail on left; trim scrubber drives trimPlayTime */
                   <div style={{ width: editBoxSize.w, height: editBoxSize.h }} className="relative overflow-hidden bg-black rounded">
-                    {/* Hidden video drives trimPlayTime for the scrubber */}
                     <video
                       src={currentMedia.croppedUrl || currentMedia.url}
                       className="hidden"
                       ref={editVideoRef}
                       muted
                       preload="metadata"
-                      onLoadedMetadata={(e) => {
-                        e.currentTarget.currentTime = currentMedia.trimStart || 0;
-                      }}
+                      onLoadedMetadata={(e) => { e.currentTarget.currentTime = currentMedia.trimStart || 0; }}
                       onTimeUpdate={(e) => {
                         setTrimPlayTime(e.currentTarget.currentTime);
                         const d = currentMedia.duration || 0;
@@ -1442,21 +1330,16 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                         }
                       }}
                     />
-                    {/* Visible: selected cover thumbnail */}
                     <img
                       src={currentMedia.coverUrl || (currentMedia.thumbnails && currentMedia.thumbnails[0]) || currentMedia.croppedUrl || currentMedia.url}
                       className="w-full h-full object-cover"
                       alt="Cover"
                     />
-                    {/* Play icon overlay */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="w-14 h-14 rounded-full bg-black/40 flex items-center justify-center">
-                        <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M8 5v14l11-7z"/>
-                        </svg>
+                        <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                       </div>
                     </div>
-                    {/* Duration badge */}
                     {currentMedia.duration > 0 && (
                       <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs font-mono px-2 py-0.5 rounded">
                         {formatDuration((currentMedia.trimEnd && currentMedia.trimEnd > 0 ? currentMedia.trimEnd : currentMedia.duration) - (currentMedia.trimStart || 0))}
@@ -1466,14 +1349,12 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                 ) : (
                   <img
                     src={currentMedia.croppedUrl || currentMedia.url}
-                    className="lg:max-w-full lg:max-h-full object-contain w-[400px] h-[500px]  transition-all duration-200"
+                    className="lg:max-w-full lg:max-h-full object-contain w-[400px] h-[500px] transition-all duration-200"
                     style={getFilterStyle(currentMedia)}
                     alt="Edit"
                   />
                 )
               )}
-
-              {/* Navigation Arrows for Edit Step */}
               {media.length > 1 && (
                 <>
                   {currentIndex > 0 && (
@@ -1488,54 +1369,26 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
 
             {/* Right: Tools */}
             <div className="bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 flex flex-col lg:w-[340px] w-full min-w-[340px] flex-none">
-              {/* Tabs */}
               <div className="flex border-b border-gray-200 dark:border-gray-800">
                 {currentMedia?.type !== 'video' ? (
                   <>
-                    <button
-                      className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'filters' ? 'text-black dark:text-white border-b border-black dark:border-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
-                      onClick={() => setActiveTab('filters')}
-                    >
-                      Filter
-                    </button>
-                    <button
-                      className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'adjustments' ? 'text-black dark:text-white border-b border-black dark:border-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
-                      onClick={() => setActiveTab('adjustments')}
-                    >
-                      Adjustment
-                    </button>
+                    <button className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'filters' ? 'text-black dark:text-white border-b border-black dark:border-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`} onClick={() => setActiveTab('filters')}>Filter</button>
+                    <button className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'adjustments' ? 'text-black dark:text-white border-b border-black dark:border-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`} onClick={() => setActiveTab('adjustments')}>Adjustment</button>
                   </>
                 ) : (
-                  <button
-                    className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'video' ? 'text-black dark:text-white border-b border-black dark:border-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
-                    onClick={() => setActiveTab('video')}
-                  >
-                    Video
-                  </button>
+                  <button className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'video' ? 'text-black dark:text-white border-b border-black dark:border-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`} onClick={() => setActiveTab('video')}>Video</button>
                 )}
               </div>
 
-              {/* Tab Content */}
               <div className="flex flex-col h-full overflow-y-scroll scrollbar-hide px-5 py-5">
                 {activeTab === 'filters' ? (
-                  <div className="grid grid-cols-3 gap-4 ">
+                  <div className="grid grid-cols-3 gap-4">
                     {FILTERS.map((filter) => (
-                      <div
-                        key={filter.name}
-                        className="flex flex-col items-center gap-2 cursor-pointer group"
-                        onClick={() => applyFilter(filter.name)}
-                      >
+                      <div key={filter.name} className="flex flex-col items-center gap-2 cursor-pointer group" onClick={() => applyFilter(filter.name)}>
                         <div className={`w-full aspect-square rounded-md overflow-hidden border-2 transition-all ${currentMedia.filter === filter.name ? 'border-[#0095f6]' : 'border-transparent'}`}>
-                          <img
-                            src={currentMedia.croppedUrl || currentMedia.url}
-                            className="w-full h-full object-cover"
-                            style={{ filter: filter.style }}
-                            alt={filter.name}
-                          />
+                          <img src={currentMedia.croppedUrl || currentMedia.url} className="w-full h-full object-cover" style={{ filter: filter.style }} alt={filter.name} />
                         </div>
-                        <span className={`text-xs font-semibold ${currentMedia.filter === filter.name ? 'text-[#0095f6]' : 'text-gray-500 dark:text-gray-400'}`}>
-                          {filter.name}
-                        </span>
+                        <span className={`text-xs font-semibold ${currentMedia.filter === filter.name ? 'text-[#0095f6]' : 'text-gray-500 dark:text-gray-400'}`}>{filter.name}</span>
                       </div>
                     ))}
                   </div>
@@ -1546,27 +1399,18 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                         <div className="flex justify-between items-center">
                           <span className="text-sm font-semibold dark:text-white">{adj.name}</span>
                           {currentMedia.adjustments[adj.property] !== 0 && (
-                            <button
-                              onClick={() => updateAdjustment(adj.property, 0)}
-                              className="text-xs text-blue-500 font-semibold hover:text-blue-600"
-                            >
-                              Reset
-                            </button>
+                            <button onClick={() => updateAdjustment(adj.property, 0)} className="text-xs text-blue-500 font-semibold hover:text-blue-600">Reset</button>
                           )}
                         </div>
                         <div className="flex items-center gap-3">
                           <input
-                            type="range"
-                            min={adj.min}
-                            max={adj.max}
+                            type="range" min={adj.min} max={adj.max}
                             value={currentMedia.adjustments[adj.property] || 0}
                             onChange={(e) => updateAdjustment(adj.property, parseInt(e.target.value))}
                             className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-black dark:accent-white"
                             disabled={currentMedia?.type === 'video'}
                           />
-                          <span className="text-xs font-mono w-8 text-right text-gray-500 dark:text-gray-400">
-                            {currentMedia.adjustments[adj.property] || 0}
-                          </span>
+                          <span className="text-xs font-mono w-8 text-right text-gray-500 dark:text-gray-400">{currentMedia.adjustments[adj.property] || 0}</span>
                         </div>
                       </div>
                     ))}
@@ -1574,28 +1418,19 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                 ) : (
                   (currentMedia?.thumbnails && currentMedia.duration !== undefined) ? (
                   <div className="flex flex-col gap-5 pb-4">
-
-                    {/* ── Cover Photo — horizontal filmstrip ── */}
+                    {/* Cover Photo */}
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-sm font-semibold dark:text-white">Cover photo</span>
-                        <button
-                          className="text-sm font-bold text-[#0095f6] hover:text-blue-400 transition-colors"
-                          onClick={() => coverInputRef.current?.click()}
-                        >
-                          Select From Computer
-                        </button>
+                        <button className="text-sm font-bold text-[#0095f6] hover:text-blue-400 transition-colors" onClick={() => coverInputRef.current?.click()}>Select From Computer</button>
                         <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
                           const f = e.target.files?.[0];
                           if (!f) return;
                           const url = URL.createObjectURL(f);
-                          // Store uploaded image separately so it shows in gallery
                           updateCurrentMedia({ coverUrl: url, uploadedCoverUrl: url });
                           e.target.value = '';
                         }} />
                       </div>
-
-                      {/* Filmstrip row — drag to pick cover frame */}
                       {(() => {
                         const thumbs = currentMedia?.thumbnails || [];
                         const selIdx = Math.max(0, thumbs.findIndex(t => t === currentMedia.coverUrl));
@@ -1615,32 +1450,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                               };
                               pick(startE.clientX);
                               const onMove = (e) => pick(e.clientX);
-                              const onUp   = () => {
-                                window.removeEventListener('mousemove', onMove);
-                                window.removeEventListener('mouseup', onUp);
-                              };
+                              const onUp   = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
                               window.addEventListener('mousemove', onMove);
                               window.addEventListener('mouseup', onUp);
                             }}
-                            onTouchStart={(startE) => {
-                              const strip = startE.currentTarget;
-                              const rect  = strip.getBoundingClientRect();
-                              const pick  = (clientX) => {
-                                const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-                                const idx   = Math.min(thumbs.length - 1, Math.floor(ratio * thumbs.length));
-                                if (thumbs[idx]) updateCurrentMedia({ coverUrl: thumbs[idx] });
-                              };
-                              pick(startE.touches[0].clientX);
-                              const onMove = (e) => pick(e.touches[0].clientX);
-                              const onEnd  = () => {
-                                window.removeEventListener('touchmove', onMove);
-                                window.removeEventListener('touchend', onEnd);
-                              };
-                              window.addEventListener('touchmove', onMove, { passive: true });
-                              window.addEventListener('touchend', onEnd);
-                            }}
                           >
-                            {/* Frames */}
                             <div className="flex h-full pointer-events-none">
                               {thumbs.map((thumb, idx) => (
                                 <div key={idx} className="relative flex-1 h-full overflow-hidden" style={{ minWidth: 0 }}>
@@ -1648,111 +1462,18 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                                 </div>
                               ))}
                             </div>
-                            {/* Moving white selection box */}
                             <div
                               className="absolute top-0 bottom-0 pointer-events-none z-10 transition-all duration-100"
-                              style={{
-                                left: `${selIdx * frameW}%`,
-                                width: `${frameW}%`,
-                                border: '3px solid white',
-                                borderRadius: 4,
-                                boxShadow: '0 0 0 1.5px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.3)'
-                              }}
+                              style={{ left: `${selIdx * frameW}%`, width: `${frameW}%`, border: '3px solid white', borderRadius: 4, boxShadow: '0 0 0 1.5px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.3)' }}
                             />
-                            {/* Dim outside selection */}
                             <div className="absolute top-0 bottom-0 left-0 bg-black/40 pointer-events-none transition-all duration-100" style={{ width: `${selIdx * frameW}%` }} />
                             <div className="absolute top-0 bottom-0 right-0 bg-black/40 pointer-events-none transition-all duration-100" style={{ width: `${(thumbs.length - selIdx - 1) * frameW}%` }} />
-                            {/* Drag hint — only show when nothing selected yet */}
-                            {selIdx === 0 && (
-                              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] text-white/50 pointer-events-none whitespace-nowrap px-2 py-0.5 rounded-full" style={{ background: 'rgba(0,0,0,0.5)' }}>
-                                Hold & drag to pick cover
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Second labels below cover filmstrip */}
-                      {(() => {
-                        const thumbs = currentMedia?.thumbnails || [];
-                        if (thumbs.length === 0) return null;
-                        return (
-                          <div className="relative w-full mt-1" style={{ height: 14 }}>
-                            {thumbs.map((_, idx) => {
-                              const pct = ((idx + 0.5) / thumbs.length) * 100;
-                              return (
-                                <span
-                                  key={idx}
-                                  className="absolute text-[9px] text-gray-400 dark:text-gray-500 font-mono"
-                                  style={{ left: `${pct}%`, transform: 'translateX(-50%)', top: 0 }}
-                                >
-                                  {idx}s
-                                </span>
-                              );
-                            })}
                           </div>
                         );
                       })()}
                     </div>
 
-                    {/* ── Selected cover preview + uploaded image ── */}
-                    {(() => {
-                      const thumbs = currentMedia?.thumbnails || [];
-                      const uploadedCover = currentMedia?.uploadedCoverUrl;
-                      const selectedCover = currentMedia?.coverUrl;
-                      // All selectable covers: uploaded image first (if any), then filmstrip frames
-                      const allCovers = uploadedCover
-                        ? [{ url: uploadedCover, label: 'Uploaded', isUploaded: true },
-                           ...thumbs.map((t, i) => ({ url: t, label: `${i}s`, isUploaded: false }))]
-                        : thumbs.map((t, i) => ({ url: t, label: `${i}s`, isUploaded: false }));
-
-                      if (allCovers.length === 0) return null;
-
-                      return (
-                        <div className="flex flex-col gap-2">
-                          {/* Big selected preview */}
-                          <div className="relative w-full rounded-xl overflow-hidden bg-black" style={{ height: 140 }}>
-                            <img
-                              src={selectedCover || allCovers[0]?.url}
-                              className="w-full h-full object-cover"
-                              alt="Selected cover"
-                              style={{ imageRendering: 'auto' }}
-                            />
-                            {/* "Cover" badge */}
-                            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                              Cover
-                            </div>
-                          </div>
-
-                          {/* Horizontal scroll row — show uploaded image if exists */}
-                          {uploadedCover && (
-                            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-                              {allCovers.filter(c => c.isUploaded).map((cover, i) => (
-                                <button
-                                  key={`uploaded-${i}`}
-                                  onClick={() => updateCurrentMedia({ coverUrl: cover.url })}
-                                  className="relative flex-shrink-0 rounded-lg overflow-hidden focus:outline-none"
-                                  style={{ width: 60, height: 60 }}
-                                >
-                                  <img src={cover.url} className="w-full h-full object-cover" alt="" draggable={false} />
-                                  {/* Selected ring */}
-                                  {selectedCover === cover.url && (
-                                    <div className="absolute inset-0 rounded-lg border-[2.5px] border-white pointer-events-none" />
-                                  )}
-                                  {/* "Photo" label */}
-                                  <div className="absolute bottom-0 left-0 right-0 text-[9px] font-semibold text-white text-center py-0.5"
-                                    style={{ background: 'rgba(0,0,0,0.55)' }}>
-                                    Photo
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* ── Trim ── */}
+                    {/* Trim */}
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-sm font-semibold dark:text-white">Trim</span>
@@ -1760,15 +1481,9 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                           const dur = currentMedia.duration || 0;
                           const s   = currentMedia.trimStart || 0;
                           const e2  = (currentMedia.trimEnd && currentMedia.trimEnd > 0) ? currentMedia.trimEnd : dur;
-                          const len = Math.max(0, e2 - s);
-                          return (
-                            <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">
-                              {formatDuration(len)} selected
-                            </span>
-                          );
+                          return <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{formatDuration(Math.max(0, e2 - s))} selected</span>;
                         })()}
                       </div>
-
                       {currentMedia?.thumbnails && (
                         <div
                           className="relative select-none"
@@ -1778,36 +1493,13 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                             const rect = trimTrackRef.current.getBoundingClientRect();
                             const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
                             const t = ratio * (currentMedia.duration || 0);
-                            if (dragHandle === 'start') {
-                              updateCurrentMedia({ trimStart: Math.max(0, Math.min(t, (currentMedia.trimEnd || 0) - 0.5)) });
-                            } else {
-                              updateCurrentMedia({ trimEnd: Math.min(currentMedia.duration || 0, Math.max(t, (currentMedia.trimStart || 0) + 0.5)) });
-                            }
+                            if (dragHandle === 'start') updateCurrentMedia({ trimStart: Math.max(0, Math.min(t, (currentMedia.trimEnd || 0) - 0.5)) });
+                            else updateCurrentMedia({ trimEnd: Math.min(currentMedia.duration || 0, Math.max(t, (currentMedia.trimStart || 0) + 0.5)) });
                           }}
                           onMouseLeave={() => setDragHandle(null)}
                           onMouseUp={() => setDragHandle(null)}
-                          onTouchMove={(e) => {
-                            if (!dragHandle) return;
-                            e.preventDefault();
-                            const touch = e.touches[0];
-                            const rect = trimTrackRef.current.getBoundingClientRect();
-                            const ratio = Math.min(1, Math.max(0, (touch.clientX - rect.left) / rect.width));
-                            const t = ratio * (currentMedia.duration || 0);
-                            if (dragHandle === 'start') {
-                              updateCurrentMedia({ trimStart: Math.max(0, Math.min(t, (currentMedia.trimEnd || 0) - 0.5)) });
-                            } else {
-                              updateCurrentMedia({ trimEnd: Math.min(currentMedia.duration || 0, Math.max(t, (currentMedia.trimStart || 0) + 0.5)) });
-                            }
-                          }}
-                          onTouchEnd={() => setDragHandle(null)}
                         >
-                          {/* Filmstrip track */}
-                          <div
-                            ref={trimTrackRef}
-                            className="relative w-full rounded-xl overflow-hidden"
-                            style={{ height: 64 }}
-                          >
-                            {/* Thumbnail frames */}
+                          <div ref={trimTrackRef} className="relative w-full rounded-xl overflow-hidden" style={{ height: 64 }}>
                             <div className="flex h-full">
                               {(currentMedia.thumbnails || []).map((thumb, idx) => (
                                 <div key={idx} className="flex-1 h-full overflow-hidden" style={{ minWidth: 0 }}>
@@ -1815,110 +1507,42 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                                 </div>
                               ))}
                             </div>
-
-                            {/* Dimmed regions outside trim */}
                             {(() => {
                               const dur = currentMedia.duration || 0;
                               const s   = (currentMedia.trimStart || 0) / (dur || 1);
                               const e2  = ((currentMedia.trimEnd && currentMedia.trimEnd > 0) ? currentMedia.trimEnd : dur) / (dur || 1);
                               return (
                                 <>
-                                  {/* Left dim */}
                                   <div className="absolute top-0 bottom-0 left-0 bg-black/55 pointer-events-none" style={{ width: `${s * 100}%` }} />
-                                  {/* Right dim */}
                                   <div className="absolute top-0 bottom-0 right-0 bg-black/55 pointer-events-none" style={{ width: `${(1 - e2) * 100}%` }} />
-                                  {/* White selection border */}
-                                  <div
-                                    className="absolute top-0 bottom-0 border-t-[3px] border-b-[3px] border-white pointer-events-none z-10"
-                                    style={{ left: `${s * 100}%`, width: `${Math.max(0, e2 - s) * 100}%` }}
-                                  />
-                                  {/* Playhead */}
-                                  <div
-                                    className="absolute top-0 bottom-0 w-[2px] bg-white z-20"
-                                    style={{
-                                      left: `${Math.min(1, Math.max(0, (trimPlayTime || 0) / (dur || 1))) * 100}%`,
-                                      boxShadow: '0 0 4px rgba(255,255,255,0.8)'
-                                    }}
-                                  />
-                                  {/* Left drag handle */}
-                                  <div
-                                    className="absolute top-0 bottom-0 z-30 flex items-center justify-center cursor-ew-resize"
-                                    style={{ left: `${s * 100}%`, width: 20, transform: 'translateX(-4px)' }}
-                                    onMouseDown={(e) => { e.preventDefault(); setDragHandle('start'); }}
-                                    onTouchStart={(e) => { e.preventDefault(); setDragHandle('start'); }}
-                                  >
+                                  <div className="absolute top-0 bottom-0 border-t-[3px] border-b-[3px] border-white pointer-events-none z-10" style={{ left: `${s * 100}%`, width: `${Math.max(0, e2 - s) * 100}%` }} />
+                                  <div className="absolute top-0 bottom-0 w-[2px] bg-white z-20" style={{ left: `${Math.min(1, Math.max(0, (trimPlayTime || 0) / (dur || 1))) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.8)' }} />
+                                  <div className="absolute top-0 bottom-0 z-30 flex items-center justify-center cursor-ew-resize" style={{ left: `${s * 100}%`, width: 20, transform: 'translateX(-4px)' }} onMouseDown={(e) => { e.preventDefault(); setDragHandle('start'); }}>
                                     <div className="w-[14px] h-full rounded-l-lg flex items-center justify-center" style={{ background: 'white' }}>
-                                      <div className="flex flex-col gap-[3px]">
-                                        <div className="w-[2px] h-3 bg-gray-400 rounded-full" />
-                                        <div className="w-[2px] h-3 bg-gray-400 rounded-full" />
-                                      </div>
+                                      <div className="flex flex-col gap-[3px]"><div className="w-[2px] h-3 bg-gray-400 rounded-full" /><div className="w-[2px] h-3 bg-gray-400 rounded-full" /></div>
                                     </div>
                                   </div>
-                                  {/* Right drag handle */}
-                                  <div
-                                    className="absolute top-0 bottom-0 z-30 flex items-center justify-center cursor-ew-resize"
-                                    style={{ left: `${e2 * 100}%`, width: 20, transform: 'translateX(-16px)' }}
-                                    onMouseDown={(e2e) => { e2e.preventDefault(); setDragHandle('end'); }}
-                                    onTouchStart={(e2e) => { e2e.preventDefault(); setDragHandle('end'); }}
-                                  >
+                                  <div className="absolute top-0 bottom-0 z-30 flex items-center justify-center cursor-ew-resize" style={{ left: `${e2 * 100}%`, width: 20, transform: 'translateX(-16px)' }} onMouseDown={(e2e) => { e2e.preventDefault(); setDragHandle('end'); }}>
                                     <div className="w-[14px] h-full rounded-r-lg flex items-center justify-center" style={{ background: 'white' }}>
-                                      <div className="flex flex-col gap-[3px]">
-                                        <div className="w-[2px] h-3 bg-gray-400 rounded-full" />
-                                        <div className="w-[2px] h-3 bg-gray-400 rounded-full" />
-                                      </div>
+                                      <div className="flex flex-col gap-[3px]"><div className="w-[2px] h-3 bg-gray-400 rounded-full" /><div className="w-[2px] h-3 bg-gray-400 rounded-full" /></div>
                                     </div>
                                   </div>
                                 </>
                               );
                             })()}
                           </div>
-
-                          {/* Time markers below filmstrip */}
-                          {(() => {
-                            const dur = currentMedia.duration || 0;
-                            if (dur <= 0) return null;
-                            // Show ~5 evenly spaced time labels
-                            const steps = Math.min(5, Math.floor(dur));
-                            return (
-                              <div className="relative w-full mt-1" style={{ height: 16 }}>
-                                {Array.from({ length: steps + 1 }).map((_, i) => {
-                                  const t   = (i / steps) * dur;
-                                  const pct = (i / steps) * 100;
-                                  return (
-                                    <span
-                                      key={i}
-                                      className="absolute text-[10px] text-gray-400 dark:text-gray-500 font-mono"
-                                      style={{
-                                        left: `${pct}%`,
-                                        transform: i === 0 ? 'none' : i === steps ? 'translateX(-100%)' : 'translateX(-50%)',
-                                        top: 0,
-                                      }}
-                                    >
-                                      {Math.round(t)}s
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
                         </div>
                       )}
                     </div>
 
-                    {/* ── Sound toggle ── */}
+                    {/* Sound toggle */}
                     <div className="flex items-center justify-between pt-1 border-t border-gray-100 dark:border-gray-800">
                       <span className="text-sm font-semibold dark:text-white">Sound</span>
                       <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="sr-only peer"
-                          checked={currentMedia.soundOn}
-                          onChange={(e) => updateCurrentMedia({ soundOn: e.target.checked })}
-                        />
+                        <input type="checkbox" className="sr-only peer" checked={currentMedia.soundOn} onChange={(e) => updateCurrentMedia({ soundOn: e.target.checked })} />
                         <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                       </label>
                     </div>
-
                   </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-16 gap-3">
@@ -1942,21 +1566,13 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                       <video
                         src={currentMedia.croppedUrl || currentMedia.url}
                         className="w-full h-full object-cover"
-                        controls={false}
-                        autoPlay
-                        loop
+                        controls={false} autoPlay loop
                         muted={!currentMedia.soundOn}
-                        onLoadedMetadata={(e) => {
-                          const v = e.currentTarget;
-                          v.currentTime = currentMedia.trimStart || 0;
-                        }}
+                        onLoadedMetadata={(e) => { e.currentTarget.currentTime = currentMedia.trimStart || 0; }}
                         onTimeUpdate={(e) => {
                           const v = e.currentTarget;
-                          const trimEnd = (currentMedia.trimEnd && currentMedia.trimEnd > 0)
-                            ? currentMedia.trimEnd
-                            : (currentMedia.duration || 0);
+                          const trimEnd = (currentMedia.trimEnd && currentMedia.trimEnd > 0) ? currentMedia.trimEnd : (currentMedia.duration || 0);
                           if (trimEnd > 0 && v.currentTime >= trimEnd) {
-                            // Loop back to trimStart
                             v.currentTime = currentMedia.trimStart || 0;
                             v.play().catch(() => {});
                           }
@@ -1976,62 +1592,28 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                       Tap to tag · Drag tags to reposition
                     </div>
                   )}
-
-                  {/* Tags — draggable */}
                   {tags.map((tag) => (
                     <div
                       key={tag.id}
                       className="tag-item absolute z-20 select-none"
-                      style={{
-                        left: `${tag.x}%`,
-                        top:  `${tag.y}%`,
-                        transform: 'translate(-50%, -50%)',
-                        cursor: draggingTagId === tag.id ? 'grabbing' : 'grab',
-                      }}
+                      style={{ left: `${tag.x}%`, top: `${tag.y}%`, transform: 'translate(-50%, -50%)', cursor: draggingTagId === tag.id ? 'grabbing' : 'grab' }}
                       onMouseDown={(e) => {
                         if (e.target.closest('button')) return;
-                        e.preventDefault();
-                        e.stopPropagation();
+                        e.preventDefault(); e.stopPropagation();
                         const container = e.currentTarget.closest('[data-media-container]');
                         if (!container) return;
                         setDraggingTagId(tag.id);
                         const rect = container.getBoundingClientRect();
                         const onMove = (me) => {
-                          const nx = Math.min(100, Math.max(0, ((me.clientX - rect.left) / rect.width)  * 100));
-                          const ny = Math.min(100, Math.max(0, ((me.clientY - rect.top)  / rect.height) * 100));
+                          const nx = Math.min(100, Math.max(0, ((me.clientX - rect.left) / rect.width) * 100));
+                          const ny = Math.min(100, Math.max(0, ((me.clientY - rect.top) / rect.height) * 100));
                           setTags(prev => prev.map(t => t.id === tag.id ? { ...t, x: nx, y: ny } : t));
                         };
-                        const onUp = () => {
-                          setDraggingTagId(null);
-                          window.removeEventListener('mousemove', onMove);
-                          window.removeEventListener('mouseup', onUp);
-                        };
+                        const onUp = () => { setDraggingTagId(null); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
                         window.addEventListener('mousemove', onMove);
                         window.addEventListener('mouseup', onUp);
                       }}
-                      onTouchStart={(e) => {
-                        if (e.target.closest('button')) return;
-                        e.stopPropagation();
-                        const container = e.currentTarget.closest('[data-media-container]');
-                        if (!container) return;
-                        setDraggingTagId(tag.id);
-                        const rect = container.getBoundingClientRect();
-                        const onMove = (te) => {
-                          const touch = te.touches[0];
-                          const nx = Math.min(100, Math.max(0, ((touch.clientX - rect.left) / rect.width)  * 100));
-                          const ny = Math.min(100, Math.max(0, ((touch.clientY - rect.top)  / rect.height) * 100));
-                          setTags(prev => prev.map(t => t.id === tag.id ? { ...t, x: nx, y: ny } : t));
-                        };
-                        const onEnd = () => {
-                          setDraggingTagId(null);
-                          window.removeEventListener('touchmove', onMove);
-                          window.removeEventListener('touchend', onEnd);
-                        };
-                        window.addEventListener('touchmove', onMove, { passive: false });
-                        window.addEventListener('touchend', onEnd);
-                      }}
                     >
-                      {/* Tag bubble */}
                       <div className="relative flex items-center gap-1.5 bg-black/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-full shadow-lg border border-white/20">
                         {tag.user.avatar_url ? (
                           <img src={tag.user.avatar_url} className="w-4 h-4 rounded-full object-cover flex-shrink-0" alt="" />
@@ -2041,19 +1623,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                           </div>
                         )}
                         <span className="text-xs font-semibold whitespace-nowrap">@{tag.user.username}</span>
-                        <button
-                          onClick={(e) => handleRemoveTag(e, tag.id)}
-                          className="ml-0.5 w-4 h-4 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors"
-                        >
-                          <X size={9} />
-                        </button>
+                        <button onClick={(e) => handleRemoveTag(e, tag.id)} className="ml-0.5 w-4 h-4 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors"><X size={9} /></button>
                       </div>
-                      {/* Pin dot */}
                       <div className="absolute left-1/2 -translate-x-1/2 -bottom-[5px] w-2 h-2 bg-black/80 rounded-full border border-white/30" />
                     </div>
                   ))}
-
-                  {/* Tag Search Popover */}
                   {showTagSearch && (
                     <div className="absolute z-50 bg-white dark:bg-gray-800 rounded-lg shadow-xl w-64 overflow-hidden" style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
                       <div className="p-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
@@ -2064,13 +1638,10 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                         <div className="relative">
                           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                           <input
-                            type="text"
-                            placeholder="Search user"
+                            type="text" placeholder="Search user"
                             className="w-full bg-gray-100 dark:bg-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm outline-none focus:ring-1 focus:ring-gray-300 dark:text-white dark:placeholder-gray-400"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            autoFocus
+                            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                            onClick={(e) => e.stopPropagation()} autoFocus
                           />
                         </div>
                       </div>
@@ -2079,19 +1650,9 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                           <div className="p-4 text-center text-gray-400 text-xs">Searching...</div>
                         ) : searchResults.length > 0 ? (
                           searchResults.map(user => (
-                            <div
-                              key={user.id}
-                              className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                              onClick={(e) => { e.stopPropagation(); handleTagUser(user); }}
-                            >
+                            <div key={user.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleTagUser(user); }}>
                               <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
-                                {user.avatar_url ? (
-                                  <img src={user.avatar_url} className="w-full h-full object-cover" alt={user.username} />
-                                ) : (
-                                  <span className="text-xs font-semibold text-gray-800 dark:text-white">
-                                    {(user.username || '').slice(0, 1).toUpperCase()}
-                                  </span>
-                                )}
+                                {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" alt={user.username} /> : <span className="text-xs font-semibold text-gray-800 dark:text-white">{(user.username || '').slice(0, 1).toUpperCase()}</span>}
                               </div>
                               <div className="flex flex-col overflow-hidden">
                                 <span className="text-sm font-semibold truncate dark:text-white">{user.username}</span>
@@ -2107,17 +1668,12 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                   )}
                 </div>
               )}
-              {/* Navigation Arrows for Share Step (Carousel) */}
               {media.length > 1 && (
                 <>
-                  {currentIndex > 0 && (
-                    <button onClick={() => setCurrentIndex(prev => prev - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-gray-800 shadow-md flex items-center justify-center"><ChevronLeft size={20} /></button>
-                  )}
-                  {currentIndex < media.length - 1 && (
-                    <button onClick={() => setCurrentIndex(prev => prev + 1)} className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-gray-800 shadow-md flex items-center justify-center"><ChevronRight size={20} /></button>
-                  )}
+                  {currentIndex > 0 && <button onClick={() => setCurrentIndex(prev => prev - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-gray-800 shadow-md flex items-center justify-center"><ChevronLeft size={20} /></button>}
+                  {currentIndex < media.length - 1 && <button onClick={() => setCurrentIndex(prev => prev + 1)} className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-gray-800 shadow-md flex items-center justify-center"><ChevronRight size={20} /></button>}
                 </>
-              )} 
+              )}
             </div>
 
             {/* Right: Share Details */}
@@ -2128,9 +1684,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                   {userObject?.avatar_url ? (
                     <img src={userObject.avatar_url} className="w-full h-full object-cover" alt={userObject.username} />
                   ) : (
-                    <span className="text-xs font-semibold text-gray-800 dark:text-white">
-                      {(userObject?.username || 'U').slice(0, 1).toUpperCase()}
-                    </span>
+                    <span className="text-xs font-semibold text-gray-800 dark:text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
                   )}
                 </div>
                 <span className="font-semibold text-sm dark:text-white">{userObject?.username || 'User'}</span>
@@ -2153,13 +1707,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                         <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1">Most popular</div>
                         <div className="grid grid-cols-7 gap-1">
                           {POPULAR_EMOJIS.map(emoji => (
-                            <button
-                              key={emoji}
-                              onClick={() => handleEmojiClick(emoji)}
-                              className="w-8 h-8 flex items-center justify-center text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                            >
-                              {emoji}
-                            </button>
+                            <button key={emoji} onClick={() => handleEmojiClick(emoji)} className="w-8 h-8 flex items-center justify-center text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded">{emoji}</button>
                           ))}
                         </div>
                       </div>
@@ -2169,60 +1717,150 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                 </div>
               </div>
 
-              {/* Settings Rows */}
+              {/* Location */}
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+                <input
+                  type="text"
+                  placeholder="Add location"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full text-sm bg-transparent outline-none dark:text-white placeholder-gray-400"
+                />
+              </div>
+
+              {/* Ad-specific fields */}
+              {postType === 'ad' && (
+                <div className="px-4 pb-4 border-b border-gray-100 dark:border-gray-800 space-y-4 pt-4">
+                  
+                  {/* Category Accordion */}
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setOpenAccordion(openAccordion === 'category' ? null : 'category')}
+                      className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white"
+                    >
+                      <span>Category {selectedCategories.length > 0 && `(${selectedCategories.length})`}</span>
+                      <ChevronDown size={16} className={`transition-transform ${openAccordion === 'category' ? 'rotate-180' : ''}`} />
+                    </button>
+                    {openAccordion === 'category' && (
+                      <div className="max-h-60 overflow-y-auto p-2 bg-white dark:bg-black">
+                        {isLoadingCategories ? (
+                          <div className="p-2 text-xs text-gray-500">Loading...</div>
+                        ) : (
+                          categories.map(cat => (
+                            <label key={cat} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer rounded">
+                              <input
+                                type="checkbox"
+                                checked={selectedCategories.includes(cat)}
+                                onChange={() => {
+                                  if (selectedCategories.includes(cat)) setSelectedCategories(selectedCategories.filter(c => c !== cat));
+                                  else setSelectedCategories([...selectedCategories, cat]);
+                                }}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm dark:text-gray-200">{cat}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Language Accordion */}
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setOpenAccordion(openAccordion === 'language' ? null : 'language')}
+                      className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white"
+                    >
+                      <span>Target Language {selectedLanguages.length > 0 && `(${selectedLanguages.length})`}</span>
+                      <ChevronDown size={16} className={`transition-transform ${openAccordion === 'language' ? 'rotate-180' : ''}`} />
+                    </button>
+                    {openAccordion === 'language' && (
+                      <div className="max-h-60 overflow-y-auto p-2 bg-white dark:bg-black">
+                        {LANGUAGES.map(lang => (
+                          <label key={lang} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer rounded">
+                            <input
+                              type="checkbox"
+                              checked={selectedLanguages.includes(lang)}
+                              onChange={() => {
+                                if (selectedLanguages.includes(lang)) setSelectedLanguages(selectedLanguages.filter(l => l !== lang));
+                                else setSelectedLanguages([...selectedLanguages, lang]);
+                              }}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm dark:text-gray-200">{lang}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Country Accordion */}
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setOpenAccordion(openAccordion === 'country' ? null : 'country')}
+                      className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white"
+                    >
+                      <span>Target Country {selectedCountries.length > 0 && `(${selectedCountries.length})`}</span>
+                      <ChevronDown size={16} className={`transition-transform ${openAccordion === 'country' ? 'rotate-180' : ''}`} />
+                    </button>
+                    {openAccordion === 'country' && (
+                      <div className="max-h-60 overflow-y-auto p-2 bg-white dark:bg-black">
+                        {COUNTRIES.map(country => (
+                          <label key={country} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer rounded">
+                            <input
+                              type="checkbox"
+                              checked={selectedCountries.includes(country)}
+                              onChange={() => {
+                                if (selectedCountries.includes(country)) setSelectedCountries(selectedCountries.filter(c => c !== country));
+                                else setSelectedCountries([...selectedCountries, country]);
+                              }}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm dark:text-gray-200">{country}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Total Budget (Coins) *</label>
+                    <input
+                      type="number" value={totalBudgetCoins} onChange={(e) => setTotalBudgetCoins(e.target.value)}
+                      placeholder="e.g. 1000"
+                      className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Tag Section */}
               <div className="flex flex-col">
-                <div
-                  className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900"
-                  onClick={() => {
-                    setShowTagSearch(true);
-                    setSearchQuery('');
-                    fetchUsers('');
-                  }}
-                >
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900" onClick={() => { setShowTagSearch(true); setSearchQuery(''); fetchUsers(''); }}>
                   <span className="text-sm text-gray-700 dark:text-gray-300">Add Tag</span>
                   <UserPlus size={20} className="text-gray-800 dark:text-gray-200" />
                 </div>
-                <div
-                  className="px-4 py-2 max-h-56 overflow-y-auto flex flex-col gap-2 pr-2"
-                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-                >
-                  {isLoadingAllUsers ? (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Loading users...</div>
-                  ) : allUsers.length > 0 ? (
-                    allUsers.map(u => (
-                      <div
-                        key={u.id}
-                        className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 rounded-md px-2 py-1"
-                        onClick={() => {
-                          handleTagUser(u);
-                        }}
-                      >
+                {allUsers.length > 0 && (
+                  <div className="px-4 py-2 max-h-40 overflow-y-auto flex flex-col gap-2 pr-2" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                    {isLoadingAllUsers ? (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Loading users...</div>
+                    ) : allUsers.map(u => (
+                      <div key={u.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 rounded-md px-2 py-1" onClick={() => handleTagUser(u)}>
                         <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
-                          {u.avatar_url ? (
-                            <img src={u.avatar_url} className="w-full h-full object-cover" alt={u.username} />
-                          ) : (
-                            <span className="text-xs font-semibold text-gray-800 dark:text-white">
-                              {(u.username || '').slice(0, 1).toUpperCase()}
-                            </span>
-                          )}
+                          {u.avatar_url ? <img src={u.avatar_url} className="w-full h-full object-cover" alt={u.username} /> : <span className="text-xs font-semibold text-gray-800 dark:text-white">{(u.username || '').slice(0, 1).toUpperCase()}</span>}
                         </div>
                         <div className="flex flex-col overflow-hidden">
                           <span className="text-sm font-semibold truncate dark:text-white">{u.username}</span>
                           <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{u.full_name}</span>
                         </div>
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">No users found</div>
-                  )}
-                </div>
+                    ))}
+                  </div>
+                )}
 
-                {/* Advanced Settings Accordion */}
+                {/* Advanced Settings */}
                 <div className="border-b border-gray-100 dark:border-gray-800">
-                  <div
-                    className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900"
-                    onClick={() => setIsAdvancedSettingsOpen(!isAdvancedSettingsOpen)}
-                  >
+                  <div className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900" onClick={() => setIsAdvancedSettingsOpen(!isAdvancedSettingsOpen)}>
                     <span className="text-sm text-gray-800 dark:text-gray-200 font-medium">Advanced Settings</span>
                     {isAdvancedSettingsOpen ? <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" /> : <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />}
                   </div>
@@ -2236,11 +1874,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                             <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                           </div>
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Only you will see the total number of likes and views on this post. You can change this later by going to the ... menu at the top of the post. To hide like counts on other people's posts, go to your account settings. <span className="text-blue-500 cursor-pointer">Learn more</span>
-                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Only you will see the total number of likes and views on this post. <span className="text-blue-500 cursor-pointer">Learn more</span></p>
                       </div>
-
                       <div className="flex flex-col gap-2">
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-800 dark:text-gray-200">Turn off commenting</span>
@@ -2249,9 +1884,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                             <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                           </div>
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          You can change this later by going to the ... menu at the top of your post.
-                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">You can change this later by going to the ... menu at the top of your post.</p>
                       </div>
                     </div>
                   )}
@@ -2263,48 +1896,31 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
       </div>
 
       <input
-        type="file"
-        ref={fileInputRef}
-        className="hidden"
-        multiple
+        type="file" ref={fileInputRef} className="hidden" multiple
         accept={postType === 'post' ? 'image/*' : postType === 'reel' ? 'video/*' : 'image/*,video/*'}
         onChange={handleFileSelect}
       />
+
       {showVendorNotValidated && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 md:hidden">
           <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 dark:border-gray-800">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">
-              Vendor verification pending
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center">
-              Your vendor account is not yet validated. Please refresh this page or wait 2–3 working days for verification before uploading ads.
-            </p>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">Vendor verification pending</h3>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center">Your vendor account is not yet validated. Please refresh this page or wait 2–3 working days for verification before uploading ads.</p>
             <div className="flex justify-center">
-              <button
-                onClick={() => setShowVendorNotValidated(false)}
-                className="px-4 py-2.5 rounded-lg bg-insta-pink text-white font-medium hover:bg-insta-purple transition-colors"
-              >
-                OK
-              </button>
+              <button onClick={() => setShowVendorNotValidated(false)} className="px-4 py-2.5 rounded-lg bg-insta-pink text-white font-medium hover:bg-insta-purple transition-colors">OK</button>
             </div>
           </div>
         </div>
       )}
-      {/* ── Upload Progress Overlay — Instagram color scheme ── */}
-      {isSubmitting && uploadStage !== 'idle' && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(12px)' }}>
-          <div className="rounded-3xl p-8 w-full max-w-xs flex flex-col items-center gap-5"
-            style={{ background: 'linear-gradient(145deg,#1a1a1a,#0d0d0d)', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 32px 80px rgba(0,0,0,0.6)' }}>
 
-            {/* Instagram-style gradient ring */}
+      {/* Upload Progress Overlay */}
+      {isSubmitting && uploadStage !== 'idle' && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(12px)' }}>
+          <div className="rounded-3xl p-8 w-full max-w-xs flex flex-col items-center gap-5" style={{ background: 'linear-gradient(145deg,#1a1a1a,#0d0d0d)', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 32px 80px rgba(0,0,0,0.6)' }}>
             <div className="relative flex items-center justify-center w-24 h-24">
               <svg className="absolute inset-0 w-24 h-24" style={{ transform: 'rotate(-90deg)' }} viewBox="0 0 96 96">
                 <circle cx="48" cy="48" r="42" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
-                <circle
-                  cx="48" cy="48" r="42" fill="none"
-                  stroke="url(#iGrad)" strokeWidth="5"
-                  strokeLinecap="round"
+                <circle cx="48" cy="48" r="42" fill="none" stroke="url(#iGrad)" strokeWidth="5" strokeLinecap="round"
                   strokeDasharray={`${2 * Math.PI * 42}`}
                   strokeDashoffset={`${2 * Math.PI * 42 * (1 - uploadProgress / 100)}`}
                   style={{ transition: 'stroke-dashoffset 0.5s cubic-bezier(0.4,0,0.2,1)' }}
@@ -2319,11 +1935,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                   </linearGradient>
                 </defs>
               </svg>
-              {/* Center percentage */}
               <span className="relative z-10 text-2xl font-bold text-white tabular-nums">{uploadProgress}%</span>
             </div>
-
-            {/* Stage title */}
             <div className="flex flex-col items-center gap-1 text-center">
               <p className="text-base font-semibold text-white">
                 {uploadStage === 'converting' && '✂️ Trimming video…'}
@@ -2336,26 +1949,15 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                 {uploadStage === 'posting'    && 'Almost done!'}
               </p>
             </div>
-
-            {/* Instagram gradient bar */}
             <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${uploadProgress}%`,
-                  background: 'linear-gradient(90deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)'
-                }}
-              />
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${uploadProgress}%`, background: 'linear-gradient(90deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)' }} />
             </div>
-
-
           </div>
         </div>
       )}
 
-      {/* ── Success Popup — Instagram style, auto-home after 5s ── */}
+      {/* Success Popup */}
       {showSuccess && (() => {
-        // Auto-navigate after 5s
         const doClose = () => {
           setShowSuccess(false);
           setUploadStage('idle');
@@ -2368,39 +1970,17 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
           navigate('/');
         };
         return (
-          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(16px)' }}>
+          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(16px)' }}>
             <style>{`
-              @keyframes igPopIn {
-                from { opacity:0; transform:scale(0.8) translateY(16px); }
-                to   { opacity:1; transform:scale(1) translateY(0); }
-              }
-              @keyframes igCheckDraw {
-                from { stroke-dashoffset: 48; }
-                to   { stroke-dashoffset: 0; }
-              }
-              @keyframes igRingRotate {
-                from { transform: rotate(0deg); }
-                to   { transform: rotate(360deg); }
-              }
-              @keyframes igCountdown {
-                from { stroke-dashoffset: 0; }
-                to   { stroke-dashoffset: ${2 * Math.PI * 22}; }
-              }
+              @keyframes igPopIn { from { opacity:0; transform:scale(0.8) translateY(16px); } to { opacity:1; transform:scale(1) translateY(0); } }
+              @keyframes igCheckDraw { from { stroke-dashoffset: 48; } to { stroke-dashoffset: 0; } }
+              @keyframes igRingRotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
             `}</style>
-
             <div
               className="w-full max-w-xs flex flex-col items-center gap-6 rounded-3xl p-8"
-              style={{
-                animation: 'igPopIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both',
-                background: 'linear-gradient(145deg,#1c1c1c,#111)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                boxShadow: '0 40px 100px rgba(0,0,0,0.7)'
-              }}
+              style={{ animation: 'igPopIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both', background: 'linear-gradient(145deg,#1c1c1c,#111)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 40px 100px rgba(0,0,0,0.7)' }}
             >
-              {/* Instagram gradient checkmark circle */}
               <div className="relative flex items-center justify-center w-24 h-24">
-                {/* Spinning rainbow ring */}
                 <svg className="absolute inset-0 w-24 h-24" style={{ animation: 'igRingRotate 3s linear infinite' }} viewBox="0 0 96 96">
                   <defs>
                     <linearGradient id="igSuccessGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -2413,48 +1993,32 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
                   </defs>
                   <circle cx="48" cy="48" r="44" fill="none" stroke="url(#igSuccessGrad)" strokeWidth="4" strokeDasharray="138 138" strokeLinecap="round" />
                 </svg>
-                {/* Inner circle with checkmark */}
-                <div className="w-16 h-16 rounded-full flex items-center justify-center"
-                  style={{ background: 'linear-gradient(135deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)' }}>
+                <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)' }}>
                   <svg className="w-8 h-8" viewBox="0 0 32 32" fill="none">
-                    <path
-                      d="M7 17l6 6 12-12"
-                      stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                      strokeDasharray="48" strokeDashoffset="0"
-                      style={{ animation: 'igCheckDraw 0.5s 0.15s ease both' }}
-                    />
+                    <path d="M7 17l6 6 12-12" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                      strokeDasharray="48" strokeDashoffset="0" style={{ animation: 'igCheckDraw 0.5s 0.15s ease both' }} />
                   </svg>
                 </div>
               </div>
-
-              {/* Text */}
               <div className="flex flex-col items-center gap-1.5 text-center">
                 <h3 className="text-xl font-bold text-white">
-                  {postType === 'reel' ? 'Reel Published! 🎉' : 'Post Shared! 🎉'}
+                  {postType === 'reel' ? 'Reel Published! 🎉' : postType === 'ad' ? 'Ad Published! 🎉' : 'Post Shared! 🎉'}
                 </h3>
                 <p className="text-sm text-white/50">
-                  {postType === 'reel' ? 'Your reel is now live' : 'Your post has been shared'}
+                  {postType === 'reel' ? 'Your reel is now live' : postType === 'ad' ? 'Your ad is now running' : 'Your post has been shared'}
                 </p>
               </div>
-
-              {/* Instagram gradient divider */}
               <div className="w-full h-px" style={{ background: 'linear-gradient(90deg,transparent,#d62976,transparent)' }} />
-
-              {/* Countdown auto-redirect */}
               <SuccessCountdown onDone={doClose} />
-
             </div>
           </div>
         );
       })()}
 
-      {/* ── Error Popup ── */}
+      {/* Error Popup */}
       {uploadStage === 'error' && !isSubmitting && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div
-            className="bg-white dark:bg-[#1a1a1a] rounded-2xl p-8 w-full max-w-sm shadow-2xl border border-red-100 dark:border-red-900/40 flex flex-col items-center gap-5"
-            style={{ animation: 'popIn 0.3s ease both' }}
-          >
+          <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl p-8 w-full max-w-sm shadow-2xl border border-red-100 dark:border-red-900/40 flex flex-col items-center gap-5">
             <div className="w-20 h-20 rounded-full flex items-center justify-center bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800">
               <svg className="w-9 h-9 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
@@ -2465,19 +2029,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post' }) => {
               <p className="text-sm text-gray-500 dark:text-gray-400">{uploadError || 'Something went wrong. Please try again.'}</p>
             </div>
             <div className="flex gap-3 w-full">
-              <button
-                onClick={() => { setUploadStage('idle'); setUploadProgress(0); setUploadError(''); }}
-                className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => { setUploadStage('idle'); setUploadProgress(0); setUploadError(''); handleNextStep(); }}
-                className="flex-1 py-3 rounded-xl text-white font-semibold text-sm transition-all active:scale-95"
-                style={{ background: 'linear-gradient(135deg, #f472b6, #a855f7)' }}
-              >
-                Try Again
-              </button>
+              <button onClick={() => { setUploadStage('idle'); setUploadProgress(0); setUploadError(''); }} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+              <button onClick={() => { setUploadStage('idle'); setUploadProgress(0); setUploadError(''); handleNextStep(); }} className="flex-1 py-3 rounded-xl text-white font-semibold text-sm transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #f472b6, #a855f7)' }}>Try Again</button>
             </div>
           </div>
         </div>

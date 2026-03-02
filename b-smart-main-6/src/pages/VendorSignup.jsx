@@ -218,8 +218,6 @@ const VendorSignup = () => {
     city: '',
     country: '',
     businessNote: '',
-    creditsPackage: '',
-    interests: '',
     targetPeople: '',
     locationTarget: '',
     campaignIdea: ''
@@ -249,20 +247,13 @@ const VendorSignup = () => {
       }
     }
 
-    if (step === 3) {
-      if (!form.creditsPackage) {
-        setError('Please select a credits package.');
-        return false;
-      }
-    }
-
     setError('');
     return true;
   };
 
   const handleNext = () => {
     if (!validateStep()) return;
-    setStep((prev) => Math.min(prev + 1, 4));
+    setStep((prev) => Math.min(prev + 1, 3));
   };
 
   const handleBack = () => {
@@ -277,15 +268,6 @@ const VendorSignup = () => {
     setError('');
     setCompleted(false);
     setLoading(true);
-
-    const credits =
-      form.creditsPackage === '50000'
-        ? 50000
-        : form.creditsPackage === '150000'
-          ? 150000
-          : form.creditsPackage === '200000'
-            ? 200000
-            : 0;
 
     const payload = {
       email: form.email,
@@ -305,8 +287,7 @@ const VendorSignup = () => {
         city: form.city,
         note: form.businessNote
       },
-      credits,
-      interests: form.interests,
+      credits: 0,
       target_people: form.targetPeople,
       location_target: form.locationTarget,
       campaign_idea: form.campaignIdea
@@ -326,8 +307,7 @@ const VendorSignup = () => {
   const steps = [
     { id: 1, label: 'Account' },
     { id: 2, label: 'Business' },
-    { id: 3, label: 'Credits' },
-    { id: 4, label: 'Audience' }
+    { id: 3, label: 'Audience' }
   ];
 
   const renderStep = () => {
@@ -602,72 +582,9 @@ const VendorSignup = () => {
       );
     }
 
-    if (step === 3) {
-      const packages = [
-        { id: '50000', name: 'Starter', credits: '50,000', description: 'Perfect for testing campaigns and first ads.' },
-        { id: '150000', name: 'Growth', credits: '150,000', description: 'Best for growing brands and multi-channel ads.' },
-        { id: '200000', name: 'Scale', credits: '200,000', description: 'For serious campaigns and always-on promotion.' }
-      ];
-
-      return (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {packages.map((pkg) => {
-              const selected = form.creditsPackage === pkg.id;
-              return (
-                <button
-                  key={pkg.id}
-                  type="button"
-                  onClick={() => setForm((prev) => ({ ...prev, creditsPackage: pkg.id }))}
-                  className={`relative rounded-2xl border px-4 py-4 text-left transition-all bg-gray-50 dark:bg-gray-900 ${selected
-                    ? 'border-insta-pink shadow-lg shadow-insta-pink/30 ring-2 ring-insta-pink/20 scale-[1.02]'
-                    : 'border-gray-200 dark:border-gray-800 hover:border-insta-pink/60 hover:shadow-md'
-                    }`}
-                >
-                  {selected && (
-                    <div className="absolute top-3 right-3 text-insta-pink">
-                      <CheckCircle2 size={18} />
-                    </div>
-                  )}
-                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                    {pkg.name} Package
-                  </div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                    {pkg.credits} credits
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                    Approx. budget {pkg.id}
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{pkg.description}</p>
-                </button>
-              );
-            })}
-          </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            You can change or top up your credits later from your wallet.
-          </p>
-        </div>
-      );
-    }
-
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Interests</label>
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
-                <Users size={18} />
-              </div>
-              <input
-                name="interests"
-                value={form.interests}
-                onChange={handleChange}
-                placeholder="Fashion, Food, Tech, Education..."
-                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
-              />
-            </div>
-          </div>
           <div className="space-y-1">
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Target People</label>
             <div className="relative group">
@@ -722,7 +639,7 @@ const VendorSignup = () => {
     );
   };
 
-  const progress = (step / 4) * 100;
+  const progress = (step / 3) * 100;
 
   return (
     <div className="h-screen flex bg-white dark:bg-black overflow-hidden">
@@ -739,7 +656,6 @@ const VendorSignup = () => {
           <div className="mt-10 flex flex-wrap gap-3 justify-center text-sm text-white/90">
             <span className="px-3 py-1 rounded-full bg-white/15 border border-white/30">Smart audience targeting</span>
             <span className="px-3 py-1 rounded-full bg-white/15 border border-white/30">Real-time performance</span>
-            <span className="px-3 py-1 rounded-full bg-white/15 border border-white/30">Flexible credit packages</span>
           </div>
           <div className="absolute -top-24 -left-24 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
           <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-purple-900/20 rounded-full blur-3xl" />
@@ -767,7 +683,7 @@ const VendorSignup = () => {
           <div className="mb-6">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">Create Vendor Account</h2>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
-              Step {step} of 4 · Set up your business profile to run ads.
+              Step {step} of 3 · Set up your business profile to run ads.
             </p>
           </div>
 
@@ -797,7 +713,7 @@ const VendorSignup = () => {
             </div>
           </div>
 
-          <form onSubmit={step === 4 ? handleSubmit : (e) => { e.preventDefault(); handleNext(); }} className="space-y-5">
+          <form onSubmit={step === 3 ? handleSubmit : (e) => { e.preventDefault(); handleNext(); }} className="space-y-5">
             {renderStep()}
 
             {error && (
@@ -829,7 +745,7 @@ const VendorSignup = () => {
                 Back
               </button>
 
-              {step < 4 && (
+              {step < 3 && (
                 <button
                   type="submit"
                   className="inline-flex items-center px-5 py-2.5 rounded-xl bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange text-white text-sm font-semibold shadow-lg shadow-insta-pink/30 hover:shadow-xl hover:shadow-insta-pink/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70 disabled:hover:scale-100 disabled:shadow-none"
@@ -839,7 +755,7 @@ const VendorSignup = () => {
                 </button>
               )}
 
-              {step === 4 && (
+              {step === 3 && (
                 <button
                   type="submit"
                   disabled={loading}

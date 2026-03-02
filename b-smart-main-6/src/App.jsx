@@ -2,13 +2,14 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchMe, setLoading } from './store/authSlice';
-import api from './lib/api';
+
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import CreatePost from './pages/CreatePost';
 import Reels from './pages/Reels';
 import Promote from './pages/Promote';
 import Ads from './pages/Ads';
+
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
@@ -63,6 +64,7 @@ function App() {
           <Route path="/reels" element={<Reels />} />
           <Route path="/promote" element={<Promote />} />
           <Route path="/ads" element={<Ads />} />
+
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/:userId" element={<Profile />} />
           <Route path="/edit-profile" element={<EditProfile />} />

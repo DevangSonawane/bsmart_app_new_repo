@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -17,38 +18,51 @@ import 'screens/post_detail_screen.dart';
 import 'screens/profile_screen.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    // ignore - .env may be absent in some environments
-  }
-
-  {
-    String? apiBaseUrl;
     try {
-      apiBaseUrl = dotenv.env['API_BASE_URL'];
-    } catch (_) {}
-    ApiConfig.init(baseUrl: apiBaseUrl);
-  }
+      await dotenv.load(fileName: ".env");
+    } catch (e) {
+      debugPrint('Error loading .env: $e');
+      // ignore - .env may be absent in some environments
+    }
 
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+    {
+      String? apiBaseUrl;
+      try {
+        apiBaseUrl = dotenv.env['API_BASE_URL'];
+      } catch (_) {}
+      ApiConfig.init(baseUrl: apiBaseUrl);
+    }
 
-  final store = createStore();
-  setGlobalStore(store);
-  final themeNotifier = await ThemeNotifier.create();
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
 
-  runApp(StoreProvider<AppState>(
-    store: store,
-    child: ThemeScope(
-      notifier: themeNotifier,
-      child: const BSmartApp(),
-    ),
-  ));
+    final store = createStore();
+    setGlobalStore(store);
+    
+    ThemeNotifier themeNotifier;
+    try {
+      themeNotifier = await ThemeNotifier.create();
+    } catch (e) {
+      debugPrint('Error initializing ThemeNotifier: $e');
+      themeNotifier = ThemeNotifier(initialDark: false);
+    }
+
+    runApp(StoreProvider<AppState>(
+      store: store,
+      child: ThemeScope(
+        notifier: themeNotifier,
+        child: const BSmartApp(),
+      ),
+    ));
+  }, (error, stack) {
+    debugPrint('Uncaught error in main: $error');
+    debugPrint(stack.toString());
+  });
 }
 
 class BSmartApp extends StatefulWidget {

@@ -18,7 +18,7 @@ import '../models/feed_post_model.dart';
 import '../models/media_model.dart';
 import '../widgets/post_detail_modal.dart';
 import '../widgets/comments_sheet.dart';
-import 'ads_screen.dart';
+import 'ads_page_screen.dart';
 import 'promote_screen.dart';
 import 'reels_screen.dart';
 import 'story_viewer_screen.dart';
@@ -774,7 +774,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     final posts = feedState.posts;
     final isLoading = feedState.isLoading;
     final isDesktop = MediaQuery.sizeOf(context).width >= 768;
-    final isFullScreen = _currentIndex == 3 || _currentIndex == 4; // Promote, Reels
+    final isFullScreen = _currentIndex == 1 || _currentIndex == 3 || _currentIndex == 4; // Ads, Promote, Reels
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -980,7 +980,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   ),
           ),
           // Ads tab
-          const AdsScreen(),
+          const AdsPageScreen(),
           // Placeholder for create (kept empty since create opens modal/route)
           Container(),
           // Promote tab

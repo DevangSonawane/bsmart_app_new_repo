@@ -8,7 +8,7 @@ import 'screens/create_screen.dart';
 import 'screens/create_upload_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/reels_screen.dart';
-import 'screens/ads_screen.dart';
+import 'screens/ads_page_screen.dart';
 import 'screens/promote_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/wallet_screen.dart';
@@ -44,7 +44,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/create': (ctx) => const CreateScreen(),
   // '/profile' is intentionally removed — handled by onGenerateRoute
   '/reels': (ctx) => const ReelsScreen(),
-  '/ads': (ctx) => const AdsScreen(),
+  '/ads': (ctx) => const AdsPageScreen(),
   '/promote': (ctx) => const PromoteScreen(),
   '/settings': (ctx) => const SettingsScreen(),
   '/wallet': (ctx) => const WalletScreen(),
