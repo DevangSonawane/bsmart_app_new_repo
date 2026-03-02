@@ -132,7 +132,7 @@ class _SignupAgeVerificationScreenState
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: Icon(LucideIcons.arrowLeft),
+          icon: const Icon(LucideIcons.arrowLeft),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -148,7 +148,7 @@ class _SignupAgeVerificationScreenState
                 children: [
                   const SizedBox(height: 40),
                   // Icon
-                  Center(
+                  const Center(
                     child: ClayContainer(
                       width: 100,
                       height: 100,
@@ -191,7 +191,7 @@ class _SignupAgeVerificationScreenState
                       ),
                       child: Row(
                         children: [
-                          Icon(
+                          const Icon(
                             LucideIcons.calendar,
                             color: InstagramTheme.textGrey,
                           ),
@@ -209,7 +209,7 @@ class _SignupAgeVerificationScreenState
                               ),
                             ),
                           ),
-                          Icon(
+                          const Icon(
                             LucideIcons.chevronRight,
                             size: 16,
                             color: InstagramTheme.textGrey,
@@ -248,7 +248,7 @@ class _SignupAgeVerificationScreenState
                       ),
                       child: Row(
                         children: [
-                          Icon(
+                          const Icon(
                             LucideIcons.info,
                             color: Colors.orange,
                           ),
@@ -280,7 +280,7 @@ class _SignupAgeVerificationScreenState
                       ),
                       child: Row(
                         children: [
-                          Icon(
+                          const Icon(
                             LucideIcons.circleAlert,
                             color: InstagramTheme.errorRed,
                           ),

@@ -92,7 +92,7 @@ class _BSmartAppState extends State<BSmartApp> {
   @override
   Widget build(BuildContext context) {
     if (!_isInitialized) {
-      return MaterialApp(
+      return const MaterialApp(
         home: Scaffold(
           body: Center(
             child: CircularProgressIndicator(

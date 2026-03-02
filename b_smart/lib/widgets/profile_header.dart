@@ -17,7 +17,7 @@ class ProfileHeader extends StatelessWidget {
   final VoidCallback? onAvatarTap;
 
   const ProfileHeader({
-    Key? key,
+    super.key,
     required this.username,
     this.fullName,
     this.bio,
@@ -30,7 +30,7 @@ class ProfileHeader extends StatelessWidget {
     this.onEdit,
     this.onFollow,
     this.onAvatarTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +48,7 @@ class ProfileHeader extends StatelessWidget {
                 onTap: onAvatarTap,
                 child: Container(
                   padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: DesignTokens.instaGradient,
                   ),
@@ -122,16 +122,28 @@ class ProfileHeader extends StatelessWidget {
                     child: InkWell(
                       onTap: onFollow,
                       borderRadius: BorderRadius.circular(10),
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: const BoxDecoration(
-                          gradient: DesignTokens.instaGradient,
-                          borderRadius: BorderRadius.all(Radius.circular(10)),
+                        decoration: BoxDecoration(
+                          gradient: isFollowing ? null : DesignTokens.instaGradient,
+                          color: isFollowing ? Colors.grey.withOpacity(0.2) : null,
+                          borderRadius: const BorderRadius.all(Radius.circular(10)),
+                          border: isFollowing ? Border.all(color: Colors.grey.withOpacity(0.3)) : null,
                         ),
                         alignment: Alignment.center,
-                        child: Text(
-                          isFollowing ? 'Following' : 'Follow',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          child: Text(
+                            isFollowing ? 'Following' : 'Follow',
+                            key: ValueKey<bool>(isFollowing),
+                            style: TextStyle(
+                              color: isFollowing ? Colors.grey : Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                       ),
                     ),

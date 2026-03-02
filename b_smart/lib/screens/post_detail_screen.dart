@@ -16,7 +16,7 @@ class PostDetailScreen extends StatefulWidget {
   final String postId;
   final FeedPost? initialPost;
 
-  const PostDetailScreen({Key? key, required this.postId, this.initialPost}) : super(key: key);
+  const PostDetailScreen({super.key, required this.postId, this.initialPost});
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -402,7 +402,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                                 mainAxisSize: MainAxisSize.min,
                                                                 children: [
                                                                   const SizedBox(height: 8),
-                                                                  SizedBox(
+                                                                  const SizedBox(
                                                                     width: 48,
                                                                     height: 48,
                                                                     child: CircularProgressIndicator(

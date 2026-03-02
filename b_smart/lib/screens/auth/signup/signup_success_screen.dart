@@ -23,7 +23,7 @@ class SignupSuccessScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                ClayContainer(
+                const ClayContainer(
                   width: 120,
                   height: 120,
                   borderRadius: 60,

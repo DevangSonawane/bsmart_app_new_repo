@@ -3,12 +3,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
-import '../api/api_client.dart';
 import '../models/story_model.dart';
 import '../services/feed_service.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/api.dart';
-import '../api/api_exceptions.dart';
 
 class StoryViewerScreen extends StatefulWidget {
   final List<StoryGroup> storyGroups;
@@ -86,9 +84,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
     final isImage = currentStory.mediaType == StoryMediaType.image;
     final durationMs = isImage ? 5000 : ((currentStory.durationSec ?? 5) * 1000);
-    final tickMs = 50;
+    const tickMs = 50;
     final ticks = (durationMs / tickMs).clamp(1, 100000).toInt();
-    _autoPlayTimer = Timer.periodic(Duration(milliseconds: tickMs), (timer) {
+    _autoPlayTimer = Timer.periodic(const Duration(milliseconds: tickMs), (timer) {
       setState(() {
         _progress += 1.0 / ticks;
       });
@@ -382,7 +380,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                         ],
                       ),
                       IconButton(
-                        icon: Icon(LucideIcons.x, color: Colors.white),
+                        icon: const Icon(LucideIcons.x, color: Colors.white),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                     ],
@@ -419,9 +417,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
+                  const Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
+                    children: [
                       Text('❤️ 😂 😮 😢 👏 🔥 🎉 💯', style: TextStyle(color: Colors.white70)),
                     ],
                   ),
@@ -558,7 +556,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                         httpHeaders: _videoHeaders,
                         fit: BoxFit.contain,
                         placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Colors.white)),
-                        errorWidget: (_, __, ___) => Center(child: Icon(LucideIcons.image, size: 100, color: Colors.white54)),
+                        errorWidget: (_, __, ___) => const Center(child: Icon(LucideIcons.image, size: 100, color: Colors.white54)),
                       )
                     : (story.mediaType == StoryMediaType.video && hasUrl && _videoCtl != null && _videoCtl!.value.isInitialized)
                         ? FittedBox(
@@ -571,8 +569,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                           )
                         : Center(
                             child: story.mediaType == StoryMediaType.video
-                                ? Icon(LucideIcons.play, size: 100, color: Colors.white54)
-                                : Icon(LucideIcons.image, size: 100, color: Colors.white54),
+                                ? const Icon(LucideIcons.play, size: 100, color: Colors.white54)
+                                : const Icon(LucideIcons.image, size: 100, color: Colors.white54),
                           ),
               ),
             ),

@@ -1,5 +1,4 @@
 import '../api/api.dart';
-import '../config/api_config.dart';
 import '../models/feed_post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
@@ -113,7 +112,7 @@ class FeedService {
         userId: 'user-3',
         userName: 'Bob Johnson',
         mediaType: PostMediaType.video,
-        mediaUrls: ['https://assets.mixkit.co/videos/preview/mixkit-tree-branches-in-the-breeze-1188-large.mp4'],
+        mediaUrls: ['https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4'],
         thumbnailUrl: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80',
         caption: 'Working on something exciting! 💻 #coding #tech',
         hashtags: ['coding', 'tech'],
@@ -157,7 +156,7 @@ class FeedService {
         userId: 'user-6',
         userName: 'Sarah Davis',
         mediaType: PostMediaType.reel,
-        mediaUrls: ['https://assets.mixkit.co/videos/preview/mixkit-girl-dancing-happy-in-a-room-4179-large.mp4'],
+        mediaUrls: ['https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4'],
         thumbnailUrl: 'https://images.unsplash.com/photo-1547153760-18fc86324498?w=800&q=80',
         caption: 'Quick tutorial! #tutorial #tips',
         hashtags: ['tutorial', 'tips'],
@@ -240,9 +239,9 @@ class FeedService {
       final data = await _postsApi.getFeed(page: page, limit: limit);
       List<Map<String, dynamic>> items = [];
       if (data is List) {
-        items = (data as List).cast<Map<String, dynamic>>();
+        items = (data).cast<Map<String, dynamic>>();
       } else if (data is Map) {
-        final map = data as Map;
+        final map = data;
         if (map['posts'] is List) {
           items = (map['posts'] as List).cast<Map<String, dynamic>>();
         } else if (map['data'] is List) {
@@ -428,12 +427,43 @@ class FeedService {
           }
 
           String? thumbnailUrl;
+          double? aspectRatio;
           if (media.isNotEmpty) {
             final first = media.first;
             if (first is Map) {
-              final thumb = (first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'])?.toString();
-              if (thumb != null && thumb.isNotEmpty) {
-                thumbnailUrl = UrlHelper.normalizeUrl(thumb);
+              // Handle thumbnail being String, Map, or List
+              dynamic rawThumb = first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
+              
+              if (rawThumb is String) {
+                thumbnailUrl = rawThumb;
+              } else if (rawThumb is Map) {
+                thumbnailUrl = (rawThumb['url'] ?? rawThumb['fileUrl'] ?? rawThumb['path'])?.toString();
+              } else if (rawThumb is List && rawThumb.isNotEmpty) {
+                final t = rawThumb.first;
+                if (t is Map) {
+                   thumbnailUrl = (t['url'] ?? t['fileUrl'] ?? t['path'])?.toString();
+                } else if (t is String) {
+                   thumbnailUrl = t;
+                }
+              }
+
+              if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+                thumbnailUrl = UrlHelper.normalizeUrl(thumbnailUrl);
+              }
+
+              // Parse stored aspect ratio from upload
+              final rawAr = first['aspect_ratio']
+                  ?? first['aspectRatio']
+                  ?? (first['crop'] is Map ? (first['crop'] as Map)['aspect_ratio'] : null);
+              if (rawAr != null) {
+                if (rawAr is double) {
+                  aspectRatio = rawAr > 0 ? rawAr : null;
+                } else if (rawAr is int) {
+                  aspectRatio = rawAr > 0 ? rawAr.toDouble() : null;
+                } else if (rawAr is String) {
+                  aspectRatio = double.tryParse(rawAr);
+                  if (aspectRatio != null && aspectRatio <= 0) aspectRatio = null;
+                }
               }
             }
           }
@@ -448,6 +478,7 @@ class FeedService {
             mediaType: mediaType,
             mediaUrls: mediaUrls,
             thumbnailUrl: thumbnailUrl,
+            aspectRatio: aspectRatio,
             caption: item['caption'] as String?,
             hashtags: ((item['tags'] as List<dynamic>?) ?? [])
                 .map((e) => e.toString())

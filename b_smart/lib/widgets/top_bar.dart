@@ -5,7 +5,7 @@ import '../screens/profile_screen.dart';
 
 class TopBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
-  const TopBar({Key? key, this.title = ''}) : super(key: key);
+  const TopBar({super.key, this.title = ''});
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +34,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
                 MaterialPageRoute(builder: (context) => const ProfileScreen()),
               );
             },
-            child: CircleAvatar(
+            child: const CircleAvatar(
               radius: 16,
               backgroundColor: DesignTokens.instaPink,
               child: Icon(LucideIcons.user, size: 16, color: Colors.white),

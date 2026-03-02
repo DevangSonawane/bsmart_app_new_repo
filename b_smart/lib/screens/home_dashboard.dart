@@ -7,7 +7,6 @@ import '../services/supabase_service.dart';
 import '../services/wallet_service.dart';
 import '../state/app_state.dart';
 import '../state/profile_actions.dart';
-import '../state/profile_actions.dart';
 import '../state/feed_actions.dart';
 import '../widgets/post_card.dart';
 import '../widgets/stories_row.dart';
@@ -35,7 +34,7 @@ import 'profile_screen.dart';
 class HomeDashboard extends StatefulWidget {
   final int? initialIndex;
 
-  const HomeDashboard({Key? key, this.initialIndex}) : super(key: key);
+  const HomeDashboard({super.key, this.initialIndex});
 
   @override
   State<HomeDashboard> createState() => _HomeDashboardState();
@@ -74,7 +73,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
   }
 
   Future<void> _loadData(Store<AppState> store) async {
-    store.dispatch(SetFeedLoading(true));
+    // Only set loading if it's the initial load or a full refresh, not for pagination
+    if (store.state.feedState.posts.isEmpty) {
+      store.dispatch(SetFeedLoading(true));
+    }
+    
     // Use REST API-backed CurrentUser helper for the authenticated user ID.
     final currentUserId = await CurrentUser.id;
     final currentProfile =
@@ -150,6 +153,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
       if (currentUserId != null && currentProfile != null) {
         store.dispatch(SetProfile(currentProfile));
       }
+      store.dispatch(SetFeedLoading(false));
     }
   }
 
@@ -180,10 +184,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
       } else {
         loc = '${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}';
       }
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _currentLocation = loc;
         _locationLoading = false;
       });
+      }
     } catch (_) {
       if (mounted) setState(() => _locationLoading = false);
     }
@@ -242,8 +248,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
 
   void _onSharePost(FeedPost post) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Share link copied'),
+      const SnackBar(
+        content: Text('Share link copied'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -284,12 +290,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     store.dispatch(UpdatePostFollowed(post.id, followed));
     if (mounted) setState(() {});
     
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(SnackBar(
-      content: Text(followed ? 'Following ${post.userName}' : 'Unfollowed ${post.userName}'),
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 1),
-    ));
+    // Snackbar notification removed for a cleaner experience
 
     // 2. Call Service & Handle Result
     () async {
@@ -303,8 +304,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
         // Revert UI if API failed
         store.dispatch(UpdatePostFollowed(post.id, !followed));
         setState(() {});
-        messenger.clearSnackBars();
-        messenger.showSnackBar(const SnackBar(content: Text('Action failed')));
       } else {
         // Success: Update "My Profile" following count in Redux
         final meId = await CurrentUser.id;
@@ -393,7 +392,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             const SizedBox(height: 8),
-                                            SizedBox(
+                                            const SizedBox(
                                               width: 48,
                                               height: 48,
                                               child: CircularProgressIndicator(
@@ -416,10 +415,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             const SizedBox(height: 4),
-                                            Text(
+                                            const Text(
                                               'Delete Post?',
                                               textAlign: TextAlign.center,
-                                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                             ),
                                             const SizedBox(height: 8),
                                             Text(
@@ -703,7 +702,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
           decoration: BoxDecoration(
             color: Theme.of(ctx).cardColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 12, offset: const Offset(0, -4))],
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, -4))],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -718,7 +717,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
-                  child: Icon(LucideIcons.image, color: Colors.white, size: 22),
+                  child: const Icon(LucideIcons.image, color: Colors.white, size: 22),
                 ),
                 title: const Text('Create Post'),
                 subtitle: Text('Photo or video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
@@ -741,7 +740,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
-                  child: Icon(LucideIcons.video, color: Colors.white, size: 22),
+                  child: const Icon(LucideIcons.video, color: Colors.white, size: 22),
                 ),
                 title: const Text('Upload Reel'),
                 subtitle: Text('Short video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
@@ -824,8 +823,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                 Container(
                                   width: 20,
                                   height: 20,
-                                  decoration: BoxDecoration(gradient: DesignTokens.instaGradient, shape: BoxShape.circle),
-                                  child: Icon(LucideIcons.wallet, size: 12, color: Colors.white),
+                                  decoration: const BoxDecoration(gradient: DesignTokens.instaGradient, shape: BoxShape.circle),
+                                  child: const Icon(LucideIcons.wallet, size: 12, color: Colors.white),
                                 ),
                                 const SizedBox(width: 6),
                                 Text('$_balance', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: appBarFg)),
@@ -888,41 +887,49 @@ class _HomeDashboardState extends State<HomeDashboard> {
           RefreshIndicator(
             onRefresh: _onRefresh,
             child: isLoading
-                ? Center(child: CircularProgressIndicator(color: DesignTokens.instaPink))
-                : SingleChildScrollView(
+                ? const Center(child: CircularProgressIndicator(color: DesignTokens.instaPink))
+                : CustomScrollView(
+                    cacheExtent: 1500, // Preload content (especially reels) before it appears
                     physics: const AlwaysScrollableScrollPhysics(),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildLocationSelector(isDark: isDark),
-                        StoriesRow(
-                          users: _storyUsers,
-                          onYourStoryTap: () {
-                            if (_yourStoryHasActive) {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => OwnStoryViewerScreen(
-                                    stories: _myStories,
-                                    storyId: _myStoryId,
-                                    userName: (_currentUserProfile?['username'] ?? _currentUserProfile?['full_name'] ?? 'You').toString(),
-                                  ),
-                                ),
-                              );
-                            } else {
-                              _openStoryCamera();
-                            }
-                          },
-                          onYourStoryAddTap: _openStoryCamera,
-                          onUserStoryTap: _storyGroups.isEmpty ? null : _onStoryTap,
-                          yourStoryHasActive: _yourStoryHasActive,
-                          showYourStory: true,
-                          userStatuses: _storyStatuses,
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildLocationSelector(isDark: isDark),
+                            StoriesRow(
+                              users: _storyUsers,
+                              onYourStoryTap: () {
+                                if (_yourStoryHasActive) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => OwnStoryViewerScreen(
+                                        stories: _myStories,
+                                        storyId: _myStoryId,
+                                        userName: (_currentUserProfile?['username'] ?? _currentUserProfile?['full_name'] ?? 'You').toString(),
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  _openStoryCamera();
+                                }
+                              },
+                              onYourStoryAddTap: _openStoryCamera,
+                              onUserStoryTap: _storyGroups.isEmpty ? null : _onStoryTap,
+                              yourStoryHasActive: _yourStoryHasActive,
+                              showYourStory: true,
+                              userStatuses: _storyStatuses,
+                            ),
+                          ],
                         ),
-                        if (posts.isEmpty)
-                          Padding(
+                      ),
+                      if (posts.isEmpty)
+                        SliverFillRemaining(
+                          child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.center,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(LucideIcons.image, size: 48, color: Theme.of(context).textTheme.bodyMedium?.color),
                                 const SizedBox(height: 12),
@@ -945,17 +952,17 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                 ),
                               ],
                             ),
-                          )
-                        else
-                          ListView.builder(
-                            physics: const NeverScrollableScrollPhysics(),
-                            shrinkWrap: true,
-                            itemCount: posts.length,
-                            itemBuilder: (context, index) {
+                          ),
+                        )
+                      else
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
                               final p = posts[index];
                               final isOwnPost =
                                   _currentUserId != null && p.userId == _currentUserId;
                               return PostCard(
+                                key: ValueKey('card-${p.id}'), // Prevent unnecessary rebuilds
                                 post: p,
                                 onLike: () => _onLikePost(p),
                                 onComment: () => _onCommentPost(p),
@@ -965,10 +972,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                 onMore: () => _onMorePost(context, p),
                               );
                             },
+                            childCount: posts.length,
                           ),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
+                        ),
+                      const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                    ],
                   ),
           ),
           // Ads tab
@@ -1097,7 +1105,7 @@ class _DesktopNotificationsButtonState extends State<_DesktopNotificationsButton
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text('Notifications', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: fgColor)),
-                            GestureDetector(onTap: () {}, child: Text('Mark all read', style: TextStyle(fontSize: 12, color: DesignTokens.instaPink, fontWeight: FontWeight.w500))),
+                            GestureDetector(onTap: () {}, child: const Text('Mark all read', style: TextStyle(fontSize: 12, color: DesignTokens.instaPink, fontWeight: FontWeight.w500))),
                           ],
                         ),
                       ),
@@ -1106,7 +1114,7 @@ class _DesktopNotificationsButtonState extends State<_DesktopNotificationsButton
                         child: ListView(
                           shrinkWrap: true,
                           padding: EdgeInsets.zero,
-                          children: [
+                          children: const [
                             _NotificationTile(icon: LucideIcons.bell, iconColor: Colors.blue, title: 'New follower: Sarah', time: '2 min ago'),
                             _NotificationTile(icon: LucideIcons.heart, iconColor: DesignTokens.instaPink, title: 'Mike liked your post', time: '1 hour ago'),
                             _NotificationTile(icon: LucideIcons.messageCircle, iconColor: DesignTokens.instaPurple, title: 'Anna commented: "Amazing!"', time: '2 hours ago'),
@@ -1175,7 +1183,7 @@ class _FloatingWallet extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(gradient: DesignTokens.instaGradient, shape: BoxShape.circle, boxShadow: [BoxShadow(color: DesignTokens.instaPink.withAlpha(80), blurRadius: 8)]),
-                child: Icon(LucideIcons.wallet, size: 20, color: Colors.white),
+                child: const Icon(LucideIcons.wallet, size: 20, color: Colors.white),
               ),
               const SizedBox(width: 12),
               Column(

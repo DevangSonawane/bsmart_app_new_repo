@@ -1,45 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-import '../models/feed_post_model.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:extended_image/extended_image.dart';
 import 'package:video_player/video_player.dart';
-import 'package:http/http.dart' as http;
+import '../models/feed_post_model.dart';
 import '../api/api_client.dart';
-import '../config/api_config.dart';
 import '../theme/design_tokens.dart';
 import '../utils/url_helper.dart';
-
-class _TrianglePainter extends CustomPainter {
-  final bool isUp;
-  final Color color;
-
-  _TrianglePainter({this.isUp = true, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final path = Path();
-    if (isUp) {
-      path.moveTo(0, size.height);
-      path.lineTo(size.width / 2, 0);
-      path.lineTo(size.width, size.height);
-    } else {
-      path.moveTo(0, 0);
-      path.lineTo(size.width / 2, size.height);
-      path.lineTo(size.width, 0);
-    }
-    path.close();
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
+import '../config/api_config.dart';
 
 class PostCard extends StatefulWidget {
   final FeedPost post;
@@ -51,7 +19,7 @@ class PostCard extends StatefulWidget {
   final VoidCallback? onMore;
 
   const PostCard({
-    Key? key,
+    super.key,
     required this.post,
     this.onLike,
     this.onComment,
@@ -59,943 +27,488 @@ class PostCard extends StatefulWidget {
     this.onSave,
     this.onFollow,
     this.onMore,
-  }) : super(key: key);
+  });
 
   @override
   State<PostCard> createState() => _PostCardState();
 }
 
-class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin {
+class _PostCardState extends State<PostCard> {
   VideoPlayerController? _videoCtl;
-  Future<void>? _initVideo;
-  Map<String, String>? _imageHeaders;
-  String? _resolvedImageUrl;
-  String? _resolvedThumbnailUrl;
+  Map<String, String>? _authHeaders;
   double? _mediaAspect;
-  late final AnimationController _heartController;
-  late final Animation<double> _heartScale;
-  late final Animation<double> _heartOpacity;
-  bool _isHeartAnimating = false;
+
+  // Tracks whether this card is currently in the viewport
   bool _isVisible = false;
+  // Tracks whether the user manually paused (tap to pause/resume)
+  bool _userWantsPaused = false;
   bool _isMuted = true;
-  bool _isPlaying = true;
-  bool _showTags = false;
+  // Whether the video controller has finished initializing
+  bool _videoInitialized = false;
+  // Whether we've already started the init process
+  bool _initStarted = false;
+
+  bool get _isVideoPost =>
+      widget.post.mediaType == PostMediaType.video ||
+      widget.post.mediaType == PostMediaType.reel;
 
   @override
   void initState() {
     super.initState();
-    _heartController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-    _heartScale = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 0.0, end: 1.3).chain(CurveTween(curve: Curves.easeOut)),
-        weight: 50,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 1.3, end: 1.0).chain(CurveTween(curve: Curves.easeIn)),
-        weight: 50,
-      ),
-    ]).animate(_heartController);
-    _heartOpacity = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 0.0, end: 1.0).chain(CurveTween(curve: Curves.easeOut)),
-        weight: 40,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 0.0).chain(CurveTween(curve: Curves.easeIn)),
-        weight: 60,
-      ),
-    ]).animate(_heartController);
-    _heartController.addStatusListener((status) {
-      if (status == AnimationStatus.completed || status == AnimationStatus.dismissed) {
-        _isHeartAnimating = false;
-      }
-    });
-    ApiClient().getToken().then((token) {
-      if (!mounted) return;
-      if (token != null && token.isNotEmpty) {
-        setState(() {
-          _imageHeaders = {'Authorization': 'Bearer $token'};
-        });
-        _setupMedia();
-      }
-    });
-    _setupMedia();
-
-    if (widget.post.isTagged && (widget.post.peopleTags?.isNotEmpty ?? false)) {
-      Future.delayed(Duration.zero, () {
-        if (mounted) setState(() => _showTags = true);
-      });
-      Future.delayed(const Duration(milliseconds: 2600), () {
-        if (mounted) setState(() => _showTags = false);
-      });
+    debugPrint('[PostCard] initState for ${widget.post.id}, mediaType: ${widget.post.mediaType}');
+    if (widget.post.aspectRatio != null && widget.post.aspectRatio! > 0) {
+      _mediaAspect = _normalizedAspect(widget.post.aspectRatio!);
     }
+    // Load auth token eagerly — video init starts once visible
+    _loadAuthHeaders();
   }
 
-  @override
-  void didUpdateWidget(covariant PostCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final oldFirst = oldWidget.post.mediaUrls.isNotEmpty ? oldWidget.post.mediaUrls.first : '';
-    final newFirst = widget.post.mediaUrls.isNotEmpty ? widget.post.mediaUrls.first : '';
-    if (oldWidget.post.id != widget.post.id ||
-        oldFirst != newFirst ||
-        oldWidget.post.mediaType != widget.post.mediaType) {
-      _disposeVideo();
-      _setupMedia();
-    }
+  double _normalizedAspect(double raw) {
+    if (raw.isNaN || raw <= 0) return 4 / 5;
+    if (widget.post.isAd) return 1.0;
+    return raw.clamp(0.5625, 1.91);
   }
 
-  bool _likeAnim = false;
-
-  void _onLikePressed() {
-    _toggleLike();
-  }
-
-  void _toggleLike({bool onlyLike = false}) {
-    final shouldLike = !widget.post.isLiked;
-    if (onlyLike && !shouldLike) return;
-    setState(() => _likeAnim = true);
-    widget.onLike?.call();
-    Future.delayed(const Duration(milliseconds: 180), () {
-      if (mounted) setState(() => _likeAnim = false);
-    });
-  }
-
-  void _togglePlay() {
-    if (_videoCtl == null) return;
+  Future<void> _loadAuthHeaders() async {
+    final token = await ApiClient().getToken();
+    if (!mounted) return;
     setState(() {
-      _isPlaying = !_isPlaying;
-      if (_isPlaying) {
-        _videoCtl!.play();
+      _authHeaders = {
+        'Authorization': 'Bearer $token',
+        'User-Agent': 'PostCard-App',
+      };
+    });
+    debugPrint('[PostCard] Headers loaded for ${widget.post.id}. Visible: $_isVisible, IsVideo: $_isVideoPost, InitStarted: $_initStarted');
+    // If visibility callback already fired before headers loaded, start init now
+    if (_isVisible && _isVideoPost && !_initStarted) {
+      _startVideoInit();
+    }
+  }
+
+  Map<String, String> _getHeaders(String url) {
+    if (_authHeaders == null) return {};
+    try {
+      final uri = Uri.parse(url);
+      final baseUri = Uri.parse(ApiConfig.baseUrl);
+      if (uri.host == baseUri.host) return _authHeaders!;
+    } catch (_) {}
+    if (url.startsWith('http://localhost') || url.startsWith('http://10.0.2.2')) {
+      return _authHeaders!;
+    }
+    return {};
+  }
+
+  /// Called once when the card becomes visible AND headers are ready.
+  void _startVideoInit() {
+    debugPrint('[PostCard] _startVideoInit called for ${widget.post.id}');
+    if (_initStarted || !_isVideoPost) {
+       debugPrint('[PostCard] Skipping init: Started=$_initStarted, IsVideo=$_isVideoPost');
+       return;
+    }
+    if (widget.post.mediaUrls.isEmpty) {
+      debugPrint('[PostCard] No media URLs for ${widget.post.id}');
+      return;
+    }
+
+    final rawUrl = widget.post.mediaUrls.first;
+    final url = UrlHelper.absoluteUrl(rawUrl);
+    debugPrint('[PostCard] Video URL for ${widget.post.id}: $url');
+    
+    if (url.isEmpty) return;
+
+    _initStarted = true;
+    _initVideo(url);
+  }
+
+  Future<void> _initVideo(String url) async {
+    debugPrint('[PostCard] Initializing video controller for ${widget.post.id}...');
+    try {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        httpHeaders: _getHeaders(url),
+      );
+
+      await controller.initialize();
+      debugPrint('[PostCard] Video initialized for ${widget.post.id}');
+
+      // After initialize(), check if we're still mounted and still want to play
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+
+      controller.setLooping(true);
+      controller.setVolume(_isMuted ? 0.0 : 1.0);
+
+      setState(() {
+        _videoCtl = controller;
+        _videoInitialized = true;
+        _mediaAspect = _normalizedAspect(controller.value.aspectRatio);
+      });
+
+      // Only play if still visible and user hasn't manually paused
+      if (_isVisible && !_userWantsPaused) {
+        debugPrint('[PostCard] Auto-playing video for ${widget.post.id}');
+        await controller.play();
+      }
+    } catch (e) {
+      debugPrint('[PostCard] Video init error for ${widget.post.id}: $e');
+      if (mounted) setState(() {}); // Show thumbnail fallback
+    }
+  }
+
+  void _onVisibilityChanged(VisibilityInfo info) {
+    final nowVisible = info.visibleFraction >= 0.5;
+    debugPrint('[PostCard] Visibility changed for ${widget.post.id}: ${info.visibleFraction}');
+
+    if (nowVisible == _isVisible) return; // No change
+    _isVisible = nowVisible;
+
+    if (nowVisible) {
+      // Card came into view
+      if (_isVideoPost) {
+        if (!_initStarted && _authHeaders != null) {
+          // Headers ready — start init
+          _startVideoInit();
+        } else if (_videoInitialized && !_userWantsPaused) {
+          // Already initialized — just resume
+          _videoCtl?.play();
+          if (mounted) setState(() {});
+        }
+        // If headers not ready yet, _loadAuthHeaders will call _startVideoInit when done
+      }
+    } else {
+      // Card left view — pause to save resources
+      _videoCtl?.pause();
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _onTapMedia() {
+    if (!_isVideoPost || !_videoInitialized) return;
+    setState(() {
+      _userWantsPaused = !_userWantsPaused;
+      if (_userWantsPaused) {
+        _videoCtl?.pause();
       } else {
-        _videoCtl!.pause();
+        _videoCtl?.play();
       }
     });
   }
 
   void _toggleMute() {
-    if (_videoCtl == null) return;
+    if (!_videoInitialized) return;
     setState(() {
       _isMuted = !_isMuted;
-      _videoCtl!.setVolume(_isMuted ? 0 : 1.0);
+      _videoCtl?.setVolume(_isMuted ? 0.0 : 1.0);
     });
   }
 
-  void _toggleTags() {
-    if (widget.post.isTagged && (widget.post.peopleTags?.isNotEmpty ?? false)) {
-      setState(() => _showTags = !_showTags);
-    }
-  }
+  String _formatTimestamp(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
 
-  /// Safely extracts a valid non-empty string ID from a dynamic value.
-  /// Returns null if the value is null, not a String, empty, or literally "null".
-  String? _extractStringId(dynamic value) {
-    if (value == null) return null;
-    if (value is! String) return null;
-    final trimmed = value.trim();
-    // Fix: React web app also checks for "undefined" or "null" strings
-    if (trimmed.isEmpty || trimmed.toLowerCase() == 'null' || trimmed.toLowerCase() == 'undefined') return null;
-    return trimmed;
-  }
-
-  void _navigateToProfile(Map<String, dynamic> tag) {
-    // 1. Try direct string IDs at the top level first
-    String? uid = _extractStringId(tag['user_id'])
-        ?? _extractStringId(tag['_id'])
-        ?? _extractStringId(tag['id']);
-
-    // 2. If not found, check if user_id or user is a populated object and dig into it
-    if (uid == null) {
-      final nested = tag['user_id'] ?? tag['user'];
-      if (nested is Map) {
-        uid = _extractStringId(nested['_id'])
-            ?? _extractStringId(nested['id'])
-            ?? _extractStringId(nested['user_id']);
-      }
-    }
-
-    final String? username = tag['username']?.toString();
-
-    if (uid != null) {
-      debugPrint("Navigating to profile: $uid (@$username)");
-      Navigator.of(context).pushNamed('/profile/$uid');
+    if (difference.inDays > 7) {
+      return '${date.day}/${date.month}/${date.year}';
+    } else if (difference.inDays >= 1) {
+      return '${difference.inDays} days ago';
+    } else if (difference.inHours >= 1) {
+      return '${difference.inHours} hours ago';
+    } else if (difference.inMinutes >= 1) {
+      return '${difference.inMinutes} minutes ago';
     } else {
-      debugPrint("Routing Error: No valid ID found in tag: $tag");
+      return 'Just now';
     }
-  }
-
-  void _onMediaDoubleTap() {
-    if (_isHeartAnimating) return;
-    _toggleLike(onlyLike: true);
-    _isHeartAnimating = true;
-    _heartController.forward(from: 0);
-  }
-
-  void _setupMedia() {
-    final url = widget.post.mediaUrls.isNotEmpty ? widget.post.mediaUrls.first : '';
-    if (url.isEmpty) return;
-
-    if (widget.post.mediaType == PostMediaType.video ||
-        widget.post.mediaType == PostMediaType.reel) {
-      if (widget.post.thumbnailUrl != null && widget.post.thumbnailUrl!.isNotEmpty) {
-        final candidates = _candidateUrls(widget.post.thumbnailUrl!);
-        setState(() {
-          _resolvedThumbnailUrl = candidates.first;
-        });
-      }
-
-      if (_isVisible) {
-        setState(() {
-          _initVideo = _initVideoFromCandidates(_candidateUrls(url));
-        });
-      } else {
-        _disposeVideo();
-      }
-    } else {
-      _resolveImageUrl(url);
-    }
-  }
-
-  void _disposeVideo() {
-    _videoCtl?.dispose();
-    _videoCtl = null;
-    _initVideo = null;
-    _mediaAspect = null;
   }
 
   @override
   void dispose() {
-    _heartController.dispose();
-    _disposeVideo();
+    _videoCtl?.dispose();
     super.dispose();
-  }
-
-  List<String> _candidateUrls(String url) {
-    String abs = UrlHelper.absoluteUrl(url);
-    final alts = <String>[abs];
-    if (abs.startsWith('http://')) {
-      alts.add(abs.replaceFirst('http://', 'https://'));
-    }
-    if (abs.contains('/api/uploads/')) {
-      alts.add(abs.replaceFirst('/api/uploads/', '/uploads/'));
-    } else if (abs.contains('/uploads/')) {
-      alts.add(abs.replaceFirst('/uploads/', '/api/uploads/'));
-    }
-    return alts.toSet().toList();
-  }
-
-  Future<void> _resolveImageUrl(String url) async {
-    final headers = _imageHeaders ?? {};
-    final candidates = _candidateUrls(url);
-    if (headers.isEmpty) {
-      if (mounted) setState(() => _resolvedImageUrl = candidates.first);
-      return;
-    }
-    for (final u in candidates) {
-      try {
-        final resp = await http.get(
-          Uri.parse(u),
-          headers: {
-            ...headers,
-            'Range': 'bytes=0-0',
-            'Accept': 'image/*',
-          },
-        ).timeout(const Duration(seconds: 8));
-        final ok = (resp.statusCode >= 200 && resp.statusCode < 300) || resp.statusCode == 206;
-        if (ok) {
-          if (!mounted) return;
-          setState(() => _resolvedImageUrl = u);
-          return;
-        }
-      } catch (_) {}
-    }
-    for (final u in candidates) {
-      try {
-        final resp = await http.get(
-          Uri.parse(u),
-          headers: {
-            ...headers,
-            'Accept': 'image/*',
-          },
-        ).timeout(const Duration(seconds: 8));
-        if (resp.statusCode >= 200 && resp.statusCode < 300) {
-          if (!mounted) return;
-          setState(() => _resolvedImageUrl = u);
-          return;
-        }
-      } catch (_) {}
-    }
-    if (mounted) setState(() => _resolvedImageUrl = candidates.first);
-  }
-
-  void _computeImageAspect(ImageProvider provider) {
-    final imageStream = provider.resolve(const ImageConfiguration());
-    ImageStreamListener? listener;
-    listener = ImageStreamListener((ImageInfo info, bool _) {
-      final w = info.image.width.toDouble();
-      final h = info.image.height.toDouble();
-      if (h > 0) {
-        final ar = w / h;
-        if (mounted) setState(() => _mediaAspect = _normalizedAspect(ar));
-      }
-      imageStream.removeListener(listener!);
-    }, onError: (_, __) {
-      imageStream.removeListener(listener!);
-    });
-    imageStream.addListener(listener);
-  }
-
-  double _normalizedAspect(double raw) {
-    if (raw.isNaN || raw <= 0) return 1.0;
-    if (widget.post.isAd) return 1.0;
-    if (raw < 0.9) return 4 / 5;
-    if (raw > 1.2) return 16 / 9;
-    return 1.0;
-  }
-
-  Future<void> _initVideoFromCandidates(List<String> candidates) async {
-    if (_imageHeaders == null) {
-      final token = await ApiClient().getToken();
-      if (token != null && token.isNotEmpty) {
-        if (mounted) {
-          setState(() {
-            _imageHeaders = {'Authorization': 'Bearer $token'};
-          });
-        } else {
-          _imageHeaders = {'Authorization': 'Bearer $token'};
-        }
-      }
-    }
-    final headers = _imageHeaders ?? {};
-    for (final u in candidates) {
-      try {
-        _videoCtl?.dispose();
-        _videoCtl = VideoPlayerController.networkUrl(Uri.parse(u), httpHeaders: headers);
-        await _videoCtl!.initialize();
-        if (mounted && _isVisible) {
-          _videoCtl!.setLooping(true);
-          _videoCtl!.setVolume(_isMuted ? 0 : 1.0);
-          if (_isPlaying) {
-            _videoCtl!.play();
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _mediaAspect = _normalizedAspect(_videoCtl!.value.aspectRatio);
-          });
-        }
-        return;
-      } catch (_) {}
-    }
-    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
-    final displayName = post.fullName?.trim().isNotEmpty == true
-        ? post.fullName!
-        : post.userName;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final surfaceColor = theme.cardColor;
-    final textColor = theme.colorScheme.onSurface;
-    final mutedColor = theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600;
 
     return VisibilityDetector(
       key: Key('post-${post.id}'),
-      onVisibilityChanged: (info) {
-        final visibleFraction = info.visibleFraction;
-        if (visibleFraction > 0.6) {
-          if (!_isVisible) {
-            _isVisible = true;
-            _setupMedia();
-          }
-        } else {
-          if (_isVisible) {
-            _isVisible = false;
-            _disposeVideo();
-            if (mounted) setState(() {});
-          }
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 0),
-        decoration: BoxDecoration(
-          color: surfaceColor,
-          borderRadius: BorderRadius.circular(0),
-          border: Border(
-            bottom: BorderSide(
-              color: isDark ? const Color(0xFF2D2D2D) : Colors.grey.shade200,
-              width: 1,
+      onVisibilityChanged: _onVisibilityChanged,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(post, isDark, theme),
+          AspectRatio(
+            aspectRatio: _mediaAspect ?? 1.0,
+            child: GestureDetector(
+              onTap: _onTapMedia,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (_isVideoPost)
+                    _buildVideoPlayer(post, isDark)
+                  else
+                    _buildImageWidget(post, isDark),
+
+                  // Mute button for videos
+                  if (_isVideoPost && _videoInitialized)
+                    Positioned(
+                      bottom: 10,
+                      right: 10,
+                      child: GestureDetector(
+                        onTap: _toggleMute,
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // Play/pause overlay icon
+                  if (_isVideoPost && _userWantsPaused)
+                    const Center(
+                      child: Icon(LucideIcons.play, color: Colors.white, size: 50),
+                    ),
+
+                  // Loading spinner while video initializes
+                  if (_isVideoPost && _isVisible && !_videoInitialized && _initStarted)
+                    const Center(
+                      child: SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
+          _buildActionBar(post, theme),
+          _buildPostDetails(post, theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoPlayer(FeedPost post, bool isDark) {
+    // Video is ready — show it
+    if (_videoInitialized && _videoCtl != null) {
+      return Center(
+        child: AspectRatio(
+          aspectRatio: _videoCtl!.value.aspectRatio,
+          child: VideoPlayer(_videoCtl!),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Header ──────────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: post.userId.isNotEmpty
-                          ? () => Navigator.of(context).pushNamed('/profile/${post.userId}')
-                          : null,
-                      borderRadius: BorderRadius.circular(24),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: DesignTokens.instaGradient,
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isDark ? Colors.black : Colors.white,
-                              ),
-                              child: CircleAvatar(
-                                radius: 16,
-                                backgroundColor: isDark ? const Color(0xFF2D2D2D) : Colors.grey.shade200,
-                                backgroundImage: post.userAvatar != null && post.userAvatar!.isNotEmpty
-                                    ? NetworkImage(post.userAvatar!)
-                                    : null,
-                                child: post.userAvatar == null || post.userAvatar!.isEmpty
-                                    ? Text(
-                                        displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
-                                        style: TextStyle(
-                                          color: DesignTokens.instaPink,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      )
-                                    : null,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        displayName,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 14,
-                                          color: textColor,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (post.isVerified) ...[
-                                      const SizedBox(width: 4),
-                                      Icon(LucideIcons.badgeCheck, size: 14, color: Colors.blue.shade400),
-                                    ],
-                                    if (post.mediaType == PostMediaType.reel) ...[
-                                      const SizedBox(width: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: (isDark ? Colors.white : Colors.black).withOpacity(0.05),
-                                          borderRadius: BorderRadius.circular(999),
-                                        ),
-                                        child: Text(
-                                          'REEL',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: mutedColor,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      if (widget.onFollow != null && !post.isFollowed)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: GestureDetector(
-                            onTap: widget.onFollow,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: isDark ? Colors.transparent : Colors.grey.shade100,
-                                border: Border.all(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                'Follow',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: textColor,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      IconButton(
-                        onPressed: widget.onMore ?? () {},
-                        icon: Icon(LucideIcons.ellipsis, size: 24, color: textColor),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+      );
+    }
 
-            // ── Media ────────────────────────────────────────────────────────
-            if (post.mediaUrls.isNotEmpty)
-              Container(
-                constraints: const BoxConstraints(maxHeight: 600),
-                width: double.infinity,
-                child: AspectRatio(
-                  aspectRatio: _mediaAspect ?? 1.0,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onDoubleTap: _onMediaDoubleTap,
-                    onTap: (post.mediaType == PostMediaType.video || post.mediaType == PostMediaType.reel)
-                        ? _togglePlay
-                        : _toggleTags,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Background / media content
-                        Container(
-                          color: isDark ? Colors.black : Colors.grey.shade200,
-                          child: post.isAd
-                              ? CachedNetworkImage(
-                                  imageUrl: _resolvedImageUrl ?? post.mediaUrls.first,
-                                  cacheKey:
-                                      '${_resolvedImageUrl ?? post.mediaUrls.first}#${_imageHeaders?['Authorization'] ?? ''}',
-                                  httpHeaders: _imageHeaders,
-                                  fit: BoxFit.contain,
-                                  width: double.infinity,
-                                  placeholder: (ctx, url) => Center(
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: DesignTokens.instaPink,
-                                    ),
-                                  ),
-                                  errorWidget: (ctx, url, err) => Center(
-                                    child: Icon(LucideIcons.imageOff, size: 48, color: mutedColor),
-                                  ),
-                                )
-                              : (post.mediaType == PostMediaType.video ||
-                                      post.mediaType == PostMediaType.reel)
-                                  ? Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        // 1. Thumbnail placeholder
-                                        if (_resolvedThumbnailUrl != null)
-                                          CachedNetworkImage(
-                                            imageUrl: _resolvedThumbnailUrl!,
-                                            fit: BoxFit.cover,
-                                            placeholder: (ctx, url) => Container(color: Colors.black),
-                                            errorWidget: (ctx, url, err) => Container(color: Colors.black),
-                                          )
-                                        else
-                                          Container(color: Colors.black),
+    // Not yet initialized — show thumbnail or placeholder
+    if (post.thumbnailUrl != null && post.thumbnailUrl!.isNotEmpty) {
+      final thumbUrl = UrlHelper.absoluteUrl(post.thumbnailUrl!);
+      if (thumbUrl.isNotEmpty) {
+        return ExtendedImage.network(
+          thumbUrl,
+          headers: _getHeaders(thumbUrl),
+          fit: BoxFit.cover,
+          loadStateChanged: (state) {
+            if (state.extendedImageLoadState == LoadState.failed) {
+              return _buildPlaceholder(isDark, isVideo: true);
+            }
+            return null;
+          },
+        );
+      }
+    }
 
-                                        // 2. Video player
-                                        if (_videoCtl != null)
-                                          FutureBuilder(
-                                            future: _initVideo,
-                                            builder: (ctx, snap) {
-                                              if (snap.connectionState == ConnectionState.done &&
-                                                  _videoCtl!.value.isInitialized) {
-                                                return Center(
-                                                  child: AspectRatio(
-                                                    aspectRatio: _videoCtl!.value.aspectRatio,
-                                                    child: VideoPlayer(_videoCtl!),
-                                                  ),
-                                                );
-                                              }
-                                              return const SizedBox.shrink();
-                                            },
-                                          ),
+    return _buildPlaceholder(isDark, isVideo: true);
+  }
 
-                                        // 3. Loading spinner
-                                        if (_videoCtl != null)
-                                          FutureBuilder(
-                                            future: _initVideo,
-                                            builder: (ctx, snap) {
-                                              if (snap.connectionState != ConnectionState.done) {
-                                                return Center(
-                                                  child: CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: Colors.white.withOpacity(0.5),
-                                                  ),
-                                                );
-                                              }
-                                              return const SizedBox.shrink();
-                                            },
-                                          ),
+  Widget _buildImageWidget(FeedPost post, bool isDark) {
+    if (post.mediaUrls.isEmpty) return _buildPlaceholder(isDark);
+    final url = UrlHelper.absoluteUrl(post.mediaUrls.first);
+    if (url.isEmpty) return _buildPlaceholder(isDark);
 
-                                        // 4. Reel icon
-                                        if (post.mediaType == PostMediaType.reel)
-                                          Positioned(
-                                            top: 12,
-                                            right: 12,
-                                            child: Icon(
-                                              LucideIcons.play,
-                                              color: Colors.white.withOpacity(0.7),
-                                              size: 18,
-                                            ),
-                                          ),
-                                      ],
-                                    )
-                                  : CachedNetworkImage(
-                                      imageUrl: _resolvedImageUrl ?? post.mediaUrls.first,
-                                      cacheKey:
-                                          '${_resolvedImageUrl ?? post.mediaUrls.first}#${_imageHeaders?['Authorization'] ?? ''}',
-                                      httpHeaders: _imageHeaders,
-                                      fit: BoxFit.contain,
-                                      width: double.infinity,
-                                      placeholder: (ctx, url) => Center(
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: DesignTokens.instaPink,
-                                        ),
-                                      ),
-                                      errorWidget: (ctx, url, err) => Center(
-                                        child: Icon(LucideIcons.imageOff, size: 48, color: mutedColor),
-                                      ),
-                                    ),
-                        ),
+    return ExtendedImage.network(
+      url,
+      headers: _getHeaders(url),
+      fit: BoxFit.cover,
+      loadStateChanged: (state) {
+        if (state.extendedImageLoadState == LoadState.completed) {
+          final info = state.extendedImageInfo;
+          if (info != null) {
+            final real = _normalizedAspect(
+              info.image.width / info.image.height,
+            );
+            if (_mediaAspect != real) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() => _mediaAspect = real);
+              });
+            }
+          }
+        }
+        if (state.extendedImageLoadState == LoadState.failed) {
+          return _buildPlaceholder(isDark);
+        }
+        return null;
+      },
+    );
+  }
 
-                        // Double-tap heart animation
-                        IgnorePointer(
-                          child: FadeTransition(
-                            opacity: _heartOpacity,
-                            child: ScaleTransition(
-                              scale: _heartScale,
-                              child: Icon(
-                                LucideIcons.heart,
-                                size: 96,
-                                color: Colors.white.withOpacity(0.9),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // Pause indicator
-                        if (!_isPlaying && _videoCtl != null)
-                          IgnorePointer(
-                            child: Center(
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.4),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(LucideIcons.play, color: Colors.white, size: 32),
-                              ),
-                            ),
-                          ),
-
-                        // Mute toggle button
-                        if (_videoCtl != null)
-                          Positioned(
-                            bottom: 12,
-                            right: 12,
-                            child: GestureDetector(
-                              onTap: _toggleMute,
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.55),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                        // People tag bubbles overlay
-                        if (_showTags && post.peopleTags != null && post.peopleTags!.isNotEmpty)
-                          ...post.peopleTags!.map((tag) {
-                            final x = (tag['x'] as num?)?.toDouble() ?? 50.0;
-                            final y = (tag['y'] as num?)?.toDouble() ?? 50.0;
-                            final username = tag['username'] as String? ?? 'User';
-                            final cx = x.clamp(12.0, 88.0);
-                            final cy = y.clamp(12.0, 88.0);
-                            final inBottomHalf = y > 55;
-
-                            return Positioned(
-                              left: (cx / 100) * MediaQuery.of(context).size.width,
-                              top: (cy / 100) *
-                                  (_mediaAspect != null
-                                      ? MediaQuery.of(context).size.width / _mediaAspect!
-                                      : MediaQuery.of(context).size.width),
-                              child: FractionalTranslation(
-                                translation: const Offset(-0.5, -0.5),
-                                child: TweenAnimationBuilder<double>(
-                                  tween: Tween(begin: 0.0, end: 1.0),
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.elasticOut,
-                                  builder: (context, value, child) {
-                                    return Transform.scale(scale: value, child: child);
-                                  },
-                                  child: GestureDetector(
-                                    onTap: () => _navigateToProfile(tag),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (!inBottomHalf)
-                                          CustomPaint(
-                                            size: const Size(12, 6),
-                                            painter: _TrianglePainter(
-                                              isUp: true,
-                                              color: Colors.white.withOpacity(0.9),
-                                            ),
-                                          ),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withOpacity(0.9),
-                                            borderRadius: BorderRadius.circular(20),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black.withOpacity(0.15),
-                                                blurRadius: 8,
-                                                offset: const Offset(0, 4),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Text(
-                                            '@$username',
-                                            style: const TextStyle(
-                                              color: Colors.black,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: -0.5,
-                                            ),
-                                          ),
-                                        ),
-                                        if (inBottomHalf)
-                                          CustomPaint(
-                                            size: const Size(12, 6),
-                                            painter: _TrianglePainter(
-                                              isUp: false,
-                                              color: Colors.white.withOpacity(0.9),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-
-                        // Tag indicator button (bottom-left)
-                        if (post.peopleTags != null && post.peopleTags!.isNotEmpty)
-                          Positioned(
-                            bottom: 12,
-                            left: 12,
-                            child: GestureDetector(
-                              onTap: () => setState(() => _showTags = !_showTags),
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.5),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(LucideIcons.user, color: Colors.white, size: 16),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else
-              AspectRatio(
-                aspectRatio: 1,
-                child: Container(
-                  color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade200,
-                  child: Center(
-                    child: Icon(LucideIcons.image, size: 48, color: mutedColor),
-                  ),
-                ),
-              ),
-
-            // ── Action bar ───────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 0.5, vertical: 0.5),
-              child: Row(
-                children: [
-                  AnimatedScale(
-                    scale: _likeAnim ? 1.15 : 1.0,
-                    duration: const Duration(milliseconds: 150),
-                    child: IconButton(
-                      onPressed: _onLikePressed,
-                      icon: Icon(
-                        post.isLiked ? Icons.favorite : LucideIcons.heart,
-                        size: 24,
-                        color: post.isLiked ? Colors.red : textColor,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: widget.onComment ?? () {},
-                    icon: Icon(LucideIcons.messageCircle, size: 24, color: textColor),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                  ),
-                  IconButton(
-                    onPressed: widget.onShare ?? () {},
-                    icon: Icon(LucideIcons.send, size: 24, color: textColor),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: widget.onSave ?? () {},
-                    icon: Icon(
-                      post.isSaved ? Icons.bookmark : LucideIcons.bookmark,
-                      size: 24,
-                      color: textColor,
-                    ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Likes count ──────────────────────────────────────────────────
-            if (post.likes > 0)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                child: Text(
-                  '${post.likes} ${post.likes == 1 ? 'like' : 'likes'}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: textColor,
-                  ),
-                ),
-              ),
-
-            // ── Caption ──────────────────────────────────────────────────────
-            if ((post.caption ?? '').trim().isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                child: RichText(
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  text: TextSpan(
-                    style: TextStyle(fontSize: 14, color: textColor, height: 1.3),
-                    children: [
-                      TextSpan(
-                        text: '${post.userName} ',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      TextSpan(text: post.caption),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-
-            // ── People tags list ─────────────────────────────────────────────
-            if (post.peopleTags != null && post.peopleTags!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 2,
-                  children: post.peopleTags!.map((tag) {
-                    final username = tag['username'] as String? ?? 'User';
-                    return GestureDetector(
-                      onTap: () => _navigateToProfile(tag),
-                      child: Text(
-                        '@$username',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF0095F6),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-
-            // ── Comments preview ─────────────────────────────────────────────
-            if (post.comments > 0)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                child: GestureDetector(
-                  onTap: widget.onComment,
-                  child: Text(
-                    'View all ${post.comments} ${post.comments == 1 ? 'comment' : 'comments'}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: mutedColor,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-
-            // ── Time posted ──────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 2, bottom: 12),
-              child: Text(
-                _formatTimeAgo(post.createdAt),
-                style: TextStyle(
-                  fontSize: 10,
-                  color: mutedColor,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ),
-          ],
+  Widget _buildPlaceholder(bool isDark, {bool isVideo = false}) {
+    return Container(
+      color: isDark ? const Color(0xFF262626) : Colors.grey.shade200,
+      child: Center(
+        child: Icon(
+          isVideo ? LucideIcons.video : LucideIcons.imageOff,
+          color: isDark ? Colors.white24 : Colors.grey.shade400,
+          size: 40,
         ),
       ),
     );
   }
 
-  String _formatTimeAgo(DateTime d) {
-    final diff = DateTime.now().difference(d);
-    if (diff.inDays > 0) return '${diff.inDays}d';
-    if (diff.inHours > 0) return '${diff.inHours}h';
-    if (diff.inMinutes > 0) return '${diff.inMinutes}m';
-    if (diff.inSeconds > 30) return '${diff.inSeconds}s';
-    return 'Just now';
+  Widget _buildHeader(FeedPost post, bool isDark, ThemeData theme) {
+    final avatarUrl =
+        post.userAvatar != null ? UrlHelper.absoluteUrl(post.userAvatar!) : '';
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      leading: CircleAvatar(
+        backgroundImage:
+            avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+        backgroundColor: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
+        child: avatarUrl.isEmpty
+            ? Text(
+                post.userName.isNotEmpty
+                    ? post.userName[0].toUpperCase()
+                    : 'U',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              )
+            : null,
+      ),
+      title: Text(
+        post.userName,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+      ),
+      subtitle: post.location != null && post.location!.isNotEmpty
+          ? Text(post.location!, style: const TextStyle(fontSize: 12))
+          : null,
+      trailing: GestureDetector(
+        onTap: widget.onMore,
+        child: const Icon(LucideIcons.ellipsis),
+      ),
+    );
+  }
+
+  Widget _buildActionBar(FeedPost post, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          IconButton(
+            iconSize: 22,
+            icon: Icon(
+              post.isLiked ? Icons.favorite : LucideIcons.heart,
+              color: post.isLiked ? Colors.red : null,
+            ),
+            onPressed: widget.onLike,
+          ),
+          IconButton(
+            iconSize: 22,
+            icon: const Icon(LucideIcons.messageCircle),
+            onPressed: widget.onComment,
+          ),
+          IconButton(
+            iconSize: 22,
+            icon: const Icon(LucideIcons.send),
+            onPressed: widget.onShare,
+          ),
+          const Spacer(),
+          if (widget.onFollow != null)
+            GestureDetector(
+              onTap: widget.onFollow,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      post.isFollowed ? LucideIcons.userCheck : LucideIcons.userPlus,
+                      size: 16,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      post.isFollowed ? 'Following' : 'Follow',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          IconButton(
+            iconSize: 22,
+            icon: Icon(
+              post.isSaved ? Icons.bookmark : LucideIcons.bookmark,
+            ),
+            onPressed: widget.onSave,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPostDetails(FeedPost post, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${post.likes} likes',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          if (post.caption != null && post.caption!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: '${post.userName} ',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  TextSpan(
+                    text: post.caption,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            _formatTimestamp(post.createdAt),
+            style: const TextStyle(
+              color: Colors.grey,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

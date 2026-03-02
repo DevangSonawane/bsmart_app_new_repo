@@ -193,7 +193,7 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: Icon(LucideIcons.arrowLeft),
+          icon: const Icon(LucideIcons.arrowLeft),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -227,7 +227,7 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
                     TextFormField(
                       controller: _fullNameController,
                       style: const TextStyle(color: InstagramTheme.textBlack),
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'Full Name (Optional)',
                         prefixIcon: Icon(LucideIcons.user),
                       ),
@@ -242,7 +242,7 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
                       style: const TextStyle(color: InstagramTheme.textBlack),
                       decoration: InputDecoration(
                         labelText: 'Username',
-                        prefixIcon: Icon(LucideIcons.mail),
+                        prefixIcon: const Icon(LucideIcons.mail),
                         suffixIcon: _isCheckingUsername
                             ? const SizedBox(
                                 width: 20,
@@ -283,7 +283,7 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
                         style: const TextStyle(color: InstagramTheme.textBlack),
                         decoration: InputDecoration(
                           labelText: 'Password',
-                          prefixIcon: Icon(LucideIcons.lock),
+                          prefixIcon: const Icon(LucideIcons.lock),
                           suffixIcon: IconButton(
                             icon: Icon(
                               _isPasswordVisible

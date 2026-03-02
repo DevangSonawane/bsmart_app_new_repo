@@ -3,8 +3,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../../models/auth/jwt_token_model.dart';
 import '../../utils/constants.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class JWTService {
   static final JWTService _instance = JWTService._internal();

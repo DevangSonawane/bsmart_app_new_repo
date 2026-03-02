@@ -2,52 +2,39 @@ import '../config/api_config.dart';
 
 class UrlHelper {
   static String absoluteUrl(String url) {
-    if (url.isEmpty) return '';
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    String u = url.trim();
+    if (u.isEmpty || u == 'file:///' || u == 'null') return '';
     
-    final base = ApiConfig.baseUrl;
-    final baseUri = Uri.parse(base);
-    final origin = '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
+    // If it's already a full URL, return it
+    if (u.startsWith('http://') || u.startsWith('https://')) return u;
     
-    String path = url;
-    if (!path.startsWith('/')) {
-      path = '/$path';
-    }
+    // Clean the base URL
+    String base = ApiConfig.baseUrl;
+    if (base.endsWith('/')) base = base.substring(0, base.length - 1);
+
+    // Ensure path starts with exactly one slash
+    if (!u.startsWith('/')) u = '/$u';
+
+    // Combine and fix common double-prefixing issues
+    String result = '$base$u';
     
-    // Avoid double /api/ prefix if baseUrl already has it or path has it
-    String result = '$origin$path';
-    if (result.contains('/api//api/')) {
-      result = result.replaceFirst('/api//api/', '/api/');
-    }
-    
+    // Cleanup internal double slashes (except the one after http:)
+    result = result.replaceFirst('://', '###');
+    result = result.replaceAll('//', '/');
+    result = result.replaceFirst('###', '://');
+
     return result;
   }
 
   static String normalizeUrl(String? url) {
     if (url == null || url.isEmpty) return '';
     
-    var u = url.trim();
-    u = u.replaceAll('\\', '/');
+    var u = url.trim().replaceAll('\\', '/');
     
-    final lower = u.toLowerCase();
-    final isLikelyFile = lower.endsWith('.jpg') ||
-        lower.endsWith('.jpeg') ||
-        lower.endsWith('.png') ||
-        lower.endsWith('.webp') ||
-        lower.endsWith('.gif') ||
-        lower.endsWith('.mp4') ||
-        lower.endsWith('.mov') ||
-        lower.contains('.m3u8');
-
-    if (!u.startsWith('http://') && !u.startsWith('https://')) {
-      if (!u.startsWith('/')) {
-        if (isLikelyFile) {
-          // If it's a file but doesn't have uploads/ or api/ prefix, add uploads/
-          if (!u.contains('uploads/') && !u.contains('api/')) {
-            u = 'uploads/$u';
-          }
-        }
-      }
+    // If it's a relative path and doesn't have a folder prefix, add uploads
+    if (!u.startsWith('http') && !u.startsWith('/') && 
+        !u.contains('uploads/') && !u.contains('api/')) {
+      u = 'uploads/$u';
     }
     
     return absoluteUrl(u);

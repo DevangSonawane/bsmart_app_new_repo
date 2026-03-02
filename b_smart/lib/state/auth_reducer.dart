@@ -3,8 +3,8 @@ import 'auth_state.dart';
 import 'auth_actions.dart';
 
 final authReducer = combineReducers<AuthState>([
-  TypedReducer<AuthState, SetAuthenticated>(_setAuthenticated),
-  TypedReducer<AuthState, ClearAuthentication>(_clearAuthentication),
+  TypedReducer<AuthState, SetAuthenticated>(_setAuthenticated).call,
+  TypedReducer<AuthState, ClearAuthentication>(_clearAuthentication).call,
 ]);
 
 AuthState _setAuthenticated(AuthState state, SetAuthenticated action) {

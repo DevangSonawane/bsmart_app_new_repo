@@ -55,6 +55,7 @@ class CreateEditPreviewScreen extends StatefulWidget {
 
 class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   final CreateService _createService = CreateService();
+  late MediaItem _currentMedia;
   String? _selectedFilter;
   String? _selectedFilterName;
   String? _selectedMusic;
@@ -150,6 +151,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   @override
   void initState() {
     super.initState();
+    _currentMedia = widget.media;
     _selectedFilter = widget.selectedFilter;
     if (_selectedFilter != null) {
       final filters = _createService.getFilters();
@@ -158,8 +160,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         _selectedFilterName = match.first.name;
       }
     }
-    if (widget.media.type == MediaType.video && widget.media.filePath != null) {
-      final controller = VideoPlayerController.file(File(widget.media.filePath!));
+    if (_currentMedia.type == MediaType.video && _currentMedia.filePath != null) {
+      final controller = VideoPlayerController.file(File(_currentMedia.filePath!));
       _videoController = controller;
       _videoInit = controller.initialize().then((_) {
         if (!mounted) return;
@@ -198,7 +200,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
     final result = await Navigator.of(context).push<VideoEditResult>(
       MaterialPageRoute(
-        builder: (_) => EditVideoScreen(media: widget.media),
+        builder: (_) => EditVideoScreen(media: _currentMedia),
       ),
     );
 
@@ -210,12 +212,37 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         _trimEnd = result.trimEnd;
       });
 
+      if (result.outputPath != null && result.outputPath!.isNotEmpty) {
+        _videoController?.removeListener(_handlePreviewVideoTick);
+        await _videoController?.dispose();
+        _videoController = null;
+        final newMedia = MediaItem(
+          id: _currentMedia.id,
+          type: _currentMedia.type,
+          filePath: result.outputPath,
+          thumbnailPath: _currentMedia.thumbnailPath,
+          duration: _currentMedia.duration,
+          createdAt: _currentMedia.createdAt,
+        );
+        _currentMedia = newMedia;
+        final controller = VideoPlayerController.file(File(newMedia.filePath!));
+        _videoController = controller;
+        _videoInit = controller.initialize().then((_) {
+          if (!mounted) return;
+          controller.setLooping(true);
+          controller.addListener(_handlePreviewVideoTick);
+          controller.play();
+          setState(() => _isPlaying = true);
+        });
+        setState(() {}); // Trigger immediate rebuild to show loading for the NEW future
+      } else {
       // Seek preview to the new trim start and resume
       final controller = _videoController;
       if (controller != null && controller.value.isInitialized) {
         await controller.seekTo(_trimStart!);
         controller.play();
         setState(() => _isPlaying = true);
+      }
       }
     } else {
       // User cancelled – just resume playback
@@ -226,12 +253,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   // ── Proceed to post details, passing trim values along
   void _proceedToPostDetails() {
-    final isVideo = widget.media.type == MediaType.video;
+    final isVideo = _currentMedia.type == MediaType.video;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => isVideo
             ? CreateReelDetailsScreen(
-                media: widget.media,
+                media: _currentMedia,
                 selectedFilter: _selectedFilter,
                 selectedMusic: _selectedMusic,
                 musicVolume: _musicVolume,
@@ -239,7 +266,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                 trimEnd: _trimEnd,
               )
             : CreatePostDetailsScreen(
-                media: widget.media,
+                media: _currentMedia,
                 selectedFilter: _selectedFilter,
                 selectedMusic: _selectedMusic,
                 musicVolume: _musicVolume,

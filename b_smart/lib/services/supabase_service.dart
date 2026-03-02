@@ -533,9 +533,9 @@ class SupabaseService {
       final data = await _commentsApi.getComments(postId, page: page, limit: limit);
       List<Map<String, dynamic>> comments = [];
       if (data is List) {
-        comments = (data as List).cast<Map<String, dynamic>>();
+        comments = (data).cast<Map<String, dynamic>>();
       } else if (data is Map) {
-        final map = data as Map;
+        final map = data;
         if (map['comments'] is List) {
           comments = (map['comments'] as List).cast<Map<String, dynamic>>();
         } else if (map['data'] is List) {
@@ -829,8 +829,8 @@ class SupabaseService {
     try {
       await _postsApi.deletePost(postId);
       return true;
-    } on ApiException catch (e) {
-      throw e;
+    } on ApiException {
+      rethrow;
     } catch (e) {
       throw ServerException(message: e.toString());
     }

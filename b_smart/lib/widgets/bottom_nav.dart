@@ -55,6 +55,7 @@ class _BottomNavState extends State<BottomNav> {
 
   Widget _buildNavItem(BuildContext context, int index, IconData icon, String label, {required bool isActive}) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return InkWell(
       onTap: () => widget.onTap(index),
       borderRadius: BorderRadius.circular(12),
@@ -63,7 +64,7 @@ class _BottomNavState extends State<BottomNav> {
         child: Icon(
           icon,
           size: 26,
-          color: isActive ? DesignTokens.instaPink : theme.colorScheme.onSurface.withValues(alpha: 0.6),
+          color: isActive ? DesignTokens.instaPink : (isDark ? Colors.white : Colors.black),
         ),
       ),
     );

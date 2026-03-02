@@ -245,9 +245,9 @@ class _AdsPageScreenState extends State<AdsPageScreen>
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 20),
-            TextField(
-              style: const TextStyle(color: InstagramTheme.textBlack),
-              decoration: const InputDecoration(
+            const TextField(
+              style: TextStyle(color: InstagramTheme.textBlack),
+              decoration: InputDecoration(
                 hintText: 'Add a comment...',
                 hintStyle: TextStyle(color: InstagramTheme.textGrey),
               ),
@@ -604,7 +604,7 @@ class _AdsPageScreenState extends State<AdsPageScreen>
           if (_isPaused)
             Container(
               color: InstagramTheme.backgroundWhite.withValues(alpha: 0.7),
-              child: Center(
+              child: const Center(
                 child: Icon(
                   Icons.play_arrow,
                   size: 60,

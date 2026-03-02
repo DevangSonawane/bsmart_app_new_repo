@@ -5,8 +5,6 @@ import '../models/account_details_model.dart';
 import '../theme/instagram_theme.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/clay_container.dart';
-import 'coins_history_screen.dart';
-import 'account_details_screen.dart';
 import '../models/ledger_model.dart';
 enum _HistoryState { hidden, minimal, expanded }
 enum _MenuSection { none, accountDetails, redeem, help }
@@ -28,7 +26,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
   int _totalSpentLifetime = 0;
   int _totalEarnedMonth = 0;
   int _totalSpentMonth = 0;
-  bool _historyExpanded = false;
+  final bool _historyExpanded = false;
   List<LedgerTransaction> _transactions = [];
   DateTime? _filterStart;
   DateTime? _filterEnd;
@@ -96,11 +94,11 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
+                        const Row(
                           children: [
-                            const Icon(LucideIcons.badgePercent, color: Colors.white),
-                            const SizedBox(width: 8),
-                            const Text(
+                            Icon(LucideIcons.badgePercent, color: Colors.white),
+                            SizedBox(width: 8),
+                            Text(
                               'Available Balance',
                               style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                             ),
@@ -716,7 +714,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          side: BorderSide(color: InstagramTheme.borderGrey),
+                          side: const BorderSide(color: InstagramTheme.borderGrey),
                           foregroundColor: InstagramTheme.textBlack,
                           backgroundColor: InstagramTheme.surfaceWhite,
                         ),
@@ -736,7 +734,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          side: BorderSide(color: InstagramTheme.borderGrey),
+                          side: const BorderSide(color: InstagramTheme.borderGrey),
                           foregroundColor: InstagramTheme.textBlack,
                           backgroundColor: InstagramTheme.surfaceWhite,
                         ),
@@ -748,13 +746,13 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                 DropdownButtonFormField<LedgerTransactionType?>(
                   initialValue: type,
                   decoration: const InputDecoration(labelText: 'Received Type'),
-                  items: [
-        const DropdownMenuItem<LedgerTransactionType?>(value: null, child: Text('Any')),
-        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.adReward, child: const Text('Earned (Ad Reward)')),
-        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.payout, child: const Text('Spent (Redeemed)')),
-        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.giftReceived, child: const Text('Gift Received')),
-        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.giftSent, child: const Text('Gift Sent')),
-        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.refund, child: const Text('Refund')),
+                  items: const [
+        DropdownMenuItem<LedgerTransactionType?>(value: null, child: Text('Any')),
+        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.adReward, child: Text('Earned (Ad Reward)')),
+        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.payout, child: Text('Spent (Redeemed)')),
+        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.giftReceived, child: Text('Gift Received')),
+        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.giftSent, child: Text('Gift Sent')),
+        DropdownMenuItem<LedgerTransactionType?>(value: LedgerTransactionType.refund, child: Text('Refund')),
                   ],
                   onChanged: (v) => type = v,
                 ),
@@ -799,7 +797,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        side: BorderSide(color: InstagramTheme.borderGrey),
+                        side: const BorderSide(color: InstagramTheme.borderGrey),
                         foregroundColor: InstagramTheme.textBlack,
                         backgroundColor: InstagramTheme.surfaceWhite,
                       ),
@@ -845,9 +843,9 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
           children: [
             Text('Available: $_coinBalance coins'),
             const SizedBox(height: 8),
-            TextField(
+            const TextField(
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Coins to redeem'),
+              decoration: InputDecoration(labelText: 'Coins to redeem'),
             ),
           ],
         ),
@@ -1055,8 +1053,8 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
             selected: {_selectedPaymentMethod},
             onSelectionChanged: (s) => setState(() => _selectedPaymentMethod = s.first),
             showSelectedIcon: false,
-            style: ButtonStyle(
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+            style: const ButtonStyle(
+              visualDensity: VisualDensity(horizontal: -2, vertical: -2),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ),

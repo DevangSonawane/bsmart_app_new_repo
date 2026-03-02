@@ -62,8 +62,9 @@ class PromoteService {
         Object? videoUrlObj;
         if (media.isNotEmpty) {
           final first = media.first;
-          if (first is String) videoUrlObj = first;
-          else if (first is Map) videoUrlObj = first['url'] ?? first['video_url'];
+          if (first is String) {
+            videoUrlObj = first;
+          } else if (first is Map) videoUrlObj = first['url'] ?? first['video_url'];
         }
         final videoUrl = videoUrlObj?.toString() ?? '';
         return {

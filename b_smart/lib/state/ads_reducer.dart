@@ -3,8 +3,8 @@ import 'ads_state.dart';
 import 'ads_actions.dart';
 
 final adsReducer = combineReducers<AdsState>([
-  TypedReducer<AdsState, SetAds>(_setAds),
-  TypedReducer<AdsState, ClearAds>(_clearAds),
+  TypedReducer<AdsState, SetAds>(_setAds).call,
+  TypedReducer<AdsState, ClearAds>(_clearAds).call,
 ]);
 
 AdsState _setAds(AdsState state, SetAds action) {

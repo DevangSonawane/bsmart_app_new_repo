@@ -147,7 +147,7 @@ class _SignupVerificationScreenState extends State<SignupVerificationScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: Icon(LucideIcons.arrowLeft),
+          icon: const Icon(LucideIcons.arrowLeft),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -215,7 +215,7 @@ class _SignupVerificationScreenState extends State<SignupVerificationScreen> {
                         letterSpacing: 8,
                       ),
                       maxLength: 6,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'Enter OTP',
                         hintText: '000000',
                         counterText: '',

@@ -3,7 +3,7 @@ import '../services/ads_service.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final String productId;
-  const ProductDetailScreen({Key? key, required this.productId}) : super(key: key);
+  const ProductDetailScreen({super.key, required this.productId});
 
   @override
   State<ProductDetailScreen> createState() => _ProductDetailScreenState();
@@ -28,7 +28,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (_product == null) return Scaffold(body: Center(child: Text('Product not found')));
+    if (_product == null) return const Scaffold(body: Center(child: Text('Product not found')));
     return Scaffold(
       appBar: AppBar(title: Text(_product?['name'] ?? 'Product')),
       body: Padding(

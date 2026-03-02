@@ -11,12 +11,12 @@ class Sidebar extends StatefulWidget {
   final VoidCallback? onUploadReel;
 
   const Sidebar({
-    Key? key,
+    super.key,
     required this.currentIndex,
     required this.onNavTap,
     this.onCreatePost,
     this.onUploadReel,
-  }) : super(key: key);
+  });
 
   @override
   State<Sidebar> createState() => _SidebarState();
@@ -290,12 +290,12 @@ class _CreateItem extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       ListTile(
-                        leading: Icon(LucideIcons.image, size: 20),
+                        leading: const Icon(LucideIcons.image, size: 20),
                         title: const Text('Create Post', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                         onTap: onCreatePost,
                       ),
                       ListTile(
-                        leading: Icon(LucideIcons.video, size: 20),
+                        leading: const Icon(LucideIcons.video, size: 20),
                         title: const Text('Upload Reel', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                         onTap: onUploadReel,
                       ),

@@ -201,6 +201,10 @@ class ApiClient {
     final Map<String, dynamic>? body =
         decoded is Map<String, dynamic> ? decoded : null;
     
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return decoded ?? response.body;
+    }
+
     // Extract detailed error message
     String? message = body?['message'] as String?;
     final error = body?['error'] as String?;
@@ -224,9 +228,6 @@ class ApiClient {
 
     final safeMessage = message ?? (response.reasonPhrase ?? 'Unknown error');
     switch (response.statusCode) {
-      case 200:
-      case 201:
-        return decoded ?? response.body;
       case 400:
         throw BadRequestException(message: safeMessage, body: body);
       case 401:

@@ -1,10 +1,8 @@
 import '../api/posts_api.dart';
 import '../models/reel_model.dart';
-import '../config/api_config.dart';
 import '../utils/url_helper.dart';
 import '../state/store.dart';
 import '../state/feed_actions.dart';
-import '../models/feed_post_model.dart';
 
 class ReelsService {
   static final ReelsService _instance = ReelsService._internal();
@@ -160,7 +158,7 @@ class ReelsService {
           if (first is String) {
             videoUrl = first;
           } else if (first is Map) {
-            final m = Map<String, dynamic>.from(first as Map);
+            final m = Map<String, dynamic>.from(first);
             videoUrl = (m['url'] ?? m['fileUrl'] ?? m['videoUrl'] ?? '').toString();
             final thumbField = m['thumbnail'] ?? m['thumbnailUrl'] ?? m['thumb'];
             if (thumbField is List && thumbField.isNotEmpty) {

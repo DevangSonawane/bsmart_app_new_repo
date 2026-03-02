@@ -4,7 +4,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../models/story_model.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/api.dart';
-import '../api/api_exceptions.dart';
 import '../services/feed_service.dart';
 
 class OwnStoryViewerScreen extends StatefulWidget {

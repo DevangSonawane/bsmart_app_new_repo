@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../theme/design_tokens.dart';
-import 'login/login_screen.dart';
 import '../home_dashboard.dart';
 
 /// Signup email verification; accepts optional email from route args.
@@ -67,15 +66,19 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
     });
     try {
       await Future.delayed(const Duration(seconds: 1));
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _message = 'Verification code resent successfully!';
         _resending = false;
       });
+      }
     } catch (e) {
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _error = e.toString();
         _resending = false;
       });
+      }
     }
   }
 
@@ -96,7 +99,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
             children: [
               TextButton.icon(
                 onPressed: () => Navigator.of(context).pushReplacementNamed('/signup'),
-                icon: Icon(LucideIcons.arrowLeft, size: 20),
+                icon: const Icon(LucideIcons.arrowLeft, size: 20),
                 label: const Text('Back to Signup'),
                 style: TextButton.styleFrom(foregroundColor: Colors.grey.shade700),
               ),
@@ -106,7 +109,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                 width: 64,
                 height: 64,
                 decoration: BoxDecoration(color: DesignTokens.instaPink.withOpacity(0.15), shape: BoxShape.circle),
-                child: Icon(LucideIcons.shieldCheck, size: 32, color: DesignTokens.instaPink),
+                child: const Icon(LucideIcons.shieldCheck, size: 32, color: DesignTokens.instaPink),
               ),
               const SizedBox(height: 24),
               const Text('Verify your email', textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),

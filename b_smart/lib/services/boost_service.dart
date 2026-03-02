@@ -74,7 +74,7 @@ class BoostService {
     if (activeBoosts >= maxActiveBoostsPerUser) {
       return BoostEligibilityResult(
         isEligible: false,
-        reason: 'You have reached the maximum number of active boosts (${maxActiveBoostsPerUser})',
+        reason: 'You have reached the maximum number of active boosts ($maxActiveBoostsPerUser)',
       );
     }
 

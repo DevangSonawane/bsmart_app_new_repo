@@ -46,7 +46,7 @@ class AdEligibilityService {
     if (_isInCooldown(userId)) {
       final lastWatch = _lastAdWatchTime[userId];
       if (lastWatch != null) {
-        final cooldownEnd = lastWatch.add(Duration(seconds: cooldownPeriodSeconds));
+        final cooldownEnd = lastWatch.add(const Duration(seconds: cooldownPeriodSeconds));
         final remaining = cooldownEnd.difference(DateTime.now()).inSeconds;
         if (remaining > 0) {
           return EligibilityResult(

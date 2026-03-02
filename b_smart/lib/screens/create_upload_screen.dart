@@ -412,17 +412,17 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                           _multiSelect = !_multiSelect;
                         });
                       },
+                      style: TextButton.styleFrom(
+                        backgroundColor: _multiSelect ? Colors.white : Colors.white10,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      ),
                       child: Text(
                         _multiSelect ? 'Deselect' : 'Select',
                         style: TextStyle(
                           color: _multiSelect ? Colors.black : Colors.white,
                           fontWeight: FontWeight.w600,
                         ),
-                      ),
-                      style: TextButton.styleFrom(
-                        backgroundColor: _multiSelect ? Colors.white : Colors.white10,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       ),
                     ),
                   ],
@@ -470,9 +470,9 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              TextButton(
+                              const TextButton(
                                 onPressed: PhotoManager.openSetting,
-                                child: const Text(
+                                child: Text(
                                   'Open Settings',
                                   style: TextStyle(color: Colors.white70),
                                 ),
@@ -482,10 +482,10 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                         ),
                       )
                     : _assets.isEmpty
-                        ? Center(
+                        ? const Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
-                              children: const [
+                              children: [
                                 Icon(Icons.image_search, size: 64, color: Colors.white30),
                                 SizedBox(height: 12),
                                 Text(

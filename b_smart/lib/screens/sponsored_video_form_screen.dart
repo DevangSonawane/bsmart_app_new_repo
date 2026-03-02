@@ -416,11 +416,11 @@ class _SponsoredVideoFormScreenState extends State<SponsoredVideoFormScreen> {
                 color: Colors.green[50],
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
+              child: const Row(
                 children: [
-                  const Icon(Icons.check_circle, color: Colors.green),
-                  const SizedBox(width: 8),
-                  const Expanded(
+                  Icon(Icons.check_circle, color: Colors.green),
+                  SizedBox(width: 8),
+                  Expanded(
                     child: Text(
                       'Video uploaded. Thumbnail generated automatically.',
                       style: TextStyle(color: Colors.green),
@@ -799,21 +799,21 @@ class _SponsoredVideoFormScreenState extends State<SponsoredVideoFormScreen> {
               color: Colors.blue[50],
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Auto-Applied Metadata (Non-editable)',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
                   ),
                 ),
-                const SizedBox(height: 8),
-                const Text('• Sponsored badge', style: TextStyle(fontSize: 12)),
-                const Text('• Disclosure ("Sponsored" / "Paid Partnership")', style: TextStyle(fontSize: 12)),
-                const Text('• Creator attribution', style: TextStyle(fontSize: 12)),
-                const Text('• Timestamp & campaign ID', style: TextStyle(fontSize: 12)),
+                SizedBox(height: 8),
+                Text('• Sponsored badge', style: TextStyle(fontSize: 12)),
+                Text('• Disclosure ("Sponsored" / "Paid Partnership")', style: TextStyle(fontSize: 12)),
+                Text('• Creator attribution', style: TextStyle(fontSize: 12)),
+                Text('• Timestamp & campaign ID', style: TextStyle(fontSize: 12)),
               ],
             ),
           ),

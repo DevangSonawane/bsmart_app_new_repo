@@ -42,7 +42,7 @@ class AppTheme {
     return ThemeData(
       brightness: Brightness.dark,
       primaryColor: DesignTokens.instaPurple,
-      colorScheme: ColorScheme.dark().copyWith(
+      colorScheme: const ColorScheme.dark().copyWith(
         primary: DesignTokens.instaPurple,
         secondary: DesignTokens.instaPink,
         surface: surfaceDark,

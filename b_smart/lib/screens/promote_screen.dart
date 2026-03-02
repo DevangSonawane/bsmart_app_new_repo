@@ -7,7 +7,7 @@ import '../theme/design_tokens.dart';
 import '../services/promote_service.dart';
 
 class PromoteScreen extends StatefulWidget {
-  const PromoteScreen({Key? key}) : super(key: key);
+  const PromoteScreen({super.key});
 
   @override
   State<PromoteScreen> createState() => _PromoteScreenState();
@@ -99,7 +99,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(child: CircularProgressIndicator(color: DesignTokens.instaPink)),
       );
@@ -239,7 +239,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
                                     children: [
                                       Text('Sponsored', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
                                       Text(' • ', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
-                                      Icon(LucideIcons.star, color: Colors.amber, size: 14),
+                                      const Icon(LucideIcons.star, color: Colors.amber, size: 14),
                                       Text(' ${item['rating']} ', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
                                       Text(' • ', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
                                       Text('FREE', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12, fontWeight: FontWeight.w600)),
@@ -266,7 +266,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
                             onPressed: () {
 _showFeaturedProductsSheet(context, products);
                             },
-                            icon: Icon(LucideIcons.shoppingBag, color: Colors.white, size: 20),
+                            icon: const Icon(LucideIcons.shoppingBag, color: Colors.white, size: 20),
                             label: const Text('View Products', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: Colors.white),
@@ -326,7 +326,7 @@ _showFeaturedProductsSheet(context, products);
                   child: Text('Featured Products', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
                 IconButton(
-                  icon: Icon(LucideIcons.x, color: Colors.white),
+                  icon: const Icon(LucideIcons.x, color: Colors.white),
                   onPressed: () => Navigator.of(ctx).pop(),
                 ),
               ],
@@ -356,8 +356,8 @@ _showFeaturedProductsSheet(context, products);
                           child: CachedNetworkImage(
                             imageUrl: (prod['image'] as String?) ?? '',
                             fit: BoxFit.cover,
-                            placeholder: (_, __) => Center(child: Icon(LucideIcons.image, color: Colors.white54)),
-                            errorWidget: (_, __, ___) => Center(child: Icon(LucideIcons.imageOff, color: Colors.white54)),
+                            placeholder: (_, __) => const Center(child: Icon(LucideIcons.image, color: Colors.white54)),
+                            errorWidget: (_, __, ___) => const Center(child: Icon(LucideIcons.imageOff, color: Colors.white54)),
                           ),
                         ),
                         Padding(

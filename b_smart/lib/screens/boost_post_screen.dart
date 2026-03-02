@@ -303,7 +303,7 @@ class _BoostPostScreenState extends State<BoostPostScreen> {
   }
 
   Widget _buildBoostOptions() {
-    final durations = BoostDuration.values;
+    const durations = BoostDuration.values;
     
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),

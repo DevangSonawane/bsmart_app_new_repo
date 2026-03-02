@@ -53,7 +53,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/edit-profile': (ctx) => const EditProfileScreen(userId: ''),
   '/story-camera': (ctx) => const StoryCameraScreen(),
   '/own-story-viewer': (ctx) {
-    return OwnStoryViewerScreen(stories: const [], userName: 'You');
+    return const OwnStoryViewerScreen(stories: [], userName: 'You');
   },
   '/edit_video': (ctx) {
     final args = ModalRoute.of(ctx)?.settings.arguments;

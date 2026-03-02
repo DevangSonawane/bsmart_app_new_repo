@@ -193,20 +193,20 @@ class SponsoredVideoPreviewScreen extends StatelessWidget {
                       color: Colors.blue[50],
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Column(
+                    child: const Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'What happens next?',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Text('• Your video is being reviewed by our moderation team'),
-                        const Text('• Content policy scan is in progress'),
-                        const Text('• Product validation is being performed'),
-                        const Text('• You will be notified once the review is complete'),
+                        SizedBox(height: 8),
+                        Text('• Your video is being reviewed by our moderation team'),
+                        Text('• Content policy scan is in progress'),
+                        Text('• Product validation is being performed'),
+                        Text('• You will be notified once the review is complete'),
                       ],
                     ),
                   ),
@@ -237,7 +237,7 @@ class SponsoredVideoPreviewScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        Text('Your sponsored video has been approved and will appear in:'),
+                        const Text('Your sponsored video has been approved and will appear in:'),
                         const SizedBox(height: 4),
                         const Text('• Sponsored Feed'),
                         const Text('• Play / Video Feed (interleaved)'),

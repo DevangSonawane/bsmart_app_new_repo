@@ -14,7 +14,7 @@ class StoriesRow extends StatelessWidget {
   final bool showYourStory;
 
   const StoriesRow({
-    Key? key,
+    super.key,
     required this.users,
     this.onYourStoryTap,
     this.onUserStoryTap,
@@ -23,7 +23,7 @@ class StoriesRow extends StatelessWidget {
     this.yourStoryUploadProgress,
     this.onYourStoryAddTap,
     this.showYourStory = true,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +135,7 @@ class _StoryItem extends StatelessWidget {
               radius: 28,
               backgroundColor: isDark ? Colors.black : Colors.white,
               backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
-              child: avatarUrl == null ? Icon(LucideIcons.user, color: Colors.grey) : null,
+              child: avatarUrl == null ? const Icon(LucideIcons.user, color: Colors.grey) : null,
             ),
               ),
               if (uploadProgress != null && (uploadProgress! > 0 && uploadProgress! < 1))

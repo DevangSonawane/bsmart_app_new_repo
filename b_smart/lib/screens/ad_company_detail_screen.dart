@@ -72,7 +72,7 @@ class AdCompanyDetailScreen extends StatelessWidget {
                           if (company.websiteUrl != null)
                             Text(
                               company.websiteUrl!,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 color: Colors.blue,
                                 fontSize: 12,
                               ),

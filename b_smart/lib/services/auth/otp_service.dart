@@ -73,7 +73,7 @@ class OTPService {
       if (otp == storedOtp || otp == _mockOtpCode) {
         // Clear attempts on success
         final sessionTokenForIdentifier = _identifierToSession.entries
-            .firstWhere((e) => e.value == sessionToken, orElse: () => MapEntry('', ''));
+            .firstWhere((e) => e.value == sessionToken, orElse: () => const MapEntry('', ''));
         if (sessionTokenForIdentifier.key.isNotEmpty) {
           _otpAttempts[sessionTokenForIdentifier.key] = 0;
         }
@@ -82,7 +82,7 @@ class OTPService {
 
       // Increment attempts
       final sessionTokenForIdentifier = _identifierToSession.entries
-          .firstWhere((e) => e.value == sessionToken, orElse: () => MapEntry('', ''));
+          .firstWhere((e) => e.value == sessionToken, orElse: () => const MapEntry('', ''));
       if (sessionTokenForIdentifier.key.isNotEmpty) {
         _otpAttempts[sessionTokenForIdentifier.key] = 
             (_otpAttempts[sessionTokenForIdentifier.key] ?? 0) + 1;
@@ -104,7 +104,7 @@ class OTPService {
     try {
       // Find identifier for this session
       final entry = _identifierToSession.entries
-          .firstWhere((e) => e.value == sessionToken, orElse: () => MapEntry('', ''));
+          .firstWhere((e) => e.value == sessionToken, orElse: () => const MapEntry('', ''));
       
       if (entry.key.isEmpty) {
         throw Exception('Invalid session');

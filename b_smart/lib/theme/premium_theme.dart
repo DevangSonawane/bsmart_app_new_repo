@@ -89,7 +89,7 @@ class PremiumTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: softGrey, width: 1),
+          borderSide: const BorderSide(color: softGrey, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

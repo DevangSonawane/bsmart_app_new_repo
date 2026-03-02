@@ -299,9 +299,9 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Select Language'),
-        content: Column(
+        content: const Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
+          children: [
             ListTile(title: Text('English (Default)'), trailing: Icon(Icons.check, color: InstagramTheme.primaryPink)),
             ListTile(title: Text('Spanish')),
             ListTile(title: Text('French')),
@@ -322,19 +322,19 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Update Address'),
-        content: Column(
+        content: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              decoration: const InputDecoration(labelText: 'Street Address'),
+              decoration: InputDecoration(labelText: 'Street Address'),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             TextField(
-              decoration: const InputDecoration(labelText: 'City'),
+              decoration: InputDecoration(labelText: 'City'),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             TextField(
-              decoration: const InputDecoration(labelText: 'Postal Code'),
+              decoration: InputDecoration(labelText: 'Postal Code'),
             ),
           ],
         ),

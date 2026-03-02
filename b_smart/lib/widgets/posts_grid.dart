@@ -9,7 +9,7 @@ class PostsGrid extends StatefulWidget {
   final List<FeedPost> posts;
   final void Function(FeedPost) onTap;
 
-  const PostsGrid({Key? key, required this.posts, required this.onTap}) : super(key: key);
+  const PostsGrid({super.key, required this.posts, required this.onTap});
 
   @override
   State<PostsGrid> createState() => _PostsGridState();
@@ -66,7 +66,7 @@ class _PostsGridState extends State<PostsGrid> {
                   CachedNetworkImage(
                     imageUrl: thumb,
                     httpHeaders: _headers,
-                    cacheKey: '${thumb}#${_headers?['Authorization'] ?? ''}',
+                    cacheKey: '$thumb#${_headers?['Authorization'] ?? ''}',
                     fit: BoxFit.cover,
                     placeholder: (ctx, url) => Container(color: Colors.grey[300]),
                     errorWidget: (ctx, url, err) => Container(
@@ -88,7 +88,7 @@ class _PostsGridState extends State<PostsGrid> {
                         ],
                       ),
                     ),
-                    child: Center(
+                    child: const Center(
                       child: Icon(
                         LucideIcons.play,
                         color: Colors.white,

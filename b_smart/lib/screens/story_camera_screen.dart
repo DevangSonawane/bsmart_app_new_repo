@@ -15,7 +15,6 @@ import 'create_post_screen.dart';
 import 'create_upload_screen.dart';
 import '../api/api.dart';
 import '../services/supabase_service.dart';
-import '../config/api_config.dart';
 
 class StoryCameraScreen extends StatefulWidget {
   const StoryCameraScreen({super.key});

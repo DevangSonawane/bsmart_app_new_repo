@@ -6,7 +6,6 @@ import '../../../widgets/clay_container.dart';
 import '../../../services/auth/auth_service.dart';
 import '../../../models/auth/signup_session_model.dart';
 import '../../../utils/validators.dart';
-import 'signup_verification_screen.dart';
 import 'signup_account_setup_screen.dart';
 
 class SignupIdentifierScreen extends StatefulWidget {
@@ -159,7 +158,7 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
                     children: [
                       const SizedBox(height: 40),
                       // Logo
-                      Center(
+                      const Center(
                         child: ClayContainer(
                           width: 100,
                           height: 100,
@@ -215,7 +214,7 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
                           style: const TextStyle(color: InstagramTheme.textBlack),
-                          decoration: InputDecoration(
+                          decoration: const InputDecoration(
                             labelText: 'Email',
                             hintText: 'Enter your email',
                             prefixIcon: Icon(LucideIcons.mail),
@@ -230,7 +229,7 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
                           decoration: InputDecoration(
                             labelText: 'Password',
                             hintText: 'Create a password',
-                            prefixIcon: Icon(LucideIcons.lock),
+                            prefixIcon: const Icon(LucideIcons.lock),
                             suffixIcon: IconButton(
                               icon: Icon(
                                 _isPasswordVisible
@@ -251,7 +250,7 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,
                           style: const TextStyle(color: InstagramTheme.textBlack),
-                          decoration: InputDecoration(
+                          decoration: const InputDecoration(
                             labelText: 'Phone Number',
                             hintText: '+1234567890',
                             prefixIcon: Icon(LucideIcons.phone),
@@ -284,7 +283,7 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
                       // Divider
                       Row(
                         children: [
-                          Expanded(
+                          const Expanded(
                             child: Divider(color: InstagramTheme.dividerGrey),
                           ),
                           Padding(
@@ -297,7 +296,7 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
                               ),
                             ),
                           ),
-                          Expanded(
+                          const Expanded(
                             child: Divider(color: InstagramTheme.dividerGrey),
                           ),
                         ],

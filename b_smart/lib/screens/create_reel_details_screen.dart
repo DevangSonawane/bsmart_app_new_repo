@@ -1,13 +1,15 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:photo_manager/photo_manager.dart';
 import '../models/media_model.dart';
 import '../services/supabase_service.dart';
 import '../api/upload_api.dart';
-import '../api/reels_api.dart';
+import '../api/posts_api.dart';
 import '../api/users_api.dart';
 import '../config/api_config.dart';
 import '../utils/current_user.dart';
@@ -21,14 +23,14 @@ class CreateReelDetailsScreen extends StatefulWidget {
   final Duration? trimEnd;
 
   const CreateReelDetailsScreen({
-    Key? key,
+    super.key,
     required this.media,
     this.selectedFilter,
     this.selectedMusic,
     this.musicVolume = 0.5,
     this.trimStart,
     this.trimEnd,
-  }) : super(key: key);
+  });
 
   @override
   State<CreateReelDetailsScreen> createState() => _CreateReelDetailsScreenState();
@@ -38,7 +40,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   final SupabaseService _svc = SupabaseService();
   final TextEditingController _captionCtl = TextEditingController();
 
-  String _location = '';
+  final String _location = '';
   bool _hideLikes = false;
   bool _turnOffCommenting = false;
   bool _advancedOpen = false;
@@ -48,6 +50,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   Map<String, dynamic>? _currentUserProfile;
   final List<Map<String, dynamic>> _peopleTags = [];
   String? _draggingTagId;
+  String? _selectedThumbnailPath; // User-selected thumbnail
 
   VideoPlayerController? _videoController;
   Future<void>? _videoInit;
@@ -86,22 +89,68 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
     }
   }
 
+  Future<void> _pickCustomThumbnail() async {
+    final PermissionState ps = await PhotoManager.requestPermissionExtend();
+    if (!ps.isAuth) return;
+    
+    final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
+      type: RequestType.image,
+      filterOption: FilterOptionGroup(
+        orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+      ),
+    );
+    if (paths.isEmpty) return;
+    
+    // Simple picker using modal bottom sheet
+    if (!mounted) return;
+    final AssetEntity? selected = await showModalBottomSheet<AssetEntity>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black,
+      builder: (ctx) => _ThumbnailPickerSheet(assetsPath: paths.first),
+    );
+    
+    if (selected != null) {
+      final file = await selected.file;
+      if (file != null) {
+        setState(() {
+          _selectedThumbnailPath = file.path;
+        });
+      }
+    }
+  }
+
   Future<Map<String, dynamic>?> _uploadThumbnailForVideo({
     required String videoPath,
     required int startMs,
     required int endMs,
   }) async {
     try {
-      final durationMs = endMs > startMs ? endMs - startMs : (endMs > 0 ? endMs : startMs);
-      final midOffset = durationMs > 0 ? durationMs ~/ 2 : 0;
-      final captureMs = startMs + midOffset;
-      final bytes = await VideoThumbnail.thumbnailData(
-        video: videoPath,
-        imageFormat: ImageFormat.JPEG,
-        timeMs: captureMs,
-        quality: 85,
-      );
+      Uint8List? bytes;
+      
+      // 1. Use user-selected thumbnail if available
+      if (_selectedThumbnailPath != null) {
+        final file = File(_selectedThumbnailPath!);
+        if (await file.exists()) {
+          bytes = await file.readAsBytes();
+        }
+      }
+      
+      // 2. Fallback to generating from video
+      if (bytes == null) {
+        final durationMs = endMs > startMs ? endMs - startMs : (endMs > 0 ? endMs : startMs);
+        final midOffset = durationMs > 0 ? durationMs ~/ 2 : 0;
+        final captureMs = startMs + midOffset;
+        bytes = await VideoThumbnail.thumbnailData(
+          video: videoPath,
+          imageFormat: ImageFormat.JPEG,
+          timeMs: captureMs,
+          quality: 85,
+        );
+      }
+      
       if (bytes == null || bytes.isEmpty) return null;
+      
       final filename = 'thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final res = await UploadApi().uploadThumbnailBytes(bytes: bytes, filename: filename);
       final rawThumbs = res['thumbnails'];
@@ -110,12 +159,12 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       if (rawThumbs is List) {
         thumbs = rawThumbs.map((e) => Map<String, dynamic>.from(e as Map)).toList();
       } else if (rawThumbs is Map) {
-        thumbs = [Map<String, dynamic>.from(rawThumbs as Map)];
+        thumbs = [Map<String, dynamic>.from(rawThumbs)];
       }
       if (thumbs == null || thumbs.isEmpty) return null;
       return {
         'thumbs': thumbs,
-        'timeMs': captureMs,
+        'timeMs': 0, // Should be actual time if auto-generated, but 0 is fine for custom
       };
     } catch (_) {
       return null;
@@ -245,29 +294,21 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       final captionText = _captionCtl.text.trim();
       final tags = RegExp(r'#(\w+)').allMatches(captionText).map((m) => m.group(0)!).toList();
 
-      final created = await ReelsApi().createReel(
+      await PostsApi().createPost(
         media: [mediaItem],
         caption: captionText.isEmpty ? null : captionText,
         location: _location.isEmpty ? null : _location,
         tags: tags,
-        peopleTags: _peopleTags.map((t) => {
-          'user_id': t['user_id'],
-          'username': t['username'],
-          'x': (t['x'] as double) * 100, // API expects 0-100 range? React sends 0-100.
-          'y': (t['y'] as double) * 100,
-        }).toList(),
+        type: 'reel',
+        peopleTags: _peopleTags,
         hideLikesCount: _hideLikes,
         turnOffCommenting: _turnOffCommenting,
       );
 
-      if (created.isNotEmpty && mounted) {
+      if (mounted) {
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Reel shared successfully!')),
-        );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to create reel.')),
         );
       }
     } catch (e) {
@@ -306,471 +347,312 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final media = widget.media;
-    final isVideo = media.type == MediaType.video;
-
-    Widget previewChild;
-    if (media.filePath != null && isVideo) {
-      final controller = _videoController;
-      if (controller == null) {
-        previewChild =
-            Icon(LucideIcons.video, size: 100, color: Colors.grey[600]);
-      } else {
-        previewChild = FutureBuilder<void>(
-          future: _videoInit,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done ||
-                !controller.value.isInitialized) {
-              return const Center(
-                child: CircularProgressIndicator(strokeWidth: 2),
-              );
-            }
-            return FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: controller.value.size.width,
-                height: controller.value.size.height,
-                child: VideoPlayer(controller),
-              ),
-            );
-          },
-        );
-      }
-    } else if (media.filePath != null && !isVideo) {
-      previewChild = Image.file(
-        File(media.filePath!),
-        fit: BoxFit.cover,
-      );
-    } else {
-      previewChild = Icon(
-        isVideo ? LucideIcons.video : LucideIcons.image,
-        size: 100,
-        color: Colors.grey[600],
-      );
-    }
-
-    final previewSection = Container(
-      color: Colors.black,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Center(child: previewChild),
-          // Interactive layer for tagging
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: () {
-                if (_peopleTags.isEmpty) {
-                   _showTagSearch();
-                }
-              },
-              child: Container(color: Colors.transparent),
-            ),
-          ),
-          if (_peopleTags.isEmpty)
-             const Positioned(
-                bottom: 20,
-                child: Text(
-                  'Tap to tag people',
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 12,
-                    shadows: [Shadow(blurRadius: 2, color: Colors.black)],
-                  ),
-                ),
-             ),
-          // Render tags
-           ..._peopleTags.map((tag) {
-              final x = (tag['x'] as double);
-              final y = (tag['y'] as double);
-              return Align(
-                alignment: Alignment(x * 2 - 1, y * 2 - 1),
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    // Drag logic requires container size context, skipping complex drag for now
-                    // just allow tap to remove
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white30),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          tag['username'],
-                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 4),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _peopleTags.remove(tag);
-                            });
-                          },
-                          child: const Icon(LucideIcons.x, size: 14, color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-           }).toList(),
-        ],
-      ),
-    );
-
-    final sharePanel = Container(
-      color: Theme.of(context).colorScheme.surface,
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: Colors.transparent,
-                  child: CircleAvatar(
-                    radius: 15,
-                    backgroundColor: Colors.grey.shade200,
-                    backgroundImage: _currentUserProfile != null &&
-                            _currentUserProfile!['avatar_url'] != null &&
-                            (_currentUserProfile!['avatar_url'] as String)
-                                .isNotEmpty
-                        ? NetworkImage(
-                            _currentUserProfile!['avatar_url'] as String)
-                        : null,
-                    child: _currentUserProfile == null ||
-                            _currentUserProfile!['avatar_url'] == null ||
-                            (_currentUserProfile!['avatar_url'] as String)
-                                .isEmpty
-                        ? Text(
-                            _currentUserProfile != null
-                                ? ((_currentUserProfile!['username'] ??
-                                            _currentUserProfile!['full_name'] ??
-                                            'U') as String)
-                                        .isNotEmpty
-                                    ? ((_currentUserProfile!['username'] ??
-                                                _currentUserProfile![
-                                                    'full_name'] ??
-                                                'U') as String)
-                                            .substring(0, 1)
-                                            .toUpperCase()
-                                    : 'U'
-                                : 'U',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color:
-                                  Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+  Widget _buildThumbnailSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text('Cover', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        SizedBox(
+          height: 120,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              // Current selection preview
+              GestureDetector(
+                onTap: _pickCustomThumbnail,
+                child: Container(
+                  width: 80,
+                  height: 120,
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                    image: _selectedThumbnailPath != null
+                        ? DecorationImage(
+                            image: FileImage(File(_selectedThumbnailPath!)),
+                            fit: BoxFit.cover,
                           )
                         : null,
                   ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  (_currentUserProfile?['username'] as String?) ?? 'User',
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: _captionCtl,
-                  maxLines: 6,
-                  maxLength: 2200,
-                  decoration: const InputDecoration(
-                    hintText: 'Write a caption...',
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    counterText: '',
-                  ),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      icon: Icon(LucideIcons.smile,
-                          color: Colors.grey[600], size: 22),
-                      onPressed: () =>
-                          setState(() => _showEmojiPicker = !_showEmojiPicker),
-                    ),
-                    ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: _captionCtl,
-                      builder: (_, value, __) => Text(
-                        '${value.text.length}/2,200',
-                        style:
-                            TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                    ),
-                  ],
-                ),
-                if (_showEmojiPicker)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Most popular',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[600]),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: _popularEmojis
-                              .map(
-                                (e) => InkWell(
-                                  onTap: () {
-                                    _captionCtl.text = _captionCtl.text + e;
-                                    setState(() {});
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(6),
-                                    child: Text(e,
-                                        style:
-                                            const TextStyle(fontSize: 22)),
+                  child: _selectedThumbnailPath == null
+                      ? Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (_videoController != null && _videoController!.value.isInitialized)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(7),
+                                child: FittedBox(
+                                  fit: BoxFit.cover,
+                                  child: SizedBox(
+                                    width: _videoController!.value.size.width,
+                                    height: _videoController!.value.size.height,
+                                    child: VideoPlayer(_videoController!),
                                   ),
                                 ),
                               )
-                              .toList(),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          InkWell(
-            onTap: _showTagSearch,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Tag People', style: TextStyle(fontSize: 14)),
-                  const Text('Add Tag', style: TextStyle(fontSize: 14, color: Colors.blue, fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
-          ),
-          if (_peopleTags.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _peopleTags.map((tag) => Chip(
-                  avatar: CircleAvatar(
-                    backgroundImage: tag['avatar_url'] != null ? NetworkImage(tag['avatar_url']) : null,
-                    child: tag['avatar_url'] == null ? Text(tag['username'][0].toUpperCase()) : null,
-                  ),
-                  label: Text(tag['username']),
-                  onDeleted: () {
-                    setState(() {
-                      _peopleTags.remove(tag);
-                    });
-                  },
-                )).toList(),
-              ),
-            ),
-          const Divider(height: 1),
-          InkWell(
-            onTap: () => setState(() => _soundOn = !_soundOn),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Sound', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                  Switch(
-                    value: _soundOn,
-                    onChanged: (v) => setState(() => _soundOn = v),
-                    activeColor: Colors.blue,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          InkWell(
-            onTap: () => setState(() => _advancedOpen = !_advancedOpen),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Advanced Settings',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w500)),
-                  Icon(
-                    _advancedOpen
-                        ? LucideIcons.chevronUp
-                        : LucideIcons.chevronDown,
-                    color: Colors.grey[600],
-                    size: 20,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_advancedOpen) ...[
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text(
-                              'Hide like and view counts on this reel',
-                              style: TextStyle(fontSize: 14),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Only you will see the total number of likes and views. You can change this later in the ... menu.',
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.grey),
+                            else
+                              const Center(child: Icon(LucideIcons.image, color: Colors.grey)),
+                            Container(
+                              color: Colors.black26,
+                              child: const Center(
+                                child: Icon(Icons.edit, color: Colors.white),
+                              ),
                             ),
                           ],
-                        ),
-                      ),
-                      Switch(
-                        value: _hideLikes,
-                        onChanged: (v) =>
-                            setState(() => _hideLikes = v),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text('Turn off commenting',
-                                style: TextStyle(fontSize: 14)),
-                            SizedBox(height: 4),
-                            Text(
-                              'You can change this later in the ... menu at the top of your reel.',
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Switch(
-                        value: _turnOffCommenting,
-                        onChanged: (v) =>
-                            setState(() => _turnOffCommenting = v),
-                      ),
-                    ],
-                  ),
-                ],
+                        )
+                      : null,
+                ),
               ),
-            ),
-          ],
-          const SizedBox(height: 24),
-        ],
-      ),
-    );
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.of(context).pop(),
+              // Option to pick from gallery
+              GestureDetector(
+                onTap: _pickCustomThumbnail,
+                child: Container(
+                  width: 80,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined, color: Colors.black54),
+                      SizedBox(height: 4),
+                      Text('Upload', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        title: const Text('New Reel', style: TextStyle(color: Colors.black)),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('New Reel'),
         actions: [
           TextButton(
             onPressed: _isSubmitting ? null : _submit,
             child: _isSubmitting
                 ? const SizedBox(
-                    width: 18,
-                    height: 18,
+                    width: 20,
+                    height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(
-                    'Share',
-                    style: TextStyle(
-                      color: Color(0xFF0095F6),
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                : const Text('Share', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final useColumn = constraints.maxWidth < 600;
-          final borderedPanel = Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border(
-                left: useColumn
-                    ? BorderSide.none
-                    : BorderSide(color: Theme.of(context).dividerColor),
-                top: useColumn
-                    ? BorderSide(color: Theme.of(context).dividerColor)
-                    : BorderSide.none,
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Video Preview (Mini)
+                  Container(
+                    width: 80,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: _videoController != null && _videoController!.value.isInitialized
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: FittedBox(
+                              fit: BoxFit.cover,
+                              child: SizedBox(
+                                width: _videoController!.value.size.width,
+                                height: _videoController!.value.size.height,
+                                child: VideoPlayer(_videoController!),
+                              ),
+                            ),
+                          )
+                        : const Center(child: CircularProgressIndicator(color: Colors.white)),
+                  ),
+                  const SizedBox(width: 16),
+                  // Caption Input
+                  Expanded(
+                    child: TextField(
+                      controller: _captionCtl,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        hintText: 'Write a caption...',
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: sharePanel,
-          );
-          if (useColumn) {
-            return Column(
-              children: [
-                Expanded(flex: 2, child: previewSection),
-                SizedBox(
-                  height: 320,
-                  child: borderedPanel,
+            
+            _buildThumbnailSection(),
+            const Divider(height: 32),
+            
+            // ... (rest of the settings: Tag People, Location, etc.)
+            ListTile(
+              leading: const Icon(LucideIcons.userPlus),
+              title: const Text('Tag people'),
+              trailing: _peopleTags.isNotEmpty
+                  ? Text('${_peopleTags.length} people')
+                  : const Icon(LucideIcons.chevronRight),
+              onTap: _showTagSearch,
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.mapPin),
+              title: const Text('Add location'),
+              trailing: const Icon(LucideIcons.chevronRight),
+              onTap: () {
+                // TODO: Location picker
+              },
+            ),
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: InkWell(
+                onTap: () => setState(() => _advancedOpen = !_advancedOpen),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Advanced Settings',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                      Icon(
+                        _advancedOpen ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                        color: Colors.grey[600],
+                        size: 20,
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(flex: 2, child: previewSection),
-              SizedBox(
-                width: 420,
-                child: borderedPanel,
+              ),
+            ),
+            if (_advancedOpen) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text('Hide like count on this reel'),
+                        ),
+                        Switch(
+                          value: _hideLikes,
+                          onChanged: (v) => setState(() => _hideLikes = v),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text('Turn off commenting'),
+                        ),
+                        Switch(
+                          value: _turnOffCommenting,
+                          onChanged: (v) => setState(() => _turnOffCommenting = v),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
-          );
-        },
+            const SizedBox(height: 100),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThumbnailPickerSheet extends StatefulWidget {
+  final AssetPathEntity assetsPath;
+  const _ThumbnailPickerSheet({required this.assetsPath});
+
+  @override
+  State<_ThumbnailPickerSheet> createState() => _ThumbnailPickerSheetState();
+}
+
+class _ThumbnailPickerSheetState extends State<_ThumbnailPickerSheet> {
+  final List<AssetEntity> _assets = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAssets();
+  }
+
+  Future<void> _loadAssets() async {
+    final list = await widget.assetsPath.getAssetListPaged(page: 0, size: 60);
+    if (mounted) {
+      setState(() {
+        _assets.addAll(list);
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      color: Colors.white,
+      child: Column(
+        children: [
+          AppBar(
+            title: const Text('Select Cover', style: TextStyle(color: Colors.black)),
+            backgroundColor: Colors.white,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.close, color: Colors.black),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : GridView.builder(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 1,
+                      mainAxisSpacing: 1,
+                    ),
+                    itemCount: _assets.length,
+                    itemBuilder: (context, index) {
+                      final asset = _assets[index];
+                      return GestureDetector(
+                        onTap: () => Navigator.pop(context, asset),
+                        child: FutureBuilder<Uint8List?>(
+                          future: asset.thumbnailDataWithSize(const ThumbnailSize(200, 200)),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasData) {
+                              return Image.memory(snapshot.data!, fit: BoxFit.cover);
+                            }
+                            return Container(color: Colors.grey[300]);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -778,7 +660,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
 
 class _TagSearchSheet extends StatefulWidget {
   final Function(Map<String, dynamic>) onSelect;
-  const _TagSearchSheet({Key? key, required this.onSelect}) : super(key: key);
+  const _TagSearchSheet({required this.onSelect});
 
   @override
   State<_TagSearchSheet> createState() => _TagSearchSheetState();

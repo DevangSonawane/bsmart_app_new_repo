@@ -142,7 +142,7 @@ const _popularEmojis = ['😂', '😮', '😍', '😢', '👏', '🔥', '🎉', 
 
 class CreatePostScreen extends StatefulWidget {
   final MediaItem? initialMedia;
-  const CreatePostScreen({Key? key, this.initialMedia}) : super(key: key);
+  const CreatePostScreen({super.key, this.initialMedia});
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -158,7 +158,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   int _currentIndex = 0;
 
   // Share step
-  String _location = '';
+  final String _location = '';
   bool _hideLikes = false;
   bool _turnOffCommenting = false;
   bool _advancedOpen = false;
@@ -428,11 +428,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     
     // Clear results if query is empty
     if (query.isEmpty) {
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _tagSearchResults = [];
         _isSearchingUsers = false;
         _lastSearchQuery = '';
       });
+      }
       return;
     }
 
@@ -444,15 +446,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       });
       try {
         final list = await UsersApi().search(query);
-        if (mounted) setState(() {
+        if (mounted) {
+          setState(() {
           _tagSearchResults = list;
           _isSearchingUsers = false;
         });
+        }
       } catch (e) {
-        if (mounted) setState(() {
+        if (mounted) {
+          setState(() {
           _tagSearchResults = [];
           _isSearchingUsers = false;
         });
+        }
       }
     });
   }
@@ -550,11 +556,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           'fileUrl': fileUrl,
           'type': item.isVideo ? 'video' : 'image',
           'crop': {
-            'mode': 'original',
+            'mode': item.aspect == 0.0 ? 'original' : 'custom',
             'zoom': 1.0,
             'x': 0,
             'y': 0,
+            'aspect_ratio': item.aspect == 0.0 ? null : item.aspect,
           },
+          'aspect_ratio': item.aspect == 0.0 ? null : item.aspect,
           'filter': {
             'name': item.filter,
             'css': css,
@@ -624,7 +632,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         elevation: 0,
         backgroundColor: Colors.white,
         leading: IconButton(
-          icon: Icon(LucideIcons.arrowLeft, color: Colors.black87),
+          icon: const Icon(LucideIcons.arrowLeft, color: Colors.black87),
           onPressed: _back,
         ),
         title: Text(
@@ -762,7 +770,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               bottom: 0,
               child: Center(
                 child: IconButton(
-                  icon: Icon(LucideIcons.chevronLeft, color: Colors.white, size: 32),
+                  icon: const Icon(LucideIcons.chevronLeft, color: Colors.white, size: 32),
                   style: IconButton.styleFrom(backgroundColor: Colors.black54),
                   onPressed: () => setState(() => _currentIndex--),
                 ),
@@ -775,7 +783,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               bottom: 0,
               child: Center(
                 child: IconButton(
-                  icon: Icon(LucideIcons.chevronRight, color: Colors.white, size: 32),
+                  icon: const Icon(LucideIcons.chevronRight, color: Colors.white, size: 32),
                   style: IconButton.styleFrom(backgroundColor: Colors.black54),
                   onPressed: () => setState(() => _currentIndex++),
                 ),
@@ -826,7 +834,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 Positioned(
                   left: 8,
                   child: IconButton(
-                    icon: Icon(LucideIcons.chevronLeft, color: Colors.black87),
+                    icon: const Icon(LucideIcons.chevronLeft, color: Colors.black87),
                     style: IconButton.styleFrom(backgroundColor: Colors.white70),
                     onPressed: () => setState(() => _currentIndex--),
                   ),
@@ -835,7 +843,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 Positioned(
                   right: 8,
                   child: IconButton(
-                    icon: Icon(LucideIcons.chevronRight, color: Colors.black87),
+                    icon: const Icon(LucideIcons.chevronRight, color: Colors.black87),
                     style: IconButton.styleFrom(backgroundColor: Colors.white70),
                     onPressed: () => setState(() => _currentIndex++),
                   ),
@@ -845,7 +853,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         );
         final toolsSection = Container(
           width: useColumn ? null : _editPanelMinWidth,
-          constraints: useColumn ? null : BoxConstraints(minWidth: _editPanelMinWidth),
+          constraints: useColumn ? null : const BoxConstraints(minWidth: _editPanelMinWidth),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             border: Border(
@@ -942,7 +950,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                               ),
                                               clipBehavior: Clip.antiAlias,
                                               child: item.isVideo
-                                                  ? Icon(LucideIcons.video, size: 32)
+                                                  ? const Icon(LucideIcons.video, size: 32)
                                                   : _filterThumbnail(file, name, selected),
                                             ),
                                             const SizedBox(height: 4),
@@ -1253,7 +1261,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     Positioned(
                       left: 8,
                       child: IconButton(
-                        icon: Icon(LucideIcons.chevronLeft, color: Colors.black87),
+                        icon: const Icon(LucideIcons.chevronLeft, color: Colors.black87),
                         style: IconButton.styleFrom(backgroundColor: Colors.white70),
                         onPressed: () => setState(() => _currentIndex--),
                       ),
@@ -1262,7 +1270,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     Positioned(
                       right: 8,
                       child: IconButton(
-                        icon: Icon(LucideIcons.chevronRight, color: Colors.black87),
+                        icon: const Icon(LucideIcons.chevronRight, color: Colors.black87),
                         style: IconButton.styleFrom(backgroundColor: Colors.white70),
                         onPressed: () => setState(() => _currentIndex++),
                       ),

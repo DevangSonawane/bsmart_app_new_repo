@@ -64,10 +64,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       // Mock sending email
       await Future.delayed(const Duration(seconds: 1));
 
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _step = 2;
         _loading = false;
       });
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -133,7 +135,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               children: [
                 TextButton.icon(
                   onPressed: () => Navigator.of(context).pushReplacementNamed('/login'),
-                  icon: Icon(LucideIcons.arrowLeft, size: 20),
+                  icon: const Icon(LucideIcons.arrowLeft, size: 20),
                   label: const Text('Back to Login'),
                   style: TextButton.styleFrom(foregroundColor: Colors.grey.shade700),
                 ),
@@ -233,7 +235,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Icon(LucideIcons.shieldCheck, size: 48, color: DesignTokens.instaPink),
+        const Icon(LucideIcons.shieldCheck, size: 48, color: DesignTokens.instaPink),
         const SizedBox(height: 16),
         const Text("Verify it's you", textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
@@ -245,10 +247,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade100)),
             child: Row(
               children: [
-                CircleAvatar(radius: 24, backgroundImage: _foundUser!['avatar_url'] != null ? NetworkImage(_foundUser!['avatar_url'] as String) : null, child: _foundUser!['avatar_url'] == null ? Text('${(_foundUser!['username'] ?? 'U').toString().substring(0, 1).toUpperCase()}') : null),
+                CircleAvatar(radius: 24, backgroundImage: _foundUser!['avatar_url'] != null ? NetworkImage(_foundUser!['avatar_url'] as String) : null, child: _foundUser!['avatar_url'] == null ? Text((_foundUser!['username'] ?? 'U').toString().substring(0, 1).toUpperCase()) : null),
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${_foundUser!['full_name'] ?? _foundUser!['username']}', style: const TextStyle(fontWeight: FontWeight.bold)), Text('${_foundUser!['email']}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600))])),
-                Icon(LucideIcons.circleCheck, color: Colors.green, size: 22),
+                const Icon(LucideIcons.circleCheck, color: Colors.green, size: 22),
               ],
             ),
           ),
@@ -289,7 +291,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Icon(LucideIcons.circleCheck, size: 48, color: Colors.green),
+        const Icon(LucideIcons.circleCheck, size: 48, color: Colors.green),
         const SizedBox(height: 16),
         const Text('Reset Password', textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),

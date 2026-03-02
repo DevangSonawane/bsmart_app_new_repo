@@ -1,11 +1,8 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:preload_page_view/preload_page_view.dart';
 import '../models/reel_model.dart';
 import '../services/reels_service.dart';
 import '../services/user_account_service.dart';
@@ -284,7 +281,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
   }
 
   void _handleShare() {
-    final messenger = ScaffoldMessenger.of(this.context);
+    final messenger = ScaffoldMessenger.of(context);
     _reelsService.incrementShares(_reels[_currentIndex].id);
     setState(() {});
     
@@ -300,7 +297,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(LucideIcons.link, color: InstagramTheme.textBlack),
+              leading: const Icon(LucideIcons.link, color: InstagramTheme.textBlack),
               title: Text(
                 'Copy Link',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -318,7 +315,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
               },
             ),
             ListTile(
-              leading: Icon(LucideIcons.send, color: InstagramTheme.textBlack),
+              leading: const Icon(LucideIcons.send, color: InstagramTheme.textBlack),
               title: Text(
                 'Share via...',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -362,7 +359,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
           children: [
             if (reel.isSponsored)
               ListTile(
-                leading: Icon(LucideIcons.info, color: InstagramTheme.textBlack),
+                leading: const Icon(LucideIcons.info, color: InstagramTheme.textBlack),
                 title: Text(
                   'View Ad Details',
                   style: Theme.of(context).textTheme.titleMedium,
@@ -374,7 +371,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
               ),
             if (reel.remixEnabled)
               ListTile(
-                leading: Icon(LucideIcons.shuffle, color: InstagramTheme.textBlack),
+                leading: const Icon(LucideIcons.shuffle, color: InstagramTheme.textBlack),
                 title: Text(
                   'Remix this Reel',
                   style: Theme.of(context).textTheme.titleMedium,
@@ -386,7 +383,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
               ),
             if (reel.audioReuseEnabled)
               ListTile(
-                leading: Icon(LucideIcons.music2, color: InstagramTheme.textBlack),
+                leading: const Icon(LucideIcons.music2, color: InstagramTheme.textBlack),
                 title: Text(
                   'Use this Audio',
                   style: Theme.of(context).textTheme.titleMedium,
@@ -397,7 +394,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 },
               ),
             ListTile(
-              leading: Icon(LucideIcons.trendingUp, color: InstagramTheme.textBlack),
+              leading: const Icon(LucideIcons.trendingUp, color: InstagramTheme.textBlack),
               title: Text(
                 'Boost Reel',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -430,7 +427,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
               },
             ),
             ListTile(
-              leading: Icon(LucideIcons.ban, color: InstagramTheme.textBlack),
+              leading: const Icon(LucideIcons.ban, color: InstagramTheme.textBlack),
               title: Text(
                 'Not Interested',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -450,7 +447,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
               },
             ),
             ListTile(
-              leading: Icon(LucideIcons.flag, color: InstagramTheme.errorRed),
+              leading: const Icon(LucideIcons.flag, color: InstagramTheme.errorRed),
               title: Text(
                 'Report',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -470,7 +467,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
   }
 
   void _showAdDetails(Reel reel) {
-    final messenger = ScaffoldMessenger.of(this.context);
+    final messenger = ScaffoldMessenger.of(context);
     showDialog(
       context: context,
       barrierColor: InstagramTheme.backgroundWhite.withValues(alpha: 0.7),
@@ -497,7 +494,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 ),
               ),
               ...reel.productTags!.map((tag) => ListTile(
-                leading: Icon(LucideIcons.shoppingBag, color: InstagramTheme.primaryPink),
+                leading: const Icon(LucideIcons.shoppingBag, color: InstagramTheme.primaryPink),
                 title: Text(
                   tag.name,
                   style: Theme.of(context).textTheme.titleMedium,
@@ -996,7 +993,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
                   ),
                 child: tag.imageUrl != null
                       ? CachedNetworkImage(imageUrl: tag.imageUrl!, width: 40, height: 40, fit: BoxFit.cover)
-                      : Icon(LucideIcons.shoppingBag, color: InstagramTheme.textBlack),
+                      : const Icon(LucideIcons.shoppingBag, color: InstagramTheme.textBlack),
                 ),
                 const SizedBox(width: 8),
                 Column(
@@ -1016,7 +1013,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
                     if (tag.price != null)
                       Text(
                         '${tag.currency ?? '\$'}${tag.price}',
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: InstagramTheme.textGrey,
                           fontSize: 10,
                         ),

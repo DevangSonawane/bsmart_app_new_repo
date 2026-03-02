@@ -10,7 +10,7 @@ import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import '../../widgets/clay_container.dart';
 
 class SignupScreen extends StatefulWidget {
-  const SignupScreen({Key? key}) : super(key: key);
+  const SignupScreen({super.key});
 
   @override
   State<SignupScreen> createState() => _SignupScreenState();
@@ -75,7 +75,7 @@ class _SignupScreenState extends State<SignupScreen> {
     setState(() => _loading = true);
     try {
       final base = ApiConfig.baseUrl;
-      final redirect = 'bsmart://auth/google/success';
+      const redirect = 'bsmart://auth/google/success';
       final url =
           '$base/auth/google'
           '?scope=${Uri.encodeComponent('email profile')}'
@@ -250,7 +250,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     const SizedBox(height: 24),
                     Row(
                       children: [
-                        Expanded(child: Divider(color: InstagramTheme.dividerGrey)),
+                        const Expanded(child: Divider(color: InstagramTheme.dividerGrey)),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: Text(
@@ -261,7 +261,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                 ),
                           ),
                         ),
-                        Expanded(child: Divider(color: InstagramTheme.dividerGrey)),
+                        const Expanded(child: Divider(color: InstagramTheme.dividerGrey)),
                       ],
                     ),
                     const SizedBox(height: 24),

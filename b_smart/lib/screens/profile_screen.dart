@@ -22,7 +22,6 @@ import '../services/wallet_service.dart';
 import '../api/auth_api.dart';
 import '../api/api_client.dart';
 import '../config/api_config.dart';
-import 'story_camera_screen.dart';
 import '../services/feed_service.dart';
 import '../models/story_model.dart';
 import 'story_viewer_screen.dart';
@@ -39,7 +38,7 @@ const String _verifiedBadgeSvg = r'''
 
 class ProfileScreen extends StatefulWidget {
   final String? userId;
-  const ProfileScreen({Key? key, this.userId}) : super(key: key);
+  const ProfileScreen({super.key, this.userId});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -171,7 +170,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    List<FeedPost> _map(List<Map<String, dynamic>> source) {
+    List<FeedPost> map0(List<Map<String, dynamic>> source) {
       return source.map((item) {
       final map = Map<String, dynamic>.from(item);
       final id = map['_id'] as String? ?? map['id'] as String? ?? '';
@@ -265,9 +264,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       }).toList();
     }
-    final posts = _map(rawPosts);
-    final saved = _map(rawSaved);
-    final tagged = _map(rawTagged);
+    final posts = map0(rawPosts);
+    final saved = map0(rawSaved);
+    final tagged = map0(rawTagged);
 
     // Initialize counts from existing data to prevent resetting to 0 on API failure
     int? followersCount;
@@ -373,12 +372,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             }
           : <String, dynamic>{};
 
+      // Determine correct post count:
+      // If we received fewer posts than the requested page limit, we know we have the complete list.
+      // In that case, trust the actual list length over the potentially stale count from the server.
+      int finalPostsCount = (profile?['posts_count'] as int?) ?? posts.length;
+      if (posts.length < _initialPostsLimit) {
+        finalPostsCount = posts.length;
+      }
+
       final merged = {
         ...?_profile, // 1. Start with existing local state as fallback
         ...derivedFromPosts, // 2. Update with info derived from posts (if any)
         ...?profile, // 3. Override with fresh API profile data (if success)
         'is_followed_by_me': isFollowedByMe,
-        'posts_count': (profile?['posts_count'] as int?) ?? posts.length,
+        'posts_count': finalPostsCount,
         'followers_count': finalFollowers,
         'following_count': finalFollowing,
         'wallet_balance': (profile?['wallet_balance'] as int?) ?? walletBalance,
@@ -547,13 +554,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           });
         }
       } catch (_) {}
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(next ? 'Following $username' : 'Unfollowed $username'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 1),
-        ),
-      );
+      // Snackbar notification removed for a cleaner experience
     }
 
     if (mounted) {
@@ -575,7 +576,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             initialPost: p,
           ),
         ),
-      );
+      ).then((_) {
+        // Refresh profile when returning from post detail (e.g. after deletion)
+        if (mounted) _load();
+      });
     } else {
       _showPostDetail(p.id);
     }
@@ -584,7 +588,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showPostDetail(String postId) {
     final isMobile = MediaQuery.sizeOf(context).width < 600;
     if (isMobile) {
-      Navigator.of(context).pushNamed('/post/$postId');
+      Navigator.of(context).pushNamed('/post/$postId').then((_) {
+        if (mounted) _load();
+      });
     } else {
       showDialog(
         context: context,
@@ -594,7 +600,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: PostDetailModal(
             postId: postId,
-            onClose: () => Navigator.of(ctx).pop(),
+            onClose: () {
+              Navigator.of(ctx).pop();
+              if (mounted) _load();
+            },
           ),
         ),
       );
@@ -610,7 +619,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           decoration: BoxDecoration(
             color: Theme.of(ctx).cardColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 12, offset: const Offset(0, -4))],
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, -4))],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -625,7 +634,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
-                  child: Icon(LucideIcons.image, color: Colors.white, size: 22),
+                  child: const Icon(LucideIcons.image, color: Colors.white, size: 22),
                 ),
                 title: const Text('Create Post'),
                 subtitle: Text('Photo or video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
@@ -648,7 +657,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
-                  child: Icon(LucideIcons.video, color: Colors.white, size: 22),
+                  child: const Icon(LucideIcons.video, color: Colors.white, size: 22),
                 ),
                 title: const Text('Upload Reel'),
                 subtitle: Text('Short video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
@@ -750,19 +759,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final displayProfile = isMe ? (myProfileFromRedux ?? _profile) : _profile;
 
         if (_loading && displayProfile == null) {
-          return Scaffold(body: Center(child: CircularProgressIndicator(color: DesignTokens.instaPink)));
+          return const Scaffold(body: Center(child: CircularProgressIndicator(color: DesignTokens.instaPink)));
         }
 
         if (!_loading && displayProfile == null) {
           return Scaffold(
             appBar: AppBar(title: const Text('Profile')),
-            body: Center(
+            body: const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(LucideIcons.userX, size: 64, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  const Text('User not found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 16),
+                  Text('User not found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -782,10 +791,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final fgColor = theme.colorScheme.onSurface;
 
         final tabs = <Tab>[
-          Tab(icon: Icon(LucideIcons.layoutGrid)),
-          Tab(icon: Icon(LucideIcons.video)),
-          if (isMe) Tab(icon: Icon(LucideIcons.bookmark)),
-          Tab(icon: Icon(LucideIcons.tag)),
+          const Tab(icon: Icon(LucideIcons.layoutGrid)),
+          const Tab(icon: Icon(LucideIcons.video)),
+          if (isMe) const Tab(icon: Icon(LucideIcons.bookmark)),
+          const Tab(icon: Icon(LucideIcons.tag)),
         ];
 
         final tabViews = <Widget>[
@@ -811,7 +820,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           const SizedBox(height: 16),
                           TextButton(
                             onPressed: () => Navigator.of(context).pushNamed('/create'),
-                            child: Text('Share your first photo', style: TextStyle(color: DesignTokens.instaPink)),
+                            child: const Text('Share your first photo', style: TextStyle(color: DesignTokens.instaPink)),
                           ),
                         ],
                       ],
@@ -859,7 +868,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 CachedNetworkImage(
                                   imageUrl: thumb,
                                   httpHeaders: _reelImageHeaders,
-                                  cacheKey: '${thumb}#${_reelImageHeaders?['Authorization'] ?? ''}',
+                                  cacheKey: '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
                                   fit: BoxFit.cover,
                                   placeholder: (ctx, url) => Container(color: Colors.grey[900]),
                                   errorWidget: (ctx, url, err) => Container(color: Colors.grey[900]),
@@ -881,7 +890,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 bottom: 6,
                                 child: Row(
                                   children: [
-                                    Icon(
+                                    const Icon(
                                       LucideIcons.eye,
                                       size: 14,
                                       color: Colors.white,
@@ -1007,7 +1016,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     delegate: _SliverTabBarDelegate(
                       TabBar(
                         tabs: tabs,
-                        indicator: UnderlineTabIndicator(borderSide: BorderSide(width: 1.5, color: DesignTokens.instaPink)),
+                        indicator: const UnderlineTabIndicator(borderSide: BorderSide(width: 1.5, color: DesignTokens.instaPink)),
                         labelColor: DesignTokens.instaPink,
                         unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
@@ -1055,7 +1064,7 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
 
 class EditProfileScreen extends StatefulWidget {
   final String? userId;
-  const EditProfileScreen({Key? key, this.userId}) : super(key: key);
+  const EditProfileScreen({super.key, this.userId});
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
@@ -1209,7 +1218,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             const SizedBox(height: 8),
             TextButton(
               onPressed: _uploading ? null : _uploadAvatar,
-              child: Text(_uploading ? 'Uploading...' : 'Change Profile Photo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: DesignTokens.instaPink)),
+              child: Text(_uploading ? 'Uploading...' : 'Change Profile Photo', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: DesignTokens.instaPink)),
             ),
             const SizedBox(height: 24),
             TextField(

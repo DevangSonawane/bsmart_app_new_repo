@@ -278,8 +278,8 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
         Navigator.of(context).popUntil((route) => route.isFirst); // Go back to home
         
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Post shared successfully!'),
+          const SnackBar(
+            content: Text('Post shared successfully!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -555,22 +555,22 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
             });
             Navigator.pop(context);
           },
-          child: Column(
+          child: const Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               RadioListTile<PrivacyLevel>(
-                title: const Text('Public'),
-                subtitle: const Text('Anyone can see this post'),
+                title: Text('Public'),
+                subtitle: Text('Anyone can see this post'),
                 value: PrivacyLevel.public,
               ),
               RadioListTile<PrivacyLevel>(
-                title: const Text('Followers'),
-                subtitle: const Text('Only your followers can see this'),
+                title: Text('Followers'),
+                subtitle: Text('Only your followers can see this'),
                 value: PrivacyLevel.followers,
               ),
               RadioListTile<PrivacyLevel>(
-                title: const Text('Private'),
-                subtitle: const Text('Only you can see this'),
+                title: Text('Private'),
+                subtitle: Text('Only you can see this'),
                 value: PrivacyLevel.private,
               ),
             ],

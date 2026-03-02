@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum PostMediaType {
   image,
   video,
@@ -13,14 +15,15 @@ class FeedPost {
   final String? userAvatar;
   final bool isVerified;
   final PostMediaType mediaType;
-  final List<String> mediaUrls; // For carousel, multiple URLs
-  final String? thumbnailUrl; // Added thumbnail URL for videos/reels
+  final List<String> mediaUrls; 
+  final String? thumbnailUrl; 
+  final double? aspectRatio;
   final String? caption;
   final List<String> hashtags;
   final DateTime createdAt;
   final int likes;
   final int comments;
-  final int views; // For videos/reels
+  final int views; 
   final int shares;
   final bool isLiked;
   final bool isSaved;
@@ -32,7 +35,7 @@ class FeedPost {
   final String? adTitle;
   final String? adCompanyId;
   final String? adCompanyName;
-  /// Raw likes array from backend (same as React: [{ user_id, like: true }, ...])
+  final String? location; // Added location field
   final List<Map<String, dynamic>>? rawLikes;
   final List<Map<String, dynamic>>? peopleTags;
 
@@ -46,6 +49,7 @@ class FeedPost {
     required this.mediaType,
     required this.mediaUrls,
     this.thumbnailUrl,
+    this.aspectRatio,
     this.caption,
     this.hashtags = const [],
     required this.createdAt,
@@ -63,9 +67,83 @@ class FeedPost {
     this.adTitle,
     this.adCompanyId,
     this.adCompanyName,
+    this.location, // Added
     this.rawLikes,
     this.peopleTags,
   });
+
+  factory FeedPost.fromJson(Map<String, dynamic> json) {
+    // 1. Handle the Media URL extraction (The fix for your 404 error)
+    List<String> extractedUrls = [];
+    if (json['mediaUrls'] != null) {
+      for (var item in (json['mediaUrls'] as List)) {
+        if (item is Map) {
+          // If backend sends [{ "fileUrl": "...", "fileName": "..." }]
+          extractedUrls.add(item['fileUrl']?.toString() ?? '');
+        } else {
+          // If backend sends ["url1", "url2"]
+          extractedUrls.add(item.toString());
+        }
+      }
+    }
+
+      // 2. Map Media Type String to Enum
+    PostMediaType type;
+    switch (json['mediaType']?.toString().toLowerCase()) {
+      case 'video': type = PostMediaType.video; break;
+      case 'reel': type = PostMediaType.reel; break;
+      case 'carousel': type = PostMediaType.carousel; break;
+      default: type = PostMediaType.image;
+    }
+
+    String? thumbUrl = json['thumbnailUrl'];
+    
+    // Fallback: Check if first media item is a map and has a thumbnail
+    if (thumbUrl == null && json['mediaUrls'] != null && (json['mediaUrls'] as List).isNotEmpty) {
+      final first = (json['mediaUrls'] as List).first;
+      if (first is Map) {
+        final t = first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
+        if (t is String) thumbUrl = t;
+        else if (t is List && t.isNotEmpty && t.first is Map) {
+           // Handle structured thumbnail object from reel payload
+           thumbUrl = (t.first as Map)['url'] ?? (t.first as Map)['fileUrl'];
+        }
+      }
+    }
+
+    return FeedPost(
+      id: json['_id'] ?? json['id'] ?? '',
+      userId: json['user_id'] ?? json['userId'] ?? '',
+      userName: json['username'] ?? json['userName'] ?? 'User',
+      fullName: json['fullName'],
+      userAvatar: json['userAvatar'],
+      isVerified: json['isVerified'] ?? false,
+      mediaType: type,
+      mediaUrls: extractedUrls.where((url) => url.isNotEmpty).toList(),
+      thumbnailUrl: thumbUrl,
+      aspectRatio: json['aspectRatio'] != null ? double.tryParse(json['aspectRatio'].toString()) : null,
+      caption: json['caption'],
+      hashtags: List<String>.from(json['hashtags'] ?? []),
+      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : DateTime.now(),
+      likes: json['likesCount'] ?? json['likes'] ?? 0,
+      comments: json['commentsCount'] ?? json['comments'] ?? 0,
+      views: json['views'] ?? 0,
+      shares: json['shares'] ?? 0,
+      isLiked: json['isLiked'] ?? false,
+      isSaved: json['isSaved'] ?? false,
+      isFollowed: json['isFollowed'] ?? false,
+      isTagged: json['isTagged'] ?? false,
+      isShared: json['isShared'] ?? false,
+      sharedFrom: json['sharedFrom'],
+      isAd: json['isAd'] ?? false,
+      adTitle: json['adTitle'],
+      adCompanyId: json['adCompanyId'],
+      adCompanyName: json['adCompanyName'],
+      location: json['location'], // Map location
+      rawLikes: (json['likes_data'] as List?)?.map((e) => e as Map<String, dynamic>).toList(),
+      peopleTags: (json['people_tags'] as List?)?.map((e) => e as Map<String, dynamic>).toList(),
+    );
+  }
 
   FeedPost copyWith({
     String? id,
@@ -77,6 +155,7 @@ class FeedPost {
     PostMediaType? mediaType,
     List<String>? mediaUrls,
     String? thumbnailUrl,
+    double? aspectRatio,
     String? caption,
     List<String>? hashtags,
     DateTime? createdAt,
@@ -107,6 +186,7 @@ class FeedPost {
       mediaType: mediaType ?? this.mediaType,
       mediaUrls: mediaUrls ?? this.mediaUrls,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      aspectRatio: aspectRatio ?? this.aspectRatio,
       caption: caption ?? this.caption,
       hashtags: hashtags ?? this.hashtags,
       createdAt: createdAt ?? this.createdAt,

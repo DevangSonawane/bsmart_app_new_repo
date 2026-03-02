@@ -283,7 +283,7 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
                           child: _isRecording
                               ? Container(
                                   margin: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
+                                  decoration: const BoxDecoration(
                                     shape: BoxShape.circle,
                                     color: Colors.red,
                                   ),
@@ -362,7 +362,7 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
                   const SizedBox(height: 4),
                   Text(
                     filter.name,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
                     ),

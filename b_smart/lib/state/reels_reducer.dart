@@ -3,8 +3,8 @@ import 'reels_state.dart';
 import 'reels_actions.dart';
 
 final reelsReducer = combineReducers<ReelsState>([
-  TypedReducer<ReelsState, SetReels>(_setReels),
-  TypedReducer<ReelsState, ClearReels>(_clearReels),
+  TypedReducer<ReelsState, SetReels>(_setReels).call,
+  TypedReducer<ReelsState, ClearReels>(_clearReels).call,
 ]);
 
 ReelsState _setReels(ReelsState state, SetReels action) {

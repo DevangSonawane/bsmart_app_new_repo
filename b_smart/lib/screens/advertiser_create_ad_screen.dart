@@ -21,9 +21,9 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
   final _ctaTextController = TextEditingController();
   final _companyNameController = TextEditingController();
   final _companyDescriptionController = TextEditingController();
-  List<String> _targetLocations = [];
-  List<String> _targetLanguages = [];
-  List<String> _targetInterests = [];
+  final List<String> _targetLocations = [];
+  final List<String> _targetLanguages = [];
+  final List<String> _targetInterests = [];
   String? _targetAgeRange;
   String? _targetGender;
   bool _commentsDisabled = false;
@@ -527,7 +527,7 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
           ),
           const SizedBox(height: 24),
           DropdownButtonFormField<String>(
-            value: _targetAgeRange,
+            initialValue: _targetAgeRange,
             decoration: const InputDecoration(
               labelText: 'Age Range',
               border: OutlineInputBorder(),
@@ -546,7 +546,7 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
-            value: _targetGender,
+            initialValue: _targetGender,
             decoration: const InputDecoration(
               labelText: 'Gender (Optional)',
               border: OutlineInputBorder(),
@@ -774,8 +774,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          CheckboxListTile(
-            title: const Text('I acknowledge the rules and terms'),
+          const CheckboxListTile(
+            title: Text('I acknowledge the rules and terms'),
             value: true,
             onChanged: null,
             controlAffinity: ListTileControlAffinity.leading,

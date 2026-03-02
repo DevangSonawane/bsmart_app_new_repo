@@ -16,7 +16,7 @@ class PostDetailModal extends StatefulWidget {
   final String postId;
   final VoidCallback? onClose;
 
-  const PostDetailModal({Key? key, required this.postId, this.onClose}) : super(key: key);
+  const PostDetailModal({super.key, required this.postId, this.onClose});
 
   @override
   State<PostDetailModal> createState() => _PostDetailModalState();
@@ -240,7 +240,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
     }
     if (_post == null) {
       return Scaffold(
-        appBar: AppBar(leading: IconButton(icon: Icon(LucideIcons.x), onPressed: () => Navigator.of(context).pop())),
+        appBar: AppBar(leading: IconButton(icon: const Icon(LucideIcons.x), onPressed: () => Navigator.of(context).pop())),
         body: const Center(child: Text('Post not found')),
       );
     }
@@ -260,7 +260,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                 Align(
                   alignment: Alignment.topRight,
                   child: IconButton(
-                    icon: Icon(LucideIcons.x),
+                    icon: const Icon(LucideIcons.x),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ),
@@ -296,7 +296,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
           imageUrl: _displayImageUrl(),
           fit: BoxFit.contain,
           placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Colors.white)),
-          errorWidget: (_, __, ___) => Icon(LucideIcons.imageOff, size: 64, color: Colors.white54),
+          errorWidget: (_, __, ___) => const Icon(LucideIcons.imageOff, size: 64, color: Colors.white54),
         ),
       ),
     );
@@ -349,7 +349,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                 ),
               ),
               IconButton(
-                icon: Icon(LucideIcons.ellipsis),
+                icon: const Icon(LucideIcons.ellipsis),
                 onPressed: () async {
                   final uid = await CurrentUser.id;
                   final ownerId = _post?['user_id'] as String?;
@@ -411,7 +411,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                                       mainAxisSize: MainAxisSize.min,
                                                       children: [
                                                         const SizedBox(height: 8),
-                                                        SizedBox(
+                                                        const SizedBox(
                                                           width: 48,
                                                           height: 48,
                                                           child: CircularProgressIndicator(
@@ -475,8 +475,11 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                                                         try {
                                                                           StoreProvider.of<AppState>(context).dispatch(RemovePost(widget.postId));
                                                                         } catch (_) {}
-                                                                        if (widget.onClose != null) widget.onClose!();
-                                                                        Navigator.of(context).pop();
+                                                                        if (widget.onClose != null) {
+                                                                          widget.onClose!();
+                                                                        } else {
+                                                                          Navigator.of(context).pop();
+                                                                        }
                                                                       }
                                                                     } else {
                                                                       if (mounted) {
@@ -591,7 +594,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                               ],
                             ),
                           ),
-                          IconButton(icon: Icon(LucideIcons.heart, size: 14), onPressed: () {}, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                          IconButton(icon: const Icon(LucideIcons.heart, size: 14), onPressed: () {}, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
                         ],
                       ),
                     );
@@ -611,10 +614,10 @@ class _PostDetailModalState extends State<PostDetailModal> {
                 duration: const Duration(milliseconds: 150),
                 child: IconButton(icon: Icon(LucideIcons.heart, color: _isLiked ? Colors.red : Colors.black87), onPressed: _handleLike),
               ),
-              IconButton(icon: Icon(LucideIcons.messageCircle), onPressed: () {}),
-              IconButton(icon: Icon(LucideIcons.send), onPressed: () {}),
+              IconButton(icon: const Icon(LucideIcons.messageCircle), onPressed: () {}),
+              IconButton(icon: const Icon(LucideIcons.send), onPressed: () {}),
               const Spacer(),
-              IconButton(icon: Icon(LucideIcons.bookmark), onPressed: () {}),
+              IconButton(icon: const Icon(LucideIcons.bookmark), onPressed: () {}),
             ],
           ),
         ),
@@ -640,7 +643,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
-              IconButton(icon: Icon(LucideIcons.smile), onPressed: () {}),
+              IconButton(icon: const Icon(LucideIcons.smile), onPressed: () {}),
               Expanded(
                 child: TextField(
                   controller: _commentController,

@@ -211,7 +211,7 @@ class AuthService {
         pass = password ?? storedPass;
       }
 
-      if (email == null || pass == null) {
+      if (pass == null) {
         throw Exception('Email and password are required');
       }
 
@@ -298,7 +298,7 @@ class AuthService {
       if (googleUser == null) throw Exception('Google sign in cancelled');
 
       final email = googleUser.email;
-      if (email == null || email.isEmpty) {
+      if (email.isEmpty) {
         throw Exception('Google account has no email');
       }
 

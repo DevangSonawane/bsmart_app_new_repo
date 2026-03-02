@@ -6,7 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/design_tokens.dart';
 
 class AdsScreen extends StatefulWidget {
-  const AdsScreen({Key? key}) : super(key: key);
+  const AdsScreen({super.key});
 
   @override
   State<AdsScreen> createState() => _AdsScreenState();

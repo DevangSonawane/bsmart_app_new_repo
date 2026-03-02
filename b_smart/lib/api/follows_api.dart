@@ -49,11 +49,11 @@ class FollowsApi {
     if (res is List) {
       return res
           .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e as Map))
+          .map((e) => Map<String, dynamic>.from(e))
           .toList();
     }
     if (res is Map) {
-      final map = res as Map;
+      final map = res;
       final list = map['data'] ??
           map['followers'] ??
           map['items'] ??
@@ -61,7 +61,7 @@ class FollowsApi {
       if (list is List) {
         return list
             .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e as Map))
+            .map((e) => Map<String, dynamic>.from(e))
             .toList();
       }
     }
@@ -76,11 +76,11 @@ class FollowsApi {
     if (res is List) {
       return res
           .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e as Map))
+          .map((e) => Map<String, dynamic>.from(e))
           .toList();
     }
     if (res is Map) {
-      final map = res as Map;
+      final map = res;
       final list = map['data'] ??
           map['following'] ??
           map['items'] ??
@@ -88,7 +88,7 @@ class FollowsApi {
       if (list is List) {
         return list
             .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e as Map))
+            .map((e) => Map<String, dynamic>.from(e))
             .toList();
       }
     }

@@ -254,7 +254,7 @@ class _LoginScreenState extends State<LoginScreen>
                       // Divider
                       Row(
                         children: [
-                          Expanded(
+                          const Expanded(
                             child: Divider(color: InstagramTheme.dividerGrey),
                           ),
                           Padding(
@@ -267,7 +267,7 @@ class _LoginScreenState extends State<LoginScreen>
                               ),
                             ),
                           ),
-                          Expanded(
+                          const Expanded(
                             child: Divider(color: InstagramTheme.dividerGrey),
                           ),
                         ],

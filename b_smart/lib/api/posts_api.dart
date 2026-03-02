@@ -39,14 +39,14 @@ class PostsApi {
   }) async {
     final body = <String, dynamic>{
       'media': media,
+      'type': type,
     };
-    if (caption != null) body['caption'] = caption;
-    if (location != null) body['location'] = location;
+    if (caption != null && caption.isNotEmpty) body['caption'] = caption;
+    if (location != null && location.isNotEmpty) body['location'] = location;
     if (tags != null && tags.isNotEmpty) body['tags'] = tags;
     if (hideLikesCount != null) body['hide_likes_count'] = hideLikesCount;
     if (turnOffCommenting != null) body['turn_off_commenting'] = turnOffCommenting;
     if (peopleTags != null && peopleTags.isNotEmpty) body['people_tags'] = peopleTags;
-    if (type != 'post') body['type'] = type;
 
     final res = await _client.post('$_basePath/posts', body: body);
     return res as Map<String, dynamic>;

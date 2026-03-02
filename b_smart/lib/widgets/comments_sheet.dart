@@ -6,7 +6,7 @@ import '../theme/design_tokens.dart';
 
 class CommentsSheet extends StatefulWidget {
   final String postId;
-  const CommentsSheet({Key? key, required this.postId}) : super(key: key);
+  const CommentsSheet({super.key, required this.postId});
 
   @override
   State<CommentsSheet> createState() => _CommentsSheetState();
@@ -503,8 +503,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                                           child: Text(un, style: const TextStyle(fontWeight: FontWeight.w600)),
                                                         ),
                                                         if (isVerified)
-                                                          Padding(
-                                                            padding: const EdgeInsets.only(left: 4),
+                                                          const Padding(
+                                                            padding: EdgeInsets.only(left: 4),
                                                             child: Icon(Icons.check_circle, size: 14, color: Colors.blueAccent),
                                                           ),
                                                         const SizedBox(width: 8),

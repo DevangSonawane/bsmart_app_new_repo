@@ -69,11 +69,11 @@ class AccountUpgradeScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
-                        const Icon(Icons.person, color: Colors.blue, size: 32),
-                        const SizedBox(width: 12),
-                        const Expanded(
+                        Icon(Icons.person, color: Colors.blue, size: 32),
+                        SizedBox(width: 12),
+                        Expanded(
                           child: Text(
                             'Creator Account',
                             style: TextStyle(
@@ -135,11 +135,11 @@ class AccountUpgradeScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
-                        const Icon(Icons.business, color: Colors.green, size: 32),
-                        const SizedBox(width: 12),
-                        const Expanded(
+                        Icon(Icons.business, color: Colors.green, size: 32),
+                        SizedBox(width: 12),
+                        Expanded(
                           child: Text(
                             'Business Account',
                             style: TextStyle(
