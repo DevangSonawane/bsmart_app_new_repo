@@ -5,6 +5,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../models/reel_model.dart';
 import '../services/reels_service.dart';
+import '../api/api_client.dart';
+import '../config/api_config.dart';
+import '../utils/url_helper.dart';
 import '../services/user_account_service.dart';
 import '../models/user_account_model.dart';
 import '../theme/instagram_theme.dart';
@@ -33,6 +36,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
   final Map<String, VideoPlayerController> _controllers = {};
   final Map<String, bool> _isInitializing = {};
   final Map<String, bool> _hasError = {};
+  Map<String, String>? _mediaHeaders;
 
   @override
   void initState() {
@@ -82,7 +86,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
   Future<void> _ensureControllerForIndex(int index) async {
     if (index < 0 || index >= _reels.length) return;
     final reel = _reels[index];
-    final url = reel.videoUrl;
+    final url = UrlHelper.absoluteUrl(reel.videoUrl);
     if (url.isEmpty) return;
     
     // If already initialized or initializing, skip
@@ -103,10 +107,12 @@ class _ReelsScreenState extends State<ReelsScreen> {
     _hasError[reel.id] = false;
 
     try {
+      await _ensureMediaHeaders();
       if (!mounted) return;
 
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(url),
+        httpHeaders: _headersForUrl(url),
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
       );
       
@@ -144,6 +150,33 @@ class _ReelsScreenState extends State<ReelsScreen> {
     } finally {
       _isInitializing[reel.id] = false;
     }
+  }
+
+  Future<void> _ensureMediaHeaders() async {
+    if (_mediaHeaders != null) return;
+    final token = await ApiClient().getToken();
+    final headers = <String, String>{
+      'User-Agent': 'ReelsScreen-App',
+    };
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    _mediaHeaders = headers;
+  }
+
+  Map<String, String> _headersForUrl(String url) {
+    final headers = _mediaHeaders;
+    if (headers == null || headers.isEmpty) return const {};
+    if (!headers.containsKey('Authorization')) return const {};
+    try {
+      final uri = Uri.parse(url);
+      final baseUri = Uri.parse(ApiConfig.baseUrl);
+      if (uri.host == baseUri.host) return headers;
+    } catch (_) {}
+    if (url.startsWith('http://localhost') || url.startsWith('http://10.0.2.2')) {
+      return headers;
+    }
+    return const {};
   }
 
   void _disposeControllerForIndex(int index) {
@@ -680,15 +713,19 @@ class _ReelsScreenState extends State<ReelsScreen> {
     final controller = _controllers[reel.id];
     final isInitialized = controller != null && controller.value.isInitialized;
     final hasError = _hasError[reel.id] ?? false;
+    final thumbnailUrl = reel.thumbnailUrl != null && reel.thumbnailUrl!.isNotEmpty
+        ? UrlHelper.absoluteUrl(reel.thumbnailUrl!)
+        : null;
 
     return SizedBox.expand(
       child: Stack(
         fit: StackFit.expand,
         children: [
           // 1. Thumbnail Placeholder
-          if (reel.thumbnailUrl != null && reel.thumbnailUrl!.isNotEmpty)
+          if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
             CachedNetworkImage(
-              imageUrl: reel.thumbnailUrl!,
+              imageUrl: thumbnailUrl,
+              httpHeaders: _headersForUrl(thumbnailUrl),
               fit: BoxFit.cover,
               placeholder: (context, url) => Container(
                 color: Colors.black,

@@ -59,6 +59,56 @@ class _HomeDashboardState extends State<HomeDashboard> {
   Map<String, dynamic>? _currentUserProfile;
   String? _currentUserId;
 
+  Map<String, dynamic>? _normalizeProfile(Map<String, dynamic>? raw) {
+    if (raw == null) return null;
+
+    Map<String, dynamic> data = Map<String, dynamic>.from(raw);
+    if (raw['user'] is Map) {
+      data = Map<String, dynamic>.from(raw['user'] as Map);
+    } else if (raw['data'] is Map) {
+      final wrapped = Map<String, dynamic>.from(raw['data'] as Map);
+      if (wrapped['user'] is Map) {
+        data = Map<String, dynamic>.from(wrapped['user'] as Map);
+      } else {
+        data = wrapped;
+      }
+    }
+
+    final normalized = Map<String, dynamic>.from(data);
+    final avatar = data['avatar_url'] ??
+        data['avatarUrl'] ??
+        data['photo_url'] ??
+        data['photoUrl'];
+    final username = data['username'] ?? data['user_name'];
+    final fullName = data['full_name'] ?? data['fullName'] ?? data['name'];
+    final id = data['id'] ?? data['_id'] ?? data['user_id'];
+
+    if (avatar != null) normalized['avatar_url'] = avatar.toString();
+    if (username != null) normalized['username'] = username.toString();
+    if (fullName != null) normalized['full_name'] = fullName.toString();
+    if (id != null) {
+      normalized['id'] = id.toString();
+      normalized['_id'] = id.toString();
+    }
+
+    return normalized;
+  }
+
+  void _openProfile() {
+    final userId = _currentUserId?.trim() ??
+        (_currentUserProfile?['id']?.toString().trim()) ??
+        (_currentUserProfile?['_id']?.toString().trim());
+    if (userId != null && userId.isNotEmpty) {
+      Navigator.of(context).pushNamed('/profile/$userId');
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const ProfileScreen(),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -80,8 +130,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
     
     // Use REST API-backed CurrentUser helper for the authenticated user ID.
     final currentUserId = await CurrentUser.id;
-    final currentProfile =
+    final currentProfileRaw =
         currentUserId != null ? await _supabase.getUserById(currentUserId) : null;
+    final currentProfile = _normalizeProfile(currentProfileRaw);
     // Same as React Home.jsx: fetch all posts, order by created_at desc
     final fetched = await _feedService.fetchFeedFromBackend(currentUserId: currentUserId);
     final bal = await _walletService.getCoinBalance();
@@ -676,7 +727,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     }
     // Profile from sidebar (desktop)
     if (idx == 5) {
-      Navigator.of(context).pushNamed('/profile');
+      _openProfile();
       return;
     }
     
@@ -841,36 +892,41 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           ],
                         ),
                         GestureDetector(
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const ProfileScreen(),
-                            ),
-                          ),
+                          onTap: _openProfile,
                           child: Padding(
                             padding: const EdgeInsets.only(left: 4, right: 12),
-                            child: CircleAvatar(
-                              radius: 16,
-                              backgroundColor: Colors.transparent,
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              padding: const EdgeInsets.all(1.5),
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: DesignTokens.instaGradient,
+                              ),
                               child: CircleAvatar(
-                                radius: 15,
-                                backgroundColor: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
-                                backgroundImage: _currentUserProfile != null &&
-                                        _currentUserProfile!['avatar_url'] != null &&
-                                        (_currentUserProfile!['avatar_url'] as String).isNotEmpty
-                                    ? NetworkImage(_currentUserProfile!['avatar_url'] as String)
-                                    : null,
-                                child: _currentUserProfile == null ||
-                                        _currentUserProfile!['avatar_url'] == null ||
-                                        (_currentUserProfile!['avatar_url'] as String).isEmpty
-                                    ? Text(
-                                        _currentUserProfile != null
-                                            ? ((_currentUserProfile!['username'] ?? _currentUserProfile!['full_name'] ?? 'U') as String).isNotEmpty
-                                                ? ((_currentUserProfile!['username'] ?? _currentUserProfile!['full_name'] ?? 'U') as String).substring(0, 1).toUpperCase()
-                                                : 'U'
-                                            : 'U',
-                                        style: TextStyle(fontWeight: FontWeight.bold, color: appBarFg),
-                                      )
-                                    : null,
+                                radius: 14,
+                                backgroundColor: isDark ? Colors.black : Colors.white,
+                                child: CircleAvatar(
+                                  radius: 13,
+                                  backgroundColor: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
+                                  backgroundImage: _currentUserProfile != null &&
+                                          _currentUserProfile!['avatar_url'] != null &&
+                                          (_currentUserProfile!['avatar_url'] as String).isNotEmpty
+                                      ? NetworkImage(_currentUserProfile!['avatar_url'] as String)
+                                      : null,
+                                  child: _currentUserProfile == null ||
+                                          _currentUserProfile!['avatar_url'] == null ||
+                                          (_currentUserProfile!['avatar_url'] as String).isEmpty
+                                      ? Text(
+                                          _currentUserProfile != null
+                                              ? ((_currentUserProfile!['username'] ?? _currentUserProfile!['full_name'] ?? 'U') as String).isNotEmpty
+                                                  ? ((_currentUserProfile!['username'] ?? _currentUserProfile!['full_name'] ?? 'U') as String).substring(0, 1).toUpperCase()
+                                                  : 'U'
+                                              : 'U',
+                                          style: TextStyle(fontWeight: FontWeight.bold, color: appBarFg),
+                                        )
+                                      : null,
+                                ),
                               ),
                             ),
                           ),
@@ -964,6 +1020,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
                               return PostCard(
                                 key: ValueKey('card-${p.id}'), // Prevent unnecessary rebuilds
                                 post: p,
+                                onUserTap: p.userId.isNotEmpty
+                                    ? () => Navigator.of(context).pushNamed('/profile/${p.userId}')
+                                    : null,
                                 onLike: () => _onLikePost(p),
                                 onComment: () => _onCommentPost(p),
                                 onShare: () => _onSharePost(p),

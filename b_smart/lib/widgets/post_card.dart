@@ -5,7 +5,6 @@ import 'package:extended_image/extended_image.dart';
 import 'package:video_player/video_player.dart';
 import '../models/feed_post_model.dart';
 import '../api/api_client.dart';
-import '../theme/design_tokens.dart';
 import '../utils/url_helper.dart';
 import '../config/api_config.dart';
 
@@ -17,6 +16,7 @@ class PostCard extends StatefulWidget {
   final VoidCallback? onSave;
   final VoidCallback? onFollow;
   final VoidCallback? onMore;
+  final VoidCallback? onUserTap;
 
   const PostCard({
     super.key,
@@ -27,6 +27,7 @@ class PostCard extends StatefulWidget {
     this.onSave,
     this.onFollow,
     this.onMore,
+    this.onUserTap,
   });
 
   @override
@@ -72,12 +73,13 @@ class _PostCardState extends State<PostCard> {
   Future<void> _loadAuthHeaders() async {
     final token = await ApiClient().getToken();
     if (!mounted) return;
-    setState(() {
-      _authHeaders = {
-        'Authorization': 'Bearer $token',
-        'User-Agent': 'PostCard-App',
-      };
-    });
+    final next = <String, String>{
+      'User-Agent': 'PostCard-App',
+    };
+    if (token != null && token.isNotEmpty) {
+      next['Authorization'] = 'Bearer $token';
+    }
+    setState(() => _authHeaders = next);
     debugPrint('[PostCard] Headers loaded for ${widget.post.id}. Visible: $_isVisible, IsVideo: $_isVideoPost, InitStarted: $_initStarted');
     // If visibility callback already fired before headers loaded, start init now
     if (_isVisible && _isVideoPost && !_initStarted) {
@@ -384,22 +386,28 @@ class _PostCardState extends State<PostCard> {
         post.userAvatar != null ? UrlHelper.absoluteUrl(post.userAvatar!) : '';
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      leading: CircleAvatar(
-        backgroundImage:
-            avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-        backgroundColor: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
-        child: avatarUrl.isEmpty
-            ? Text(
-                post.userName.isNotEmpty
-                    ? post.userName[0].toUpperCase()
-                    : 'U',
-                style: TextStyle(color: theme.colorScheme.onSurface),
-              )
-            : null,
+      leading: GestureDetector(
+        onTap: widget.onUserTap,
+        child: CircleAvatar(
+          backgroundImage:
+              avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+          backgroundColor: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
+          child: avatarUrl.isEmpty
+              ? Text(
+                  post.userName.isNotEmpty
+                      ? post.userName[0].toUpperCase()
+                      : 'U',
+                  style: TextStyle(color: theme.colorScheme.onSurface),
+                )
+              : null,
+        ),
       ),
-      title: Text(
-        post.userName,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+      title: GestureDetector(
+        onTap: widget.onUserTap,
+        child: Text(
+          post.userName,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
       ),
       subtitle: post.location != null && post.location!.isNotEmpty
           ? Text(post.location!, style: const TextStyle(fontSize: 12))
@@ -484,19 +492,20 @@ class _PostCardState extends State<PostCard> {
           ),
           if (post.caption != null && post.caption!.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: '${post.userName} ',
+            Wrap(
+              children: [
+                GestureDetector(
+                  onTap: widget.onUserTap,
+                  child: Text(
+                    '${post.userName} ',
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   ),
-                  TextSpan(
-                    text: post.caption,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ],
-              ),
+                ),
+                Text(
+                  post.caption!,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ],
             ),
           ],
           const SizedBox(height: 4),

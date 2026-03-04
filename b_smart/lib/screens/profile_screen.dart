@@ -60,6 +60,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final FeedService _feedService = FeedService();
   List<StoryGroup> _storyGroups = const [];
   Map<String, String>? _reelImageHeaders;
+  bool _isOwnProfile = false;
 
   @override
   void initState() {
@@ -95,12 +96,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Only hydrate from Redux cache when viewing own profile (no explicit userId).
-    final isMe = widget.userId == null;
-    if (!isMe || _usedCache) return;
+    if (_usedCache) return;
     final store = StoreProvider.of<AppState>(context);
     final cached = store.state.profileState.profile;
     if (cached == null) return;
+    final cachedId = (cached['id'] ?? cached['_id'])?.toString().trim();
+    final targetId = widget.userId?.trim();
+    final isTargetingCachedUser = targetId == null || (cachedId != null && cachedId == targetId);
+    if (!isTargetingCachedUser) return;
     _usedCache = true;
     setState(() {
       _profile = Map<String, dynamic>.from(cached);
@@ -111,6 +114,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _load() async {
     final meId = await CurrentUser.id;
     final targetId = widget.userId ?? meId;
+    final normalizedTargetId = targetId?.trim();
+    final normalizedMeId = meId?.trim();
+    final bool isMe = widget.userId == null || (normalizedTargetId != null && normalizedMeId != null && normalizedTargetId == normalizedMeId);
+
+    if (mounted && _isOwnProfile != isMe) {
+      setState(() {
+        _isOwnProfile = isMe;
+      });
+    }
+
     if (targetId == null) {
       if (mounted) {
         setState(() {
@@ -120,7 +133,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    final bool isMe = widget.userId == null;
     final profileFuture = isMe ? AuthApi().me() : _svc.getUserById(targetId);
     final postsFuture = _svc.getUserPosts(targetId, limit: _initialPostsLimit);
     final savedFuture = isMe
@@ -750,12 +762,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     // Wrap with StoreConnector to listen to profile changes for "My Profile"
     return StoreConnector<AppState, Map<String, dynamic>?>(
-      converter: (store) => widget.userId == null ? store.state.profileState.profile : null,
+      converter: (store) => _isOwnProfile ? store.state.profileState.profile : null,
       builder: (context, myProfileFromRedux) {
         
         // CRITICAL FIX: If viewing own profile, use the Redux state directly.
         // This ensures that AdjustFollowingCount from the Dashboard reflects here instantly.
-        final bool isMe = widget.userId == null;
+        final bool isMe = _isOwnProfile || widget.userId == null;
         final displayProfile = isMe ? (myProfileFromRedux ?? _profile) : _profile;
 
         if (_loading && displayProfile == null) {
