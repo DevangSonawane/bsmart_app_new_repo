@@ -275,6 +275,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
     }
   }
 
+  void _onDoubleTapLikePost(FeedPost post) {
+    if (!post.isLiked) {
+      _onLikePost(post);
+    }
+  }
+
   void _onCommentPost(FeedPost post) {
     final isMobile = MediaQuery.sizeOf(context).width < 600;
     if (isMobile) {
@@ -1024,6 +1030,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                     ? () => Navigator.of(context).pushNamed('/profile/${p.userId}')
                                     : null,
                                 onLike: () => _onLikePost(p),
+                                onDoubleTapLike: () => _onDoubleTapLikePost(p),
                                 onComment: () => _onCommentPost(p),
                                 onShare: () => _onSharePost(p),
                                 onSave: () => _onSavePost(p),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -17,6 +19,7 @@ class PostCard extends StatefulWidget {
   final VoidCallback? onFollow;
   final VoidCallback? onMore;
   final VoidCallback? onUserTap;
+  final VoidCallback? onDoubleTapLike;
 
   const PostCard({
     super.key,
@@ -28,6 +31,7 @@ class PostCard extends StatefulWidget {
     this.onFollow,
     this.onMore,
     this.onUserTap,
+    this.onDoubleTapLike,
   });
 
   @override
@@ -48,6 +52,8 @@ class _PostCardState extends State<PostCard> {
   bool _videoInitialized = false;
   // Whether we've already started the init process
   bool _initStarted = false;
+  bool _showDoubleTapLike = false;
+  Timer? _doubleTapLikeTimer;
 
   bool get _isVideoPost =>
       widget.post.mediaType == PostMediaType.video ||
@@ -206,6 +212,19 @@ class _PostCardState extends State<PostCard> {
     });
   }
 
+  void _onDoubleTapMedia() {
+    widget.onDoubleTapLike?.call();
+    _doubleTapLikeTimer?.cancel();
+    if (mounted) {
+      setState(() => _showDoubleTapLike = true);
+    }
+    _doubleTapLikeTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) {
+        setState(() => _showDoubleTapLike = false);
+      }
+    });
+  }
+
   String _formatTimestamp(DateTime date) {
     final now = DateTime.now();
     final difference = now.difference(date);
@@ -225,6 +244,7 @@ class _PostCardState extends State<PostCard> {
 
   @override
   void dispose() {
+    _doubleTapLikeTimer?.cancel();
     _videoCtl?.dispose();
     super.dispose();
   }
@@ -246,6 +266,7 @@ class _PostCardState extends State<PostCard> {
             aspectRatio: _mediaAspect ?? 1.0,
             child: GestureDetector(
               onTap: _onTapMedia,
+              onDoubleTap: _onDoubleTapMedia,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -263,7 +284,7 @@ class _PostCardState extends State<PostCard> {
                         onTap: _toggleMute,
                         child: Container(
                           padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             color: Colors.black54,
                             shape: BoxShape.circle,
                           ),
@@ -294,6 +315,33 @@ class _PostCardState extends State<PostCard> {
                         ),
                       ),
                     ),
+
+                  IgnorePointer(
+                    child: Center(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        opacity: _showDoubleTapLike ? 1 : 0,
+                        child: AnimatedScale(
+                          duration: const Duration(milliseconds: 280),
+                          curve: Curves.easeOutBack,
+                          scale: _showDoubleTapLike ? 1 : 0.65,
+                          child: const Icon(
+                            Icons.favorite,
+                            size: 92,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black54,
+                                blurRadius: 12,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

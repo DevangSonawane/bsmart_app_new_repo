@@ -32,6 +32,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
   bool _isMuted = false;
   bool _isPlaying = true;
   Timer? _viewTimer;
+  Timer? _doubleTapLikeTimer;
+  bool _showDoubleTapLike = false;
   List<Reel> _reels = [];
   final Map<String, VideoPlayerController> _controllers = {};
   final Map<String, bool> _isInitializing = {};
@@ -49,6 +51,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
   void dispose() {
     _pageController.dispose();
     _viewTimer?.cancel();
+    _doubleTapLikeTimer?.cancel();
     _disposeAllControllers();
     super.dispose();
   }
@@ -284,18 +287,20 @@ class _ReelsScreenState extends State<ReelsScreen> {
   }
 
   void _handleDoubleTap() {
-    _reelsService.toggleLike(_reels[_currentIndex].id);
-    setState(() {});
-    
-    // Show like animation
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('❤️'),
-        duration: Duration(milliseconds: 500),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-    );
+    final reel = _reels[_currentIndex];
+    if (!reel.isLiked) {
+      _reelsService.toggleLike(reel.id);
+    }
+    _doubleTapLikeTimer?.cancel();
+    setState(() {
+      _showDoubleTapLike = true;
+    });
+    _doubleTapLikeTimer = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      setState(() {
+        _showDoubleTapLike = false;
+      });
+    });
   }
 
   void _handleLike() {
@@ -646,6 +651,33 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 final reel = _reels[index];
                 return _buildReelPlayer(reel);
               },
+            ),
+
+            IgnorePointer(
+              child: Center(
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  opacity: _showDoubleTapLike ? 1 : 0,
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeOutBack,
+                    scale: _showDoubleTapLike ? 1 : 0.65,
+                    child: const Icon(
+                      Icons.favorite,
+                      color: Colors.white,
+                      size: 104,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black54,
+                          blurRadius: 14,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
 
             // Mute Button (Top Right)
