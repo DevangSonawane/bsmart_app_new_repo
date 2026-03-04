@@ -101,6 +101,11 @@ class AuthService {
         'Google login failed at backend exchange (HTTP ${e.statusCode}): ${e.message}',
       );
     } on PlatformException catch (e) {
+      if (e.code == 'channel-error') {
+        throw Exception(
+          'Google login native channel is not connected (${e.code}). Rebuild the app fully (flutter clean + flutter pub get + reinstall app) and verify native Google config for this app id.',
+        );
+      }
       throw Exception(
         'Google login failed in Android/iOS SDK (${e.code}): ${e.message ?? e.details ?? 'Unknown platform error'}',
       );
