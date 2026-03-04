@@ -5,6 +5,7 @@ import '../../../theme/instagram_theme.dart';
 import '../../../widgets/clay_container.dart';
 import '../../../services/auth/auth_service.dart';
 import '../../home_dashboard.dart';
+import '../google_sign_in_button.dart';
 // Using native GoogleSignIn / secure browser flows; no embedded WebView
 
 class LoginScreen extends StatefulWidget {
@@ -73,25 +74,6 @@ class _LoginScreenState extends State<LoginScreen>
       }
     }
   }
-
-  Future<void> _handleGoogleLogin() async {
-    if (_isLoading) return;
-    setState(() => _isLoading = true);
-    try {
-      await _authService.loginWithGoogle();
-      final user = await _authService.fetchCurrentUser();
-      if (user != null) {
-        _navigateToHome();
-        return;
-      }
-      _showError('Authentication failed');
-    } catch (e) {
-      _showError(e.toString().replaceAll('Exception: ', ''));
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
 
   void _navigateToHome() {
     if (mounted) {
@@ -275,24 +257,7 @@ class _LoginScreenState extends State<LoginScreen>
                       const SizedBox(height: 32),
 
                       // Google Sign In Button
-                      SizedBox(
-                        height: 56,
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _handleGoogleLogin,
-                          icon: SvgPicture.asset(
-                            'assets/images/google_logo.svg',
-                            width: 24,
-                            height: 24,
-                          ),
-                          label: const Text('Continue with Google'),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: InstagramTheme.borderGrey),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                        ),
-                      ),
+                      const GoogleSignInButton(),
                       const SizedBox(height: 32),
 
                       // Sign Up Link

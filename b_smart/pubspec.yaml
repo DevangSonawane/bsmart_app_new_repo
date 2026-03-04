@@ -27,7 +27,8 @@ dependencies:
   device_info_plus: ^10.1.0
   package_info_plus: ^8.0.2
 
-  google_sign_in: ^6.2.1
+  # Google Sign In (Native)
+  google_sign_in: ^6.1.6
 
   # Utilities
   intl: ^0.19.0
@@ -84,3 +85,4 @@ flutter:
     - assets/images/dashboard_sample.png
     - assets/images/logo.svg
     - assets/images/google_logo.svg
+    - .env

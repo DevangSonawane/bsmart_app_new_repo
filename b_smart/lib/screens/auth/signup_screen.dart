@@ -6,8 +6,8 @@ import '../../services/auth/auth_service.dart';
 import '../../config/api_config.dart';
 import '../../theme/instagram_theme.dart';
 import '../../screens/home_dashboard.dart';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import '../../widgets/clay_container.dart';
+import 'google_sign_in_button.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -70,56 +70,7 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
-  Future<void> _googleSignup() async {
-    if (_loading) return;
-    setState(() => _loading = true);
-    try {
-      final base = ApiConfig.baseUrl;
-      const redirect = 'bsmart://auth/google/success';
-      final url =
-          '$base/auth/google'
-          '?scope=${Uri.encodeComponent('email profile')}'
-          '&redirect_uri=${Uri.encodeComponent(redirect)}'
-          '&redirect=${Uri.encodeComponent(redirect)}'
-          '&callback=${Uri.encodeComponent(redirect)}';
-      String result = await FlutterWebAuth2.authenticate(
-        url: url,
-        callbackUrlScheme: 'bsmart',
-      );
-      final uri = Uri.parse(result);
-      String? token =
-          uri.queryParameters['token'] ??
-          uri.queryParameters['access_token'] ??
-          uri.queryParameters['id_token'];
-      if (token == null || token.isEmpty) {
-        final frag = uri.fragment;
-        if (frag.isNotEmpty) {
-          final fragParams = Uri.splitQueryString(frag);
-          token = fragParams['token'] ??
-              fragParams['access_token'] ??
-              fragParams['id_token'];
-        }
-      }
-      if (token != null && token.isNotEmpty) {
-        await AuthApi().saveExternalToken(token);
-        final user = await _authService.fetchCurrentUser();
-        if (user != null) {
-          if (mounted) {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const HomeDashboard()),
-              (route) => false,
-            );
-          }
-          return;
-        }
-      }
-      setState(() => _error = 'Google authentication failed');
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -265,18 +216,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    SizedBox(
-                      height: 56,
-                      child: OutlinedButton.icon(
-                        onPressed: _loading ? null : _googleSignup,
-                        icon: SvgPicture.asset('assets/images/google_logo.svg', width: 24, height: 24),
-                        label: const Text('Continue with Google'),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: InstagramTheme.borderGrey),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                      ),
-                    ),
+                    const GoogleSignInButton(label: 'Sign up with Google'),
                     const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,

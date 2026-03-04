@@ -1,3 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">b_smart</string>
+    <!-- Web Client ID for Google Sign-In (required for idToken) -->
+    <string name="default_web_client_id">832065490130-97j2a560l5e30p3tu90j9miqfdkdctlv.apps.googleusercontent.com</string>
 </resources>

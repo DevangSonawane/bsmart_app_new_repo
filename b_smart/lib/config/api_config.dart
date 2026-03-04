@@ -2,10 +2,10 @@
 ///
 /// Call `ApiConfig.init(...)` early in `main()` (after loading any env files)
 /// to override defaults. The base URL should point to the deployed backend,
-/// e.g. `https://bsmart.asynk.store/api`.
+/// e.g. `https://api.bebsmart.in/api`.
 class ApiConfig {
   // Use HTTPS to avoid 301 redirects from the server.
-  static String _baseUrl = 'https://bsmart.asynk.store/api';
+  static String _baseUrl = 'https://api.bebsmart.in/api';
   static Duration _timeout = const Duration(seconds: 30);
 
   /// Initialize runtime values (call after loading dotenv in `main()`).

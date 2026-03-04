@@ -1,4 +1,6 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../api/api.dart';
 import '../../models/auth/auth_user_model.dart' as model;
@@ -13,9 +15,9 @@ class AuthService {
   final AuthApi _authApi = AuthApi();
   final ApiClient _apiClient = ApiClient();
   final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'https://www.googleapis.com/auth/userinfo.profile'],
     serverClientId:
         '832065490130-97j2a560l5e30p3tu90j9miqfdkdctlv.apps.googleusercontent.com',
-    scopes: const ['email', 'profile'],
   );
 
   // In-memory storage for signup sessions during the flow
@@ -31,19 +33,19 @@ class AuthService {
     final now = DateTime.now();
 
     final session = SignupSession(
-        id: sessionToken,
-        sessionToken: sessionToken,
-        identifierType: IdentifierType.email,
-        identifierValue: email,
-        verificationStatus: VerificationStatus.verified,
-        step: 1,
-        metadata: {
-          'email': email,
-          'password': password,
-        },
-        createdAt: now,
-        expiresAt: now.add(const Duration(hours: 1)),
-      );
+      id: sessionToken,
+      sessionToken: sessionToken,
+      identifierType: IdentifierType.email,
+      identifierValue: email,
+      verificationStatus: VerificationStatus.verified,
+      step: 1,
+      metadata: {
+        'email': email,
+        'password': password,
+      },
+      createdAt: now,
+      expiresAt: now.add(const Duration(hours: 1)),
+    );
 
     _sessions[sessionToken] = session;
     return session;
@@ -55,65 +57,76 @@ class AuthService {
     final now = DateTime.now();
 
     final session = SignupSession(
-        id: sessionToken,
-        sessionToken: sessionToken,
-        identifierType: IdentifierType.phone,
-        identifierValue: phone,
-        verificationStatus: VerificationStatus.verified,
-        step: 1,
-        metadata: {
-          'phone': phone,
-        },
-        createdAt: now,
-        expiresAt: now.add(const Duration(hours: 1)),
-      );
+      id: sessionToken,
+      sessionToken: sessionToken,
+      identifierType: IdentifierType.phone,
+      identifierValue: phone,
+      verificationStatus: VerificationStatus.verified,
+      step: 1,
+      metadata: {
+        'phone': phone,
+      },
+      createdAt: now,
+      expiresAt: now.add(const Duration(hours: 1)),
+    );
 
     _sessions[sessionToken] = session;
     return session;
   }
 
-  // Signup with Google - Step 1
-  Future<SignupSession> signupWithGoogle() async {
+  Future<String?> loginWithGoogle() async {
     try {
       final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        throw Exception('Google sign in cancelled');
-      }
+      if (googleUser == null) return null;
 
       final googleAuth = await googleUser.authentication;
       final idToken = googleAuth.idToken;
-
-      if (idToken == null) {
-        throw Exception('No ID Token found.');
+      if (idToken == null || idToken.isEmpty) {
+        throw Exception('Google sign-in did not return an ID token.');
       }
 
-      // For the new REST API, the Google OAuth flow is browser-redirect based.
-      // On mobile we collect the Google profile info and register via the API.
-      final sessionToken = _generateSessionToken();
-      final now = DateTime.now();
-
-      final session = SignupSession(
-        id: sessionToken,
-        sessionToken: sessionToken,
-        identifierType: IdentifierType.google,
-        identifierValue: googleUser.email,
-        verificationStatus: VerificationStatus.verified,
-        step: 1,
-        metadata: {
-          'email': googleUser.email,
-          'full_name': googleUser.displayName,
-          'avatar_url': googleUser.photoUrl,
-          'google_id_token': idToken,
-        },
-        createdAt: now,
-        expiresAt: now.add(const Duration(hours: 1)),
+      debugPrint(
+        'Google sign-in success for ${googleUser.email}. Exchanging ID token with backend...',
       );
-
-      _sessions[sessionToken] = session;
-      return session;
+      final data = await _authApi.loginWithGoogle(idToken: idToken);
+      final token = data['token'] as String?;
+      if (token == null || token.isEmpty) {
+        throw Exception(
+          'Backend did not return app token after Google login. Response keys: ${data.keys.join(', ')}',
+        );
+      }
+      return token;
+    } on ApiException catch (e) {
+      throw Exception(
+        'Google login failed at backend exchange (HTTP ${e.statusCode}): ${e.message}',
+      );
+    } on PlatformException catch (e) {
+      throw Exception(
+        'Google login failed in Android/iOS SDK (${e.code}): ${e.message ?? e.details ?? 'Unknown platform error'}',
+      );
     } catch (e) {
-      throw Exception('Google sign up failed: $e');
+      throw Exception('Google login failed: ${e.toString()}');
     }
+  }
+
+  Future<SignupSession> signupWithGoogle() async {
+    final token = await loginWithGoogle();
+    if (token == null) {
+      throw Exception('Sign up cancelled');
+    }
+
+    final now = DateTime.now();
+    return SignupSession(
+      id: 'google-session',
+      sessionToken: token,
+      identifierType: IdentifierType.email,
+      identifierValue: _googleSignIn.currentUser?.email ?? 'google-user',
+      verificationStatus: VerificationStatus.verified,
+      step: 3, // Completed
+      metadata: {},
+      createdAt: now,
+      expiresAt: now.add(const Duration(hours: 1)),
+    );
   }
 
   // Verify OTP - Step 2
@@ -140,7 +153,9 @@ class AuthService {
 
   // Update session metadata (used in Account Setup)
   Future<void> updateSignupSession(
-      String sessionToken, Map<String, dynamic> updates) async {
+    String sessionToken,
+    Map<String, dynamic> updates,
+  ) async {
     final session = _sessions[sessionToken];
     if (session == null) throw Exception('Session not found');
 
@@ -263,7 +278,9 @@ class AuthService {
   }
 
   Future<model.AuthUser> loginWithUsername(
-      String username, String password) async {
+    String username,
+    String password,
+  ) async {
     // The new API login endpoint uses email. If the user enters a username,
     // we pass it as email and let the server handle the lookup, or
     // fall back to the email field.
@@ -280,45 +297,12 @@ class AuthService {
 
   Future<SignupSession> loginWithPhone(String phone) async {
     throw Exception(
-        'Phone login is not currently supported. Please use Email or Google.');
+      'Phone login is not currently supported. Please use Email or Google.',
+    );
   }
 
   Future<void> completePhoneLogin(String sessionToken, String otp) async {
     throw Exception('Phone login is not currently supported.');
-  }
-
-  Future<void> loginWithGoogle() async {
-    try {
-      try {
-        await _googleSignIn.disconnect();
-      } catch (_) {
-        await _googleSignIn.signOut();
-      }
-      final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) throw Exception('Google sign in cancelled');
-
-      final email = googleUser.email;
-      if (email.isEmpty) {
-        throw Exception('Google account has no email');
-      }
-
-      final derivedPassword = _googlePasswordForEmail(email);
-
-      try {
-        final data =
-            await _authApi.login(email: email, password: derivedPassword);
-        if (data['token'] != null) return;
-      } catch (_) {
-        await _authApi.register(
-          email: email,
-          password: derivedPassword,
-          username: email.split('@').first,
-          fullName: googleUser.displayName,
-        );
-      }
-    } catch (e) {
-      throw Exception('Google login failed: $e');
-    }
   }
 
   /// Fetch the current authenticated user profile from the REST API.
@@ -333,6 +317,7 @@ class AuthService {
 
   /// Logout – clears stored JWT.
   Future<void> logout() async {
+    await _googleSignIn.signOut();
     await _authApi.logout();
   }
 

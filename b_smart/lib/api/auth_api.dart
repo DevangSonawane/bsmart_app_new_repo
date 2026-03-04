@@ -76,6 +76,19 @@ class AuthApi {
     return res as Map<String, dynamic>;
   }
 
+  /// Login with Google ID token (native sign-in flow).
+  Future<Map<String, dynamic>> loginWithGoogle({required String idToken}) async {
+    final res = await _client.post('/auth/google/token', body: {
+      'id_token': idToken,
+    });
+    final data = res as Map<String, dynamic>;
+    final token = data['token'] as String?;
+    if (token != null && token.isNotEmpty) {
+      await _client.saveToken(token);
+    }
+    return data;
+  }
+
   /// Logout – clears the stored token.
   Future<void> logout() async {
     await _client.clearToken();
