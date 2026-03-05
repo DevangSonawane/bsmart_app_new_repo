@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 
-const BASE_URL = 'https://bsmart.asynk.store/api';
+const BASE_URL = 'https://api.bebsmart.in/api';
 
 const getToken = () => localStorage.getItem('token');
 const authHeaders = () => ({
@@ -419,14 +419,14 @@ const CommentsUI = ({ reel, onClose, userObject }) => {
 // ─── Desktop Comments Side Panel ──────────────────────────────────────────────
 const CommentsPopup = ({ reel, onClose, userObject, anchorRight }) => (
   <div className="hidden md:flex fixed z-50" style={{ top: '50%', right: `${anchorRight}px`, transform: 'translateY(-50%)', alignItems: 'center' }}>
-    {/* Arrow pointing left */}
-    <div className="flex-shrink-0" style={{ width: 0, height: 0, borderTop: '10px solid transparent', borderBottom: '10px solid transparent', borderRight: '10px solid white' }} />
     <div
       className="rounded-2xl shadow-2xl overflow-hidden flex flex-col bg-white dark:bg-[#262626] border border-gray-200 dark:border-white/10"
       style={{ width: 340, height: '78vh', maxHeight: 640, animation: 'slideInRight 0.22s cubic-bezier(0.32,0.72,0,1) forwards' }}
     >
       <CommentsUI reel={reel} onClose={onClose} userObject={userObject} />
     </div>
+    {/* Arrow pointing right (towards buttons) */}
+    <div className="flex-shrink-0" style={{ width: 0, height: 0, borderTop: '10px solid transparent', borderBottom: '10px solid transparent', borderLeft: '10px solid white' }} />
   </div>
 );
 

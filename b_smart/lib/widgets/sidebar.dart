@@ -7,15 +7,19 @@ import '../theme/theme_scope.dart';
 class Sidebar extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onNavTap;
+  final bool isVendor;
   final VoidCallback? onCreatePost;
   final VoidCallback? onUploadReel;
+  final VoidCallback? onCreateAd;
 
   const Sidebar({
     super.key,
     required this.currentIndex,
     required this.onNavTap,
+    this.isVendor = false,
     this.onCreatePost,
     this.onUploadReel,
+    this.onCreateAd,
   });
 
   @override
@@ -98,6 +102,7 @@ class _SidebarState extends State<Sidebar> {
                   _NavItem(icon: LucideIcons.target, label: 'Ads', index: 1, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(1), inactiveColor: inactiveColor),
                   _CreateItem(
                     currentIndex: widget.currentIndex,
+                    isVendor: widget.isVendor,
                     hovered: _hovered,
                     dropdownOpen: _createDropdownOpen,
                     onTap: () => setState(() => _createDropdownOpen = !_createDropdownOpen),
@@ -109,6 +114,10 @@ class _SidebarState extends State<Sidebar> {
                     onUploadReel: () {
                       setState(() => _createDropdownOpen = false);
                       widget.onUploadReel?.call();
+                    },
+                    onCreateAd: () {
+                      setState(() => _createDropdownOpen = false);
+                      widget.onCreateAd?.call();
                     },
                   ),
                   _NavItem(icon: LucideIcons.megaphone, label: 'Promote', index: 3, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(3), inactiveColor: inactiveColor),
@@ -214,21 +223,25 @@ class _NavItem extends StatelessWidget {
 
 class _CreateItem extends StatelessWidget {
   final int currentIndex;
+  final bool isVendor;
   final bool hovered;
   final bool dropdownOpen;
   final VoidCallback onTap;
   final VoidCallback onDismiss;
   final VoidCallback? onCreatePost;
   final VoidCallback? onUploadReel;
+  final VoidCallback? onCreateAd;
 
   const _CreateItem({
     required this.currentIndex,
+    required this.isVendor,
     required this.hovered,
     required this.dropdownOpen,
     required this.onTap,
     required this.onDismiss,
     this.onCreatePost,
     this.onUploadReel,
+    this.onCreateAd,
   });
 
   @override
@@ -289,16 +302,24 @@ class _CreateItem extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ListTile(
-                        leading: const Icon(LucideIcons.image, size: 20),
-                        title: const Text('Create Post', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                        onTap: onCreatePost,
-                      ),
-                      ListTile(
-                        leading: const Icon(LucideIcons.video, size: 20),
-                        title: const Text('Upload Reel', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                        onTap: onUploadReel,
-                      ),
+                      if (isVendor)
+                        ListTile(
+                          leading: const Icon(LucideIcons.megaphone, size: 20),
+                          title: const Text('Create Ads', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          onTap: onCreateAd,
+                        )
+                      else ...[
+                        ListTile(
+                          leading: const Icon(LucideIcons.image, size: 20),
+                          title: const Text('Create Post', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          onTap: onCreatePost,
+                        ),
+                        ListTile(
+                          leading: const Icon(LucideIcons.video, size: 20),
+                          title: const Text('Upload Reel', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          onTap: onUploadReel,
+                        ),
+                      ],
                     ],
                   ),
                 ),

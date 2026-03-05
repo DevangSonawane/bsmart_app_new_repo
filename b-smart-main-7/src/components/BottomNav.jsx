@@ -1,15 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Bell, Clapperboard, Heart, Home, Megaphone, Plus, Search, Target, User } from 'lucide-react';
+import { Home, Plus, Search, Target, User, LayoutDashboard, FileText, Clapperboard } from 'lucide-react';
 
 const BottomNav = ({ onOpenCreateModal }) => {
   const location = useLocation();
   const { userObject } = useSelector((state) => state.auth);
   const isVendor = userObject?.role === 'vendor';
   const [showVendorNotValidated, setShowVendorNotValidated] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const notificationsRef = useRef(null);
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
@@ -23,26 +21,24 @@ const BottomNav = ({ onOpenCreateModal }) => {
   // Hide bottom nav on specific pages
   const hideBottomNav = ['/create-ad'].includes(location.pathname);
 
-  useEffect(() => {
-    const onDown = (e) => {
-      if (notificationsRef.current && !notificationsRef.current.contains(e.target)) setShowNotifications(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, []);
-
   if (hideBottomNav) return null;
 
   return (
     <>
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-black border-t border-gray-200 dark:border-gray-800 flex justify-between items-center px-6 h-[60px] z-50 pb-2">
-        <Link to="/" className={`${isActive('/') ? activeColor : inactiveColor}`}>
-          <Home size={28} strokeWidth={isActive('/') ? 2.5 : 2} />
-        </Link>
+        {isVendor ? (
+          <Link to="/vendor/dashboard" className={`${isActive('/vendor/dashboard') ? activeColor : inactiveColor}`}>
+            <LayoutDashboard size={28} strokeWidth={isActive('/vendor/dashboard') ? 2.5 : 2} />
+          </Link>
+        ) : (
+          <Link to="/" className={`${isActive('/') ? activeColor : inactiveColor}`}>
+            <Home size={28} strokeWidth={isActive('/') ? 2.5 : 2} />
+          </Link>
+        )}
 
         {isVendor ? (
-          <Link to="/ads" className={`${isActive('/ads') ? activeColor : inactiveColor}`}>
-            <Target size={28} strokeWidth={isActive('/ads') ? 2.5 : 2} />
+          <Link to="/vendor/ads-management" className={`${isActive('/vendor/ads-management') ? activeColor : inactiveColor}`}>
+            <Target size={28} strokeWidth={isActive('/vendor/ads-management') ? 2.5 : 2} />
           </Link>
         ) : (
           <Link to="/search" className={`${isActive('/search') ? activeColor : inactiveColor}`}>
@@ -55,7 +51,7 @@ const BottomNav = ({ onOpenCreateModal }) => {
             onClick={() => {
               if (isVendor) {
                 if (!userObject?.is_active) setShowVendorNotValidated(true);
-                else onOpenCreateModal('ad');
+                else onOpenCreateModal('ad'); // This should map to creating ad in vendor context
               } else {
                 onOpenCreateModal('post');
               }
@@ -67,31 +63,9 @@ const BottomNav = ({ onOpenCreateModal }) => {
         </div>
 
         {isVendor ? (
-          <div className="relative" ref={notificationsRef}>
-            <button
-              onClick={() => setShowNotifications(v => !v)}
-              className={`${showNotifications ? activeColor : inactiveColor} relative`}
-            >
-              <Heart size={28} strokeWidth={showNotifications ? 2.5 : 2} />
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#fa3f5e] rounded-full border border-white dark:border-black"></span>
-            </button>
-            {showNotifications && (
-              <div className="absolute bottom-full right-0 mb-3 w-72 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-100 dark:border-gray-800 py-2 z-[60] animate-fade-in">
-                <div className="px-4 py-2 border-b border-gray-50 dark:border-gray-800">
-                  <h3 className="font-semibold text-sm text-gray-900 dark:text-white">Notifications</h3>
-                </div>
-                <div className="max-h-60 overflow-y-auto">
-                  <div className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex gap-3 items-center">
-                    <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-500 flex items-center justify-center"><Bell size={14} /></div>
-                    <div>
-                      <p className="text-sm text-gray-900 dark:text-gray-200">New follower: <span className="font-bold">Sarah</span></p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">2 min ago</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <Link to="/vendor/analytics" className={`${isActive('/vendor/analytics') ? activeColor : inactiveColor}`}>
+            <FileText size={28} strokeWidth={isActive('/vendor/analytics') ? 2.5 : 2} />
+          </Link>
         ) : (
           <Link to="/reels" className={`${isActive('/reels') ? activeColor : inactiveColor}`}>
             <Clapperboard size={28} strokeWidth={isActive('/reels') ? 2.5 : 2} />
@@ -99,8 +73,8 @@ const BottomNav = ({ onOpenCreateModal }) => {
         )}
 
         {isVendor ? (
-          <Link to="/profile" className={`${isActive('/profile') ? activeColor : inactiveColor}`}>
-            <User size={28} strokeWidth={isActive('/profile') ? 2.5 : 2} />
+          <Link to="/vendor/profile" className={`${isActive('/vendor/profile') ? activeColor : inactiveColor}`}>
+            <User size={28} strokeWidth={isActive('/vendor/profile') ? 2.5 : 2} />
           </Link>
         ) : (
           <Link to="/profile" className={`${isActive('/profile') ? activeColor : inactiveColor}`}>

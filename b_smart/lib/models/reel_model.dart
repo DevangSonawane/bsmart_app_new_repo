@@ -7,6 +7,7 @@ class Reel {
   final String? userAvatarUrl;
   final String videoUrl;
   final String? thumbnailUrl;
+  final String? aspectRatio;
   final String? caption;
   final List<String> hashtags;
   final String? audioTitle;
@@ -41,6 +42,7 @@ class Reel {
     this.userAvatarUrl,
     required this.videoUrl,
     this.thumbnailUrl,
+    this.aspectRatio,
     this.caption,
     this.hashtags = const [],
     this.audioTitle,
@@ -76,6 +78,7 @@ class Reel {
     String? userAvatarUrl,
     String? videoUrl,
     String? thumbnailUrl,
+    String? aspectRatio,
     String? caption,
     List<String>? hashtags,
     String? audioTitle,
@@ -110,6 +113,7 @@ class Reel {
       userAvatarUrl: userAvatarUrl ?? this.userAvatarUrl,
       videoUrl: videoUrl ?? this.videoUrl,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      aspectRatio: aspectRatio ?? this.aspectRatio,
       caption: caption ?? this.caption,
       hashtags: hashtags ?? this.hashtags,
       audioTitle: audioTitle ?? this.audioTitle,
@@ -170,6 +174,7 @@ class Reel {
       userAvatarUrl: post.userAvatar,
       videoUrl: post.mediaUrls.first,
       thumbnailUrl: post.thumbnailUrl,
+      aspectRatio: null,
       caption: post.caption,
       hashtags: post.hashtags,
       createdAt: post.createdAt,

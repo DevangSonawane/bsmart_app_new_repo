@@ -253,7 +253,7 @@ const VendorSignup = () => {
 
   const handleNext = () => {
     if (!validateStep()) return;
-    setStep((prev) => Math.min(prev + 1, 3));
+    setStep((prev) => Math.min(prev + 1, 2));
   };
 
   const handleBack = () => {
@@ -287,10 +287,7 @@ const VendorSignup = () => {
         city: form.city,
         note: form.businessNote
       },
-      credits: 0,
-      target_people: form.targetPeople,
-      location_target: form.locationTarget,
-      campaign_idea: form.campaignIdea
+      credits: 200000,
     };
 
     try {
@@ -306,8 +303,7 @@ const VendorSignup = () => {
 
   const steps = [
     { id: 1, label: 'Account' },
-    { id: 2, label: 'Business' },
-    { id: 3, label: 'Audience' }
+    { id: 2, label: 'Business' }
   ];
 
   const renderStep = () => {
@@ -581,65 +577,9 @@ const VendorSignup = () => {
         </div>
       );
     }
-
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Target People</label>
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
-                <Target size={18} />
-              </div>
-              <input
-                name="targetPeople"
-                value={form.targetPeople}
-                onChange={handleChange}
-                placeholder="Age, location, interests..."
-                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
-              />
-            </div>
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Location Target (Country)</label>
-          <div className="relative">
-            <select
-              value={form.locationTarget}
-              onChange={(e) => {
-                const value = e.target.value;
-                setForm((prev) => ({ ...prev, locationTarget: value }));
-              }}
-              className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all text-sm text-gray-800 dark:text-gray-100"
-            >
-              <option value="">Select a country</option>
-              {COUNTRIES.map((country) => (
-                <option
-                  key={country}
-                  value={country}
-                  className="py-1 text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-900"
-                >
-                  {country}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Campaign Idea (optional)</label>
-          <textarea
-            name="campaignIdea"
-            value={form.campaignIdea}
-            onChange={handleChange}
-            placeholder="Share what you want to promote first on b_smart."
-            className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white min-h-[80px] resize-none"
-          />
-        </div>
-      </div>
-    );
   };
 
-  const progress = (step / 3) * 100;
+  const progress = (step / 2) * 100;
 
   return (
     <div className="h-screen flex bg-white dark:bg-black overflow-hidden">
@@ -683,7 +623,7 @@ const VendorSignup = () => {
           <div className="mb-6">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">Create Vendor Account</h2>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
-              Step {step} of 3 · Set up your business profile to run ads.
+              Step {step} of 2 · Set up your business profile to run ads.
             </p>
           </div>
 
@@ -713,7 +653,7 @@ const VendorSignup = () => {
             </div>
           </div>
 
-          <form onSubmit={step === 3 ? handleSubmit : (e) => { e.preventDefault(); handleNext(); }} className="space-y-5">
+          <form onSubmit={step === 2 ? handleSubmit : (e) => { e.preventDefault(); handleNext(); }} className="space-y-5">
             {renderStep()}
 
             {error && (
@@ -745,7 +685,7 @@ const VendorSignup = () => {
                 Back
               </button>
 
-              {step < 3 && (
+              {step < 2 && (
                 <button
                   type="submit"
                   className="inline-flex items-center px-5 py-2.5 rounded-xl bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange text-white text-sm font-semibold shadow-lg shadow-insta-pink/30 hover:shadow-xl hover:shadow-insta-pink/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70 disabled:hover:scale-100 disabled:shadow-none"
@@ -755,7 +695,7 @@ const VendorSignup = () => {
                 </button>
               )}
 
-              {step === 3 && (
+              {step === 2 && (
                 <button
                   type="submit"
                   disabled={loading}

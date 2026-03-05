@@ -6,6 +6,7 @@ import '../services/create_service.dart';
 import 'create_post_screen.dart';
 import 'create_edit_preview_screen.dart';
 import 'story_camera_screen.dart';
+import 'advertiser_create_ad_screen.dart';
 
 enum _GallerySource {
   recents,
@@ -16,8 +17,13 @@ enum _GallerySource {
 
 class CreateUploadScreen extends StatefulWidget {
   final UploadMode initialMode;
+  final bool isAdFlow;
 
-  const CreateUploadScreen({super.key, this.initialMode = UploadMode.post});
+  const CreateUploadScreen({
+    super.key,
+    this.initialMode = UploadMode.post,
+    this.isAdFlow = false,
+  });
 
   @override
   State<CreateUploadScreen> createState() => _CreateUploadScreenState();
@@ -176,6 +182,16 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   }
 
   void _onModeTap(UploadMode mode) {
+    if (widget.isAdFlow) {
+      if (mode != UploadMode.post && mode != UploadMode.reel) return;
+      if (_mode == mode) return;
+      setState(() {
+        _mode = mode;
+      });
+      _applySource(_source);
+      return;
+    }
+
     if (mode == UploadMode.post) {
       if (_mode != UploadMode.post) {
         setState(() {
@@ -260,6 +276,18 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       return;
     }
     if (!mounted) return;
+    if (widget.isAdFlow) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => AdvertiserCreateAdScreen(
+            initialContentType: _mode == UploadMode.reel ? 'reel' : 'post',
+            initialMediaPath: file.path,
+            initialMediaIsVideo: media.type == MediaType.video,
+          ),
+        ),
+      );
+      return;
+    }
     if (_mode == UploadMode.reel) {
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -600,19 +628,21 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                               child: const Text('POST'),
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          GestureDetector(
-                            onTap: () => _onModeTap(UploadMode.story),
-                            child: AnimatedDefaultTextStyle(
-                              duration: _modeAnimDuration,
-                              style: TextStyle(
-                                color: _mode == UploadMode.story ? Colors.white : Colors.white54,
-                                fontWeight: _mode == UploadMode.story ? FontWeight.bold : FontWeight.w500,
-                                letterSpacing: 1.2,
+                          if (!widget.isAdFlow) ...[
+                            const SizedBox(width: 16),
+                            GestureDetector(
+                              onTap: () => _onModeTap(UploadMode.story),
+                              child: AnimatedDefaultTextStyle(
+                                duration: _modeAnimDuration,
+                                style: TextStyle(
+                                  color: _mode == UploadMode.story ? Colors.white : Colors.white54,
+                                  fontWeight: _mode == UploadMode.story ? FontWeight.bold : FontWeight.w500,
+                                  letterSpacing: 1.2,
+                                ),
+                                child: const Text('STORY'),
                               ),
-                              child: const Text('STORY'),
                             ),
-                          ),
+                          ],
                           const SizedBox(width: 16),
                           GestureDetector(
                             onTap: () => _onModeTap(UploadMode.reel),
@@ -626,19 +656,21 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                               child: const Text('REEL'),
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          GestureDetector(
-                            onTap: () => _onModeTap(UploadMode.live),
-                            child: AnimatedDefaultTextStyle(
-                              duration: _modeAnimDuration,
-                              style: TextStyle(
-                                color: _mode == UploadMode.live ? Colors.white : Colors.white54,
-                                fontWeight: _mode == UploadMode.live ? FontWeight.bold : FontWeight.w500,
-                                letterSpacing: 1.2,
+                          if (!widget.isAdFlow) ...[
+                            const SizedBox(width: 16),
+                            GestureDetector(
+                              onTap: () => _onModeTap(UploadMode.live),
+                              child: AnimatedDefaultTextStyle(
+                                duration: _modeAnimDuration,
+                                style: TextStyle(
+                                  color: _mode == UploadMode.live ? Colors.white : Colors.white54,
+                                  fontWeight: _mode == UploadMode.live ? FontWeight.bold : FontWeight.w500,
+                                  letterSpacing: 1.2,
+                                ),
+                                child: const Text('LIVE'),
                               ),
-                              child: const Text('LIVE'),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -686,8 +718,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withOpacity(0),
-                      Colors.black.withOpacity(0.8),
+                      Colors.black.withValues(alpha: 0),
+                      Colors.black.withValues(alpha: 0.8),
                     ],
                   ),
                 ),

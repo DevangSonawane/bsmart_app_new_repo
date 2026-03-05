@@ -1,369 +1,252 @@
 import '../api/posts_api.dart';
+import '../api/reels_api.dart';
 import '../models/reel_model.dart';
-import '../utils/url_helper.dart';
-import '../state/store.dart';
 import '../state/feed_actions.dart';
+import '../state/store.dart';
+import '../utils/url_helper.dart';
 
 class ReelsService {
   static final ReelsService _instance = ReelsService._internal();
   factory ReelsService() => _instance;
-  ReelsService._internal() {
-    // Seed with mock data so UI shows immediately (no loading spinner)
-    _cache.addAll(_defaultMockReels());
-    _init();
-  }
+  ReelsService._internal();
 
   final PostsApi _postsApi = PostsApi();
+  final ReelsApi _reelsApi = ReelsApi();
   final List<Reel> _cache = [];
 
-  static List<Reel> _defaultMockReels() {
-    return [
-      Reel(
-        id: 'reel-1',
-        userId: 'user-dance',
-        userName: 'dance_queen',
-        userAvatarUrl: 'https://i.pravatar.cc/150?u=dance_queen',
-        videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-girl-dancing-happy-in-a-room-4179-large.mp4',
-        thumbnailUrl: 'https://images.unsplash.com/photo-1547153760-18fc86324498?w=800&q=80',
-        caption: 'Dancing vibes! 💃 #dance #fun',
-        hashtags: ['dance', 'fun'],
-        audioTitle: 'Original Audio - dance_quee',
-        audioArtist: null,
-        audioId: null,
-        likes: 12500,
-        comments: 120,
-        shares: 10,
-        views: 50000,
-        isLiked: false,
-        isSaved: false,
-        isFollowing: false,
-        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-        isSponsored: false,
-        sponsorBrand: null,
-        sponsorLogoUrl: null,
-        productTags: null,
-        remixEnabled: true,
-        audioReuseEnabled: true,
-        originalReelId: null,
-        originalCreatorId: null,
-        originalCreatorName: null,
-        isRisingCreator: false,
-        isTrending: false,
-        duration: const Duration(seconds: 30),
-      ),
-      Reel(
-        id: 'reel-2',
-        userId: 'user-nature',
-        userName: 'nature_walks',
-        userAvatarUrl: 'https://i.pravatar.cc/150?u=nature_walks',
-        videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-tree-branches-in-the-breeze-1188-large.mp4',
-        thumbnailUrl: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80',
-        caption: 'Peaceful morning 🌳 #nature',
-        hashtags: ['nature'],
-        audioTitle: 'Original Audio - nature_walks',
-        audioArtist: null,
-        audioId: null,
-        likes: 8200,
-        comments: 45,
-        shares: 5,
-        views: 20000,
-        isLiked: false,
-        isSaved: false,
-        isFollowing: false,
-        createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-        isSponsored: false,
-        sponsorBrand: null,
-        sponsorLogoUrl: null,
-        productTags: null,
-        remixEnabled: true,
-        audioReuseEnabled: true,
-        originalReelId: null,
-        originalCreatorId: null,
-        originalCreatorName: null,
-        isRisingCreator: false,
-        isTrending: false,
-        duration: const Duration(seconds: 25),
-      ),
-      Reel(
-        id: 'reel-3',
-        userId: 'user-city',
-        userName: 'city_life',
-        userAvatarUrl: 'https://i.pravatar.cc/150?u=city_life',
-        videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-traffic-in-the-city-at-night-4228-large.mp4',
-        thumbnailUrl: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=800&q=80',
-        caption: 'City lights 🌃 #nightlife',
-        hashtags: ['city', 'nightlife'],
-        audioTitle: 'Original Audio - city_life',
-        audioArtist: null,
-        audioId: null,
-        likes: 25000,
-        comments: 500,
-        shares: 40,
-        views: 120000,
-        isLiked: false,
-        isSaved: false,
-        isFollowing: false,
-        createdAt: DateTime.now().subtract(const Duration(hours: 8)),
-        isSponsored: false,
-        sponsorBrand: null,
-        sponsorLogoUrl: null,
-        productTags: null,
-        remixEnabled: true,
-        audioReuseEnabled: true,
-        originalReelId: null,
-        originalCreatorId: null,
-        originalCreatorName: null,
-        isRisingCreator: false,
-        isTrending: true,
-        duration: const Duration(seconds: 30),
-      ),
-    ];
-  }
-
-  /// When backend has posts with media_type=reel, fetchReels uses them; otherwise mock is shown.
-  Future<void> _init() async {
-    try {
-      final fetched = await fetchReels(limit: 20, offset: 0);
-      if (fetched.isNotEmpty) {
-        _cache.clear();
-        _cache.addAll(fetched);
-      }
-    } catch (_) {
-      // Keep seeded mock data on fetch failure
-    }
-  }
-
-  // Synchronous getter used by UI components that expect an immediate list
   List<Reel> getReels() => List.unmodifiable(_cache);
 
   Future<List<Reel>> fetchReels({int limit = 20, int offset = 0}) async {
-    try {
-      final page = (offset ~/ limit) + 1;
-      final res = await _postsApi.getFeed(page: page, limit: limit);
-      final allPosts = res['posts'] as List<dynamic>? ?? [];
-      
-      // Filter for reels client-side since API doesn't support type filtering yet
-      final items = allPosts.where((p) {
-        final type = (p['type'] as String? ?? p['media_type'] as String? ?? 'post').toLowerCase();
-        return type == 'reel' || type == 'video';
-      }).toList();
+    final page = (offset ~/ limit) + 1;
+    final res = await _reelsApi.listReels(page: page, limit: limit);
+    final rawItems = _extractList(res);
 
-      final list = items.map((item) {
-        final user = item['users'] as Map<String, dynamic>? ?? item['user'] as Map<String, dynamic>?;
-        final media = item['media'] as List<dynamic>? ?? [];
-        String videoUrl = '';
-        String? thumbnailUrl;
-        if (media.isNotEmpty) {
-          final first = media.first;
-          if (first is String) {
-            videoUrl = first;
-          } else if (first is Map) {
-            final m = Map<String, dynamic>.from(first);
-            videoUrl = (m['url'] ?? m['fileUrl'] ?? m['videoUrl'] ?? '').toString();
-            final thumbField = m['thumbnail'] ?? m['thumbnailUrl'] ?? m['thumb'];
-            if (thumbField is List && thumbField.isNotEmpty) {
-              thumbnailUrl = thumbField.first.toString();
-            } else if (thumbField is String) {
-              thumbnailUrl = thumbField;
-            }
-          }
-        }
-        return Reel(
-          id: item['id'] as String,
-          userId: item['user_id'] as String? ?? user?['id'] as String? ?? '',
-          userName: user?['username'] as String? ?? 'user',
-          userAvatarUrl: UrlHelper.normalizeUrl(user?['avatar_url'] as String?),
-          videoUrl: UrlHelper.normalizeUrl(videoUrl),
-          thumbnailUrl: thumbnailUrl != null ? UrlHelper.normalizeUrl(thumbnailUrl) : null,
-          caption: item['caption'] as String?,
-          hashtags: ((item['hashtags'] as List<dynamic>?) ?? []).map((e) => e.toString()).toList(),
-          audioTitle: null,
-          audioArtist: null,
-          audioId: null,
-          likes: item['likes_count'] as int? ?? 0,
-          comments: item['comments_count'] as int? ?? 0,
-          shares: item['shares_count'] as int? ?? 0,
-          views: item['views_count'] as int? ?? 0,
-          isLiked: item['is_liked_by_me'] as bool? ?? false,
-          isSaved: false,
-          isFollowing: false,
-          createdAt: DateTime.tryParse(item['created_at'] as String? ?? '') ?? DateTime.now(),
-          isSponsored: item['is_ad'] as bool? ?? false,
-          sponsorBrand: item['ad_company_name'] as String?,
-          sponsorLogoUrl: null,
-          productTags: null,
-          remixEnabled: true,
-          audioReuseEnabled: true,
-          originalReelId: null,
-          originalCreatorId: null,
-          originalCreatorName: null,
-          isRisingCreator: false,
-          isTrending: false,
-          duration: const Duration(seconds: 30),
-        );
-      }).toList();
-      // update cache if offset == 0
-      if (offset == 0) {
-        _cache.clear();
-        _cache.addAll(list);
-        // Dispatch to Redux to sync with Home Feed
-        globalStore.dispatch(SetFeedPosts(list.map((r) => r.toFeedPost()).toList()));
-      }
-      return list;
-    } catch (e) {
-      // Fallback to mock reels (match React app sample)
-      return [
-        Reel(
-          id: 'reel-1',
-          userId: 'user-dance',
-          userName: 'dance_queen',
-          userAvatarUrl: 'https://i.pravatar.cc/150?u=dance_queen',
-          videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-girl-dancing-happy-in-a-room-4179-large.mp4',
-          thumbnailUrl: null,
-          caption: 'Dancing vibes! 💃 #dance #fun',
-          hashtags: ['dance','fun'],
-          audioTitle: null,
-          audioArtist: null,
-          audioId: null,
-          likes: 12500,
-          comments: 120,
-          shares: 10,
-          views: 50000,
-          isLiked: false,
-          isSaved: false,
-          isFollowing: false,
-          createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-          isSponsored: false,
-          sponsorBrand: null,
-          sponsorLogoUrl: null,
-          productTags: null,
-          remixEnabled: true,
-          audioReuseEnabled: true,
-          originalReelId: null,
-          originalCreatorId: null,
-          originalCreatorName: null,
-          isRisingCreator: false,
-          isTrending: false,
-          duration: const Duration(seconds: 30),
-        ),
-        Reel(
-          id: 'reel-2',
-          userId: 'user-nature',
-          userName: 'nature_walks',
-          userAvatarUrl: 'https://i.pravatar.cc/150?u=nature_walks',
-          videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-tree-branches-in-the-breeze-1188-large.mp4',
-          thumbnailUrl: null,
-          caption: 'Peaceful morning 🌳 #nature',
-          hashtags: ['nature'],
-          audioTitle: null,
-          audioArtist: null,
-          audioId: null,
-          likes: 8200,
-          comments: 45,
-          shares: 5,
-          views: 20000,
-          isLiked: false,
-          isSaved: false,
-          isFollowing: false,
-          createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-          isSponsored: false,
-          sponsorBrand: null,
-          sponsorLogoUrl: null,
-          productTags: null,
-          remixEnabled: true,
-          audioReuseEnabled: true,
-          originalReelId: null,
-          originalCreatorId: null,
-          originalCreatorName: null,
-          isRisingCreator: false,
-          isTrending: false,
-          duration: const Duration(seconds: 25),
-        ),
-        Reel(
-          id: 'reel-3',
-          userId: 'user-city',
-          userName: 'city_life',
-          userAvatarUrl: 'https://i.pravatar.cc/150?u=city_life',
-          videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-traffic-in-the-city-at-night-4228-large.mp4',
-          thumbnailUrl: null,
-          caption: 'City lights 🌃 #nightlife',
-          hashtags: ['city','nightlife'],
-          audioTitle: null,
-          audioArtist: null,
-          audioId: null,
-          likes: 25000,
-          comments: 500,
-          shares: 40,
-          views: 120000,
-          isLiked: false,
-          isSaved: false,
-          isFollowing: false,
-          createdAt: DateTime.now().subtract(const Duration(hours: 8)),
-          isSponsored: false,
-          sponsorBrand: null,
-          sponsorLogoUrl: null,
-          productTags: null,
-          remixEnabled: true,
-          audioReuseEnabled: true,
-          originalReelId: null,
-          originalCreatorId: null,
-          originalCreatorName: null,
-          isRisingCreator: false,
-          isTrending: true,
-          duration: const Duration(seconds: 30),
-        ),
-      ];
+    final parsed = rawItems
+        .map((item) => _parseReel(item))
+        .whereType<Reel>()
+        .where((reel) => reel.videoUrl.isNotEmpty)
+        .toList();
+
+    if (offset == 0) {
+      _cache
+        ..clear()
+        ..addAll(parsed);
+      globalStore.dispatch(SetFeedPosts(parsed.map((r) => r.toFeedPost()).toList()));
+    } else {
+      _cache.addAll(parsed);
     }
+
+    return parsed;
+  }
+
+  List<dynamic> _extractList(dynamic payload) {
+    if (payload is List<dynamic>) return payload;
+    if (payload is Map<String, dynamic>) {
+      final candidates = [
+        payload['data'],
+        payload['reels'],
+        payload['posts'],
+        payload['results'],
+      ];
+      for (final c in candidates) {
+        if (c is List<dynamic>) return c;
+      }
+    }
+    return const [];
+  }
+
+  Reel? _parseReel(dynamic raw) {
+    if (raw is! Map) return null;
+    final item = Map<String, dynamic>.from(raw);
+
+    final id = _string(item['_id']) ?? _string(item['id']) ?? _string(item['post_id']);
+    if (id == null || id.isEmpty) return null;
+
+    final userField = item['user_id'];
+    final userMap = userField is Map
+        ? Map<String, dynamic>.from(userField)
+        : item['users'] is Map
+            ? Map<String, dynamic>.from(item['users'])
+            : item['user'] is Map
+                ? Map<String, dynamic>.from(item['user'])
+                : <String, dynamic>{};
+
+    final mediaList = item['media'] is List ? (item['media'] as List) : const [];
+    String? videoUrl;
+    String? thumbnailUrl;
+    String? aspectRatio;
+
+    if (mediaList.isNotEmpty) {
+      final first = mediaList.first;
+      if (first is String) {
+        videoUrl = first;
+      } else if (first is Map) {
+        final media = Map<String, dynamic>.from(first);
+        videoUrl = _string(media['fileUrl']) ??
+            _string(media['url']) ??
+            _string(media['videoUrl']) ??
+            _string(media['file_url']);
+
+        final thumbField = media['thumbnail'] ?? media['thumbnailUrl'] ?? media['thumb'];
+        if (thumbField is String) {
+          thumbnailUrl = thumbField;
+        } else if (thumbField is Map) {
+          final thumbMap = Map<String, dynamic>.from(thumbField);
+          thumbnailUrl = _string(thumbMap['fileUrl']) ??
+              _string(thumbMap['url']) ??
+              _string(thumbMap['file_url']);
+        } else if (thumbField is List && thumbField.isNotEmpty) {
+          thumbnailUrl = _string(thumbField.first);
+        }
+
+        final mediaCrop = media['crop'] is Map
+            ? Map<String, dynamic>.from(media['crop'])
+            : const <String, dynamic>{};
+        aspectRatio = _string(mediaCrop['aspect_ratio']) ?? _string(media['aspect_ratio']);
+      }
+    }
+
+    final reelCrop = item['crop'] is Map
+        ? Map<String, dynamic>.from(item['crop'])
+        : const <String, dynamic>{};
+    aspectRatio = aspectRatio ?? _string(reelCrop['aspect_ratio']) ?? _string(item['aspect_ratio']);
+
+    final tagsRaw = item['tags'] ?? item['hashtags'] ?? const [];
+    final tags = tagsRaw is List ? tagsRaw.map((e) => e.toString()).toList() : <String>[];
+
+    final createdAtRaw = _string(item['created_at']) ?? _string(item['createdAt']);
+
+    final userId = _string(userMap['_id']) ??
+        _string(userMap['id']) ??
+        _string(userField) ??
+        '';
+    final userName = _string(userMap['username']) ??
+        _string(userMap['full_name']) ??
+        'Unknown';
+
+    return Reel(
+      id: id,
+      userId: userId,
+      userName: userName,
+      userAvatarUrl: UrlHelper.normalizeUrl(_string(userMap['avatar_url'])),
+      videoUrl: UrlHelper.normalizeUrl(videoUrl ?? ''),
+      thumbnailUrl: UrlHelper.normalizeUrl(thumbnailUrl),
+      aspectRatio: aspectRatio,
+      caption: _string(item['caption']),
+      hashtags: tags,
+      audioTitle: null,
+      audioArtist: null,
+      audioId: null,
+      likes: _toInt(item['likes_count']),
+      comments: _toInt(item['comments_count']),
+      shares: _toInt(item['shares_count']),
+      views: _toInt(item['views_count']),
+      isLiked: _toBool(item['is_liked_by_me']),
+      isSaved: _toBool(item['is_saved_by_me']),
+      isFollowing: _toBool(item['is_followed_by_me']),
+      createdAt: DateTime.tryParse(createdAtRaw ?? '') ?? DateTime.now(),
+      isSponsored: _toBool(item['is_ad']),
+      sponsorBrand: _string(item['ad_company_name']),
+      sponsorLogoUrl: null,
+      productTags: null,
+      remixEnabled: true,
+      audioReuseEnabled: true,
+      originalReelId: null,
+      originalCreatorId: null,
+      originalCreatorName: null,
+      isRisingCreator: false,
+      isTrending: false,
+      duration: const Duration(seconds: 30),
+    );
+  }
+
+  String? _string(dynamic v) {
+    if (v == null) return null;
+    final s = v.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  bool _toBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final lower = value.toLowerCase();
+      return lower == 'true' || lower == '1';
+    }
+    return false;
   }
 
   Future<void> incrementViews(String reelId) async {
-    // API doesn't support view increment yet
+    // API does not expose a view increment endpoint yet.
   }
 
   Future<void> incrementShares(String reelId) async {
-    // API doesn't support share increment yet
+    // API does not expose a share increment endpoint yet.
   }
 
-  // Local cache helpers for UI interactions (optimistic)
-  void toggleLike(String reelId) {
+  Future<void> toggleLike(String reelId) async {
     final idx = _cache.indexWhere((r) => r.id == reelId);
-    if (idx != -1) {
-      final r = _cache[idx];
-      final newLiked = !r.isLiked;
-      final updatedReel = r.copyWith(isLiked: newLiked, likes: newLiked ? r.likes + 1 : r.likes - 1);
-      _cache[idx] = updatedReel;
-      
-      // Update Redux store
-      globalStore.dispatch(UpdatePostLikedWithCount(reelId, newLiked, updatedReel.likes));
-      
-      // async backend update
-      if (newLiked) {
-        _postsApi.likePost(reelId);
+    if (idx == -1) return;
+
+    final original = _cache[idx];
+    final nextLiked = !original.isLiked;
+    final optimistic = original.copyWith(
+      isLiked: nextLiked,
+      likes: nextLiked ? original.likes + 1 : (original.likes > 0 ? original.likes - 1 : 0),
+    );
+
+    _cache[idx] = optimistic;
+    globalStore.dispatch(UpdatePostLikedWithCount(reelId, optimistic.isLiked, optimistic.likes));
+
+    try {
+      if (nextLiked) {
+        await _postsApi.likePost(reelId);
       } else {
-        _postsApi.unlikePost(reelId);
+        await _postsApi.unlikePost(reelId);
       }
+    } catch (_) {
+      _cache[idx] = original;
+      globalStore.dispatch(UpdatePostLikedWithCount(reelId, original.isLiked, original.likes));
+      rethrow;
     }
   }
 
-  void toggleSave(String reelId) {
+  Future<void> toggleSave(String reelId) async {
     final idx = _cache.indexWhere((r) => r.id == reelId);
-    if (idx != -1) {
-      final r = _cache[idx];
-      final newSaved = !r.isSaved;
-      final updatedReel = r.copyWith(isSaved: newSaved);
-      _cache[idx] = updatedReel;
-      
-      // Update Redux store
-      globalStore.dispatch(UpdatePostSaved(reelId, newSaved));
+    if (idx == -1) return;
+
+    final original = _cache[idx];
+    final nextSaved = !original.isSaved;
+    final optimistic = original.copyWith(isSaved: nextSaved);
+
+    _cache[idx] = optimistic;
+    globalStore.dispatch(UpdatePostSaved(reelId, optimistic.isSaved));
+
+    try {
+      if (nextSaved) {
+        await _postsApi.savePost(reelId);
+      } else {
+        await _postsApi.unsavePost(reelId);
+      }
+    } catch (_) {
+      _cache[idx] = original;
+      globalStore.dispatch(UpdatePostSaved(reelId, original.isSaved));
+      rethrow;
     }
   }
 
   void toggleFollow(String userId) {
-    for (int i = 0; i < _cache.length; i++) {
+    for (var i = 0; i < _cache.length; i++) {
       if (_cache[i].userId == userId) {
         _cache[i] = _cache[i].copyWith(isFollowing: !_cache[i].isFollowing);
       }
     }
-    // backend follow action (not supported in new API yet)
   }
 }

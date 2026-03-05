@@ -25,6 +25,7 @@ import 'story_viewer_screen.dart';
 import 'own_story_viewer_screen.dart';
 import 'create_upload_screen.dart';
 import '../utils/current_user.dart';
+import '../api/auth_api.dart';
 import '../api/api_exceptions.dart';
 import '../api/api_client.dart';
 import 'package:geolocator/geolocator.dart';
@@ -58,6 +59,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
   /// Current user profile from `users` table (same source as React web app) for header avatar.
   Map<String, dynamic>? _currentUserProfile;
   String? _currentUserId;
+  bool get _isVendor =>
+      (_currentUserProfile?['role']?.toString().toLowerCase() ?? '') == 'vendor';
 
   Map<String, dynamic>? _normalizeProfile(Map<String, dynamic>? raw) {
     if (raw == null) return null;
@@ -82,10 +85,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
     final username = data['username'] ?? data['user_name'];
     final fullName = data['full_name'] ?? data['fullName'] ?? data['name'];
     final id = data['id'] ?? data['_id'] ?? data['user_id'];
+    final role = data['role'];
+    final isActive = data['is_active'] ?? data['isActive'];
 
     if (avatar != null) normalized['avatar_url'] = avatar.toString();
     if (username != null) normalized['username'] = username.toString();
     if (fullName != null) normalized['full_name'] = fullName.toString();
+    if (role != null) normalized['role'] = role.toString();
+    if (isActive != null) normalized['is_active'] = isActive == true;
     if (id != null) {
       normalized['id'] = id.toString();
       normalized['_id'] = id.toString();
@@ -130,20 +137,33 @@ class _HomeDashboardState extends State<HomeDashboard> {
     
     // Use REST API-backed CurrentUser helper for the authenticated user ID.
     final currentUserId = await CurrentUser.id;
+    Map<String, dynamic>? meRaw;
+    try {
+      meRaw = await AuthApi().me();
+    } catch (_) {}
+    final meProfile = _normalizeProfile(meRaw);
     final currentProfileRaw =
         currentUserId != null ? await _supabase.getUserById(currentUserId) : null;
     final currentProfile = _normalizeProfile(currentProfileRaw);
+    final mergedProfile = <String, dynamic>{
+      ...?currentProfile,
+      ...?meProfile,
+    };
+    final effectiveUserId =
+        currentUserId ??
+        (mergedProfile['id']?.toString()) ??
+        (mergedProfile['_id']?.toString());
     // Same as React Home.jsx: fetch all posts, order by created_at desc
     final fetched = await _feedService.fetchFeedFromBackend(currentUserId: currentUserId);
     final bal = await _walletService.getCoinBalance();
     // Stories feed from backend
     final groups = await _feedService.fetchStoriesFeed();
     final allGroups = List<StoryGroup>.from(groups);
-    final myGroups = currentUserId != null
-        ? allGroups.where((g) => g.userId == currentUserId).toList()
+    final myGroups = effectiveUserId != null
+        ? allGroups.where((g) => g.userId == effectiveUserId).toList()
         : <StoryGroup>[];
-    final otherGroups = currentUserId != null
-        ? allGroups.where((g) => g.userId != currentUserId).toList()
+    final otherGroups = effectiveUserId != null
+        ? allGroups.where((g) => g.userId != effectiveUserId).toList()
         : allGroups;
 
     final baseStatuses = _computeStoryStatuses(otherGroups);
@@ -184,14 +204,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
         'avatar_url': g.userAvatar,
       };
     }).toList();
-    final my = currentUserId != null
+    final my = effectiveUserId != null
         ? myGroups.expand((g) => g.stories).toList()
-        : _buildMyStories(currentProfile);
+        : _buildMyStories(mergedProfile.isEmpty ? null : mergedProfile);
     if (mounted) {
       store.dispatch(SetFeedPosts(fetched));
       setState(() {
-        _currentUserProfile = currentProfile;
-        _currentUserId = currentUserId;
+        _currentUserProfile = mergedProfile.isEmpty ? null : mergedProfile;
+        _currentUserId = effectiveUserId;
         _storyUsers = users;
         _storyGroups = otherGroups;
         _storyStatuses = mergedStatuses;
@@ -201,8 +221,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
         _balance = bal;
       });
       // Preload profile into Redux so ProfileScreen opens instantly
-      if (currentUserId != null && currentProfile != null) {
-        store.dispatch(SetProfile(currentProfile));
+      if (effectiveUserId != null && mergedProfile.isNotEmpty) {
+        store.dispatch(SetProfile(mergedProfile));
       }
       store.dispatch(SetFeedLoading(false));
     }
@@ -720,15 +740,33 @@ class _HomeDashboardState extends State<HomeDashboard> {
     await _onRefresh();
   }
 
+  void _openVendorAdComposer(String contentType) {
+    final mode = contentType.toLowerCase() == 'reel'
+        ? UploadMode.reel
+        : UploadMode.post;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => CreateUploadScreen(
+          initialMode: mode,
+          isAdFlow: true,
+        ),
+      ),
+    );
+  }
+
   void _onNavTap(int idx) {
     if (idx == 2) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => const CreateUploadScreen(
-            initialMode: UploadMode.post,
+      if (_isVendor) {
+        _openVendorAdComposer('post');
+      } else {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const CreateUploadScreen(
+              initialMode: UploadMode.post,
+            ),
           ),
-        ),
-      );
+        );
+      }
       return;
     }
     // Profile from sidebar (desktop)
@@ -776,46 +814,55 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
                   child: const Icon(LucideIcons.image, color: Colors.white, size: 22),
                 ),
-                title: const Text('Create Post'),
-                subtitle: Text('Photo or video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                title: Text(_isVendor ? 'Create Ads' : 'Create Post'),
+                subtitle: Text(
+                  _isVendor ? 'Upload ad campaign' : 'Photo or video',
+                  style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                ),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (!mounted) return;
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) => const CreateUploadScreen(
-                          initialMode: UploadMode.post,
-                        ),
+                        builder: (context) => _isVendor
+                            ? const CreateUploadScreen(
+                                initialMode: UploadMode.post,
+                                isAdFlow: true,
+                              )
+                            : const CreateUploadScreen(
+                                initialMode: UploadMode.post,
+                              ),
                       ),
                     );
                   });
                 },
               ),
-              ListTile(
-                leading: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(LucideIcons.video, color: Colors.white, size: 22),
-                ),
-                title: const Text('Upload Reel'),
-                subtitle: Text('Short video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const CreateUploadScreen(
-                            initialMode: UploadMode.reel,
+              if (!_isVendor)
+                ListTile(
+                  leading: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(LucideIcons.video, color: Colors.white, size: 22),
+                  ),
+                  title: const Text('Upload Reel'),
+                  subtitle: Text('Short video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const CreateUploadScreen(
+                              initialMode: UploadMode.reel,
+                            ),
                           ),
-                        ),
-                      );
-                    }
-                  });
-                },
-              ),
+                        );
+                      }
+                    });
+                  },
+                ),
               const SizedBox(height: 16),
             ],
           ),
@@ -838,7 +885,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     final appBarBg = theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
     final appBarFg = theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
     final content = Scaffold(
-      extendBody: true,
+      extendBody: _currentIndex != 4,
       backgroundColor: isFullScreen ? (isDark ? const Color(0xFF121212) : Colors.black) : null,
       appBar: isFullScreen
           ? null
@@ -1063,17 +1110,23 @@ class _HomeDashboardState extends State<HomeDashboard> {
         children: [
           Sidebar(
             currentIndex: _currentIndex,
+            isVendor: _isVendor,
             onNavTap: _onNavTap,
             onCreatePost: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => const CreateUploadScreen(
-                    initialMode: UploadMode.post,
+              if (_isVendor) {
+                _openVendorAdComposer('post');
+              } else {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const CreateUploadScreen(
+                      initialMode: UploadMode.post,
+                    ),
                   ),
-                ),
-              );
+                );
+              }
             },
             onUploadReel: () {
+              if (_isVendor) return;
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (context) => const CreateUploadScreen(
@@ -1081,6 +1134,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   ),
                 ),
               );
+            },
+            onCreateAd: () {
+              _openVendorAdComposer('post');
             },
           ),
           Expanded(

@@ -139,8 +139,8 @@ const FollowButton = ({ targetUserId }) => {
         setLoading(true);
         try {
             const endpoint = wasFollowing
-                ? 'https://bsmart.asynk.store/api/unfollow'
-                : 'https://bsmart.asynk.store/api/follow';
+                ? 'https://api.bebsmart.in/api/unfollow'
+                : 'https://api.bebsmart.in/api/follow';
             await api.post(endpoint, { followedUserId: targetUserId });
         } catch {
             setFollowing(wasFollowing); // revert on error
@@ -325,7 +325,7 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
         const was = isSaved;
         setIsSaved(!was);
         try {
-            await api.post(`https://bsmart.asynk.store/api/posts/${postId}/${was ? 'unsave' : 'save'}`);
+            await api.post(`https://api.bebsmart.in/api/posts/${postId}/${was ? 'unsave' : 'save'}`);
         } catch {
             setIsSaved(was);
         }

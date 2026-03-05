@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create an Axios instance
 const api = axios.create({
-	baseURL: 'https://bsmart.asynk.store/api', // Default to localhost:5000 if not set
+	baseURL: 'https://api.bebsmart.in/api', // Default to localhost:5000 if not set
 	headers: {
 		'Content-Type': 'application/json',
 	},

@@ -3,8 +3,8 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import api from '../lib/api';
 import authService from '../services/authService';
-import { login, fetchMe, setUser } from '../store/authSlice';
-import { ArrowLeft, Mail, Lock, User, Phone, LogIn, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { login, fetchMe } from '../store/authSlice';
+import { ArrowLeft, Lock, User, LogIn, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -37,11 +37,13 @@ const Login = () => {
       }));
 
       if (login.fulfilled.match(resultAction)) {
+        console.log('Login Successful:', resultAction.payload);
+        console.log('User Profile:', resultAction.payload?.user || resultAction.payload);
         navigate('/');
       } else {
         setError(resultAction.payload || 'Login failed');
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred');
     } finally {
       setLoading(false);

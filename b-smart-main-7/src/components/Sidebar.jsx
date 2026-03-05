@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Home, PlusSquare, Clapperboard, ShoppingBag, User, Menu, Image, Video, Target, Megaphone, Moon, Sun, Search, Heart, Bell, MessageCircle } from 'lucide-react';
+import { Home, PlusSquare, Clapperboard, ShoppingBag, User, Menu, Image, Video, Target, Megaphone, Moon, Sun, Search, Heart, Bell, MessageCircle, LayoutDashboard, FileText, CreditCard, Settings } from 'lucide-react';
 import { toggleTheme } from '../store/themeSlice';
 import CreatePostModal from './CreatePostModal';
 
@@ -40,15 +40,19 @@ const Sidebar = ({ onOpenCreateModal }) => {
   }, []);
 
   const navItems = isVendor ? [
-    { icon: Home, label: 'Home', path: '/' },
-    { icon: Target, label: 'Ads', path: '/ads' },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/vendor/dashboard' },
+    { icon: User, label: 'Vendor Profile', path: '/vendor/profile' },
+    { icon: Target, label: 'Ads Management', path: '/vendor/ads-management' },
     { icon: PlusSquare, label: 'Create', path: null, action: () => setIsCreateDropdownOpen(!isCreateDropdownOpen) },
-    { icon: User, label: 'Profile', path: '/profile' },
+    { icon: FileText, label: 'Reports & Analytics', path: '/vendor/analytics' },
+    { icon: CreditCard, label: 'Coins & Billing', path: '/vendor/billing' },
+    { icon: Settings, label: 'Settings', path: '/vendor/settings' },
   ] : [
     { icon: Home, label: 'Home', path: '/' },
     { icon: Search, label: 'Search', path: '/search' },
     { icon: PlusSquare, label: 'Create', path: null, action: () => setIsCreateDropdownOpen(!isCreateDropdownOpen) },
     { icon: Clapperboard, label: 'Reels', path: '/reels' },
+    { icon: Target, label: 'Ads', path: '/ads' },
     { icon: User, label: 'Profile', path: '/profile' },
   ];
 
@@ -131,7 +135,7 @@ const Sidebar = ({ onOpenCreateModal }) => {
                       )}
                       {isVendor && (
                         <button
-                           onClick={() => {
+                          onClick={() => {
                             if (!userObject?.is_active) {
                               setShowVendorNotValidated(true);
                             } else {

@@ -62,6 +62,7 @@ const authSlice = createSlice({
         state.error = null;
       })
       .addCase(login.fulfilled, (state, action) => {
+        console.log('Login Payload (Redux):', action.payload);
         state.loading = false;
         state.isAuthenticated = true;
         state.userObject = action.payload?.user || action.payload;

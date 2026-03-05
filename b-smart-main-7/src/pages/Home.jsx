@@ -59,7 +59,10 @@ const Home = () => {
 
   useEffect(() => {
     console.log('Logged in user:', userObject);
-  }, [userObject]);
+    if (userObject?.role === 'vendor') {
+      navigate('/vendor/dashboard');
+    }
+  }, [userObject, navigate]);
 
   const handlePostDeleted = (postId) => {
     setPosts(prevPosts => prevPosts.filter(p => (p._id || p.id) !== postId));
