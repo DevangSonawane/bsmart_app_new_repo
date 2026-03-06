@@ -10,6 +10,7 @@ final feedReducer = combineReducers<FeedState>([
   TypedReducer<FeedState, UpdatePostLikedWithCount>(_updatePostLikedWithCount).call,
   TypedReducer<FeedState, UpdatePostSaved>(_updatePostSaved).call,
   TypedReducer<FeedState, UpdatePostFollowed>(_updatePostFollowed).call,
+  TypedReducer<FeedState, UpdatePostCommentsCount>(_updatePostCommentsCount).call,
   TypedReducer<FeedState, RemovePost>(_removePost).call,
 ]);
 
@@ -65,6 +66,17 @@ FeedState _updatePostFollowed(FeedState state, UpdatePostFollowed action) {
   final prev = state.posts[idx];
   if (prev.isFollowed == action.followed) return state;
   final updated = prev.copyWith(isFollowed: action.followed);
+  final next = List<FeedPost>.from(state.posts);
+  next[idx] = updated;
+  return state.copyWith(posts: next);
+}
+
+FeedState _updatePostCommentsCount(FeedState state, UpdatePostCommentsCount action) {
+  final idx = state.posts.indexWhere((p) => p.id == action.postId);
+  if (idx == -1) return state;
+  final prev = state.posts[idx];
+  if (prev.comments == action.commentsCount) return state;
+  final updated = prev.copyWith(comments: action.commentsCount);
   final next = List<FeedPost>.from(state.posts);
   next[idx] = updated;
   return state.copyWith(posts: next);

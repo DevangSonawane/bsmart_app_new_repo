@@ -292,9 +292,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       ),
     );
     if (!mounted) return;
+    if (result == true) {
+      Navigator.of(context).pop(true);
+      return;
+    }
     // Resume preview only when user comes back from next screen.
-    if (result != true &&
-        _videoController != null &&
+    if (_videoController != null &&
         _videoController!.value.isInitialized) {
       await _videoController!.play();
       if (mounted) {

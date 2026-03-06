@@ -465,7 +465,7 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildGlassAction(
-                icon: _isLiked ? LucideIcons.heart : LucideIcons.heart,
+                icon: _isLiked ? Icons.favorite : LucideIcons.heart,
                 label: _formatCount(_likesCount),
                 iconColor: _isLiked ? Colors.red : Colors.white,
                 fillColor: _isLiked ? Colors.red : null,

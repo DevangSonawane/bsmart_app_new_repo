@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
 import '../models/feed_post_model.dart';
@@ -11,6 +12,8 @@ import '../models/user_account_model.dart';
 import '../utils/current_user.dart';
 import '../theme/instagram_theme.dart';
 import '../widgets/clay_container.dart';
+import '../state/app_state.dart';
+import '../state/feed_actions.dart';
 import 'profile_screen.dart';
 import 'notifications_screen.dart';
 import 'story_viewer_screen.dart';
@@ -124,6 +127,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
 
   Future<void> _handleSave(FeedPost post) async {
     final desired = !post.isSaved;
+    final store = StoreProvider.of<AppState>(context, listen: false);
+    store.dispatch(UpdatePostSaved(post.id, desired));
     setState(() {
       final index = _feedPosts.indexWhere((p) => p.id == post.id);
       if (index != -1) {
@@ -136,6 +141,7 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
     try {
       final data = await _supabase.getPostById(post.id);
       final serverSaved = (data?['is_saved_by_me'] as bool?) ?? saved;
+      store.dispatch(UpdatePostSaved(post.id, serverSaved));
       setState(() {
         final index = _feedPosts.indexWhere((p) => p.id == post.id);
         if (index != -1) {
@@ -144,6 +150,7 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
         }
       });
     } catch (_) {
+      store.dispatch(UpdatePostSaved(post.id, saved));
       setState(() {
         final index = _feedPosts.indexWhere((p) => p.id == post.id);
         if (index != -1) {

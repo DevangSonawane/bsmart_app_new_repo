@@ -1,6 +1,8 @@
 import '../api/posts_api.dart';
 import '../api/reels_api.dart';
+import '../models/feed_post_model.dart';
 import '../models/reel_model.dart';
+import 'supabase_service.dart';
 import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/url_helper.dart';
@@ -12,9 +14,10 @@ class ReelsService {
 
   final PostsApi _postsApi = PostsApi();
   final ReelsApi _reelsApi = ReelsApi();
+  final SupabaseService _supabase = SupabaseService();
   final List<Reel> _cache = [];
 
-  List<Reel> getReels() => List.unmodifiable(_cache);
+  List<Reel> getReels() => List.unmodifiable(_applyFeedOverrides(_cache));
 
   Future<List<Reel>> fetchReels({int limit = 20, int offset = 0}) async {
     final page = (offset ~/ limit) + 1;
@@ -26,17 +29,18 @@ class ReelsService {
         .whereType<Reel>()
         .where((reel) => reel.videoUrl.isNotEmpty)
         .toList();
+    final synced = _applyFeedOverrides(parsed);
 
     if (offset == 0) {
       _cache
         ..clear()
-        ..addAll(parsed);
-      globalStore.dispatch(SetFeedPosts(parsed.map((r) => r.toFeedPost()).toList()));
+        ..addAll(synced);
+      globalStore.dispatch(SetFeedPosts(synced.map((r) => r.toFeedPost()).toList()));
     } else {
-      _cache.addAll(parsed);
+      _cache.addAll(synced);
     }
 
-    return parsed;
+    return offset == 0 ? getReels() : List.unmodifiable(synced);
   }
 
   List<dynamic> _extractList(dynamic payload) {
@@ -183,6 +187,30 @@ class ReelsService {
     return false;
   }
 
+  List<Reel> _applyFeedOverrides(List<Reel> reels) {
+    if (reels.isEmpty) return reels;
+    try {
+      final feedById = <String, FeedPost>{
+        for (final p in globalStore.state.feedState.posts) p.id: p,
+      };
+      return reels.map((reel) {
+        final feedPost = feedById[reel.id];
+        if (feedPost == null) return reel;
+        return reel.copyWith(
+          likes: feedPost.likes,
+          comments: feedPost.comments,
+          shares: feedPost.shares,
+          views: feedPost.views,
+          isLiked: feedPost.isLiked,
+          isSaved: feedPost.isSaved,
+          isFollowing: feedPost.isFollowed,
+        );
+      }).toList();
+    } catch (_) {
+      return reels;
+    }
+  }
+
   Future<void> incrementViews(String reelId) async {
     // API does not expose a view increment endpoint yet.
   }
@@ -230,11 +258,15 @@ class ReelsService {
     globalStore.dispatch(UpdatePostSaved(reelId, optimistic.isSaved));
 
     try {
-      if (nextSaved) {
-        await _postsApi.savePost(reelId);
-      } else {
-        await _postsApi.unsavePost(reelId);
-      }
+      final saved = await _supabase.setPostSaved(reelId, save: nextSaved);
+      bool serverSaved = saved;
+      try {
+        final p = await _supabase.getPostById(reelId);
+        serverSaved = (p?['is_saved_by_me'] as bool?) ?? saved;
+      } catch (_) {}
+
+      _cache[idx] = optimistic.copyWith(isSaved: serverSaved);
+      globalStore.dispatch(UpdatePostSaved(reelId, serverSaved));
     } catch (_) {
       _cache[idx] = original;
       globalStore.dispatch(UpdatePostSaved(reelId, original.isSaved));

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_redux/flutter_redux.dart';
+import 'dart:async';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -15,6 +16,7 @@ import '../theme/design_tokens.dart';
 import '../state/app_state.dart';
 import '../state/profile_actions.dart';
 import '../state/feed_actions.dart';
+import '../state/store.dart';
 import '../utils/current_user.dart';
 import '../services/user_account_service.dart';
 import '../services/wallet_service.dart';
@@ -59,6 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<StoryGroup> _storyGroups = const [];
   Map<String, String>? _reelImageHeaders;
   bool _isOwnProfile = false;
+  StreamSubscription<AppState>? _storeSub;
 
   @override
   void initState() {
@@ -71,7 +74,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
     });
+    _storeSub = globalStore.onChange.listen((_) {
+      if (!mounted) return;
+      _syncLocalListsWithFeedState();
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _storeSub?.cancel();
+    super.dispose();
   }
 
   String _absoluteReelUrl(String url) {
@@ -85,6 +98,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _syncLocalListsWithFeedState();
     if (_usedCache) return;
     final store = StoreProvider.of<AppState>(context);
     final cached = store.state.profileState.profile;
@@ -98,6 +112,126 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _profile = Map<String, dynamic>.from(cached);
       _loading = false;
+    });
+  }
+
+  void _syncLocalListsWithFeedState() {
+    if (!mounted) return;
+    final store = StoreProvider.of<AppState>(context, listen: false);
+    final feedById = <String, FeedPost>{
+      for (final p in store.state.feedState.posts) p.id: p,
+    };
+    if (feedById.isEmpty) return;
+    FeedPost syncPost(FeedPost p) {
+      final fp = feedById[p.id];
+      if (fp == null) return p;
+      return p.copyWith(
+        likes: fp.likes,
+        comments: fp.comments,
+        shares: fp.shares,
+        views: fp.views,
+        isLiked: fp.isLiked,
+        isSaved: fp.isSaved,
+        isFollowed: fp.isFollowed,
+      );
+    }
+    final nextPosts = _posts.map(syncPost).toList();
+    final nextTagged = _tagged.map(syncPost).toList();
+
+    // Build saved list from all known posts so save/unsave updates appear instantly.
+    final savedById = <String, FeedPost>{};
+    void putIfSaved(FeedPost p) {
+      if (!p.isSaved) return;
+      savedById[p.id] = p;
+    }
+
+    for (final p in _saved) {
+      putIfSaved(syncPost(p));
+    }
+    for (final p in nextPosts) {
+      putIfSaved(p);
+    }
+    for (final p in nextTagged) {
+      putIfSaved(p);
+    }
+    for (final p in feedById.values) {
+      putIfSaved(p);
+    }
+
+    final nextSaved = savedById.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final nextReels = _userReels.map((r) {
+      final fp = feedById[r.id];
+      if (fp == null) return r;
+      return r.copyWith(
+        likes: fp.likes,
+        comments: fp.comments,
+        shares: fp.shares,
+        views: fp.views,
+        isLiked: fp.isLiked,
+        isSaved: fp.isSaved,
+        isFollowing: fp.isFollowed,
+      );
+    }).toList();
+    bool sameFeedPost(FeedPost a, FeedPost b) =>
+        a.likes == b.likes &&
+        a.comments == b.comments &&
+        a.shares == b.shares &&
+        a.views == b.views &&
+        a.isLiked == b.isLiked &&
+        a.isSaved == b.isSaved &&
+        a.isFollowed == b.isFollowed;
+    bool sameReel(Reel a, Reel b) =>
+        a.likes == b.likes &&
+        a.comments == b.comments &&
+        a.shares == b.shares &&
+        a.views == b.views &&
+        a.isLiked == b.isLiked &&
+        a.isSaved == b.isSaved &&
+        a.isFollowing == b.isFollowing;
+    bool unchanged = _posts.length == nextPosts.length &&
+        _saved.length == nextSaved.length &&
+        _tagged.length == nextTagged.length &&
+        _userReels.length == nextReels.length;
+    if (unchanged) {
+      for (var i = 0; i < _posts.length; i++) {
+        if (!sameFeedPost(_posts[i], nextPosts[i])) {
+          unchanged = false;
+          break;
+        }
+      }
+    }
+    if (unchanged) {
+      for (var i = 0; i < _saved.length; i++) {
+        if (!sameFeedPost(_saved[i], nextSaved[i])) {
+          unchanged = false;
+          break;
+        }
+      }
+    }
+    if (unchanged) {
+      for (var i = 0; i < _tagged.length; i++) {
+        if (!sameFeedPost(_tagged[i], nextTagged[i])) {
+          unchanged = false;
+          break;
+        }
+      }
+    }
+    if (unchanged) {
+      for (var i = 0; i < _userReels.length; i++) {
+        if (!sameReel(_userReels[i], nextReels[i])) {
+          unchanged = false;
+          break;
+        }
+      }
+    }
+    if (unchanged) return;
+    setState(() {
+      _posts = nextPosts;
+      _saved = nextSaved;
+      _tagged = nextTagged;
+      _userReels = nextReels;
     });
   }
 
@@ -179,6 +313,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     List<FeedPost> map0(List<Map<String, dynamic>> source) {
+      bool toBool(dynamic v) {
+        if (v is bool) return v;
+        if (v is num) return v != 0;
+        if (v is String) {
+          final s = v.toLowerCase();
+          return s == 'true' || s == '1';
+        }
+        return false;
+      }
+
       return source.map((item) {
         final map = Map<String, dynamic>.from(item);
         final id = map['_id'] as String? ?? map['id'] as String? ?? '';
@@ -290,6 +434,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               (map['likes'] is int ? map['likes'] as int : 0),
           comments: (map['comments_count'] as int?) ??
               (map['comments'] is int ? map['comments'] as int : 0),
+          isLiked: toBool(map['is_liked_by_me']) || toBool(map['liked_by_me']),
+          isSaved: toBool(map['is_saved_by_me']) || toBool(map['saved_by_me']),
+          isFollowed: toBool(map['is_followed_by_me']) || toBool(map['followed_by_me']),
         );
       }).toList();
     }
@@ -627,11 +774,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
             postId: postId,
             onClose: () {
               Navigator.of(ctx).pop();
-              if (mounted) _load();
             },
           ),
         ),
-      );
+      ).then((_) {
+        if (mounted) _load();
+      });
+    }
+  }
+
+  Future<void> _openCreateUpload({UploadMode mode = UploadMode.post}) async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => CreateUploadScreen(initialMode: mode),
+      ),
+    );
+    if (created == true && mounted) {
+      await _load();
     }
   }
 
@@ -685,13 +844,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Navigator.of(ctx).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (!mounted) return;
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const CreateUploadScreen(
-                          initialMode: UploadMode.post,
-                        ),
-                      ),
-                    );
+                    _openCreateUpload(mode: UploadMode.post);
                   });
                 },
               ),
@@ -714,13 +867,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Navigator.of(ctx).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const CreateUploadScreen(
-                            initialMode: UploadMode.reel,
-                          ),
-                        ),
-                      );
+                      _openCreateUpload(mode: UploadMode.reel);
                     }
                   });
                 },
@@ -917,8 +1064,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         if (isMe) ...[
                           const SizedBox(height: 16),
                           TextButton(
-                            onPressed: () =>
-                                Navigator.of(context).pushNamed('/create'),
+                            onPressed: () => _openCreateUpload(
+                              mode: UploadMode.post,
+                            ),
                             child: const Text('Share your first photo',
                                 style:
                                     TextStyle(color: DesignTokens.instaPink)),
@@ -1058,15 +1206,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 if (isMe) ...[
                   IconButton(
                     icon: Icon(LucideIcons.squarePlus, color: fgColor),
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const CreateUploadScreen(
-                            initialMode: UploadMode.post,
-                          ),
-                        ),
-                      );
-                    },
+                    onPressed: () => _openCreateUpload(
+                      mode: UploadMode.post,
+                    ),
                   ),
                   IconButton(
                       icon: Icon(LucideIcons.menu, color: fgColor),

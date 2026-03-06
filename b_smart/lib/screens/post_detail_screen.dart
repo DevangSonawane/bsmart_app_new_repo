@@ -35,6 +35,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _loadingComments = true;
   final _commentController = TextEditingController();
   bool _isLiked = false;
+  bool _isSaved = false;
   bool _postingComment = false;
   String? _currentUserId;
   bool _isAuthorFollowed = false;
@@ -47,6 +48,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _videoReady = false;
   bool _videoLoading = false;
   String? _activeVideoUrl;
+
+  void _dispatchCommentsCount(int commentsCount) {
+    if (!mounted) return;
+    StoreProvider.of<AppState>(context, listen: false)
+        .dispatch(UpdatePostCommentsCount(widget.postId, commentsCount < 0 ? 0 : commentsCount));
+  }
 
   String? _extractId(dynamic value) {
     if (value is String && value.isNotEmpty) return value;
@@ -61,6 +68,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Map<String, dynamic>? _extractUserMap(dynamic value) {
     if (value is Map) return Map<String, dynamic>.from(value);
     return null;
+  }
+
+  bool _asBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      return v == 'true' || v == '1';
+    }
+    return false;
   }
 
   @override
@@ -82,6 +99,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     Map<String, dynamic>? eagerPost = _post;
     Map<String, dynamic>? eagerUser = _postUser;
     bool eagerLiked = _isLiked;
+    bool eagerSaved = _isSaved;
     bool eagerFollowed = _isAuthorFollowed;
     String? meId = _currentUserId;
 
@@ -104,6 +122,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         'avatar_url': initial.userAvatar,
       };
       eagerLiked = initial.isLiked;
+      eagerSaved = initial.isSaved;
       eagerFollowed = initial.isFollowed;
     }
 
@@ -115,6 +134,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _post = eagerPost;
           _postUser = eagerUser;
           _isLiked = eagerLiked;
+          _isSaved = eagerSaved;
           _isAuthorFollowed = eagerFollowed;
           _currentUserId = meId;
           _loadingPost = false;
@@ -193,6 +213,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     }
     final meId2 = currentUserId?.toString();
+    final isSaved = _asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']);
     bool isFollowed = (post['is_followed_by_me'] as bool?) ??
         (user?['is_followed_by_me'] as bool?) ??
         false;
@@ -205,6 +226,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ..clear()
           ..addAll(seededReplies);
         _isLiked = isLiked;
+        _isSaved = isSaved;
         _loadingPost = false;
         _loadingComments = false;
         _currentUserId = meId2;
@@ -212,6 +234,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       });
       _syncCurrentMediaPlayback();
       _prefetchRepliesForTopLevelComments(topLevelComments);
+      final serverCount = (post['comments_count'] as int?) ??
+          (post['commentCount'] as int?) ??
+          (post['comments'] as int?) ??
+          topLevelComments.length;
+      _dispatchCommentsCount(serverCount);
     }
   }
 
@@ -222,6 +249,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final parentId = _replyParentId;
     setState(() => _postingComment = true);
     try {
+      final isTopLevel = parentId == null || parentId.isEmpty;
+      if (isTopLevel) {
+        _dispatchCommentsCount(_comments.length + 1);
+      }
       await _svc.addComment(widget.postId, userId, content, parentId: parentId);
       _commentController.clear();
       if (parentId != null && parentId.isNotEmpty) {
@@ -232,6 +263,38 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await _load();
     } finally {
       if (mounted) setState(() => _postingComment = false);
+    }
+  }
+
+  Future<void> _handleSave() async {
+    if (_post == null) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to save posts')),
+        );
+      }
+      return;
+    }
+
+    final desired = !_isSaved;
+    setState(() => _isSaved = desired);
+    StoreProvider.of<AppState>(context, listen: false)
+        .dispatch(UpdatePostSaved(widget.postId, desired));
+
+    final saved = await _svc.setPostSaved(widget.postId, save: desired);
+    if (!mounted) return;
+    try {
+      final p = await _svc.getPostById(widget.postId);
+      final serverSaved = _asBool(p?['is_saved_by_me']) || _asBool(p?['saved_by_me']) || saved;
+      setState(() => _isSaved = serverSaved);
+      StoreProvider.of<AppState>(context, listen: false)
+          .dispatch(UpdatePostSaved(widget.postId, serverSaved));
+    } catch (_) {
+      setState(() => _isSaved = saved);
+      StoreProvider.of<AppState>(context, listen: false)
+          .dispatch(UpdatePostSaved(widget.postId, saved));
     }
   }
 
@@ -1151,9 +1214,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             onPressed: () {}),
                         const Spacer(),
                         IconButton(
-                            icon: const Icon(LucideIcons.bookmark, size: 28),
+                            icon: Icon(
+                              _isSaved ? Icons.bookmark : LucideIcons.bookmark,
+                              size: 28,
+                            ),
                             color: primaryText,
-                            onPressed: () {}),
+                            onPressed: _handleSave),
                       ],
                     ),
                   ),

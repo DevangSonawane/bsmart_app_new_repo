@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
 import '../theme/design_tokens.dart';
+import '../state/app_state.dart';
+import '../state/feed_actions.dart';
+import '../models/feed_post_model.dart';
 
 class CommentsSheet extends StatefulWidget {
   final String postId;
@@ -42,6 +46,21 @@ class _CommentsSheetState extends State<CommentsSheet> {
   final FocusNode _inputFocus = FocusNode();
   Map<String, dynamic>? _me;
   String? _postAuthorName;
+
+  void _dispatchCommentsDelta(int delta) {
+    if (!mounted || delta == 0) return;
+    final store = StoreProvider.of<AppState>(context, listen: false);
+    FeedPost? post;
+    for (final p in store.state.feedState.posts) {
+      if (p.id == widget.postId) {
+        post = p;
+        break;
+      }
+    }
+    if (post == null) return;
+    final next = post.comments + delta;
+    store.dispatch(UpdatePostCommentsCount(widget.postId, next < 0 ? 0 : next));
+  }
 
   @override
   void initState() {
@@ -245,6 +264,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
         });
       }
       _controller.clear();
+      if (!isReply) {
+        _dispatchCommentsDelta(1);
+      }
     }
     if (mounted) setState(() => _posting = false);
   }
@@ -335,6 +357,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       setState(() {
         _comments.removeAt(index);
       });
+      _dispatchCommentsDelta(-1);
     }
   }
 

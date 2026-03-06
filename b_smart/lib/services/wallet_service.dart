@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/ledger_model.dart';
 import '../models/account_details_model.dart';
 
@@ -10,7 +14,10 @@ class WalletService {
   static final WalletService _instance = WalletService._internal();
   factory WalletService() => _instance;
 
+  static const String _accountDetailsKey = 'wallet_account_details_v1';
+
   AccountDetails? _accountDetails;
+  bool _hasLoadedAccountDetails = false;
 
   WalletService._internal();
 
@@ -70,21 +77,55 @@ class WalletService {
     return false;
   }
 
-  // Get account details (Stub)
+  // Returns cached account details if already loaded in-memory.
   AccountDetails? getAccountDetails() {
     return _accountDetails;
   }
 
-  // Save account details (Stub)
-  Future<bool> saveAccountDetails(AccountDetails details) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    _accountDetails = details;
-    return true;
+  // Load account details from local storage.
+  Future<AccountDetails?> loadAccountDetails() async {
+    if (_hasLoadedAccountDetails) {
+      return _accountDetails;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_accountDetailsKey);
+    if (raw == null || raw.isEmpty) {
+      _accountDetails = null;
+      _hasLoadedAccountDetails = true;
+      return null;
+    }
+    try {
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      _accountDetails = AccountDetails.fromJson(json);
+    } catch (_) {
+      _accountDetails = null;
+    }
+    _hasLoadedAccountDetails = true;
+    return _accountDetails;
   }
 
-  // Delete account details (Stub)
+  // Save account details to local storage.
+  Future<bool> saveAccountDetails(AccountDetails details) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(details.toJson());
+      final ok = await prefs.setString(_accountDetailsKey, encoded);
+      if (!ok) {
+        return false;
+      }
+      _accountDetails = details;
+      _hasLoadedAccountDetails = true;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Delete account details from local storage.
   Future<void> deleteAccountDetails() async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_accountDetailsKey);
     _accountDetails = null;
+    _hasLoadedAccountDetails = true;
   }
 }

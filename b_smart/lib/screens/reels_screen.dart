@@ -54,6 +54,11 @@ class _ReelsScreenState extends State<ReelsScreen> {
   void didUpdateWidget(covariant ReelsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isActive == widget.isActive) return;
+    if (widget.isActive && mounted) {
+      setState(() {
+        _reels = _reelsService.getReels();
+      });
+    }
     _syncActivePlayback();
   }
 
@@ -268,6 +273,15 @@ class _ReelsScreenState extends State<ReelsScreen> {
 
   Future<void> _toggleSave() async {
     if (_reels.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to save posts')),
+        );
+      }
+      return;
+    }
     final reelId = _reels[_currentIndex].id;
     try {
       await _reelsService.toggleSave(reelId);
@@ -619,7 +633,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
     return Column(
       children: [
         _buildMobileAction(
-          icon: LucideIcons.heart,
+          icon: reel.isLiked ? Icons.favorite : LucideIcons.heart,
           count: _formatCount(reel.likes),
           color: reel.isLiked ? Colors.red : Colors.white,
           onTap: _toggleLike,
@@ -699,7 +713,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
         circleButton(
           onTap: _toggleLike,
           child: Icon(
-            LucideIcons.heart,
+            reel.isLiked ? Icons.favorite : LucideIcons.heart,
             size: 21,
             color: reel.isLiked ? Colors.red : Colors.white,
           ),

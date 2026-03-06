@@ -32,6 +32,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
   bool _loadingComments = true;
   final _commentController = TextEditingController();
   bool _isLiked = false;
+  bool _isSaved = false;
   int _likeCount = 0;
   bool _postingComment = false;
   bool _likeAnimate = false;
@@ -55,6 +56,16 @@ class _PostDetailModalState extends State<PostDetailModal> {
   Map<String, dynamic>? _extractUserMap(dynamic value) {
     if (value is Map) return Map<String, dynamic>.from(value);
     return null;
+  }
+
+  bool _asBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      return v == 'true' || v == '1';
+    }
+    return false;
   }
 
   @override
@@ -117,12 +128,14 @@ class _PostDetailModalState extends State<PostDetailModal> {
       }
     }
     int likeCount = (post['likes_count'] as int?) ?? rawLikes.length;
+    final isSaved = _asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']);
     if (mounted) {
       setState(() {
         _post = post;
         _postUser = user;
         _comments = comments;
         _isLiked = isLiked;
+        _isSaved = isSaved;
         _likeCount = likeCount;
         _loadingPost = false;
         _loadingComments = false;
@@ -202,6 +215,38 @@ class _PostDetailModalState extends State<PostDetailModal> {
       await _load();
     } finally {
       if (mounted) setState(() => _postingComment = false);
+    }
+  }
+
+  Future<void> _handleSave() async {
+    if (_post == null) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to save posts')),
+        );
+      }
+      return;
+    }
+
+    final desired = !_isSaved;
+    setState(() => _isSaved = desired);
+    StoreProvider.of<AppState>(context, listen: false)
+        .dispatch(UpdatePostSaved(widget.postId, desired));
+
+    final saved = await _svc.setPostSaved(widget.postId, save: desired);
+    if (!mounted) return;
+    try {
+      final p = await _svc.getPostById(widget.postId);
+      final serverSaved = _asBool(p?['is_saved_by_me']) || _asBool(p?['saved_by_me']) || saved;
+      setState(() => _isSaved = serverSaved);
+      StoreProvider.of<AppState>(context, listen: false)
+          .dispatch(UpdatePostSaved(widget.postId, serverSaved));
+    } catch (_) {
+      setState(() => _isSaved = saved);
+      StoreProvider.of<AppState>(context, listen: false)
+          .dispatch(UpdatePostSaved(widget.postId, saved));
     }
   }
 
@@ -1082,7 +1127,10 @@ class _PostDetailModalState extends State<PostDetailModal> {
               IconButton(icon: const Icon(LucideIcons.send), onPressed: () {}),
               const Spacer(),
               IconButton(
-                  icon: const Icon(LucideIcons.bookmark), onPressed: () {}),
+                  icon: Icon(
+                    _isSaved ? Icons.bookmark : LucideIcons.bookmark,
+                  ),
+                  onPressed: _handleSave),
             ],
           ),
         ),

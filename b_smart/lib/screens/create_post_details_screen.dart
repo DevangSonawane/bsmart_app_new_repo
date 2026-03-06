@@ -275,7 +275,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
 
       if (mounted) {
         Navigator.of(context).pop(); // Close loading
-        Navigator.of(context).popUntil((route) => route.isFirst); // Go back to home
+        Navigator.of(context).pop(true);
         
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

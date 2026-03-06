@@ -295,6 +295,7 @@ class SupabaseService {
 
   Future<List<Map<String, dynamic>>> getUserSavedPosts(String userId,
       {int limit = 20, int offset = 0}) async {
+    final localSaved = await getSavedPostIds(userId);
     try {
       final page = (offset ~/ limit) + 1;
       final data = await _postsApi.getFeed(page: page, limit: limit * 3);
@@ -306,6 +307,8 @@ class SupabaseService {
       }
       final posts = raw.where((p) {
         final m = (p as Map).cast<String, dynamic>();
+        final id = (m['id'] ?? m['_id'])?.toString();
+        if (id != null && localSaved.contains(id)) return true;
         final isSaved = m['is_saved_by_me'] as bool?;
         if (isSaved == true) return true;
         final savedBy = m['saved_by'] as List<dynamic>?;

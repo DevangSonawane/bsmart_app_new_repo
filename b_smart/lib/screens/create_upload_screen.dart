@@ -289,21 +289,27 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       return;
     }
     if (_mode == UploadMode.reel) {
-      Navigator.of(context).push(
+      final created = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (context) => CreateEditPreviewScreen(
             media: media,
           ),
         ),
       );
+      if (created == true && mounted) {
+        Navigator.of(context).pop(true);
+      }
     } else {
-      Navigator.of(context).push(
+      final created = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (context) => CreatePostScreen(
             initialMedia: media,
           ),
         ),
       );
+      if (created == true && mounted) {
+        Navigator.of(context).pop(true);
+      }
     }
   }
 

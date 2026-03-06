@@ -35,6 +35,12 @@ class UpdatePostFollowed {
   UpdatePostFollowed(this.postId, this.followed);
 }
 
+class UpdatePostCommentsCount {
+  final String postId;
+  final int commentsCount;
+  UpdatePostCommentsCount(this.postId, this.commentsCount);
+}
+
 class RemovePost {
   final String postId;
   RemovePost(this.postId);

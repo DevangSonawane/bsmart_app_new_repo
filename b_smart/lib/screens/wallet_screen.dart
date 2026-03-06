@@ -988,8 +988,9 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
     }
   }
 
-  void _loadAccountDetails() {
-    final details = _walletService.getAccountDetails();
+  Future<void> _loadAccountDetails() async {
+    final details = await _walletService.loadAccountDetails();
+    if (!mounted) return;
     if (details != null) {
       setState(() {
         _existingDetails = details;
@@ -1003,6 +1004,27 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
   }
 
   Future<void> _saveAccountInline() async {
+    if (_nameController.text.trim().isEmpty ||
+        _accountNumberController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill account holder name and account details'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    if (_selectedPaymentMethod == 'Bank' &&
+        (_bankNameController.text.trim().isEmpty ||
+            _ifscController.text.trim().length != 11)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid bank name and 11-character IFSC'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     setState(() {
       _isSavingDetails = true;
     });
@@ -1017,6 +1039,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
       updatedAt: DateTime.now(),
     );
     final ok = await _walletService.saveAccountDetails(details);
+    if (!mounted) return;
     setState(() {
       _isSavingDetails = false;
       if (ok) {

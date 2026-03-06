@@ -38,8 +38,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     super.dispose();
   }
 
-  void _loadAccountDetails() {
-    final details = _walletService.getAccountDetails();
+  Future<void> _loadAccountDetails() async {
+    final details = await _walletService.loadAccountDetails();
+    if (!mounted) return;
     if (details != null) {
       setState(() {
         _existingDetails = details;
@@ -74,6 +75,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
     final success = await _walletService.saveAccountDetails(details);
 
+    if (!mounted) return;
     setState(() {
       _isLoading = false;
     });
@@ -114,8 +116,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              _walletService.deleteAccountDetails();
+            onPressed: () async {
+              await _walletService.deleteAccountDetails();
+              if (!context.mounted) return;
               Navigator.of(context).pop();
               Navigator.of(context).pop();
               ScaffoldMessenger.of(context).showSnackBar(
