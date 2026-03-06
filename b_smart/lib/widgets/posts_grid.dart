@@ -20,7 +20,8 @@ class _PostsGridState extends State<PostsGrid> {
   String _absolute(String url) {
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
     final baseUri = Uri.parse(ApiConfig.baseUrl);
-    final origin = '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
+    final origin =
+        '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
     return url.startsWith('/') ? '$origin$url' : '$origin/$url';
   }
 
@@ -48,8 +49,8 @@ class _PostsGridState extends State<PostsGrid> {
       itemCount: widget.posts.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
+        crossAxisSpacing: 1,
+        mainAxisSpacing: 1,
       ),
       itemBuilder: (context, index) {
         final p = widget.posts[index];
@@ -57,47 +58,34 @@ class _PostsGridState extends State<PostsGrid> {
         final thumb = (raw != null && raw.isNotEmpty) ? _absolute(raw) : null;
         return GestureDetector(
           onTap: () => widget.onTap(p),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (thumb != null)
-                  CachedNetworkImage(
-                    imageUrl: thumb,
-                    httpHeaders: _headers,
-                    cacheKey: '$thumb#${_headers?['Authorization'] ?? ''}',
-                    fit: BoxFit.cover,
-                    placeholder: (ctx, url) => Container(color: Colors.grey[300]),
-                    errorWidget: (ctx, url, err) => Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.broken_image),
-                    ),
-                  )
-                else
-                  Container(color: Colors.grey[200]),
-                if (p.mediaType == PostMediaType.reel)
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.1),
-                          Colors.black.withValues(alpha: 0.4),
-                        ],
-                      ),
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        LucideIcons.play,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (thumb != null)
+                CachedNetworkImage(
+                  imageUrl: thumb,
+                  httpHeaders: _headers,
+                  cacheKey: '$thumb#${_headers?['Authorization'] ?? ''}',
+                  fit: BoxFit.cover,
+                  placeholder: (ctx, url) => Container(color: Colors.grey[300]),
+                  errorWidget: (ctx, url, err) => Container(
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.broken_image),
                   ),
-              ],
-            ),
+                )
+              else
+                Container(color: Colors.grey[200]),
+              if (p.mediaType == PostMediaType.reel)
+                const Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Icon(
+                    LucideIcons.video,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+            ],
           ),
         );
       },

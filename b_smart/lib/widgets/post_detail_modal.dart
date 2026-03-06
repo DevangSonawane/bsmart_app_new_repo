@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:video_player/video_player.dart';
 import '../services/supabase_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
@@ -34,6 +35,27 @@ class _PostDetailModalState extends State<PostDetailModal> {
   int _likeCount = 0;
   bool _postingComment = false;
   bool _likeAnimate = false;
+  final PageController _mediaPageController = PageController();
+  int _currentMediaIndex = 0;
+  VideoPlayerController? _videoController;
+  bool _videoReady = false;
+  bool _videoLoading = false;
+  String? _activeVideoUrl;
+
+  String? _extractId(dynamic value) {
+    if (value is String && value.isNotEmpty) return value;
+    if (value is Map) {
+      final id = value['id'] ?? value['_id'];
+      if (id is String && id.isNotEmpty) return id;
+      if (id != null) return id.toString();
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _extractUserMap(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
 
   @override
   void initState() {
@@ -44,6 +66,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
   @override
   void dispose() {
     _commentController.dispose();
+    _mediaPageController.dispose();
+    _videoController?.dispose();
     super.dispose();
   }
 
@@ -57,10 +81,15 @@ class _PostDetailModalState extends State<PostDetailModal> {
       if (mounted) setState(() => _loadingPost = false);
       return;
     }
-    final userId = post['user_id'] as String?;
-    Map<String, dynamic>? user;
+    final userId = _extractId(post['user_id']) ??
+        _extractId(post['user']) ??
+        _extractId(post['users']);
+    Map<String, dynamic>? user = _extractUserMap(post['user']) ??
+        _extractUserMap(post['users']) ??
+        _extractUserMap(post['user_id']);
     if (userId != null) {
-      user = await _svc.getUserById(userId);
+      final fetched = await _svc.getUserById(userId);
+      if (fetched != null) user = fetched;
     }
     final comments = await _svc.getComments(widget.postId);
     final rawLikes = post['likes'] as List<dynamic>? ?? [];
@@ -68,16 +97,21 @@ class _PostDetailModalState extends State<PostDetailModal> {
     bool isLiked = false;
     for (final e in rawLikes) {
       if (e is Map) {
-        String? uid = (e['user_id'] as String?) ?? (e['id'] as String?) ?? (e['_id'] as String?);
+        String? uid = _extractId(e['user_id']) ??
+            _extractId(e['id']) ??
+            _extractId(e['_id']);
         if (uid == null && e['user'] is Map) {
-          final u = (e['user'] as Map);
-          uid = (u['id'] as String?) ?? (u['_id'] as String?);
+          uid = _extractId(e['user']);
         }
-        if (uid != null && currentUserId != null && uid.toString() == currentUserId.toString()) {
+        if (uid != null &&
+            currentUserId != null &&
+            uid.toString() == currentUserId.toString()) {
           isLiked = true;
           break;
         }
-      } else if (e is String && currentUserId != null && e.toString() == currentUserId.toString()) {
+      } else if (e is String &&
+          currentUserId != null &&
+          e.toString() == currentUserId.toString()) {
         isLiked = true;
         break;
       }
@@ -93,6 +127,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
         _loadingPost = false;
         _loadingComments = false;
       });
+      _syncCurrentMediaPlayback();
     }
   }
 
@@ -122,16 +157,21 @@ class _PostDetailModalState extends State<PostDetailModal> {
       final currentUserId = await CurrentUser.id;
       for (final e in rawLikes) {
         if (e is Map) {
-          String? uid = (e['user_id'] as String?) ?? (e['id'] as String?) ?? (e['_id'] as String?);
+          String? uid = _extractId(e['user_id']) ??
+              _extractId(e['id']) ??
+              _extractId(e['_id']);
           if (uid == null && e['user'] is Map) {
-            final u = (e['user'] as Map);
-            uid = (u['id'] as String?) ?? (u['_id'] as String?);
+            uid = _extractId(e['user']);
           }
-          if (uid != null && currentUserId != null && uid.toString() == currentUserId.toString()) {
+          if (uid != null &&
+              currentUserId != null &&
+              uid.toString() == currentUserId.toString()) {
             serverLiked = true;
             break;
           }
-        } else if (e is String && currentUserId != null && e.toString() == currentUserId.toString()) {
+        } else if (e is String &&
+            currentUserId != null &&
+            e.toString() == currentUserId.toString()) {
           serverLiked = true;
           break;
         }
@@ -185,16 +225,27 @@ class _PostDetailModalState extends State<PostDetailModal> {
                   itemCount: users.length,
                   itemBuilder: (context, index) {
                     final u = users[index];
-                    final id = (u['_id'] as String?) ?? (u['id'] as String?) ?? '';
-                    final username = (u['username'] as String?) ?? (u['full_name'] as String?) ?? 'User';
+                    final id =
+                        (u['_id'] as String?) ?? (u['id'] as String?) ?? '';
+                    final username = (u['username'] as String?) ??
+                        (u['full_name'] as String?) ??
+                        'User';
                     final avatar = (u['avatar_url'] as String?) ?? '';
                     return ListTile(
                       leading: CircleAvatar(
-                        backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
-                        child: avatar.isEmpty ? Text(username.isNotEmpty ? username[0].toUpperCase() : 'U') : null,
+                        backgroundImage:
+                            avatar.isNotEmpty ? NetworkImage(avatar) : null,
+                        child: avatar.isEmpty
+                            ? Text(username.isNotEmpty
+                                ? username[0].toUpperCase()
+                                : 'U')
+                            : null,
                       ),
                       title: Text(username),
-                      onTap: id.isNotEmpty ? () => Navigator.of(context).pushNamed('/profile/$id') : null,
+                      onTap: id.isNotEmpty
+                          ? () =>
+                              Navigator.of(context).pushNamed('/profile/$id')
+                          : null,
                     );
                   },
                 ),
@@ -218,29 +269,150 @@ class _PostDetailModalState extends State<PostDetailModal> {
     return '${(diff.inDays / 7).floor()}w';
   }
 
-  String _displayImageUrl() {
+  List<dynamic> get _mediaItems {
     final media = _post?['media'] as List<dynamic>?;
-    if (media == null || media.isEmpty) return 'https://via.placeholder.com/600';
-    final first = media.first;
+    if (media != null && media.isNotEmpty) return media;
+    final fallback = _post?['imageUrl'] as String?;
+    if (fallback != null && fallback.isNotEmpty) return [fallback];
+    return const [];
+  }
+
+  String _mediaUrl(dynamic item) {
     String? raw;
-    if (first is Map && first.containsKey('image')) raw = first['image'] as String?;
-    if (raw == null && first is Map && first.containsKey('url')) raw = first['url'] as String?;
-    if (raw == null && first is String) raw = first;
-    if (raw == null || raw.isEmpty) return 'https://via.placeholder.com/600';
+    if (item is Map && item.containsKey('image')) {
+      raw = item['image'] as String?;
+    }
+    if (raw == null && item is Map && item.containsKey('url')) {
+      raw = item['url'] as String?;
+    }
+    if (raw == null && item is Map && item.containsKey('fileUrl')) {
+      raw = item['fileUrl'] as String?;
+    }
+    if (raw == null && item is Map && item.containsKey('file_url')) {
+      raw = item['file_url'] as String?;
+    }
+    if (raw == null && item is String) {
+      raw = item;
+    }
+    if (raw == null || raw.isEmpty) return '';
     final baseUri = Uri.parse(ApiConfig.baseUrl);
-    final origin = '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
-    return raw.startsWith('http://') || raw.startsWith('https://') ? raw : (raw.startsWith('/') ? '$origin$raw' : '$origin/$raw');
-    return 'https://via.placeholder.com/600';
+    final origin =
+        '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
+    return raw.startsWith('http://') || raw.startsWith('https://')
+        ? raw
+        : (raw.startsWith('/') ? '$origin$raw' : '$origin/$raw');
+  }
+
+  bool _isVideoMedia(dynamic item) {
+    final url = _mediaUrl(item).toLowerCase();
+    final type = (item is Map ? item['type'] as String? : null)?.toLowerCase();
+    return type == 'video' ||
+        type == 'reel' ||
+        url.endsWith('.mp4') ||
+        url.endsWith('.mov') ||
+        url.contains('.m3u8');
+  }
+
+  Future<void> _syncCurrentMediaPlayback() async {
+    final media = _mediaItems;
+    if (media.isEmpty || _currentMediaIndex >= media.length) {
+      _currentMediaIndex = 0;
+    }
+    if (media.isEmpty) {
+      _videoController?.dispose();
+      _videoController = null;
+      _activeVideoUrl = null;
+      if (mounted) {
+        setState(() {
+          _videoReady = false;
+          _videoLoading = false;
+        });
+      }
+      return;
+    }
+
+    final item = media[_currentMediaIndex];
+    if (!_isVideoMedia(item)) {
+      _videoController?.pause();
+      _videoController?.dispose();
+      _videoController = null;
+      _activeVideoUrl = null;
+      if (mounted) {
+        setState(() {
+          _videoReady = false;
+          _videoLoading = false;
+        });
+      }
+      return;
+    }
+
+    final url = _mediaUrl(item);
+    if (url.isEmpty) {
+      return;
+    }
+    if (_activeVideoUrl == url &&
+        _videoController?.value.isInitialized == true) {
+      return;
+    }
+
+    final previous = _videoController;
+    _videoController = null;
+    _activeVideoUrl = url;
+    if (mounted) {
+      setState(() {
+        _videoReady = false;
+        _videoLoading = true;
+      });
+    }
+    previous?.dispose();
+
+    try {
+      final token = await ApiClient().getToken();
+      final headers = <String, String>{};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        httpHeaders: headers,
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+      );
+      await controller.initialize();
+      controller.setLooping(true);
+      await controller.play();
+
+      if (!mounted || _activeVideoUrl != url) {
+        controller.dispose();
+        return;
+      }
+
+      _videoController = controller;
+      setState(() {
+        _videoReady = true;
+        _videoLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || _activeVideoUrl != url) return;
+      setState(() {
+        _videoReady = false;
+        _videoLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loadingPost && _post == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator(color: DesignTokens.instaPink)));
+      return const Scaffold(
+          body: Center(
+              child: CircularProgressIndicator(color: DesignTokens.instaPink)));
     }
     if (_post == null) {
       return Scaffold(
-        appBar: AppBar(leading: IconButton(icon: const Icon(LucideIcons.x), onPressed: () => Navigator.of(context).pop())),
+        appBar: AppBar(
+            leading: IconButton(
+                icon: const Icon(LucideIcons.x),
+                onPressed: () => Navigator.of(context).pop())),
         body: const Center(child: Text('Post not found')),
       );
     }
@@ -252,8 +424,12 @@ class _PostDetailModalState extends State<PostDetailModal> {
       child: SafeArea(
         child: Center(
           child: Container(
-            constraints: BoxConstraints(maxWidth: 1200, maxHeight: MediaQuery.sizeOf(context).height * 0.9),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(isMobile ? 0 : 12)),
+            constraints: BoxConstraints(
+                maxWidth: 1200,
+                maxHeight: MediaQuery.sizeOf(context).height * 0.9),
+            decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(isMobile ? 0 : 12)),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -289,16 +465,151 @@ class _PostDetailModalState extends State<PostDetailModal> {
   }
 
   Widget _buildImage() {
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: CachedNetworkImage(
-          imageUrl: _displayImageUrl(),
-          fit: BoxFit.contain,
-          placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Colors.white)),
-          errorWidget: (_, __, ___) => const Icon(LucideIcons.imageOff, size: 64, color: Colors.white54),
+    final media = _mediaItems;
+    if (media.isEmpty) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: Icon(LucideIcons.imageOff, size: 64, color: Colors.white54),
         ),
-      ),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PageView.builder(
+          controller: _mediaPageController,
+          itemCount: media.length,
+          onPageChanged: (index) {
+            setState(() {
+              _currentMediaIndex = index;
+            });
+            _syncCurrentMediaPlayback();
+          },
+          itemBuilder: (_, index) {
+            final item = media[index];
+            final url = _mediaUrl(item);
+            final isVideo = _isVideoMedia(item);
+            if (url.isEmpty) {
+              return const Center(
+                child:
+                    Icon(LucideIcons.imageOff, size: 64, color: Colors.white54),
+              );
+            }
+            if (isVideo) {
+              final isCurrent = index == _currentMediaIndex;
+              final controller = _videoController;
+              return Container(
+                color: Colors.black,
+                child: Center(
+                  child: isCurrent &&
+                          _videoReady &&
+                          controller != null &&
+                          controller.value.isInitialized
+                      ? GestureDetector(
+                          onTap: () {
+                            if (controller.value.isPlaying) {
+                              controller.pause();
+                            } else {
+                              controller.play();
+                            }
+                            setState(() {});
+                          },
+                          child: AspectRatio(
+                            aspectRatio: controller.value.aspectRatio <= 0
+                                ? 9 / 16
+                                : controller.value.aspectRatio,
+                            child: VideoPlayer(controller),
+                          ),
+                        )
+                      : _videoLoading && isCurrent
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Icon(LucideIcons.video,
+                              size: 48,
+                              color: Colors.white.withValues(alpha: 0.7)),
+                ),
+              );
+            }
+            return Container(
+              color: Colors.black,
+              child: Center(
+                child: CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const Center(
+                      child: CircularProgressIndicator(color: Colors.white)),
+                  errorWidget: (_, __, ___) => const Icon(LucideIcons.imageOff,
+                      size: 64, color: Colors.white54),
+                ),
+              ),
+            );
+          },
+        ),
+        if (media.length > 1) ...[
+          Positioned(
+            left: 8,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: IconButton(
+                icon: const Icon(LucideIcons.chevronLeft, color: Colors.white),
+                onPressed: () {
+                  final next =
+                      (_currentMediaIndex - 1).clamp(0, media.length - 1);
+                  _mediaPageController.animateToPage(
+                    next,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                  );
+                },
+              ),
+            ),
+          ),
+          Positioned(
+            right: 8,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: IconButton(
+                icon: const Icon(LucideIcons.chevronRight, color: Colors.white),
+                onPressed: () {
+                  final next =
+                      (_currentMediaIndex + 1).clamp(0, media.length - 1);
+                  _mediaPageController.animateToPage(
+                    next,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                  );
+                },
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 12,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                media.length,
+                (index) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: index == _currentMediaIndex
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.45),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -319,7 +630,10 @@ class _PostDetailModalState extends State<PostDetailModal> {
               Expanded(
                 child: InkWell(
                   onTap: () {
-                    final userId = _postUser?['id'] as String?;
+                    final userId = _extractId(_postUser?['id']) ??
+                        _extractId(_post?['user_id']) ??
+                        _extractId(_post?['user']) ??
+                        _extractId(_post?['users']);
                     if (userId != null && userId.isNotEmpty) {
                       Navigator.of(context).pop();
                       Navigator.of(context).pushNamed('/profile/$userId');
@@ -330,8 +644,13 @@ class _PostDetailModalState extends State<PostDetailModal> {
                     children: [
                       CircleAvatar(
                         radius: 18,
-                        backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                        child: avatarUrl == null ? Text(username.isNotEmpty ? username[0].toUpperCase() : 'U') : null,
+                        backgroundImage:
+                            avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                        child: avatarUrl == null
+                            ? Text(username.isNotEmpty
+                                ? username[0].toUpperCase()
+                                : 'U')
+                            : null,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -339,8 +658,16 @@ class _PostDetailModalState extends State<PostDetailModal> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(username, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14), overflow: TextOverflow.ellipsis),
-                            if (location != null && location.isNotEmpty) Text(location, style: TextStyle(fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis),
+                            Text(username,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 14),
+                                overflow: TextOverflow.ellipsis),
+                            if (location != null && location.isNotEmpty)
+                              Text(location,
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600),
+                                  overflow: TextOverflow.ellipsis),
                           ],
                         ),
                       ),
@@ -352,8 +679,11 @@ class _PostDetailModalState extends State<PostDetailModal> {
                 icon: const Icon(LucideIcons.ellipsis),
                 onPressed: () async {
                   final uid = await CurrentUser.id;
-                  final ownerId = _post?['user_id'] as String?;
-                  final isOwner = uid != null && ownerId != null && uid == ownerId;
+                  final ownerId = _extractId(_post?['user_id']) ??
+                      _extractId(_post?['user']) ??
+                      _extractId(_post?['users']);
+                  final isOwner =
+                      uid != null && ownerId != null && uid == ownerId;
                   showModalBottomSheet(
                     context: context,
                     builder: (ctx) => SafeArea(
@@ -376,14 +706,17 @@ class _PostDetailModalState extends State<PostDetailModal> {
                             onTap: () {
                               Navigator.pop(ctx);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Report submitted')),
+                                const SnackBar(
+                                    content: Text('Report submitted')),
                               );
                             },
                           ),
                           if (isOwner)
                             ListTile(
-                              leading: const Icon(Icons.delete_outline, color: Colors.red),
-                              title: const Text('Delete Post', style: TextStyle(color: Colors.red)),
+                              leading: const Icon(Icons.delete_outline,
+                                  color: Colors.red),
+                              title: const Text('Delete Post',
+                                  style: TextStyle(color: Colors.red)),
                               onTap: () async {
                                 Navigator.pop(ctx);
                                 final messenger = ScaffoldMessenger.of(context);
@@ -398,111 +731,184 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                           child: Material(
                                             color: Colors.transparent,
                                             child: Container(
-                                              width: MediaQuery.of(context).size.width * 0.9,
-                                              constraints: const BoxConstraints(maxWidth: 360),
+                                              width: MediaQuery.of(context)
+                                                      .size
+                                                      .width *
+                                                  0.9,
+                                              constraints: const BoxConstraints(
+                                                  maxWidth: 360),
                                               padding: const EdgeInsets.all(16),
                                               decoration: BoxDecoration(
-                                                color: Theme.of(context).cardColor,
-                                                borderRadius: BorderRadius.circular(16),
-                                                border: Border.all(color: Theme.of(context).dividerColor),
+                                                color:
+                                                    Theme.of(context).cardColor,
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                                border: Border.all(
+                                                    color: Theme.of(context)
+                                                        .dividerColor),
                                               ),
                                               child: isDeleting
                                                   ? Column(
-                                                      mainAxisSize: MainAxisSize.min,
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
                                                       children: [
-                                                        const SizedBox(height: 8),
+                                                        const SizedBox(
+                                                            height: 8),
                                                         const SizedBox(
                                                           width: 48,
                                                           height: 48,
-                                                          child: CircularProgressIndicator(
+                                                          child:
+                                                              CircularProgressIndicator(
                                                             strokeWidth: 4,
                                                             color: Colors.red,
                                                           ),
                                                         ),
-                                                        const SizedBox(height: 16),
+                                                        const SizedBox(
+                                                            height: 16),
                                                         Text(
                                                           'Deleting post...',
                                                           style: TextStyle(
-                                                            color: Theme.of(context).textTheme.bodyMedium?.color,
-                                                            fontWeight: FontWeight.w600,
+                                                            color: Theme.of(
+                                                                    context)
+                                                                .textTheme
+                                                                .bodyMedium
+                                                                ?.color,
+                                                            fontWeight:
+                                                                FontWeight.w600,
                                                           ),
                                                         ),
-                                                        const SizedBox(height: 8),
+                                                        const SizedBox(
+                                                            height: 8),
                                                       ],
                                                     )
                                                   : Column(
-                                                      mainAxisSize: MainAxisSize.min,
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
                                                       children: [
-                                                        const SizedBox(height: 4),
+                                                        const SizedBox(
+                                                            height: 4),
                                                         const Text(
                                                           'Delete Post?',
-                                                          textAlign: TextAlign.center,
-                                                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                                          textAlign:
+                                                              TextAlign.center,
+                                                          style: TextStyle(
+                                                              fontSize: 18,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold),
                                                         ),
-                                                        const SizedBox(height: 8),
+                                                        const SizedBox(
+                                                            height: 8),
                                                         Text(
                                                           'Are you sure you want to delete this post? This action cannot be undone.',
-                                                          textAlign: TextAlign.center,
-                                                          style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+                                                          textAlign:
+                                                              TextAlign.center,
+                                                          style: TextStyle(
+                                                              color: Theme.of(
+                                                                      context)
+                                                                  .textTheme
+                                                                  .bodySmall
+                                                                  ?.color),
                                                         ),
-                                                        const SizedBox(height: 16),
+                                                        const SizedBox(
+                                                            height: 16),
                                                         Row(
                                                           children: [
                                                             Expanded(
-                                                              child: OutlinedButton(
+                                                              child:
+                                                                  OutlinedButton(
                                                                 onPressed: () {
-                                                                  Navigator.pop(context);
+                                                                  Navigator.pop(
+                                                                      context);
                                                                 },
-                                                                child: const Text('Cancel'),
+                                                                child: const Text(
+                                                                    'Cancel'),
                                                               ),
                                                             ),
-                                                            const SizedBox(width: 8),
+                                                            const SizedBox(
+                                                                width: 8),
                                                             Expanded(
-                                                              child: ElevatedButton(
-                                                                style: ElevatedButton.styleFrom(
-                                                                  backgroundColor: Colors.red,
-                                                                  foregroundColor: Colors.white,
+                                                              child:
+                                                                  ElevatedButton(
+                                                                style: ElevatedButton
+                                                                    .styleFrom(
+                                                                  backgroundColor:
+                                                                      Colors
+                                                                          .red,
+                                                                  foregroundColor:
+                                                                      Colors
+                                                                          .white,
                                                                 ),
-                                                                onPressed: () async {
-                                                                  setState(() => isDeleting = true);
+                                                                onPressed:
+                                                                    () async {
+                                                                  setState(() =>
+                                                                      isDeleting =
+                                                                          true);
                                                                   try {
-                                                                    final ok = await _svc.deletePost(widget.postId);
-                                                                    await Future.delayed(const Duration(milliseconds: 1500));
+                                                                    final ok = await _svc
+                                                                        .deletePost(
+                                                                            widget.postId);
+                                                                    await Future.delayed(const Duration(
+                                                                        milliseconds:
+                                                                            1500));
                                                                     if (ok) {
                                                                       if (mounted) {
-                                                                        Navigator.pop(context);
-                                                                        messenger.showSnackBar(const SnackBar(content: Text('Post deleted')));
+                                                                        Navigator.pop(
+                                                                            context);
+                                                                        messenger.showSnackBar(const SnackBar(
+                                                                            content:
+                                                                                Text('Post deleted')));
                                                                         try {
-                                                                          StoreProvider.of<AppState>(context).dispatch(RemovePost(widget.postId));
+                                                                          StoreProvider.of<AppState>(context)
+                                                                              .dispatch(RemovePost(widget.postId));
                                                                         } catch (_) {}
-                                                                        if (widget.onClose != null) {
-                                                                          widget.onClose!();
+                                                                        if (widget.onClose !=
+                                                                            null) {
+                                                                          widget
+                                                                              .onClose!();
                                                                         } else {
-                                                                          Navigator.of(context).pop();
+                                                                          Navigator.of(context)
+                                                                              .pop();
                                                                         }
                                                                       }
                                                                     } else {
                                                                       if (mounted) {
-                                                                        setState(() => isDeleting = false);
-                                                                        Navigator.pop(context);
-                                                                        messenger.showSnackBar(const SnackBar(content: Text('Failed to delete post')));
+                                                                        setState(() =>
+                                                                            isDeleting =
+                                                                                false);
+                                                                        Navigator.pop(
+                                                                            context);
+                                                                        messenger.showSnackBar(const SnackBar(
+                                                                            content:
+                                                                                Text('Failed to delete post')));
                                                                       }
                                                                     }
                                                                   } on ApiException catch (e) {
                                                                     if (mounted) {
-                                                                      setState(() => isDeleting = false);
-                                                                      Navigator.pop(context);
-                                                                      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+                                                                      setState(() =>
+                                                                          isDeleting =
+                                                                              false);
+                                                                      Navigator.pop(
+                                                                          context);
+                                                                      messenger.showSnackBar(SnackBar(
+                                                                          content:
+                                                                              Text(e.message)));
                                                                     }
                                                                   } catch (e) {
                                                                     if (mounted) {
-                                                                      setState(() => isDeleting = false);
-                                                                      Navigator.pop(context);
-                                                                      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+                                                                      setState(() =>
+                                                                          isDeleting =
+                                                                              false);
+                                                                      Navigator.pop(
+                                                                          context);
+                                                                      messenger.showSnackBar(SnackBar(
+                                                                          content:
+                                                                              Text(e.toString())));
                                                                     }
                                                                   }
                                                                 },
-                                                                child: const Text('Delete'),
+                                                                child: const Text(
+                                                                    'Delete'),
                                                               ),
                                                             ),
                                                           ],
@@ -536,69 +942,122 @@ class _PostDetailModalState extends State<PostDetailModal> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CircleAvatar(radius: 14, backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null, child: avatarUrl == null ? Text(username.isNotEmpty ? username[0].toUpperCase() : 'U', style: const TextStyle(fontSize: 12)) : null),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          RichText(
-                            text: TextSpan(
-                              style: const TextStyle(color: Colors.black, fontSize: 14),
-                              children: [
-                                TextSpan(text: '$username ', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                TextSpan(text: caption),
-                              ],
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CircleAvatar(
+                          radius: 14,
+                          backgroundImage: avatarUrl != null
+                              ? NetworkImage(avatarUrl)
+                              : null,
+                          child: avatarUrl == null
+                              ? Text(
+                                  username.isNotEmpty
+                                      ? username[0].toUpperCase()
+                                      : 'U',
+                                  style: const TextStyle(fontSize: 12))
+                              : null),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            RichText(
+                              text: TextSpan(
+                                style: const TextStyle(
+                                    color: Colors.black, fontSize: 14),
+                                children: [
+                                  TextSpan(
+                                      text: '$username ',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  TextSpan(text: caption),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(formatRelativeTime(createdAt), style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                        ],
+                            const SizedBox(height: 4),
+                            Text(formatRelativeTime(createdAt),
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey.shade600)),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (_loadingComments)
-                  const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(color: DesignTokens.instaPink)))
-                else if (_comments.isEmpty)
-                  Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('No comments yet.', style: TextStyle(color: Colors.grey.shade600, fontSize: 14))))
-                else
-                  ..._comments.map((c) {
-                    final u = c['user'] as Map<String, dynamic>?;
-                    final un = u?['username'] as String? ?? 'user';
-                    final uAvatar = u?['avatar_url'] as String?;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          CircleAvatar(radius: 14, backgroundImage: uAvatar != null ? NetworkImage(uAvatar) : null, child: uAvatar == null ? Text(un.isNotEmpty ? un[0].toUpperCase() : 'U', style: const TextStyle(fontSize: 12)) : null),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                RichText(
-                                  text: TextSpan(
-                                    style: const TextStyle(color: Colors.black, fontSize: 14),
-                                    children: [
-                                      TextSpan(text: '$un ', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                      TextSpan(text: c['content'] as String? ?? ''),
-                                    ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (_loadingComments)
+                    const Center(
+                        child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: CircularProgressIndicator(
+                                color: DesignTokens.instaPink)))
+                  else if (_comments.isEmpty)
+                    Center(
+                        child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text('No comments yet.',
+                                style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 14))))
+                  else
+                    ..._comments.map((c) {
+                      final u = c['user'] as Map<String, dynamic>?;
+                      final un = u?['username'] as String? ?? 'user';
+                      final uAvatar = u?['avatar_url'] as String?;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CircleAvatar(
+                                radius: 14,
+                                backgroundImage: uAvatar != null
+                                    ? NetworkImage(uAvatar)
+                                    : null,
+                                child: uAvatar == null
+                                    ? Text(
+                                        un.isNotEmpty
+                                            ? un[0].toUpperCase()
+                                            : 'U',
+                                        style: const TextStyle(fontSize: 12))
+                                    : null),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  RichText(
+                                    text: TextSpan(
+                                      style: const TextStyle(
+                                          color: Colors.black, fontSize: 14),
+                                      children: [
+                                        TextSpan(
+                                            text: '$un ',
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w600)),
+                                        TextSpan(
+                                            text:
+                                                c['content'] as String? ?? ''),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                Text(formatRelativeTime(c['created_at'] as String? ?? ''), style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-                              ],
+                                  Text(
+                                      formatRelativeTime(
+                                          c['created_at'] as String? ?? ''),
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade600)),
+                                ],
+                              ),
                             ),
-                          ),
-                          IconButton(icon: const Icon(LucideIcons.heart, size: 14), onPressed: () {}, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-                        ],
-                      ),
-                    );
-                  }),
+                            IconButton(
+                                icon: const Icon(LucideIcons.heart, size: 14),
+                                onPressed: () {},
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints()),
+                          ],
+                        ),
+                      );
+                    }),
                 ],
               ),
             ],
@@ -612,12 +1071,18 @@ class _PostDetailModalState extends State<PostDetailModal> {
               AnimatedScale(
                 scale: _likeAnimate ? 1.15 : 1.0,
                 duration: const Duration(milliseconds: 150),
-                child: IconButton(icon: Icon(LucideIcons.heart, color: _isLiked ? Colors.red : Colors.black87), onPressed: _handleLike),
+                child: IconButton(
+                    icon: Icon(LucideIcons.heart,
+                        color: _isLiked ? Colors.red : Colors.black87),
+                    onPressed: _handleLike),
               ),
-              IconButton(icon: const Icon(LucideIcons.messageCircle), onPressed: () {}),
+              IconButton(
+                  icon: const Icon(LucideIcons.messageCircle),
+                  onPressed: () {}),
               IconButton(icon: const Icon(LucideIcons.send), onPressed: () {}),
               const Spacer(),
-              IconButton(icon: const Icon(LucideIcons.bookmark), onPressed: () {}),
+              IconButton(
+                  icon: const Icon(LucideIcons.bookmark), onPressed: () {}),
             ],
           ),
         ),
@@ -625,9 +1090,12 @@ class _PostDetailModalState extends State<PostDetailModal> {
           padding: const EdgeInsets.only(left: 12, right: 12, bottom: 8),
           child: Row(
             children: [
-              Text('$_likeCount ${_likeCount == 1 ? 'like' : 'likes'}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              Text('$_likeCount ${_likeCount == 1 ? 'like' : 'likes'}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 14)),
               const SizedBox(width: 12),
-              TextButton(onPressed: _showLikesList, child: const Text('Liked by')),
+              TextButton(
+                  onPressed: _showLikesList, child: const Text('Liked by')),
             ],
           ),
         ),
@@ -635,7 +1103,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
           padding: const EdgeInsets.only(left: 12, right: 12, bottom: 8),
           child: Text(
             _formatFullDate(createdAt),
-            style: TextStyle(fontSize: 10, color: Colors.grey.shade600, letterSpacing: 0.5),
+            style: TextStyle(
+                fontSize: 10, color: Colors.grey.shade600, letterSpacing: 0.5),
           ),
         ),
         const Divider(height: 1),
@@ -647,7 +1116,10 @@ class _PostDetailModalState extends State<PostDetailModal> {
               Expanded(
                 child: TextField(
                   controller: _commentController,
-                  decoration: const InputDecoration(hintText: 'Add a comment...', border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 8)),
+                  decoration: const InputDecoration(
+                      hintText: 'Add a comment...',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 8)),
                   onSubmitted: (_) => _postComment(),
                 ),
               ),
@@ -656,8 +1128,13 @@ class _PostDetailModalState extends State<PostDetailModal> {
                 builder: (context, value, _) {
                   final hasText = value.text.trim().isNotEmpty;
                   return TextButton(
-                    onPressed: _postingComment || !hasText ? null : _postComment,
-                    child: Text('Post', style: TextStyle(color: !hasText ? Colors.grey : DesignTokens.instaPink, fontWeight: FontWeight.w600)),
+                    onPressed:
+                        _postingComment || !hasText ? null : _postComment,
+                    child: Text('Post',
+                        style: TextStyle(
+                            color:
+                                !hasText ? Colors.grey : DesignTokens.instaPink,
+                            fontWeight: FontWeight.w600)),
                   );
                 },
               ),

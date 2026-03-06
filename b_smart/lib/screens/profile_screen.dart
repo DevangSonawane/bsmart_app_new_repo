@@ -4,7 +4,6 @@ import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'reels_screen.dart';
 import '../services/reels_service.dart';
 import '../models/reel_model.dart';
 import '../services/supabase_service.dart';
@@ -27,7 +26,6 @@ import '../models/story_model.dart';
 import 'story_viewer_screen.dart';
 import '../models/media_model.dart';
 import 'create_upload_screen.dart';
-import 'post_detail_screen.dart';
 
 /// Heroicons badge-check (same as React web app verified badge)
 const String _verifiedBadgeSvg = r'''
@@ -79,18 +77,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _absoluteReelUrl(String url) {
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
     final baseUri = Uri.parse(ApiConfig.baseUrl);
-    final origin = '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
+    final origin =
+        '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
     return url.startsWith('/') ? '$origin$url' : '$origin/$url';
-  }
-
-  String _formatViews(int views) {
-    if (views < 1000) return views.toString();
-    if (views < 1000000) {
-      final value = views / 1000;
-      return value >= 10 ? '${value.toStringAsFixed(0)}K' : '${value.toStringAsFixed(1)}K';
-    }
-    final value = views / 1000000;
-    return value >= 10 ? '${value.toStringAsFixed(0)}M' : '${value.toStringAsFixed(1)}M';
   }
 
   @override
@@ -102,7 +91,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (cached == null) return;
     final cachedId = (cached['id'] ?? cached['_id'])?.toString().trim();
     final targetId = widget.userId?.trim();
-    final isTargetingCachedUser = targetId == null || (cachedId != null && cachedId == targetId);
+    final isTargetingCachedUser =
+        targetId == null || (cachedId != null && cachedId == targetId);
     if (!isTargetingCachedUser) return;
     _usedCache = true;
     setState(() {
@@ -116,7 +106,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final targetId = widget.userId ?? meId;
     final normalizedTargetId = targetId?.trim();
     final normalizedMeId = meId?.trim();
-    final bool isMe = widget.userId == null || (normalizedTargetId != null && normalizedMeId != null && normalizedTargetId == normalizedMeId);
+    final bool isMe = widget.userId == null ||
+        (normalizedTargetId != null &&
+            normalizedMeId != null &&
+            normalizedTargetId == normalizedMeId);
 
     if (mounted && _isOwnProfile != isMe) {
       setState(() {
@@ -138,8 +131,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final savedFuture = isMe
         ? _svc.getUserSavedPosts(targetId, limit: _initialPostsLimit)
         : Future.value(<Map<String, dynamic>>[]);
-    final taggedFuture = _svc.getUserTaggedPosts(targetId, limit: _initialPostsLimit);
-    final walletFuture = (widget.userId == null) ? WalletService().getCoinBalance() : Future.value(0);
+    final taggedFuture =
+        _svc.getUserTaggedPosts(targetId, limit: _initialPostsLimit);
+    final walletFuture = (widget.userId == null)
+        ? WalletService().getCoinBalance()
+        : Future.value(0);
     final userAccount = UserAccountService().getAccount(targetId);
 
     Map<String, dynamic>? profile;
@@ -184,82 +180,99 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     List<FeedPost> map0(List<Map<String, dynamic>> source) {
       return source.map((item) {
-      final map = Map<String, dynamic>.from(item);
-      final id = map['_id'] as String? ?? map['id'] as String? ?? '';
-      // user_id may be a string or a populated object
-      String userId = '';
-      String userName = 'user';
-      final uid = map['user_id'];
-      if (uid is String) {
-        userId = uid;
-      } else if (uid is Map) {
-        userId = uid['_id'] as String? ?? uid['id'] as String? ?? '';
-        userName = uid['username'] as String? ?? userName;
-      }
-      // Fallback to joined 'users' key (Supabase style)
-      final joinedUser = map['users'];
-      if (joinedUser is Map) {
-        userName = joinedUser['username'] as String? ?? userName;
-        userId = joinedUser['id'] as String? ?? userId;
-      }
-      final media = (map['media'] as List<dynamic>? ?? []);
-      final mediaUrls = media.map((m) {
-        if (m is String) return m;
-        if (m is Map) {
-          final mm = Map<String, dynamic>.from(m);
-          String? thumb;
-          final thumbField = mm['thumbnail'] ?? mm['thumbnailUrl'] ?? mm['thumb'];
-          if (thumbField is List && thumbField.isNotEmpty) {
-            thumb = thumbField.first.toString();
-          } else if (thumbField is String) {
-            thumb = thumbField;
-          }
-          final url = thumb ?? (mm['fileUrl'] ?? mm['image'] ?? mm['url'])?.toString();
-          if (url != null && url.isNotEmpty) return url;
+        final map = Map<String, dynamic>.from(item);
+        final id = map['_id'] as String? ?? map['id'] as String? ?? '';
+        // user_id may be a string or a populated object
+        String userId = '';
+        String userName = 'user';
+        final uid = map['user_id'];
+        if (uid is String) {
+          userId = uid;
+        } else if (uid is Map) {
+          userId = uid['_id'] as String? ?? uid['id'] as String? ?? '';
+          userName = uid['username'] as String? ?? userName;
         }
-        return m.toString();
-      }).cast<String>().toList();
-      final typeStr = ((map['type'] as String?) ?? (map['media_type'] as String?) ?? 'post').toLowerCase();
-      bool hasVideo = false;
-      for (final m in media) {
-        if (m is Map) {
-          final t = (m['type'] as String?)?.toLowerCase();
-          if (t == 'video' || t == 'reel') {
-            hasVideo = true;
-            break;
-          }
-          final cand = (m['fileUrl'] ?? m['file_url'] ?? m['url'])?.toString().toLowerCase();
-          if (cand != null && (cand.endsWith('.mp4') || cand.endsWith('.mov') || cand.contains('.m3u8'))) {
-            hasVideo = true;
-            break;
-          }
-        } else if (m is String) {
-          final s = m.toLowerCase();
-          if (s.endsWith('.mp4') || s.endsWith('.mov')) {
-            hasVideo = true;
-            break;
+        // Fallback to joined 'users' key (Supabase style)
+        final joinedUser = map['users'];
+        if (joinedUser is Map) {
+          userName = joinedUser['username'] as String? ?? userName;
+          userId = joinedUser['id'] as String? ?? userId;
+        }
+        final media = (map['media'] as List<dynamic>? ?? []);
+        final mediaUrls = media
+            .map((m) {
+              if (m is String) return m;
+              if (m is Map) {
+                final mm = Map<String, dynamic>.from(m);
+                String? thumb;
+                final thumbField =
+                    mm['thumbnail'] ?? mm['thumbnailUrl'] ?? mm['thumb'];
+                if (thumbField is List && thumbField.isNotEmpty) {
+                  thumb = thumbField.first.toString();
+                } else if (thumbField is String) {
+                  thumb = thumbField;
+                }
+                final url = thumb ??
+                    (mm['fileUrl'] ?? mm['image'] ?? mm['url'])?.toString();
+                if (url != null && url.isNotEmpty) return url;
+              }
+              return m.toString();
+            })
+            .cast<String>()
+            .toList();
+        final typeStr = ((map['type'] as String?) ??
+                (map['media_type'] as String?) ??
+                'post')
+            .toLowerCase();
+        bool hasVideo = false;
+        for (final m in media) {
+          if (m is Map) {
+            final t = (m['type'] as String?)?.toLowerCase();
+            if (t == 'video' || t == 'reel') {
+              hasVideo = true;
+              break;
+            }
+            final cand = (m['fileUrl'] ?? m['file_url'] ?? m['url'])
+                ?.toString()
+                .toLowerCase();
+            if (cand != null &&
+                (cand.endsWith('.mp4') ||
+                    cand.endsWith('.mov') ||
+                    cand.contains('.m3u8'))) {
+              hasVideo = true;
+              break;
+            }
+          } else if (m is String) {
+            final s = m.toLowerCase();
+            if (s.endsWith('.mp4') || s.endsWith('.mov')) {
+              hasVideo = true;
+              break;
+            }
           }
         }
-      }
-      PostMediaType mediaType = PostMediaType.image;
-      if (typeStr == 'reel') {
-        mediaType = PostMediaType.reel;
-      } else if (hasVideo) {
-        mediaType = mediaUrls.length == 1 ? PostMediaType.reel : PostMediaType.video;
-      } else if (mediaUrls.length > 1) {
-        mediaType = PostMediaType.carousel;
-      }
-      final caption = map['caption'] as String?;
-      final hashtags = ((map['hashtags'] as List<dynamic>?) ?? (map['tags'] as List<dynamic>?) ?? [])
-          .map((e) => e.toString())
-          .toList();
-      DateTime createdAt;
-      final createdAtStr = map['created_at'] as String? ?? map['createdAt'] as String?;
-      if (createdAtStr != null && createdAtStr.isNotEmpty) {
-        createdAt = DateTime.tryParse(createdAtStr) ?? DateTime.now();
-      } else {
-        createdAt = DateTime.now();
-      }
+        PostMediaType mediaType = PostMediaType.image;
+        if (typeStr == 'reel') {
+          mediaType = PostMediaType.reel;
+        } else if (hasVideo) {
+          mediaType =
+              mediaUrls.length == 1 ? PostMediaType.reel : PostMediaType.video;
+        } else if (mediaUrls.length > 1) {
+          mediaType = PostMediaType.carousel;
+        }
+        final caption = map['caption'] as String?;
+        final hashtags = ((map['hashtags'] as List<dynamic>?) ??
+                (map['tags'] as List<dynamic>?) ??
+                [])
+            .map((e) => e.toString())
+            .toList();
+        DateTime createdAt;
+        final createdAtStr =
+            map['created_at'] as String? ?? map['createdAt'] as String?;
+        if (createdAtStr != null && createdAtStr.isNotEmpty) {
+          createdAt = DateTime.tryParse(createdAtStr) ?? DateTime.now();
+        } else {
+          createdAt = DateTime.now();
+        }
         return FeedPost(
           id: id,
           userId: userId,
@@ -270,12 +283,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
           hashtags: hashtags,
           createdAt: createdAt,
           isTagged: (map['people_tags'] as List?)?.isNotEmpty ?? false,
-          peopleTags: (map['people_tags'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList(),
-          likes: (map['likes_count'] as int?) ?? (map['likes'] is int ? map['likes'] as int : 0),
-          comments: (map['comments_count'] as int?) ?? (map['comments'] is int ? map['comments'] as int : 0),
+          peopleTags: (map['people_tags'] as List?)
+              ?.map((e) => Map<String, dynamic>.from(e))
+              .toList(),
+          likes: (map['likes_count'] as int?) ??
+              (map['likes'] is int ? map['likes'] as int : 0),
+          comments: (map['comments_count'] as int?) ??
+              (map['comments'] is int ? map['comments'] as int : 0),
         );
       }).toList();
     }
+
     final posts = map0(rawPosts);
     final saved = map0(rawSaved);
     final tagged = map0(rawTagged);
@@ -283,17 +301,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Initialize counts from existing data to prevent resetting to 0 on API failure
     int? followersCount;
     int? followingCount;
-    
+
     // 1. Try to get from current Redux state (for "Me") or local state
     if (widget.userId == null) {
-       try {
-         final store = StoreProvider.of<AppState>(context);
-         final cached = store.state.profileState.profile;
-         if (cached != null) {
-           followersCount = cached['followers_count'] as int?;
-           followingCount = cached['following_count'] as int?;
-         }
-       } catch (_) {}
+      try {
+        final store = StoreProvider.of<AppState>(context);
+        final cached = store.state.profileState.profile;
+        if (cached != null) {
+          followersCount = cached['followers_count'] as int?;
+          followingCount = cached['following_count'] as int?;
+        }
+      } catch (_) {}
     }
     // 2. Fallback to local _profile
     if (followersCount == null && _profile != null) {
@@ -320,16 +338,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         // API returned 0 (or failed silently). Check Redux state before accepting 0.
         if (widget.userId == null) {
           try {
-             final store = StoreProvider.of<AppState>(context);
-             final cached = store.state.profileState.profile;
-             final cachedCount = cached?['followers_count'] as int?;
-             if (cachedCount != null && cachedCount > 0) {
-               // Keep the cached non-zero value instead of overwriting with 0
-               followersCount = cachedCount;
-             } else {
-               // If cache is also 0 or null, then accept 0
-               followersCount = 0;
-             }
+            final store = StoreProvider.of<AppState>(context);
+            final cached = store.state.profileState.profile;
+            final cachedCount = cached?['followers_count'] as int?;
+            if (cachedCount != null && cachedCount > 0) {
+              // Keep the cached non-zero value instead of overwriting with 0
+              followersCount = cachedCount;
+            } else {
+              // If cache is also 0 or null, then accept 0
+              followersCount = 0;
+            }
           } catch (_) {}
         }
       }
@@ -340,16 +358,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (count > 0) {
         followingCount = count;
       } else {
-         if (widget.userId == null) {
+        if (widget.userId == null) {
           try {
-             final store = StoreProvider.of<AppState>(context);
-             final cached = store.state.profileState.profile;
-             final cachedCount = cached?['following_count'] as int?;
-             if (cachedCount != null && cachedCount > 0) {
-               followingCount = cachedCount;
-             } else {
-               followingCount = 0;
-             }
+            final store = StoreProvider.of<AppState>(context);
+            final cached = store.state.profileState.profile;
+            final cachedCount = cached?['following_count'] as int?;
+            if (cachedCount != null && cachedCount > 0) {
+              followingCount = cachedCount;
+            } else {
+              followingCount = 0;
+            }
           } catch (_) {}
         }
       }
@@ -363,8 +381,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (meId != null && meId.isNotEmpty) {
       // Prioritize server-provided follow status if available
-      if (profile != null && (profile.containsKey('is_followed_by_me') || profile.containsKey('is_following'))) {
-        isFollowedByMe = (profile['is_followed_by_me'] ?? profile['is_following']) == true;
+      if (profile != null &&
+          (profile.containsKey('is_followed_by_me') ||
+              profile.containsKey('is_following'))) {
+        isFollowedByMe =
+            (profile['is_followed_by_me'] ?? profile['is_following']) == true;
         // Sync local cache with authoritative server state
         _svc.syncFollowStatus(targetId, isFollowedByMe);
       } else {
@@ -408,7 +429,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final reelsFromService =
           _reelsService.getReels().where((r) => r.userId == targetId).toList();
       final reelsFromPosts = posts
-          .where((p) => p.mediaType == PostMediaType.reel && p.mediaUrls.isNotEmpty)
+          .where((p) =>
+              p.mediaType == PostMediaType.reel && p.mediaUrls.isNotEmpty)
           .map((p) {
         final firstUrl = p.mediaUrls.first;
         return Reel(
@@ -467,8 +489,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Cache own profile in Redux for instant load next time
       if (widget.userId == null) {
         // Only dispatch if we have valid data (e.g., a username or id) to prevent overwriting with empty state
-        if (merged['username'] != null || merged['id'] != null || merged['_id'] != null) {
-           StoreProvider.of<AppState>(context).dispatch(SetProfile(merged));
+        if (merged['username'] != null ||
+            merged['id'] != null ||
+            merged['_id'] != null) {
+          StoreProvider.of<AppState>(context).dispatch(SetProfile(merged));
         }
       }
     }
@@ -477,7 +501,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _openStoriesFromProfile() async {
     final profile = _profile;
     if (profile == null) return;
-    final targetId = (profile['id'] as String?) ?? (profile['_id'] as String?) ?? '';
+    final targetId =
+        (profile['id'] as String?) ?? (profile['_id'] as String?) ?? '';
     if (targetId.isEmpty) return;
     final groups = await _feedService.fetchStoriesFeed();
     final userGroups = groups.where((g) => g.userId == targetId).toList();
@@ -512,7 +537,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final username = (_profile?['username'] as String?) ?? 'user';
     int followersCount = (_profile?['followers_count'] as int?) ?? 0;
     final delta = next ? 1 : -1;
-    final nextFollowers = ((followersCount + delta).toDouble().clamp(0, double.maxFinite)).toInt();
+    final nextFollowers =
+        ((followersCount + delta).toDouble().clamp(0, double.maxFinite))
+            .toInt();
 
     if (mounted) {
       setState(() {
@@ -545,7 +572,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           };
         });
       }
-    } 
+    }
 
     if (success && mounted) {
       final store = StoreProvider.of<AppState>(context);
@@ -579,22 +606,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _onPostTap(FeedPost p) {
-    final isMobile = MediaQuery.sizeOf(context).width < 600;
-    if (isMobile) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (ctx) => PostDetailScreen(
-            postId: p.id,
-            initialPost: p,
-          ),
-        ),
-      ).then((_) {
-        // Refresh profile when returning from post detail (e.g. after deletion)
-        if (mounted) _load();
-      });
-    } else {
-      _showPostDetail(p.id);
-    }
+    _showPostDetail(p.id);
   }
 
   void _showPostDetail(String postId) {
@@ -609,7 +621,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         barrierColor: Colors.black54,
         builder: (ctx) => Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: PostDetailModal(
             postId: postId,
             onClose: () {
@@ -631,25 +644,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
           decoration: BoxDecoration(
             color: Theme.of(ctx).cardColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, -4))],
+            boxShadow: const [
+              BoxShadow(
+                  color: Colors.black26, blurRadius: 12, offset: Offset(0, -4))
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 12),
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2))),
+              Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.grey.shade400,
+                      borderRadius: BorderRadius.circular(2))),
               const SizedBox(height: 16),
-              Text('Create', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+              Text('Create',
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 16),
               ListTile(
                 leading: Container(
                   width: 44,
                   height: 44,
-                  decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(LucideIcons.image, color: Colors.white, size: 22),
+                  decoration: BoxDecoration(
+                      gradient: DesignTokens.instaGradient,
+                      borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(LucideIcons.image,
+                      color: Colors.white, size: 22),
                 ),
                 title: const Text('Create Post'),
-                subtitle: Text('Photo or video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                subtitle: Text('Photo or video',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -668,11 +699,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 leading: Container(
                   width: 44,
                   height: 44,
-                  decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(LucideIcons.video, color: Colors.white, size: 22),
+                  decoration: BoxDecoration(
+                      gradient: DesignTokens.instaGradient,
+                      borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(LucideIcons.video,
+                      color: Colors.white, size: 22),
                 ),
                 title: const Text('Upload Reel'),
-                subtitle: Text('Short video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                subtitle: Text('Short video',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -697,11 +734,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   static const List<({String title, String img})> _highlights = [
-    (title: 'Travel', img: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=150&h=150&fit=crop'),
-    (title: 'Work', img: 'https://images.unsplash.com/photo-1497215728101-856f4ea42174?w=150&h=150&fit=crop'),
-    (title: 'Life', img: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=150&h=150&fit=crop'),
-    (title: 'Tech', img: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=150&h=150&fit=crop'),
-    (title: 'Music', img: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=150&h=150&fit=crop'),
+    (
+      title: 'Travel',
+      img:
+          'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=150&h=150&fit=crop'
+    ),
+    (
+      title: 'Work',
+      img:
+          'https://images.unsplash.com/photo-1497215728101-856f4ea42174?w=150&h=150&fit=crop'
+    ),
+    (
+      title: 'Life',
+      img:
+          'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=150&h=150&fit=crop'
+    ),
+    (
+      title: 'Tech',
+      img:
+          'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=150&h=150&fit=crop'
+    ),
+    (
+      title: 'Music',
+      img:
+          'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=150&h=150&fit=crop'
+    ),
   ];
 
   Widget _buildHighlights() {
@@ -746,11 +803,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 padding: const EdgeInsets.all(2),
                 child: ClipOval(
-                  child: Image.network(h.img, width: 60, height: 60, fit: BoxFit.cover),
+                  child: Image.network(h.img,
+                      width: 60, height: 60, fit: BoxFit.cover),
                 ),
               ),
               const SizedBox(height: 6),
-              SizedBox(width: 72, child: Text(h.title, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
+              SizedBox(
+                  width: 72,
+                  child: Text(h.title,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurface))),
             ],
           );
         },
@@ -762,16 +827,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     // Wrap with StoreConnector to listen to profile changes for "My Profile"
     return StoreConnector<AppState, Map<String, dynamic>?>(
-      converter: (store) => _isOwnProfile ? store.state.profileState.profile : null,
+      converter: (store) =>
+          _isOwnProfile ? store.state.profileState.profile : null,
       builder: (context, myProfileFromRedux) {
-        
         // CRITICAL FIX: If viewing own profile, use the Redux state directly.
         // This ensures that AdjustFollowingCount from the Dashboard reflects here instantly.
         final bool isMe = _isOwnProfile || widget.userId == null;
-        final displayProfile = isMe ? (myProfileFromRedux ?? _profile) : _profile;
+        final displayProfile =
+            isMe ? (myProfileFromRedux ?? _profile) : _profile;
 
         if (_loading && displayProfile == null) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator(color: DesignTokens.instaPink)));
+          return const Scaffold(
+              body: Center(
+                  child: CircularProgressIndicator(
+                      color: DesignTokens.instaPink)));
         }
 
         if (!_loading && displayProfile == null) {
@@ -783,7 +852,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   Icon(LucideIcons.userX, size: 64, color: Colors.grey),
                   SizedBox(height: 16),
-                  Text('User not found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text('User not found',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -795,10 +866,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final fullName = displayProfile?['full_name'] as String?;
         final bio = displayProfile?['bio'] as String?;
         final avatar = displayProfile?['avatar_url'] as String?;
-        final postsCount = (displayProfile?['posts_count'] as int?) ?? _posts.length;
+        final postsCount =
+            (displayProfile?['posts_count'] as int?) ?? _posts.length;
         final followers = (displayProfile?['followers_count'] as int?) ?? 0;
         final following = (displayProfile?['following_count'] as int?) ?? 0;
-        
+
         final theme = Theme.of(context);
         final fgColor = theme.colorScheme.onSurface;
 
@@ -821,18 +893,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Container(
                           width: 64,
                           height: 64,
-                          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: theme.dividerColor, width: 2)),
-                          child: Icon(LucideIcons.layoutGrid, size: 32, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                          decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: theme.dividerColor, width: 2)),
+                          child: Icon(LucideIcons.layoutGrid,
+                              size: 32,
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.5)),
                         ),
                         const SizedBox(height: 16),
-                        Text('No Posts Yet', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: fgColor)),
+                        Text('No Posts Yet',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600, color: fgColor)),
                         const SizedBox(height: 8),
-                        Text('When you share photos, they will appear on your profile.', style: TextStyle(color: theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600, fontSize: 14), textAlign: TextAlign.center),
+                        Text(
+                            'When you share photos, they will appear on your profile.',
+                            style: TextStyle(
+                                color: theme.textTheme.bodyMedium?.color ??
+                                    Colors.grey.shade600,
+                                fontSize: 14),
+                            textAlign: TextAlign.center),
                         if (isMe) ...[
                           const SizedBox(height: 16),
                           TextButton(
-                            onPressed: () => Navigator.of(context).pushNamed('/create'),
-                            child: const Text('Share your first photo', style: TextStyle(color: DesignTokens.instaPink)),
+                            onPressed: () =>
+                                Navigator.of(context).pushNamed('/create'),
+                            child: const Text('Share your first photo',
+                                style:
+                                    TextStyle(color: DesignTokens.instaPink)),
                           ),
                         ],
                       ],
@@ -849,7 +938,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(24.0),
-                      child: Center(child: Text('No reels yet', style: TextStyle(color: fgColor))),
+                      child: Center(
+                          child: Text('No reels yet',
+                              style: TextStyle(color: fgColor))),
                     ),
                   ],
                 )
@@ -859,68 +950,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: _userReels.length,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
-                      crossAxisSpacing: 4,
-                      mainAxisSpacing: 4,
+                      crossAxisSpacing: 1,
+                      mainAxisSpacing: 1,
                     ),
                     itemBuilder: (ctx, i) {
                       final r = _userReels[i];
                       final thumbRaw = r.thumbnailUrl?.trim();
-                      final thumb = (thumbRaw != null && thumbRaw.isNotEmpty) ? _absoluteReelUrl(thumbRaw) : null;
+                      final thumb = (thumbRaw != null && thumbRaw.isNotEmpty)
+                          ? _absoluteReelUrl(thumbRaw)
+                          : null;
                       return GestureDetector(
-                        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReelsScreen())),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Container(color: Colors.black),
-                              if (thumb != null)
-                                CachedNetworkImage(
-                                  imageUrl: thumb,
-                                  httpHeaders: _reelImageHeaders,
-                                  cacheKey: '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
-                                  fit: BoxFit.cover,
-                                  placeholder: (ctx, url) => Container(color: Colors.grey[900]),
-                                  errorWidget: (ctx, url, err) => Container(color: Colors.grey[900]),
-                                ),
-                              Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.black.withValues(alpha: 0.15),
-                                      Colors.black.withValues(alpha: 0.45),
-                                    ],
-                                  ),
-                                ),
+                        onTap: () => _showPostDetail(r.id),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Container(color: Colors.black),
+                            if (thumb != null)
+                              CachedNetworkImage(
+                                imageUrl: thumb,
+                                httpHeaders: _reelImageHeaders,
+                                cacheKey:
+                                    '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
+                                fit: BoxFit.cover,
+                                placeholder: (ctx, url) =>
+                                    Container(color: Colors.grey[900]),
+                                errorWidget: (ctx, url, err) =>
+                                    Container(color: Colors.grey[900]),
                               ),
-                              Positioned(
-                                left: 6,
-                                bottom: 6,
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      LucideIcons.eye,
-                                      size: 14,
-                                      color: Colors.white,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      _formatViews(r.views),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                            const Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Icon(
+                                LucideIcons.video,
+                                color: Colors.white,
+                                size: 16,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -933,13 +1002,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(24.0),
-                        child: Center(child: Text('No saved posts', style: TextStyle(color: fgColor))),
+                        child: Center(
+                            child: Text('No saved posts',
+                                style: TextStyle(color: fgColor))),
                       ),
                     ],
                   )
                 : Padding(
                     padding: const EdgeInsets.all(8.0),
-                    child: PostsGrid(posts: _saved, onTap: (p) => _onPostTap(p)),
+                    child:
+                        PostsGrid(posts: _saved, onTap: (p) => _onPostTap(p)),
                   )),
           _tagged.isEmpty
               ? ListView(
@@ -947,7 +1019,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(24.0),
-                      child: Center(child: Text('No tagged posts', style: TextStyle(color: fgColor))),
+                      child: Center(
+                          child: Text('No tagged posts',
+                              style: TextStyle(color: fgColor))),
                     ),
                   ],
                 )
@@ -958,6 +1032,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ];
 
         return DefaultTabController(
+          key: ValueKey('profile-tabs-${tabs.length}'),
           length: tabViews.length,
           child: Scaffold(
             backgroundColor: theme.scaffoldBackgroundColor,
@@ -974,7 +1049,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _verifiedBadgeSvg,
                     width: 20,
                     height: 20,
-                    colorFilter: const ColorFilter.mode(Color(0xFF3B82F6), BlendMode.srcIn),
+                    colorFilter: const ColorFilter.mode(
+                        Color(0xFF3B82F6), BlendMode.srcIn),
                   ),
                 ],
               ),
@@ -992,7 +1068,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       );
                     },
                   ),
-                  IconButton(icon: Icon(LucideIcons.menu, color: fgColor), onPressed: () => Navigator.of(context).pushNamed('/settings')),
+                  IconButton(
+                      icon: Icon(LucideIcons.menu, color: fgColor),
+                      onPressed: () =>
+                          Navigator.of(context).pushNamed('/settings')),
                 ],
               ],
             ),
@@ -1011,7 +1090,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       followers: followers,
                       following: following,
                       isMe: isMe,
-                      isFollowing: (displayProfile?['is_followed_by_me'] as bool?) ?? false,
+                      isFollowing:
+                          (displayProfile?['is_followed_by_me'] as bool?) ??
+                              false,
                       onEdit: isMe ? _onEdit : null,
                       onFollow: isMe ? null : _onFollow,
                       onAvatarTap: _openStoriesFromProfile,
@@ -1028,9 +1109,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     delegate: _SliverTabBarDelegate(
                       TabBar(
                         tabs: tabs,
-                        indicator: const UnderlineTabIndicator(borderSide: BorderSide(width: 1.5, color: DesignTokens.instaPink)),
+                        indicator: const UnderlineTabIndicator(
+                            borderSide: BorderSide(
+                                width: 1.5, color: DesignTokens.instaPink)),
                         labelColor: DesignTokens.instaPink,
-                        unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        unselectedLabelColor:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
                   ),
@@ -1059,7 +1143,8 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => 48;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       height: 48,
       decoration: BoxDecoration(
@@ -1071,7 +1156,10 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) => false;
+  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) {
+    if (oldDelegate is! _SliverTabBarDelegate) return true;
+    return oldDelegate.tabBar.tabs.length != tabBar.tabs.length;
+  }
 }
 
 class EditProfileScreen extends StatefulWidget {
@@ -1104,7 +1192,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final uid = widget.userId != null && widget.userId!.isNotEmpty
         ? widget.userId
         : await CurrentUser.id;
-    
+
     if (uid == null) {
       if (mounted) Navigator.of(context).pop();
       return;
@@ -1133,7 +1221,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     try {
       final bytes = await xfile.readAsBytes();
       final ext = xfile.path.split('.').last;
-      final path = '$_effectiveUserId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final path =
+          '$_effectiveUserId/${DateTime.now().millisecondsSinceEpoch}.$ext';
       final res = await _svc.uploadFile('avatars', path, bytes);
       if (mounted) {
         setState(() {
@@ -1144,7 +1233,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _uploading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
       }
     }
   }
@@ -1168,7 +1258,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
     }
   }
@@ -1177,19 +1268,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final fgColor = theme.colorScheme.onSurface;
-    if (_loading && _profile == null) return const Scaffold(body: Center(child: CircularProgressIndicator(color: DesignTokens.instaPink)));
+    if (_loading && _profile == null) {
+      return const Scaffold(
+          body: Center(
+              child: CircularProgressIndicator(color: DesignTokens.instaPink)));
+    }
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        leading: IconButton(icon: Icon(LucideIcons.arrowLeft, color: fgColor), onPressed: () => Navigator.of(context).pop()),
-        title: Text('Edit Profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: fgColor)),
+        leading: IconButton(
+            icon: Icon(LucideIcons.arrowLeft, color: fgColor),
+            onPressed: () => Navigator.of(context).pop()),
+        title: Text('Edit Profile',
+            style: TextStyle(
+                fontSize: 18, fontWeight: FontWeight.w600, color: fgColor)),
         backgroundColor: theme.appBarTheme.backgroundColor,
         foregroundColor: fgColor,
         elevation: 0,
         actions: [
           TextButton(
             onPressed: _loading ? null : _save,
-            child: Text(_loading ? 'Saving...' : 'Save', style: TextStyle(fontWeight: FontWeight.w600, color: _loading ? Colors.grey : DesignTokens.instaPink)),
+            child: Text(_loading ? 'Saving...' : 'Save',
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: _loading ? Colors.grey : DesignTokens.instaPink)),
           ),
         ],
       ),
@@ -1209,54 +1311,104 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: DesignTokens.instaGradient,
-                      boxShadow: [BoxShadow(color: DesignTokens.instaPink.withAlpha(80), blurRadius: 8)],
+                      boxShadow: [
+                        BoxShadow(
+                            color: DesignTokens.instaPink.withAlpha(80),
+                            blurRadius: 8)
+                      ],
                     ),
                     padding: const EdgeInsets.all(3),
                     child: Container(
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: theme.cardColor),
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle, color: theme.cardColor),
                       padding: const EdgeInsets.all(2),
                       child: ClipOval(
                         child: _avatarUrl != null
-                            ? Image.network(_avatarUrl!, width: 86, height: 86, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _placeholderAvatar())
+                            ? Image.network(_avatarUrl!,
+                                width: 86,
+                                height: 86,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    _placeholderAvatar())
                             : _placeholderAvatar(),
                       ),
                     ),
                   ),
-                  if (_uploading) Positioned.fill(child: Container(color: Colors.black38, child: const Center(child: CircularProgressIndicator(color: Colors.white)))),
-                  if (!_uploading) Positioned(bottom: 0, right: 0, child: Icon(LucideIcons.camera, size: 20, color: fgColor)),
+                  if (_uploading)
+                    Positioned.fill(
+                        child: Container(
+                            color: Colors.black38,
+                            child: const Center(
+                                child: CircularProgressIndicator(
+                                    color: Colors.white)))),
+                  if (!_uploading)
+                    Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child:
+                            Icon(LucideIcons.camera, size: 20, color: fgColor)),
                 ],
               ),
             ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _uploading ? null : _uploadAvatar,
-              child: Text(_uploading ? 'Uploading...' : 'Change Profile Photo', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: DesignTokens.instaPink)),
+              child: Text(_uploading ? 'Uploading...' : 'Change Profile Photo',
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: DesignTokens.instaPink)),
             ),
             const SizedBox(height: 24),
             TextField(
               controller: _fullNameCtl,
               style: TextStyle(color: fgColor),
-              decoration: InputDecoration(labelText: 'Name', filled: true, fillColor: theme.cardColor, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: theme.dividerColor))),
+              decoration: InputDecoration(
+                  labelText: 'Name',
+                  filled: true,
+                  fillColor: theme.cardColor,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: theme.dividerColor))),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _usernameCtl,
               style: TextStyle(color: fgColor),
-              decoration: InputDecoration(labelText: 'Username', filled: true, fillColor: theme.cardColor, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: theme.dividerColor))),
+              decoration: InputDecoration(
+                  labelText: 'Username',
+                  filled: true,
+                  fillColor: theme.cardColor,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: theme.dividerColor))),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _bioCtl,
               maxLines: 3,
               style: TextStyle(color: fgColor),
-              decoration: InputDecoration(labelText: 'Bio', hintText: 'Write something about yourself...', filled: true, fillColor: theme.cardColor, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: theme.dividerColor))),
+              decoration: InputDecoration(
+                  labelText: 'Bio',
+                  hintText: 'Write something about yourself...',
+                  filled: true,
+                  fillColor: theme.cardColor,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: theme.dividerColor))),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _phoneCtl,
               keyboardType: TextInputType.phone,
               style: TextStyle(color: fgColor),
-              decoration: InputDecoration(labelText: 'Phone', filled: true, fillColor: theme.cardColor, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: theme.dividerColor))),
+              decoration: InputDecoration(
+                  labelText: 'Phone',
+                  filled: true,
+                  fillColor: theme.cardColor,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: theme.dividerColor))),
             ),
           ],
         ),
@@ -1266,8 +1418,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Widget _placeholderAvatar() {
     final theme = Theme.of(context);
-    final name = _fullNameCtl.text.trim().isNotEmpty ? _fullNameCtl.text.trim() : _usernameCtl.text.trim();
+    final name = _fullNameCtl.text.trim().isNotEmpty
+        ? _fullNameCtl.text.trim()
+        : _usernameCtl.text.trim();
     final initial = name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'U';
-    return Container(color: theme.cardColor, child: Center(child: Text(initial, style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface))));
+    return Container(
+        color: theme.cardColor,
+        child: Center(
+            child: Text(initial,
+                style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface))));
   }
 }

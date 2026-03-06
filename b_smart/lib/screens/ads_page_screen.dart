@@ -3,13 +3,10 @@ import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
 import 'dart:math' as math;
-import '../utils/current_user.dart';
 import '../models/ad_model.dart';
 import '../models/ad_category_model.dart';
-import '../services/ad_category_service.dart';
-import '../services/ad_eligibility_service.dart';
-import '../services/wallet_service.dart';
-import '../theme/instagram_theme.dart';
+import '../services/ads_service.dart';
+import '../widgets/comments_sheet.dart';
 
 class AdsPageScreen extends StatefulWidget {
   const AdsPageScreen({super.key});
@@ -19,17 +16,14 @@ class AdsPageScreen extends StatefulWidget {
 }
 
 class _AdsPageScreenState extends State<AdsPageScreen> {
-  final AdCategoryService _categoryService = AdCategoryService();
-  // ignore: unused_field
-  final AdEligibilityService _eligibilityService = AdEligibilityService();
-  // ignore: unused_field
-  final WalletService _walletService = WalletService();
+  final AdsService _adsService = AdsService();
 
   List<AdCategory> _categories = [];
-  String _selectedCategoryId = 'all';
+  String _selectedCategoryId = 'All';
   List<Ad> _ads = [];
   
   bool _isLoading = true;
+  String? _error;
   final PageController _pageController = PageController();
   int _focusedIndex = 0;
 
@@ -46,47 +40,48 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   }
 
   Future<void> _init() async {
-    _loadCategoriesAndAds();
+    await _loadCategoriesAndAds();
   }
 
-  void _loadCategoriesAndAds() {
+  Future<void> _loadCategoriesAndAds() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
+      _error = null;
     });
 
-    _categories = _categoryService.getCategories();
-    
-    // Mocking/Loading ads
-    _ads = _categoryService.getAdsByCategory(
-      categoryId: _selectedCategoryId,
-      userLanguages: ['en'],
-      userPreferences: ['technology', 'fashion'],
-      userLocation: 'US',
-    );
-    
-    setState(() {
-      _isLoading = false;
-    });
+    try {
+      final categories = _adsService.getCategories();
+      final ads = await _adsService.fetchAds(category: _selectedCategoryId);
+      if (!mounted) return;
+      setState(() {
+        _categories = categories;
+        _ads = ads;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _categories = _adsService.getCategories();
+        _ads = [];
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
   }
 
-  void _onCategorySelected(String categoryId) {
+  Future<void> _onCategorySelected(String categoryId) async {
     if (_selectedCategoryId == categoryId) return;
 
     setState(() {
       _selectedCategoryId = categoryId;
-      _isLoading = true;
+      _focusedIndex = 0;
     });
 
-    // Simulate network delay and reload
-    Future.delayed(const Duration(milliseconds: 300), () {
-      _loadCategoriesAndAds();
-      if (_pageController.hasClients) {
-        _pageController.jumpToPage(0);
-      }
-      setState(() {
-        _focusedIndex = 0;
-      });
-    });
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(0);
+    }
+    await _loadCategoriesAndAds();
   }
 
   @override
@@ -102,7 +97,9 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 )
-              : _ads.isEmpty
+              : _error != null
+                  ? _buildErrorState()
+                  : _ads.isEmpty
                   ? _buildEmptyState()
                   : PageView.builder(
                       controller: _pageController,
@@ -117,6 +114,11 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                         return AdVideoItem(
                           ad: _ads[index],
                           isActive: index == _focusedIndex,
+                          onOpenComments: () async {
+                            await CommentsSheet.show(context, _ads[index].id);
+                            if (!mounted) return;
+                            await _loadCategoriesAndAds();
+                          },
                         );
                       },
                     ),
@@ -221,16 +223,50 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
       ),
     );
   }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(LucideIcons.circleAlert, color: Colors.redAccent, size: 64),
+            const SizedBox(height: 16),
+            const Text(
+              'Failed to load ads',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _error ?? 'Unknown error',
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: _loadCategoriesAndAds,
+              child: const Text('Retry', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class AdVideoItem extends StatefulWidget {
   final Ad ad;
   final bool isActive;
+  final Future<void> Function() onOpenComments;
 
   const AdVideoItem({
     super.key,
     required this.ad,
     required this.isActive,
+    required this.onOpenComments,
   });
 
   @override
@@ -239,10 +275,13 @@ class AdVideoItem extends StatefulWidget {
 
 class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStateMixin {
   VideoPlayerController? _controller;
+  final AdsService _adsService = AdsService();
   bool _isInitialized = false;
   bool _isLiked = false;
   bool _isSaved = false;
   bool _isMuted = true;
+  bool _isLikeLoading = false;
+  int _likesCount = 0;
   
   // Animation for music disc
   late AnimationController _discController;
@@ -250,6 +289,8 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
+    _isLiked = widget.ad.isLikedByMe;
+    _likesCount = widget.ad.likesCount;
     _discController = AnimationController(
       duration: const Duration(seconds: 5),
       vsync: this,
@@ -261,6 +302,10 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
   @override
   void didUpdateWidget(AdVideoItem oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.ad.id != widget.ad.id) {
+      _isLiked = widget.ad.isLikedByMe;
+      _likesCount = widget.ad.likesCount;
+    }
     if (widget.isActive != oldWidget.isActive) {
       if (widget.isActive) {
         _controller?.play();
@@ -311,6 +356,42 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
         _discController.repeat();
       }
     });
+  }
+
+  Future<void> _toggleLike() async {
+    if (_isLikeLoading || widget.ad.id.isEmpty) return;
+
+    final previousLiked = _isLiked;
+    final previousLikes = _likesCount;
+    final nextLiked = !previousLiked;
+    final nextLikes = nextLiked ? previousLikes + 1 : (previousLikes > 0 ? previousLikes - 1 : 0);
+
+    setState(() {
+      _isLikeLoading = true;
+      _isLiked = nextLiked;
+      _likesCount = nextLikes;
+    });
+
+    try {
+      if (nextLiked) {
+        await _adsService.likeAd(widget.ad.id);
+      } else {
+        await _adsService.dislikeAd(widget.ad.id);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLiked = previousLiked;
+          _likesCount = previousLikes;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLikeLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -385,21 +466,21 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
             children: [
               _buildGlassAction(
                 icon: _isLiked ? LucideIcons.heart : LucideIcons.heart,
-                label: _formatCount(widget.ad.currentViews + (_isLiked ? 1 : 0)),
+                label: _formatCount(_likesCount),
                 iconColor: _isLiked ? Colors.red : Colors.white,
                 fillColor: _isLiked ? Colors.red : null,
-                onTap: () => setState(() => _isLiked = !_isLiked),
+                onTap: _toggleLike,
               ),
               const SizedBox(height: 16),
               _buildGlassAction(
                 icon: LucideIcons.messageCircle,
-                label: '45',
-                onTap: () {},
+                label: _formatCount(widget.ad.commentsCount),
+                onTap: () => unawaited(widget.onOpenComments()),
               ),
               const SizedBox(height: 16),
               _buildGlassAction(
                 icon: LucideIcons.send,
-                label: '5',
+                label: _formatCount(widget.ad.sharesCount),
                 onTap: () {},
                 rotate: -0.2, // ~12 degrees
               ),
@@ -469,11 +550,14 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
                     ),
                     child: CircleAvatar(
                       radius: 16,
-                      backgroundImage: widget.ad.companyLogo != null
-                          ? NetworkImage(widget.ad.companyLogo!)
+                      backgroundImage: (widget.ad.userAvatarUrl ?? widget.ad.companyLogo) != null
+                          ? NetworkImage(widget.ad.userAvatarUrl ?? widget.ad.companyLogo!)
                           : null,
-                      child: widget.ad.companyLogo == null
-                          ? Text(widget.ad.companyName[0], style: const TextStyle(fontWeight: FontWeight.bold))
+                      child: (widget.ad.userAvatarUrl ?? widget.ad.companyLogo) == null
+                          ? Text(
+                              (widget.ad.vendorBusinessName ?? widget.ad.userName ?? widget.ad.companyName)[0],
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            )
                           : null,
                     ),
                   ),
@@ -483,7 +567,7 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
                       children: [
                         Flexible(
                           child: Text(
-                            widget.ad.companyName,
+                            widget.ad.vendorBusinessName ?? widget.ad.userName ?? widget.ad.companyName,
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -493,7 +577,7 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
                           ),
                         ),
                         const SizedBox(width: 8),
-                        if (widget.ad.coinReward > 0)
+                        if (widget.ad.totalBudgetCoins > 0)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
@@ -507,7 +591,7 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
                                 const Icon(LucideIcons.coins, color: Colors.amber, size: 10),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${widget.ad.coinReward}',
+                                  _formatCount(widget.ad.totalBudgetCoins),
                                   style: const TextStyle(
                                     color: Colors.amberAccent,
                                     fontSize: 10,
@@ -543,7 +627,9 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
               
               // Description
               Text(
-                widget.ad.description,
+                (widget.ad.caption ?? widget.ad.description).isNotEmpty
+                    ? (widget.ad.caption ?? widget.ad.description)
+                    : 'Sponsored',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
@@ -551,9 +637,9 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
               const SizedBox(height: 4),
               
               // Category
-              if (widget.ad.targetCategories.isNotEmpty)
+              if ((widget.ad.category ?? '').isNotEmpty || widget.ad.targetCategories.isNotEmpty)
                 Text(
-                  widget.ad.targetCategories.first,
+                  widget.ad.category ?? widget.ad.targetCategories.first,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.6),
                     fontSize: 12,
@@ -571,7 +657,10 @@ class _AdVideoItemState extends State<AdVideoItem> with SingleTickerProviderStat
                     child: SizedBox(
                       height: 20,
                       child: MarqueeWidget(
-                        text: 'Original Audio - ${widget.ad.companyName}',
+                        text:
+                            '${widget.ad.targetLocations.isEmpty ? 'Global' : widget.ad.targetLocations.join(', ')}'
+                            ' · '
+                            '${widget.ad.targetLanguages.isEmpty ? 'All Languages' : widget.ad.targetLanguages.join(', ')}',
                         style: const TextStyle(color: Colors.white70, fontSize: 12),
                       ),
                     ),

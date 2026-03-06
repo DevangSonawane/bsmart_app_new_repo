@@ -83,10 +83,19 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       _videoInit = controller.initialize().then((_) {
         if (!mounted) return;
         controller.setLooping(true);
+        controller.setVolume(_soundOn ? 1.0 : 0.0);
         controller.play();
         setState(() {});
       });
     }
+  }
+
+  @override
+  void deactivate() {
+    if (_videoController?.value.isInitialized == true) {
+      _videoController?.pause();
+    }
+    super.deactivate();
   }
 
   Future<void> _pickCustomThumbnail() async {

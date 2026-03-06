@@ -11,10 +11,11 @@ import '../config/api_config.dart';
 import '../models/reel_model.dart';
 import '../services/reels_service.dart';
 import '../utils/url_helper.dart';
-import 'reel_comments_screen.dart';
+import '../widgets/comments_sheet.dart';
 
 class ReelsScreen extends StatefulWidget {
-  const ReelsScreen({super.key});
+  final bool isActive;
+  const ReelsScreen({super.key, this.isActive = true});
 
   @override
   State<ReelsScreen> createState() => _ReelsScreenState();
@@ -47,6 +48,13 @@ class _ReelsScreenState extends State<ReelsScreen> {
     _pageController.dispose();
     _disposeAllControllers();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant ReelsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive == widget.isActive) return;
+    _syncActivePlayback();
   }
 
   Future<void> _loadReels() async {
@@ -111,8 +119,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
     if (_controllers.containsKey(reel.id)) {
       final c = _controllers[reel.id]!;
       if (c.value.isInitialized) {
-        c.setVolume(_isMuted ? 0 : 1);
-        if (index == _currentIndex) {
+        c.setVolume(widget.isActive && !_isMuted ? 1 : 0);
+        if (widget.isActive && index == _currentIndex) {
           unawaited(c.play());
         }
       }
@@ -130,7 +138,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
       final c = VideoPlayerController.networkUrl(
         Uri.parse(url),
         httpHeaders: _headersForUrl(url),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
 
       _controllers[reel.id] = c;
@@ -138,8 +146,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
       if (!mounted) return;
 
       c.setLooping(true);
-      c.setVolume(_isMuted ? 0 : 1);
-      if (index == _currentIndex) {
+      c.setVolume(widget.isActive && !_isMuted ? 1 : 0);
+      if (widget.isActive && index == _currentIndex) {
         unawaited(c.play());
       }
 
@@ -215,6 +223,32 @@ class _ReelsScreenState extends State<ReelsScreen> {
     unawaited(_ensureControllerForIndex(index + 1));
   }
 
+  void _syncActivePlayback() {
+    if (_reels.isEmpty || _currentIndex < 0 || _currentIndex >= _reels.length) {
+      for (final c in _controllers.values) {
+        if (!c.value.isInitialized) continue;
+        c.setVolume(0);
+        c.pause();
+      }
+      return;
+    }
+    final activeReelId = _reels[_currentIndex].id;
+    for (final entry in _controllers.entries) {
+      final c = entry.value;
+      if (!c.value.isInitialized) continue;
+      if (!widget.isActive) {
+        c.setVolume(0);
+        c.pause();
+      } else if (entry.key == activeReelId) {
+        c.setVolume(_isMuted ? 0 : 1);
+        unawaited(c.play());
+      } else {
+        c.setVolume(0);
+        c.pause();
+      }
+    }
+  }
+
   Future<void> _toggleLike() async {
     if (_reels.isEmpty) return;
     final reelId = _reels[_currentIndex].id;
@@ -259,11 +293,11 @@ class _ReelsScreenState extends State<ReelsScreen> {
 
   void _openComments() {
     if (_reels.isEmpty) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => ReelCommentsScreen(reel: _reels[_currentIndex]),
-      ),
-    );
+    unawaited(() async {
+      await CommentsSheet.show(context, _reels[_currentIndex].id);
+      if (!mounted) return;
+      await _loadReels();
+    }());
   }
 
   void _shareCurrent() {
@@ -445,7 +479,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
                   });
                   for (final c in _controllers.values) {
                     if (c.value.isInitialized) {
-                      c.setVolume(_isMuted ? 0 : 1);
+                      c.setVolume(widget.isActive && !_isMuted ? 1 : 0);
                     }
                   }
                 },

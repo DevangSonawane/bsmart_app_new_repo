@@ -22,9 +22,11 @@ class SupabaseService {
   void setCommentLikeOverride(String commentId, bool liked) {
     _commentLikeOverrides[commentId] = liked;
   }
+
   bool? getCommentLikeOverride(String commentId) {
     return _commentLikeOverrides[commentId];
   }
+
   final Map<String, List<Map<String, dynamic>>> _repliesCache = {};
   void setRepliesCache(String commentId, List<Map<String, dynamic>> replies) {
     _repliesCache[commentId] = List<Map<String, dynamic>>.from(replies);
@@ -35,10 +37,14 @@ class SupabaseService {
       } catch (_) {}
     }();
   }
+
   List<Map<String, dynamic>> getRepliesCached(String commentId) {
-    return List<Map<String, dynamic>>.from(_repliesCache[commentId] ?? const []);
+    return List<Map<String, dynamic>>.from(
+        _repliesCache[commentId] ?? const []);
   }
-  Future<Map<String, List<Map<String, dynamic>>>> loadRepliesCacheFor(List<String> commentIds) async {
+
+  Future<Map<String, List<Map<String, dynamic>>>> loadRepliesCacheFor(
+      List<String> commentIds) async {
     final result = <String, List<Map<String, dynamic>>>{};
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -47,7 +53,10 @@ class SupabaseService {
         if (raw != null && raw.isNotEmpty) {
           final parsed = jsonDecode(raw);
           if (parsed is List) {
-            final list = parsed.map((e) => (e as Map).cast<String, dynamic>()).toList().cast<Map<String, dynamic>>();
+            final list = parsed
+                .map((e) => (e as Map).cast<String, dynamic>())
+                .toList()
+                .cast<Map<String, dynamic>>();
             _repliesCache[id] = list;
             result[id] = list;
           }
@@ -148,24 +157,29 @@ class SupabaseService {
     // Primary source: public users endpoint with posts
     try {
       final data = await _usersApi.getUserProfile(userId);
-      
+
       // Case 1: data['user'] exists (Standard format)
       if (data['user'] is Map) {
         return data['user'] as Map<String, dynamic>;
       }
-      
+
       // Case 2: data['data'] exists (Sometimes wrapped)
       if (data['data'] is Map) {
         final d = data['data'] as Map;
         if (d['user'] is Map) return d['user'] as Map<String, dynamic>;
         // If data['data'] IS the user object
-        if (d['username'] != null || d['full_name'] != null || d['_id'] != null) {
+        if (d['username'] != null ||
+            d['full_name'] != null ||
+            d['_id'] != null) {
           return d.cast<String, dynamic>();
         }
       }
 
       // Case 3: data IS the user object (Direct return)
-      if (data['username'] != null || data['full_name'] != null || data['_id'] != null || data['id'] != null) {
+      if (data['username'] != null ||
+          data['full_name'] != null ||
+          data['_id'] != null ||
+          data['id'] != null) {
         return data;
       }
     } catch (_) {}
@@ -236,9 +250,11 @@ class SupabaseService {
       List<dynamic> posts = [];
       if (data['posts'] is List) {
         posts = data['posts'] as List<dynamic>;
-      } else if (data['user'] is Map && (data['user'] as Map)['posts'] is List) {
+      } else if (data['user'] is Map &&
+          (data['user'] as Map)['posts'] is List) {
         posts = ((data['user'] as Map)['posts'] as List<dynamic>);
-      } else if (data['data'] is Map && (data['data'] as Map)['posts'] is List) {
+      } else if (data['data'] is Map &&
+          (data['data'] as Map)['posts'] is List) {
         posts = ((data['data'] as Map)['posts'] as List<dynamic>);
       }
       if (posts.isNotEmpty) {
@@ -265,7 +281,8 @@ class SupabaseService {
         }
         final joinedUser = m['users'];
         if (joinedUser is Map) {
-          final id = joinedUser['id'] as String? ?? joinedUser['_id'] as String?;
+          final id =
+              joinedUser['id'] as String? ?? joinedUser['_id'] as String?;
           if (id == userId) return true;
         }
         return false;
@@ -296,7 +313,9 @@ class SupabaseService {
           for (final entry in savedBy) {
             if (entry is String && entry == userId) return true;
             if (entry is Map) {
-              final id = entry['id'] as String? ?? entry['_id'] as String? ?? entry['user_id'] as String?;
+              final id = entry['id'] as String? ??
+                  entry['_id'] as String? ??
+                  entry['user_id'] as String?;
               if (id == userId) return true;
             }
           }
@@ -306,7 +325,9 @@ class SupabaseService {
           for (final b in bookmarks) {
             if (b is String && b == userId) return true;
             if (b is Map) {
-              final id = b['id'] as String? ?? b['_id'] as String? ?? b['user_id'] as String?;
+              final id = b['id'] as String? ??
+                  b['_id'] as String? ??
+                  b['user_id'] as String?;
               if (id == userId) return true;
             }
           }
@@ -332,11 +353,15 @@ class SupabaseService {
       }
       final posts = raw.where((p) {
         final m = (p as Map).cast<String, dynamic>();
-        final peopleTags = (m['people_tags'] as List<dynamic>?) ?? (m['peopleTags'] as List<dynamic>?) ?? const [];
+        final peopleTags = (m['people_tags'] as List<dynamic>?) ??
+            (m['peopleTags'] as List<dynamic>?) ??
+            const [];
         for (final t in peopleTags) {
           if (t is String && t == userId) return true;
           if (t is Map) {
-            final id = t['user_id'] as String? ?? t['id'] as String? ?? t['_id'] as String?;
+            final id = t['user_id'] as String? ??
+                t['id'] as String? ??
+                t['_id'] as String?;
             if (id == userId) return true;
           }
         }
@@ -437,7 +462,7 @@ class SupabaseService {
         if (followed != null) {
           result = followed;
         } else {
-           result = true;
+          result = true;
         }
       } catch (_) {
         result = false;
@@ -456,7 +481,8 @@ class SupabaseService {
       final res = await _followsApi.unfollow(targetUserId);
       final followed = res['followed'] as bool?;
       if (followed != null) {
-        result = !followed; // If followed=false, then unfollow succeeded (result=true means "success")
+        result =
+            !followed; // If followed=false, then unfollow succeeded (result=true means "success")
       } else {
         result = true;
       }
@@ -516,7 +542,8 @@ class SupabaseService {
 
   // ── Uploads ────────────────────────────────────────────────────────────────
 
-  Future<Map<String, dynamic>> uploadFile(String bucket, String path, Uint8List bytes,
+  Future<Map<String, dynamic>> uploadFile(
+      String bucket, String path, Uint8List bytes,
       {bool makePublic = true}) async {
     final result = await _uploadApi.uploadFileBytes(
       bytes: bytes,
@@ -527,29 +554,146 @@ class SupabaseService {
 
   // ── Comments ───────────────────────────────────────────────────────────────
 
+  List<dynamic> _extractCommentsList(dynamic data) {
+    if (data is List) return data;
+    if (data is! Map) return const [];
+
+    final map = data;
+    final candidates = <dynamic>[
+      map['comments'],
+      map['data'],
+      map['results'],
+      map['items'],
+      map['rows'],
+      map['docs'],
+      map['payload'],
+      map['list'],
+      map['commentList'],
+    ];
+
+    for (final c in candidates) {
+      if (c is List) return c;
+      if (c is Map) {
+        final nested = c['comments'] ??
+            c['data'] ??
+            c['results'] ??
+            c['items'] ??
+            c['rows'] ??
+            c['docs'] ??
+            c['list'];
+        if (nested is List) return nested;
+      }
+    }
+    return const [];
+  }
+
+  Map<String, dynamic> _normalizeComment(Map<String, dynamic> raw) {
+    final out = Map<String, dynamic>.from(raw);
+
+    int toInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      if (v is String) return int.tryParse(v) ?? 0;
+      return 0;
+    }
+
+    final id = (out['_id'] ?? out['id'])?.toString();
+    if (id != null && id.isNotEmpty) {
+      out['_id'] = id;
+      out['id'] = id;
+    }
+
+    final content =
+        (out['content'] ?? out['text'] ?? out['comment'])?.toString();
+    if (content != null) {
+      out['content'] = content;
+      out['text'] = content;
+    }
+
+    final createdAt =
+        (out['created_at'] ?? out['createdAt'] ?? out['timestamp'])?.toString();
+    if (createdAt != null) {
+      out['created_at'] = createdAt;
+      out['createdAt'] = createdAt;
+    }
+
+    final likesCount = out['likes_count'] ??
+        out['likesCount'] ??
+        (out['likes'] is List ? (out['likes'] as List).length : null) ??
+        0;
+    out['likes_count'] = likesCount;
+
+    final repliesCount = toInt(out['reply_count']) > 0
+        ? toInt(out['reply_count'])
+        : toInt(out['replies_count']) > 0
+            ? toInt(out['replies_count'])
+            : toInt(out['replyCount']) > 0
+                ? toInt(out['replyCount'])
+                : toInt(out['repliesCount']) > 0
+                    ? toInt(out['repliesCount'])
+                    : (out['replies'] is List
+                        ? (out['replies'] as List).length
+                        : 0);
+    out['reply_count'] = repliesCount;
+    out['replies_count'] = repliesCount;
+
+    dynamic userRaw =
+        out['user'] ?? out['users'] ?? out['author'] ?? out['user_id'];
+    Map<String, dynamic> user = {};
+    if (userRaw is Map) {
+      user = Map<String, dynamic>.from(userRaw);
+      final userId = (user['id'] ?? user['_id'] ?? out['user_id'])?.toString();
+      if (userId != null && userId.isNotEmpty) {
+        user['id'] = userId;
+        user['_id'] = userId;
+        out['user_id'] = userId;
+      }
+      user['username'] =
+          (user['username'] ?? user['name'] ?? out['username'] ?? 'user')
+              .toString();
+      user['avatar_url'] =
+          (user['avatar_url'] ?? user['avatar'] ?? out['avatar_url'])
+              ?.toString();
+    } else if (userRaw != null) {
+      final userId = userRaw.toString();
+      if (userId.isNotEmpty) {
+        out['user_id'] = userId;
+        user = {
+          'id': userId,
+          '_id': userId,
+          'username': (out['username'] ?? 'user').toString(),
+          'avatar_url': out['avatar_url']?.toString(),
+        };
+      }
+    }
+    if (user.isNotEmpty) {
+      out['user'] = user;
+      out['users'] = user;
+    }
+
+    return out;
+  }
+
   Future<List<Map<String, dynamic>>> getComments(String postId,
       {int page = 1, int limit = 50, bool newestFirst = true}) async {
     try {
-      final data = await _commentsApi.getComments(postId, page: page, limit: limit);
-      List<Map<String, dynamic>> comments = [];
-      if (data is List) {
-        comments = (data).cast<Map<String, dynamic>>();
-      } else if (data is Map) {
-        final map = data;
-        if (map['comments'] is List) {
-          comments = (map['comments'] as List).cast<Map<String, dynamic>>();
-        } else if (map['data'] is List) {
-          comments = (map['data'] as List).cast<Map<String, dynamic>>();
-        } else if (map['data'] is Map && (map['data'] as Map)['comments'] is List) {
-          comments = ((map['data'] as Map)['comments'] as List).cast<Map<String, dynamic>>();
-        }
-      }
+      final data =
+          await _commentsApi.getComments(postId, page: page, limit: limit);
+      final list = _extractCommentsList(data);
+      final comments = list
+          .whereType<Map>()
+          .map((e) => _normalizeComment(Map<String, dynamic>.from(e)))
+          .toList();
       if (newestFirst) {
         comments.sort((a, b) {
-          final as = (a['created_at'] as String?) ?? (a['createdAt'] as String?) ?? '';
-          final bs = (b['created_at'] as String?) ?? (b['createdAt'] as String?) ?? '';
-          final ad = DateTime.tryParse(as) ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final bd = DateTime.tryParse(bs) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final as =
+              (a['created_at'] as String?) ?? (a['createdAt'] as String?) ?? '';
+          final bs =
+              (b['created_at'] as String?) ?? (b['createdAt'] as String?) ?? '';
+          final ad =
+              DateTime.tryParse(as) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bd =
+              DateTime.tryParse(bs) ?? DateTime.fromMillisecondsSinceEpoch(0);
           return bd.compareTo(ad);
         });
       }
@@ -560,7 +704,8 @@ class SupabaseService {
   }
 
   Future<Map<String, dynamic>?> addComment(
-      String postId, String userId, String content, {String? parentId}) async {
+      String postId, String userId, String content,
+      {String? parentId}) async {
     try {
       final created = await _commentsApi.addComment(
         postId,
@@ -603,9 +748,24 @@ class SupabaseService {
   Future<List<Map<String, dynamic>>> getReplies(String commentId,
       {int page = 1, int limit = 10}) async {
     try {
-      final res = await _commentsApi.getReplies(commentId, page: page, limit: limit);
-      final replies = res['replies'] as List<dynamic>? ?? [];
-      final casted = replies.cast<Map<String, dynamic>>();
+      final res =
+          await _commentsApi.getReplies(commentId, page: page, limit: limit);
+      List<dynamic> replies = const [];
+      if (res is List) {
+        replies = res;
+      } else if (res is Map) {
+        replies = (res['replies'] as List<dynamic>?) ??
+            (res['data'] as List<dynamic>?) ??
+            (res['results'] as List<dynamic>?) ??
+            (res['items'] as List<dynamic>?) ??
+            ((res['data'] is Map && (res['data'] as Map)['replies'] is List)
+                ? ((res['data'] as Map)['replies'] as List<dynamic>)
+                : const []);
+      }
+      final casted = replies
+          .whereType<Map>()
+          .map((e) => _normalizeComment(Map<String, dynamic>.from(e)))
+          .toList();
       setRepliesCache(commentId, casted);
       return casted;
     } catch (_) {
@@ -648,7 +808,9 @@ class SupabaseService {
   /// Returns the server's authoritative `liked` state.
   Future<bool> setPostLike(String postId, {required bool like}) async {
     try {
-      final res = like ? await _postsApi.likePost(postId) : await _postsApi.unlikePost(postId);
+      final res = like
+          ? await _postsApi.likePost(postId)
+          : await _postsApi.unlikePost(postId);
       final liked = res['liked'] as bool?;
       if (liked != null) return liked;
       final lc = res['likes_count'] as int?;
@@ -689,7 +851,9 @@ class SupabaseService {
   Future<bool> setPostSaved(String postId, {required bool save}) async {
     bool result = save;
     try {
-      final res = save ? await _postsApi.savePost(postId) : await _postsApi.unsavePost(postId);
+      final res = save
+          ? await _postsApi.savePost(postId)
+          : await _postsApi.unsavePost(postId);
       final saved = res['saved'] as bool?;
       if (saved != null) result = saved;
       final isSavedByMe = res['is_saved_by_me'] as bool?;
@@ -727,7 +891,10 @@ class SupabaseService {
     try {
       final res = await _postsApi.getLikes(postId);
       final users = res['users'] as List<dynamic>? ?? [];
-      return users.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+      return users
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -796,7 +963,10 @@ class SupabaseService {
       },
     ];
     if (excludeUserId != null && excludeUserId.isNotEmpty) {
-      return samples.where((u) => u['id'] != excludeUserId).take(limit).toList();
+      return samples
+          .where((u) => u['id'] != excludeUserId)
+          .take(limit)
+          .toList();
     }
     return samples.take(limit).toList();
   }

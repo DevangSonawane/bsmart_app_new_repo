@@ -1073,6 +1073,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                               return PostCard(
                                 key: ValueKey('card-${p.id}'), // Prevent unnecessary rebuilds
                                 post: p,
+                                isTabActive: _currentIndex == 0,
                                 onUserTap: p.userId.isNotEmpty
                                     ? () => Navigator.of(context).pushNamed('/profile/${p.userId}')
                                     : null,
@@ -1099,7 +1100,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
           // Promote tab
           const PromoteScreen(),
           // Reels tab
-          const ReelsScreen(),
+          ReelsScreen(isActive: _currentIndex == 4),
         ],
       ),
       bottomNavigationBar: isDesktop ? null : BottomNav(currentIndex: _currentIndex, onTap: _onNavTap),

@@ -12,6 +12,7 @@ import '../config/api_config.dart';
 
 class PostCard extends StatefulWidget {
   final FeedPost post;
+  final bool isTabActive;
   final VoidCallback? onLike;
   final VoidCallback? onComment;
   final VoidCallback? onShare;
@@ -24,6 +25,7 @@ class PostCard extends StatefulWidget {
   const PostCard({
     super.key,
     required this.post,
+    this.isTabActive = true,
     this.onLike,
     this.onComment,
     this.onShare,
@@ -146,7 +148,7 @@ class _PostCardState extends State<PostCard> {
       }
 
       controller.setLooping(true);
-      controller.setVolume(_isMuted ? 0.0 : 1.0);
+      controller.setVolume(widget.isTabActive && !_isMuted ? 1.0 : 0.0);
 
       setState(() {
         _videoCtl = controller;
@@ -155,7 +157,7 @@ class _PostCardState extends State<PostCard> {
       });
 
       // Only play if still visible and user hasn't manually paused
-      if (_isVisible && !_userWantsPaused) {
+      if (widget.isTabActive && _isVisible && !_userWantsPaused) {
         debugPrint('[PostCard] Auto-playing video for ${widget.post.id}');
         await controller.play();
       }
@@ -173,6 +175,10 @@ class _PostCardState extends State<PostCard> {
     _isVisible = nowVisible;
 
     if (nowVisible) {
+      if (!widget.isTabActive) {
+        _videoCtl?.pause();
+        return;
+      }
       // Card came into view
       if (_isVideoPost) {
         if (!_initStarted && _authHeaders != null) {
@@ -208,8 +214,25 @@ class _PostCardState extends State<PostCard> {
     if (!_videoInitialized) return;
     setState(() {
       _isMuted = !_isMuted;
-      _videoCtl?.setVolume(_isMuted ? 0.0 : 1.0);
+      _videoCtl?.setVolume(widget.isTabActive && !_isMuted ? 1.0 : 0.0);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isTabActive == widget.isTabActive) return;
+    if (!widget.isTabActive) {
+      _videoCtl?.setVolume(0.0);
+      _videoCtl?.pause();
+      return;
+    }
+    if (_videoInitialized) {
+      _videoCtl?.setVolume(_isMuted ? 0.0 : 1.0);
+      if (_isVisible && !_userWantsPaused) {
+        _videoCtl?.play();
+      }
+    }
   }
 
   void _onDoubleTapMedia() {

@@ -1,5 +1,5 @@
- import 'api_client.dart';
- import '../config/api_config.dart';
+import 'api_client.dart';
+import '../config/api_config.dart';
 
 /// REST API wrapper for comment & reply endpoints.
 ///
@@ -17,7 +17,8 @@ class CommentsApi {
 
   final ApiClient _client = ApiClient();
   String get _basePath {
-    final base = ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
+    final base =
+        ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
     final endsWithApi = base.endsWith('/api');
     return endsWithApi ? '' : '/api';
   }
@@ -34,7 +35,8 @@ class CommentsApi {
     final body = <String, dynamic>{'text': text};
     if (parentId != null) body['parent_id'] = parentId;
 
-    final res = await _client.post('$_basePath/posts/$postId/comments', body: body);
+    final res =
+        await _client.post('$_basePath/posts/$postId/comments', body: body);
     return res as Map<String, dynamic>;
   }
 
@@ -49,7 +51,8 @@ class CommentsApi {
     int page = 1,
     int limit = 10,
   }) async {
-    final res = await _client.get('$_basePath/posts/$postId/comments', queryParams: {
+    final res =
+        await _client.get('$_basePath/posts/$postId/comments', queryParams: {
       'page': page.toString(),
       'limit': limit.toString(),
     });
@@ -80,16 +83,20 @@ class CommentsApi {
 
   /// Get paginated replies for a comment.
   ///
-  /// Returns `{ page, limit, total, replies: [...] }`.
-  Future<Map<String, dynamic>> getReplies(
+  /// Returns one of:
+  /// - `{ page, limit, total, replies: [...] }`
+  /// - `{ data: [...] }`
+  /// - `[...]`
+  Future<dynamic> getReplies(
     String commentId, {
     int page = 1,
     int limit = 10,
   }) async {
-    final res = await _client.get('$_basePath/comments/$commentId/replies', queryParams: {
+    final res = await _client
+        .get('$_basePath/comments/$commentId/replies', queryParams: {
       'page': page.toString(),
       'limit': limit.toString(),
     });
-    return res as Map<String, dynamic>;
+    return res;
   }
 }

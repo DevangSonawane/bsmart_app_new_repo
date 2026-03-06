@@ -180,6 +180,16 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     super.dispose();
   }
 
+  @override
+  void deactivate() {
+    // Prevent background audio when another route (e.g. reel details) is pushed.
+    if (_videoController?.value.isInitialized == true) {
+      _videoController?.pause();
+      _isPlaying = false;
+    }
+    super.deactivate();
+  }
+
   void _handlePreviewVideoTick() {
     final controller = _videoController;
     if (controller == null || !controller.value.isInitialized) return;
@@ -252,9 +262,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   }
 
   // ── Proceed to post details, passing trim values along
-  void _proceedToPostDetails() {
+  Future<void> _proceedToPostDetails() async {
     final isVideo = _currentMedia.type == MediaType.video;
-    Navigator.of(context).push(
+    if (_videoController?.value.isInitialized == true) {
+      await _videoController?.pause();
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
+    }
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => isVideo
             ? CreateReelDetailsScreen(
@@ -275,6 +291,16 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               ),
       ),
     );
+    if (!mounted) return;
+    // Resume preview only when user comes back from next screen.
+    if (result != true &&
+        _videoController != null &&
+        _videoController!.value.isInitialized) {
+      await _videoController!.play();
+      if (mounted) {
+        setState(() => _isPlaying = true);
+      }
+    }
   }
 
   void _handleTextScaleStart(ScaleStartDetails details) {
@@ -610,12 +636,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                           onTap: _onTapText,
                         ),
                         const SizedBox(width: 8),
-                        _buildEditOption(
-                          icon: Icons.filter_alt,
-                          label: 'Filters',
-                          onTap: _showFilterOptions,
-                        ),
-                        const SizedBox(width: 8),
                         if (widget.media.type == MediaType.video)
                           _buildEditOption(
                             icon: Icons.content_cut,
@@ -813,82 +833,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                       : Colors.white,
                   fontSize: 12)),
         ],
-      ),
-    );
-  }
-
-  void _showFilterOptions() {
-    final filters = _createService.getFilters();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.grey[900],
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Select Filter',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 100,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: filters.length,
-                itemBuilder: (context, index) {
-                  final filter = filters[index];
-                  final isSelected = _selectedFilter == filter.id;
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedFilter = filter.id;
-                        _selectedFilterName = filter.name;
-                      });
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      width: 80,
-                      margin:
-                          const EdgeInsets.symmetric(horizontal: 4),
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 70,
-                            height: 70,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.grey[800],
-                              border: Border.all(
-                                color: isSelected
-                                    ? Colors.blue
-                                    : Colors.transparent,
-                                width: 3,
-                              ),
-                            ),
-                            child: Center(
-                              child: Text(filter.name[0],
-                                  style: const TextStyle(
-                                      color: Colors.white)),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(filter.name,
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 10),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

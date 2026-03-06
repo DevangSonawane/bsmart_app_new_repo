@@ -8,6 +8,21 @@ class CommentsSheet extends StatefulWidget {
   final String postId;
   const CommentsSheet({super.key, required this.postId});
 
+  static Future<void> show(BuildContext context, String postId) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.82,
+        child: CommentsSheet(postId: postId),
+      ),
+    );
+  }
+
   @override
   State<CommentsSheet> createState() => _CommentsSheetState();
 }
