@@ -2,87 +2,202 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/ledger_model.dart';
+import '../api/api.dart';
 import '../models/account_details_model.dart';
+import '../models/ledger_model.dart';
 
-/// Wallet service.
-///
-/// The new REST API does not yet expose wallet/transaction endpoints.
-/// This service now operates independently of Supabase and will be wired
-/// to REST endpoints once they are available.
 class WalletService {
   static final WalletService _instance = WalletService._internal();
   factory WalletService() => _instance;
 
   static const String _accountDetailsKey = 'wallet_account_details_v1';
 
+  final ApiClient _apiClient = ApiClient();
+  final AuthApi _authApi = AuthApi();
+
   AccountDetails? _accountDetails;
   bool _hasLoadedAccountDetails = false;
 
   WalletService._internal();
 
-  // Get current coin balance.
-  // TODO: Wire to REST API when `/wallet/balance` endpoint is available.
-  Future<int> getCoinBalance() async {
-    // Stub – return 0 until wallet API exists.
-    return 0;
+  Future<Map<String, dynamic>> _normalizeMap(dynamic raw) async {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return <String, dynamic>{};
   }
 
-  // Get equivalent value (assuming 1 coin = $0.01)
+  String _extractUserId(Map<String, dynamic> profile) {
+    final id = profile['id'] ?? profile['_id'] ?? profile['user_id'];
+    return id?.toString() ?? '';
+  }
+
+  Map<String, dynamic> _normalizeProfile(dynamic raw) {
+    if (raw is! Map) return const <String, dynamic>{};
+    final map = Map<String, dynamic>.from(raw);
+    if (map['user'] is Map) {
+      return Map<String, dynamic>.from(map['user'] as Map);
+    }
+    if (map['data'] is Map) {
+      final data = Map<String, dynamic>.from(map['data'] as Map);
+      if (data['user'] is Map) {
+        return Map<String, dynamic>.from(data['user'] as Map);
+      }
+      return data;
+    }
+    return map;
+  }
+
+  LedgerTransactionType _mapType(String rawType, String direction) {
+    final t = rawType.toUpperCase();
+    if (t.contains('GIFT') && direction == 'credit') {
+      return LedgerTransactionType.giftReceived;
+    }
+    if (t.contains('GIFT') && direction == 'debit') {
+      return LedgerTransactionType.giftSent;
+    }
+    if (t.contains('REFUND')) return LedgerTransactionType.refund;
+    if (direction == 'debit') return LedgerTransactionType.payout;
+    return LedgerTransactionType.adReward;
+  }
+
+  LedgerTransactionStatus _mapStatus(String rawStatus) {
+    final s = rawStatus.toUpperCase();
+    if (s == 'SUCCESS' || s == 'COMPLETED') {
+      return LedgerTransactionStatus.completed;
+    }
+    if (s == 'FAILED') return LedgerTransactionStatus.failed;
+    if (s == 'BLOCKED') return LedgerTransactionStatus.blocked;
+    return LedgerTransactionStatus.pending;
+  }
+
+  Future<Map<String, dynamic>> fetchMemberWalletHistoryForCurrentUser() async {
+    final meRaw = await _authApi.me();
+    final profile = _normalizeProfile(meRaw);
+    final userId = _extractUserId(profile);
+    if (userId.isEmpty) {
+      throw Exception('Could not resolve current user id');
+    }
+
+    final raw = await _apiClient.get('/wallet/member/$userId/history');
+    final data = await _normalizeMap(raw);
+    final success = data['success'];
+    if (success is bool && !success) {
+      final message = data['message']?.toString() ?? 'Failed to load wallet data';
+      throw Exception(message);
+    }
+    return data;
+  }
+
+  Future<int> getCoinBalance() async {
+    try {
+      final data = await fetchMemberWalletHistoryForCurrentUser();
+      final wallet = data['wallet'];
+      if (wallet is Map) {
+        final balance = wallet['balance'];
+        if (balance is int) return balance;
+        if (balance is num) return balance.toInt();
+        if (balance is String) return int.tryParse(balance) ?? 0;
+      }
+      return 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Future<double> getEquivalentValue() async {
     final balance = await getCoinBalance();
     return balance * 0.01;
   }
 
-  // Get all transactions.
   Future<List<LedgerTransaction>> getTransactions() async {
-    return [];
+    try {
+      final data = await fetchMemberWalletHistoryForCurrentUser();
+      final txRaw = data['transactions'];
+      if (txRaw is! List) return <LedgerTransaction>[];
+
+      final meRaw = await _authApi.me();
+      final profile = _normalizeProfile(meRaw);
+      final userId = _extractUserId(profile);
+
+      return txRaw.map((raw) {
+        final map = raw is Map<String, dynamic>
+            ? raw
+            : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
+        final direction = (map['direction'] ?? '').toString().toLowerCase();
+        final rawType = (map['type'] ?? 'UNKNOWN').toString();
+        final rawAmount = map['amount'];
+        int amount = 0;
+        if (rawAmount is int) amount = rawAmount;
+        if (rawAmount is num) amount = rawAmount.toInt();
+        if (rawAmount is String) amount = int.tryParse(rawAmount) ?? 0;
+        if (direction == 'debit' && amount > 0) amount = -amount;
+        if (direction == 'credit' && amount < 0) amount = amount.abs();
+
+        final createdAt = map['created_at']?.toString();
+        final timestamp = createdAt != null
+            ? DateTime.tryParse(createdAt) ?? DateTime.now()
+            : DateTime.now();
+
+        return LedgerTransaction(
+          id: (map['_id'] ?? map['id'] ?? timestamp.millisecondsSinceEpoch).toString(),
+          userId: userId,
+          type: _mapType(rawType, direction),
+          amount: amount,
+          timestamp: timestamp,
+          status: _mapStatus((map['status'] ?? '').toString()),
+          description: map['description']?.toString() ?? map['label']?.toString(),
+          relatedId: map['ad_id']?.toString(),
+          metadata: map,
+        );
+      }).toList();
+    } catch (_) {
+      return <LedgerTransaction>[];
+    }
   }
 
-  // Get filtered transactions
   Future<List<LedgerTransaction>> getFilteredTransactions({
     LedgerTransactionType? type,
     LedgerTransactionStatus? status,
   }) async {
-    return [];
+    var items = await getTransactions();
+    if (type != null) {
+      items = items.where((t) => t.type == type).toList();
+    }
+    if (status != null) {
+      items = items.where((t) => t.status == status).toList();
+    }
+    return items;
   }
 
-  // Method to update balance.
   Future<void> updateBalance(int amount, String description) async {
-    // TODO: Call REST API endpoint when available.
+    // Not yet exposed by backend.
   }
 
-  // Check if user has sufficient balance
   Future<bool> hasSufficientBalance(int amount) async {
     final balance = await getCoinBalance();
     return balance >= amount;
   }
 
-  // Send gift coins to another user.
   Future<bool> sendGiftCoins(
       int amount, String recipientId, String recipientName) async {
-    if (!await hasSufficientBalance(amount)) return false;
-    // TODO: Call REST API endpoint when available.
+    // Not yet exposed by backend.
     return false;
   }
 
-  // Add coins via ledger (for ads/rewards).
   Future<bool> addCoinsViaLedger({
     required int amount,
     required String description,
     required String adId,
     Map<String, dynamic>? metadata,
   }) async {
-    // TODO: Call REST API endpoint when available.
+    // Not yet exposed by backend.
     return false;
   }
 
-  // Returns cached account details if already loaded in-memory.
   AccountDetails? getAccountDetails() {
     return _accountDetails;
   }
 
-  // Load account details from local storage.
   Future<AccountDetails?> loadAccountDetails() async {
     if (_hasLoadedAccountDetails) {
       return _accountDetails;
@@ -104,15 +219,12 @@ class WalletService {
     return _accountDetails;
   }
 
-  // Save account details to local storage.
   Future<bool> saveAccountDetails(AccountDetails details) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final encoded = jsonEncode(details.toJson());
       final ok = await prefs.setString(_accountDetailsKey, encoded);
-      if (!ok) {
-        return false;
-      }
+      if (!ok) return false;
       _accountDetails = details;
       _hasLoadedAccountDetails = true;
       return true;
@@ -121,7 +233,6 @@ class WalletService {
     }
   }
 
-  // Delete account details from local storage.
   Future<void> deleteAccountDetails() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_accountDetailsKey);

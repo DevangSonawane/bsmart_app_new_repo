@@ -72,12 +72,12 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
   useEffect(() => {
     const story = stories[currentIndex];
     if (!story || !story.id || story.id === 'your_story') {
-      setCurrentItemIndex(0);
+      Promise.resolve().then(() => setCurrentItemIndex(0));
       return;
     }
 
     if (itemsByStoryId[story.id]) {
-      setCurrentItemIndex(0);
+      Promise.resolve().then(() => setCurrentItemIndex(0));
       return;
     }
 
@@ -89,7 +89,7 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
           ...prev,
           [story.id]: items,
         }));
-        setCurrentItemIndex(0);
+        Promise.resolve().then(() => setCurrentItemIndex(0));
       } catch (error) {
         console.error('Error fetching story items:', error);
       }
@@ -99,7 +99,7 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
   }, [currentIndex, stories, itemsByStoryId]);
 
   useEffect(() => {
-    setProgress(0);
+    Promise.resolve().then(() => setProgress(0));
     if (!currentStory) return;
 
     const items = storyItems;
@@ -119,11 +119,12 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
     }
 
     let cancelled = false;
-    const start = performance.now();
+    let start = null;
     const durationMs = durationSec * 1000;
 
     const step = (now) => {
       if (cancelled) return;
+      if (start == null) start = now;
       const elapsed = now - start;
       const pct = Math.min(100, (elapsed / durationMs) * 100);
       setProgress(pct);

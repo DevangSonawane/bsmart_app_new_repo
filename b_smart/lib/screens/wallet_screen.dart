@@ -1,5 +1,8 @@
+// ignore_for_file: unused_field, unused_element
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../api/api.dart';
 import '../services/wallet_service.dart';
 import '../models/account_details_model.dart';
 import '../theme/instagram_theme.dart';
@@ -19,6 +22,7 @@ class WalletScreen extends StatefulWidget {
 
 class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMixin {
   final WalletService _walletService = WalletService();
+  final AuthApi _authApi = AuthApi();
   int _coinBalance = 0;
   double _equivalentValue = 0;
   bool _isLifeTime = true;
@@ -26,6 +30,8 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
   int _totalSpentLifetime = 0;
   int _totalEarnedMonth = 0;
   int _totalSpentMonth = 0;
+  Map<String, dynamic>? _walletData;
+  Map<String, dynamic>? _meProfile;
   final bool _historyExpanded = false;
   List<LedgerTransaction> _transactions = [];
   DateTime? _filterStart;
@@ -48,19 +54,156 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
   void initState() {
     super.initState();
     _loadBalance();
-    _seedTransactions();
     _loadAccountDetails();
   }
 
   Future<void> _loadBalance() async {
-    final balance = await _walletService.getCoinBalance();
-    final value = await _walletService.getEquivalentValue();
-    if (mounted) {
+    try {
+      final meRaw = await _authApi.me();
+      final me = _normalizeProfile(meRaw);
+      final data = await _walletService.fetchMemberWalletHistoryForCurrentUser();
+      final wallet = data['wallet'] is Map ? Map<String, dynamic>.from(data['wallet'] as Map) : <String, dynamic>{};
+      final summary = data['summary'] is Map ? Map<String, dynamic>.from(data['summary'] as Map) : <String, dynamic>{};
+      final parsedTransactions = _mapApiTransactions(data);
+      final balanceRaw = wallet['balance'];
+      int balance = 0;
+      if (balanceRaw is int) {
+        balance = balanceRaw;
+      } else if (balanceRaw is num) {
+        balance = balanceRaw.toInt();
+      } else if (balanceRaw is String) {
+        balance = int.tryParse(balanceRaw) ?? 0;
+      }
+      final earnedFromSummary = _parseMaybeInt(summary['total_earned']);
+      final spentFromSummary = _parseMaybeInt(summary['total_deducted']);
+
+      int lifetimeEarned = 0;
+      int lifetimeSpent = 0;
+      int monthEarned = 0;
+      int monthSpent = 0;
+      final now = DateTime.now();
+      for (final t in parsedTransactions) {
+        if (t.amount > 0) {
+          lifetimeEarned += t.amount;
+          if (t.timestamp.year == now.year && t.timestamp.month == now.month) {
+            monthEarned += t.amount;
+          }
+        } else if (t.amount < 0) {
+          final abs = t.amount.abs();
+          lifetimeSpent += abs;
+          if (t.timestamp.year == now.year && t.timestamp.month == now.month) {
+            monthSpent += abs;
+          }
+        }
+      }
+
+      final value = balance * 0.01;
+      if (!mounted) return;
       setState(() {
+        _meProfile = me;
+        _walletData = data;
+        _transactions = parsedTransactions;
         _coinBalance = balance;
         _equivalentValue = value;
+        _totalEarnedLifetime = earnedFromSummary ?? lifetimeEarned;
+        _totalSpentLifetime = spentFromSummary ?? lifetimeSpent;
+        _totalEarnedMonth = monthEarned;
+        _totalSpentMonth = monthSpent;
       });
+    } catch (_) {
+      final balance = await _walletService.getCoinBalance();
+      final value = await _walletService.getEquivalentValue();
+      if (mounted) {
+        setState(() {
+          _coinBalance = balance;
+          _equivalentValue = value;
+        });
+      }
     }
+  }
+
+  Map<String, dynamic> _normalizeProfile(dynamic raw) {
+    if (raw is! Map) return const <String, dynamic>{};
+    final map = Map<String, dynamic>.from(raw);
+    if (map['user'] is Map) {
+      return Map<String, dynamic>.from(map['user'] as Map);
+    }
+    if (map['data'] is Map) {
+      final data = Map<String, dynamic>.from(map['data'] as Map);
+      if (data['user'] is Map) {
+        return Map<String, dynamic>.from(data['user'] as Map);
+      }
+      return data;
+    }
+    return map;
+  }
+
+  int? _parseMaybeInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  LedgerTransactionStatus _mapStatus(String rawStatus) {
+    final s = rawStatus.toUpperCase();
+    if (s == 'SUCCESS' || s == 'COMPLETED') return LedgerTransactionStatus.completed;
+    if (s == 'FAILED') return LedgerTransactionStatus.failed;
+    if (s == 'BLOCKED') return LedgerTransactionStatus.blocked;
+    return LedgerTransactionStatus.pending;
+  }
+
+  LedgerTransactionType _mapType(String rawType, String direction) {
+    final t = rawType.toUpperCase();
+    if (t.contains('GIFT') && direction == 'credit') {
+      return LedgerTransactionType.giftReceived;
+    }
+    if (t.contains('GIFT') && direction == 'debit') {
+      return LedgerTransactionType.giftSent;
+    }
+    if (t.contains('REFUND')) return LedgerTransactionType.refund;
+    if (direction == 'debit') return LedgerTransactionType.payout;
+    return LedgerTransactionType.adReward;
+  }
+
+  List<LedgerTransaction> _mapApiTransactions(Map<String, dynamic> data) {
+    final txRaw = data['transactions'];
+    if (txRaw is! List) return <LedgerTransaction>[];
+
+    final user = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
+    final userId = (user['_id'] ?? user['id'] ?? '').toString();
+
+    return txRaw.map((raw) {
+      final map = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
+      final direction = (map['direction'] ?? '').toString().toLowerCase();
+      final rawType = (map['type'] ?? 'UNKNOWN').toString();
+      final rawAmount = map['amount'];
+      int amount = 0;
+      if (rawAmount is int) amount = rawAmount;
+      if (rawAmount is num) amount = rawAmount.toInt();
+      if (rawAmount is String) amount = int.tryParse(rawAmount) ?? 0;
+      if (direction == 'debit' && amount > 0) amount = -amount;
+      if (direction == 'credit' && amount < 0) amount = amount.abs();
+
+      final createdAt = map['created_at']?.toString();
+      final timestamp = createdAt != null
+          ? DateTime.tryParse(createdAt)?.toLocal() ?? DateTime.now()
+          : DateTime.now();
+
+      return LedgerTransaction(
+        id: (map['_id'] ?? map['id'] ?? timestamp.millisecondsSinceEpoch).toString(),
+        userId: userId,
+        type: _mapType(rawType, direction),
+        amount: amount,
+        timestamp: timestamp,
+        status: _mapStatus((map['status'] ?? '').toString()),
+        description: map['description']?.toString() ?? map['label']?.toString(),
+        relatedId: map['ad_id']?.toString(),
+        metadata: map,
+      );
+    }).toList();
   }
 
   @override
@@ -1056,6 +1199,27 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
 
   Widget _buildAccountDetailsInline() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final walletUser = _walletData?['user'] is Map
+        ? Map<String, dynamic>.from(_walletData!['user'] as Map)
+        : <String, dynamic>{};
+    final user = <String, dynamic>{
+      ...walletUser,
+      ...?_meProfile,
+    };
+    final wallet = _walletData?['wallet'] is Map
+        ? Map<String, dynamic>.from(_walletData!['wallet'] as Map)
+        : <String, dynamic>{};
+    final companyDetails = user['company_details'] is Map
+        ? Map<String, dynamic>.from(user['company_details'] as Map)
+        : <String, dynamic>{};
+    final role = (user['role'] ?? '').toString().trim();
+    final name = (user['full_name'] ?? user['username'] ?? '—').toString();
+    final username = (user['username'] ?? '—').toString();
+    final avatarUrl = (user['avatar_url'] ?? '').toString().trim();
+    final email = (user['email'] ?? '—').toString();
+    final phone = (user['phone'] ?? '—').toString();
+    final currency = (wallet['currency'] ?? 'Coins').toString();
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -1067,81 +1231,220 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'UPI', label: Text('UPI')),
-              ButtonSegment(value: 'Bank', label: Text('Bank')),
-              ButtonSegment(value: 'PayPal', label: Text('PayPal')),
-            ],
-            selected: {_selectedPaymentMethod},
-            onSelectionChanged: (s) => setState(() => _selectedPaymentMethod = s.first),
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF7F7FA),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: InstagramTheme.borderGrey),
             ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    color: isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFEDEFF4),
+                  ),
+                  alignment: Alignment.center,
+                  child: avatarUrl.isNotEmpty
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            avatarUrl,
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(LucideIcons.user, size: 18),
+                          ),
+                        )
+                      : const Icon(LucideIcons.user, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                      ),
+                      Text(
+                        '@$username',
+                        style: const TextStyle(color: InstagramTheme.textGrey, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                if (role.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: const Color(0x33F97316),
+                      border: Border.all(color: const Color(0x55F97316)),
+                    ),
+                    child: Text(
+                      role.toUpperCase(),
+                      style: const TextStyle(
+                        color: Color(0xFFFB923C),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _accountDetailRow(
+            label: 'Email',
+            value: email,
+            icon: LucideIcons.mail,
+            isDark: isDark,
           ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Account Holder Name',
-              prefixIcon: Icon(Icons.person),
-            ),
+          _accountDetailRow(
+            label: 'Phone',
+            value: phone,
+            icon: LucideIcons.phone,
+            isDark: isDark,
           ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _accountNumberController,
-            decoration: InputDecoration(
-              labelText: _selectedPaymentMethod == 'UPI'
-                  ? 'UPI ID'
-                  : _selectedPaymentMethod == 'Bank'
-                      ? 'Account Number'
-                      : 'Email / ID',
-              prefixIcon: const Icon(Icons.account_balance_wallet),
-            ),
+          _accountDetailRow(
+            label: 'Balance',
+            value: '$_coinBalance Coins',
+            icon: LucideIcons.coins,
+            isDark: isDark,
+            valueColor: const Color(0xFFFB923C),
           ),
-          if (_selectedPaymentMethod == 'Bank') ...[
-            const SizedBox(height: 8),
-            TextField(
-              controller: _bankNameController,
-              decoration: const InputDecoration(
-                labelText: 'Bank Name',
-                prefixIcon: Icon(Icons.account_balance),
+          const SizedBox(height: 8),
+          _accountDetailRow(
+            label: 'Currency',
+            value: currency,
+            icon: LucideIcons.badgeDollarSign,
+            isDark: isDark,
+          ),
+          if (role.toLowerCase() == 'vendor' && companyDetails.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF8F9FC),
+                border: Border.all(color: InstagramTheme.borderGrey),
               ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _ifscController,
-              decoration: const InputDecoration(
-                labelText: 'IFSC Code',
-                prefixIcon: Icon(Icons.code),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(LucideIcons.building2, size: 14, color: InstagramTheme.textGrey),
+                      SizedBox(width: 6),
+                      Text(
+                        'Company Details',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _companyChip('Company', companyDetails['company_name']),
+                      _companyChip('Legal Name', companyDetails['legal_business_name']),
+                      _companyChip('Industry', companyDetails['industry']),
+                      _companyChip('Website', companyDetails['website']),
+                      _companyChip('Business Email', companyDetails['business_email']),
+                      _companyChip('Business Phone', companyDetails['business_phone']),
+                      _companyChip('City', companyDetails['city']),
+                      _companyChip('Country', companyDetails['country']),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _isSavingDetails ? null : () {
-                    _unfocus(context);
-                    _saveAccountInline();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: InstagramTheme.primaryPink,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: _isSavingDetails
-                      ? const SizedBox(
-                          height: 18, width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
-                        )
-                      : const Text('Save'),
-                ),
+        ],
+      ),
+    );
+  }
+
+  Widget _accountDetailRow({
+    required String label,
+    required String value,
+    required IconData icon,
+    required bool isDark,
+    Color? valueColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        color: isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF8F9FC),
+        border: Border.all(color: InstagramTheme.borderGrey),
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: InstagramTheme.textGrey, fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          const Spacer(),
+          Icon(icon, size: 12, color: InstagramTheme.textGrey),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              value.trim().isEmpty ? '—' : value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: valueColor ?? (isDark ? Colors.white : InstagramTheme.textBlack),
               ),
-            ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _companyChip(String label, dynamic rawValue) {
+    final value = (rawValue ?? '').toString().trim();
+    return Container(
+      width: 140,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        color: Colors.white.withValues(alpha: 0.04),
+        border: Border.all(color: InstagramTheme.borderGrey),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 9,
+              color: InstagramTheme.textGrey,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value.isEmpty ? '—' : value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ],
       ),

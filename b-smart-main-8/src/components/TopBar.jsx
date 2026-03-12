@@ -6,6 +6,14 @@ import { useSelector } from 'react-redux';
 const TopBar = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const { userObject } = useSelector((state) => state.auth);
+  const getInitials = (name) => {
+    const raw = (name || '').trim();
+    if (!raw) return 'U';
+    const parts = raw.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.[0] || 'U';
+    const second = parts.length > 1 ? (parts[1]?.[0] || '') : '';
+    return `${first}${second}`.toUpperCase();
+  };
 
   return (
     <div className="md:hidden fixed top-0 left-0 right-0 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex justify-between items-center z-50">
@@ -65,11 +73,17 @@ const TopBar = () => {
         <Link to="/profile">
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-insta-yellow via-insta-orange to-insta-pink p-[1.5px]">
             <div className="w-full h-full rounded-full bg-white dark:bg-black p-[1px]">
-              <img
-                src={userObject?.avatar_url || "https://i.pravatar.cc/150?u=my_profile"}
-                alt={userObject?.username || "Profile"}
-                className="w-full h-full rounded-full object-cover"
-              />
+              {userObject?.avatar_url ? (
+                <img
+                  src={userObject.avatar_url}
+                  alt={userObject?.username || 'Profile'}
+                  className="w-full h-full rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full rounded-full bg-white dark:bg-black flex items-center justify-center text-[11px] font-bold text-gray-900 dark:text-white">
+                  {getInitials(userObject?.full_name || userObject?.username)}
+                </div>
+              )}
             </div>
           </div>
         </Link>

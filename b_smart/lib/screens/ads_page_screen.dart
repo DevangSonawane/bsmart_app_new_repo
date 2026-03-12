@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import '../api/api_exceptions.dart';
+import '../api/follows_api.dart';
 import '../models/ad_model.dart';
 import '../models/ad_category_model.dart';
 import '../services/ads_service.dart';
@@ -18,6 +21,7 @@ class AdsPageScreen extends StatefulWidget {
 
 class _AdsPageScreenState extends State<AdsPageScreen> {
   final AdsService _adsService = AdsService();
+  static final Set<String> _sessionViewedAdIds = <String>{};
 
   List<AdCategory> _categories = [];
   String _selectedCategoryId = 'All';
@@ -27,8 +31,8 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   bool _isLoading = true;
   String? _error;
   final PageController _pageController = PageController();
+  final FocusNode _keyboardFocusNode = FocusNode(debugLabel: 'ads-feed-focus');
   int _focusedIndex = 0;
-  final Set<String> _recordedViewAdIds = <String>{};
 
   @override
   void initState() {
@@ -38,6 +42,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
 
   @override
   void dispose() {
+    _keyboardFocusNode.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -148,19 +153,50 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   }
 
   Future<void> _recordViewForAd(Ad ad) async {
-    if (ad.id.isEmpty || _recordedViewAdIds.contains(ad.id)) return;
+    if (ad.id.isEmpty || _sessionViewedAdIds.contains(ad.id)) return;
     final userId = await CurrentUser.id;
     if (userId == null || userId.trim().isEmpty) return;
 
-    _recordedViewAdIds.add(ad.id);
+    _sessionViewedAdIds.add(ad.id);
     try {
       await _adsService.recordAdView(adId: ad.id, userId: userId);
     } catch (_) {
-      _recordedViewAdIds.remove(ad.id);
+      _sessionViewedAdIds.remove(ad.id);
     }
   }
 
   Future<void> _openAdComments(Ad ad) async {
+    final isDesktop = MediaQuery.of(context).size.width >= 768;
+    if (isDesktop) {
+      await showGeneralDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: 'Comments',
+        barrierColor: Colors.black54,
+        transitionDuration: const Duration(milliseconds: 180),
+        pageBuilder: (context, _, __) {
+          return SafeArea(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                width: 360,
+                height: MediaQuery.of(context).size.height * 0.78,
+                margin: const EdgeInsets.only(right: 18),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: AdCommentsSheet(adId: ad.id),
+              ),
+            ),
+          );
+        },
+      );
+      return;
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -175,8 +211,78 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     );
   }
 
+  void _goToPage(int index) {
+    if (_ads.isEmpty) return;
+    final next = index.clamp(0, _ads.length - 1);
+    if (next == _focusedIndex) return;
+    _pageController.animateToPage(
+      next,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _handleKeyboard(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowDown) {
+      _goToPage(_focusedIndex + 1);
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      _goToPage(_focusedIndex - 1);
+    }
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    if (event.scrollDelta.dy.abs() < 20) return;
+    if (event.scrollDelta.dy > 0) {
+      _goToPage(_focusedIndex + 1);
+    } else {
+      _goToPage(_focusedIndex - 1);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width >= 768;
+    final feedView = KeyboardListener(
+      focusNode: _keyboardFocusNode,
+      autofocus: true,
+      onKeyEvent: _handleKeyboard,
+      child: Listener(
+        onPointerSignal: _handlePointerSignal,
+        child: PageView.builder(
+          controller: _pageController,
+          scrollDirection: Axis.vertical,
+          onPageChanged: (index) {
+            setState(() {
+              _focusedIndex = index;
+            });
+            if (index >= 0 && index < _ads.length) {
+              unawaited(_recordViewForAd(_ads[index]));
+            }
+          },
+          itemCount: _ads.length,
+          itemBuilder: (context, index) {
+            final ad = _ads[index];
+            return AdVideoItem(
+              key: ValueKey('ad-video-${ad.id}'),
+              ad: ad,
+              isActive: index == _focusedIndex,
+              onAutoNext: () {
+                if (index + 1 < _ads.length) {
+                  _goToPage(index + 1);
+                }
+              },
+              onOpenComments: () async {
+                await _openAdComments(ad);
+              },
+            );
+          },
+        ),
+      ),
+    );
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -192,32 +298,28 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                   ? _buildErrorState()
                   : _ads.isEmpty
                       ? _buildEmptyState()
-                      : PageView.builder(
-                          controller: _pageController,
-                          scrollDirection: Axis.vertical,
-                          onPageChanged: (index) {
-                            setState(() {
-                              _focusedIndex = index;
-                            });
-                            if (index >= 0 && index < _ads.length) {
-                              unawaited(_recordViewForAd(_ads[index]));
-                            }
-                          },
-                          itemCount: _ads.length,
-                          itemBuilder: (context, index) {
-                            final ad = _ads[index];
-                            return AdVideoItem(
-                              key: ValueKey('ad-video-${ad.id}'),
-                              ad: ad,
-                              isActive: index == _focusedIndex,
-                              onOpenComments: () async {
-                                await _openAdComments(ad);
-                                if (!mounted) return;
-                                await _loadCategoriesAndAds();
-                              },
-                            );
-                          },
-                        ),
+                      : isDesktop
+                          ? Center(
+                              child: Container(
+                                width: 360,
+                                height: MediaQuery.of(context).size.height * 0.9,
+                                decoration: BoxDecoration(
+                                  color: Colors.black,
+                                  borderRadius: BorderRadius.circular(22),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0xAA000000),
+                                      blurRadius: 28,
+                                      offset: Offset(0, 14),
+                                    ),
+                                  ],
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: feedView,
+                              ),
+                            )
+                          : feedView,
 
           // Layer 2: Top Navigation Overlay
           Positioned(
@@ -225,33 +327,88 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
             left: 0,
             right: 0,
             child: SafeArea(
-              child: _buildTopBar(),
+              child: _buildTopBar(isDesktop: isDesktop),
             ),
           ),
+          if (!_isLoading && _error == null && _ads.isNotEmpty && isDesktop)
+            Positioned(
+              right: 20,
+              top: MediaQuery.of(context).size.height * 0.45,
+              child: Column(
+                children: [
+                  _navButton(
+                    icon: Icons.keyboard_arrow_up,
+                    onTap: _focusedIndex > 0 ? () => _goToPage(_focusedIndex - 1) : null,
+                  ),
+                  const SizedBox(height: 10),
+                  _navButton(
+                    icon: Icons.keyboard_arrow_down,
+                    onTap: _focusedIndex < _ads.length - 1
+                        ? () => _goToPage(_focusedIndex + 1)
+                        : null,
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildTopBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.black.withOpacity(0.6),
-            Colors.transparent,
-          ],
+  Widget _navButton({required IconData icon, VoidCallback? onTap}) {
+    final disabled = onTap == null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: 0.12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
         ),
+        child: Icon(
+          icon,
+          color: disabled ? Colors.white38 : Colors.white,
+          size: 22,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar({required bool isDesktop}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        vertical: isDesktop ? 6 : 8,
+        horizontal: 4,
+      ),
+      decoration: BoxDecoration(
+        color: isDesktop ? const Color(0xE60A0A0A) : null,
+        border: isDesktop
+            ? Border(
+                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+              )
+            : null,
+        gradient: isDesktop
+            ? null
+            : LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.6),
+                  Colors.transparent,
+                ],
+              ),
       ),
       child: Row(
         children: [
           // Back Button
           IconButton(
-            icon: const Icon(LucideIcons.chevronLeft,
-                color: Colors.white, size: 28),
+            icon: Icon(
+              LucideIcons.chevronLeft,
+              color: isDesktop ? Colors.white70 : Colors.white,
+              size: isDesktop ? 22 : 28,
+            ),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
 
@@ -263,7 +420,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 children: _categories
-                    .map((c) => _buildCategoryChip(c.id, c.name))
+                    .map((c) => _buildCategoryChip(c.id, c.name, isDesktop))
                     .toList(),
               ),
             ),
@@ -271,7 +428,11 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
 
           // Search Button
           IconButton(
-            icon: const Icon(LucideIcons.search, color: Colors.white, size: 24),
+            icon: Icon(
+              LucideIcons.search,
+              color: isDesktop ? Colors.white70 : Colors.white,
+              size: isDesktop ? 20 : 24,
+            ),
             onPressed: _openSearchDialog,
           ),
         ],
@@ -279,28 +440,39 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     );
   }
 
-  Widget _buildCategoryChip(String id, String label) {
+  Widget _buildCategoryChip(String id, String label, bool isDesktop) {
     final isSelected = _selectedCategoryId == id;
     return GestureDetector(
       onTap: () => _onCategorySelected(id),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: isDesktop ? 12 : 16,
+          vertical: isDesktop ? 5 : 6,
+        ),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.black.withOpacity(0.3),
+          color: isSelected
+              ? Colors.white
+              : (isDesktop
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.3)),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? Colors.white : Colors.white.withOpacity(0.2),
+            color: isSelected
+                ? Colors.white
+                : Colors.white.withValues(alpha: isDesktop ? 0.10 : 0.2),
             width: 1,
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.black : Colors.white.withOpacity(0.9),
+            color: isSelected
+                ? Colors.black
+                : Colors.white.withValues(alpha: isDesktop ? 0.75 : 0.9),
             fontWeight: FontWeight.w600,
-            fontSize: 13,
+            fontSize: isDesktop ? 12 : 13,
           ),
         ),
       ),
@@ -317,7 +489,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
           Text(
             'No ads available in this category',
             style:
-                TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 16),
+                TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
           ),
         ],
       ),
@@ -348,7 +520,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style:
-                  TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                  TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
             ),
             const SizedBox(height: 16),
             TextButton(
@@ -366,12 +538,14 @@ class AdVideoItem extends StatefulWidget {
   final Ad ad;
   final bool isActive;
   final Future<void> Function() onOpenComments;
+  final VoidCallback onAutoNext;
 
   const AdVideoItem({
     super.key,
     required this.ad,
     required this.isActive,
     required this.onOpenComments,
+    required this.onAutoNext,
   });
 
   @override
@@ -382,15 +556,22 @@ class _AdVideoItemState extends State<AdVideoItem>
     with SingleTickerProviderStateMixin {
   VideoPlayerController? _controller;
   final AdsService _adsService = AdsService();
+  final FollowsApi _followsApi = FollowsApi();
   bool _isInitialized = false;
   bool _isLiked = false;
+  bool _isDisliked = false;
   bool _isSaved = false;
+  bool _isFollowing = false;
   bool _isMuted = false;
   bool _isLikeLoading = false;
-  bool _isSaveLoading = false;
+  bool _isDislikeLoading = false;
+  bool _isFollowLoading = false;
   int _likesCount = 0;
   bool _userPaused = false;
   bool _resumeAttemptInFlight = false;
+  double _progress = 0;
+  Timer? _imageProgressTimer;
+  bool _captionExpanded = false;
 
   // Animation for music disc
   late AnimationController _discController;
@@ -399,6 +580,8 @@ class _AdVideoItemState extends State<AdVideoItem>
   void initState() {
     super.initState();
     _isLiked = widget.ad.isLikedByMe;
+    _isDisliked = widget.ad.isDislikedByMe;
+    _isSaved = widget.ad.isSavedByMe;
     _likesCount = widget.ad.likesCount;
     _discController = AnimationController(
       duration: const Duration(seconds: 5),
@@ -406,6 +589,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     );
     if (widget.isActive) _discController.repeat();
     _initializeVideo();
+    _startOrStopProgress();
   }
 
   @override
@@ -413,13 +597,18 @@ class _AdVideoItemState extends State<AdVideoItem>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.ad.id != widget.ad.id) {
       _isLiked = widget.ad.isLikedByMe;
+      _isDisliked = widget.ad.isDislikedByMe;
+      _isSaved = widget.ad.isSavedByMe;
       _likesCount = widget.ad.likesCount;
+      _captionExpanded = false;
       _isInitialized = false;
       _userPaused = false;
+      _progress = 0;
       _controller?.removeListener(_onVideoTick);
       unawaited(_controller?.dispose());
       _controller = null;
       _initializeVideo();
+      _startOrStopProgress();
     }
     if (widget.isActive != oldWidget.isActive) {
       if (widget.isActive) {
@@ -433,6 +622,7 @@ class _AdVideoItemState extends State<AdVideoItem>
         unawaited(_controller?.pause());
         _discController.stop();
       }
+      _startOrStopProgress();
     }
   }
 
@@ -440,6 +630,7 @@ class _AdVideoItemState extends State<AdVideoItem>
   void dispose() {
     _controller?.removeListener(_onVideoTick);
     _controller?.dispose();
+    _imageProgressTimer?.cancel();
     _discController.dispose();
     super.dispose();
   }
@@ -458,6 +649,7 @@ class _AdVideoItemState extends State<AdVideoItem>
         if (widget.isActive) {
           await _controller!.play();
         }
+        _startOrStopProgress();
         if (mounted) {
           setState(() {
             _isInitialized = true;
@@ -478,11 +670,25 @@ class _AdVideoItemState extends State<AdVideoItem>
 
     final value = controller.value;
     if (!value.isInitialized || value.hasError) return;
+    if (value.duration > Duration.zero) {
+      final pct = (value.position.inMilliseconds / value.duration.inMilliseconds)
+          .clamp(0.0, 1.0);
+      if ((_progress - pct).abs() > 0.004 && mounted) {
+        setState(() {
+          _progress = pct;
+        });
+      }
+    }
 
     final duration = value.duration;
     if (duration > Duration.zero &&
         value.position >= duration - const Duration(milliseconds: 180)) {
       unawaited(controller.seekTo(Duration.zero));
+      if (mounted) {
+        setState(() {
+          _progress = 0;
+        });
+      }
       if (!value.isPlaying) {
         unawaited(controller.play());
       }
@@ -501,6 +707,36 @@ class _AdVideoItemState extends State<AdVideoItem>
         }
       }());
     }
+  }
+
+  bool get _isVideoAd => (widget.ad.videoUrl ?? '').trim().isNotEmpty;
+
+  void _startOrStopProgress() {
+    _imageProgressTimer?.cancel();
+    if (!widget.isActive) return;
+    if (_isVideoAd) return;
+
+    final start = DateTime.now();
+    const total = Duration(seconds: 15);
+    setState(() {
+      _progress = 0;
+    });
+    _imageProgressTimer =
+        Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted || !widget.isActive) {
+        timer.cancel();
+        return;
+      }
+      final elapsed = DateTime.now().difference(start);
+      final pct = (elapsed.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
+      setState(() {
+        _progress = pct;
+      });
+      if (pct >= 1) {
+        timer.cancel();
+        widget.onAutoNext();
+      }
+    });
   }
 
   void _togglePlay() {
@@ -533,6 +769,9 @@ class _AdVideoItemState extends State<AdVideoItem>
       _isLikeLoading = true;
       _isLiked = nextLiked;
       _likesCount = nextLikes;
+      if (nextLiked) {
+        _isDisliked = false;
+      }
     });
 
     try {
@@ -583,7 +822,6 @@ class _AdVideoItemState extends State<AdVideoItem>
             'liked_by_me'
           ],
         );
-        final coinsEarned = res['coins_earned'];
         if (mounted) {
           setState(() {
             if (serverLikes != null) {
@@ -592,15 +830,10 @@ class _AdVideoItemState extends State<AdVideoItem>
             if (serverLiked != null) {
               _isLiked = serverLiked;
             }
+            if (_isLiked) {
+              _isDisliked = false;
+            }
           });
-          if (coinsEarned is num && coinsEarned > 0) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('You earned ${coinsEarned.toInt()} coins'),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          }
         }
       } else {
         final res =
@@ -618,7 +851,6 @@ class _AdVideoItemState extends State<AdVideoItem>
             'liked_by_me'
           ],
         );
-        final coinsDeducted = res['coins_deducted'];
         if (mounted) {
           setState(() {
             if (serverLikes != null) {
@@ -629,16 +861,9 @@ class _AdVideoItemState extends State<AdVideoItem>
             }
             if (isDisliked is bool && isDisliked) {
               _isLiked = false;
+              _isDisliked = true;
             }
           });
-          if (coinsDeducted is num && coinsDeducted > 0) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('${coinsDeducted.toInt()} coins deducted'),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          }
         }
       }
     } on ApiException catch (e) {
@@ -661,14 +886,6 @@ class _AdVideoItemState extends State<AdVideoItem>
           _isLiked = previousLiked;
           _likesCount = previousLikes;
         });
-        final message =
-            e.message.trim().isEmpty ? 'Unable to update like' : e.message;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 2),
-          ),
-        );
       }
     } catch (_) {
       if (mounted) {
@@ -676,12 +893,6 @@ class _AdVideoItemState extends State<AdVideoItem>
           _isLiked = previousLiked;
           _likesCount = previousLikes;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to update like right now'),
-            duration: Duration(seconds: 2),
-          ),
-        );
       }
     } finally {
       if (mounted) {
@@ -692,77 +903,128 @@ class _AdVideoItemState extends State<AdVideoItem>
     }
   }
 
-  Future<void> _toggleSaveAd() async {
-    if (_isSaveLoading || widget.ad.id.isEmpty) return;
-    setState(() => _isSaveLoading = true);
+  Future<void> _toggleDislike() async {
+    if (_isDislikeLoading || widget.ad.id.isEmpty) return;
+
+    final previousDisliked = _isDisliked;
+    final previousLiked = _isLiked;
+    final previousLikes = _likesCount;
+    final nextDisliked = !previousDisliked;
+
+    setState(() {
+      _isDislikeLoading = true;
+      _isDisliked = nextDisliked;
+      if (nextDisliked && _isLiked) {
+        _isLiked = false;
+        _likesCount = _likesCount > 0 ? _likesCount - 1 : 0;
+      }
+    });
+
     try {
-      if (_isSaved) {
-        final res = await _adsService.unsaveAd(widget.ad.id);
-        final isUnsaved = res['is_unsaved'];
-        if (!mounted) return;
-        setState(() {
-          _isSaved = !(isUnsaved is bool ? isUnsaved : true);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Ad unsaved'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      } else {
-        final res = await _adsService.saveAd(widget.ad.id);
-        final isSaved = res['is_saved'];
-        final coinsEarned = res['coins_earned'];
-        if (!mounted) return;
-        setState(() {
-          _isSaved = isSaved is bool ? isSaved : true;
-        });
-        if (coinsEarned is num && coinsEarned > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  Text('Ad saved. You earned ${coinsEarned.toInt()} coins'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Ad saved successfully'),
-              duration: Duration(seconds: 2),
-            ),
-          );
+      final currentUserId = await CurrentUser.id;
+      final userId = currentUserId?.trim();
+      if (userId == null || userId.isEmpty) {
+        throw Exception('Please log in to dislike ads');
+      }
+
+      final res = nextDisliked
+          ? await _adsService.dislikeAd(adId: widget.ad.id, userId: userId)
+          : await _adsService.likeAd(adId: widget.ad.id, userId: userId);
+
+      bool? readBool(Map<String, dynamic> data, List<String> keys) {
+        for (final key in keys) {
+          final value = data[key];
+          if (value is bool) return value;
+          if (value is num) return value != 0;
+          if (value is String) {
+            final lower = value.trim().toLowerCase();
+            if (lower == 'true' || lower == '1') return true;
+            if (lower == 'false' || lower == '0') return false;
+          }
         }
+        return null;
       }
-    } on ApiException catch (e) {
-      if (e.statusCode == 409) {
-        if (!mounted) return;
-        setState(() => _isSaved = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ad already saved')),
-        );
-      } else if (e.statusCode == 400 && _isSaved) {
-        if (!mounted) return;
-        setState(() => _isSaved = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Ad was not saved'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      } else {
-        rethrow;
+
+      int? readInt(Map<String, dynamic> data, List<String> keys) {
+        for (final key in keys) {
+          final value = data[key];
+          if (value is int) return value;
+          if (value is num) return value.toInt();
+          if (value is String) {
+            final parsed = int.tryParse(value);
+            if (parsed != null) return parsed;
+          }
+        }
+        return null;
       }
-    } catch (e) {
+
+      final serverDisliked =
+          readBool(res, const ['is_disliked', 'disliked', 'isDisliked']);
+      final serverLiked = readBool(res, const [
+        'is_liked',
+        'liked',
+        'isLiked',
+        'is_liked_by_me',
+        'liked_by_me'
+      ]);
+      final serverLikes = readInt(res, const ['likes_count', 'likesCount']);
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update save: $e')),
-      );
+      setState(() {
+        if (serverDisliked != null) _isDisliked = serverDisliked;
+        if (serverLiked != null) _isLiked = serverLiked;
+        if (serverLikes != null) _likesCount = serverLikes;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isDisliked = previousDisliked;
+        _isLiked = previousLiked;
+        _likesCount = previousLikes;
+      });
     } finally {
       if (mounted) {
-        setState(() => _isSaveLoading = false);
+        setState(() => _isDislikeLoading = false);
       }
     }
+  }
+
+  Future<void> _toggleFollow() async {
+    if (_isFollowLoading) return;
+    final targetUserId = widget.ad.userId?.trim() ?? '';
+    if (targetUserId.isEmpty) return;
+
+    final previous = _isFollowing;
+    setState(() {
+      _isFollowLoading = true;
+      _isFollowing = !previous;
+    });
+
+    try {
+      if (previous) {
+        await _followsApi.unfollow(targetUserId);
+      } else {
+        await _followsApi.follow(targetUserId);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isFollowing = previous;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFollowLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleSaveAd() async {
+    if (widget.ad.id.isEmpty) return;
+    setState(() {
+      _isSaved = !_isSaved;
+    });
   }
 
   @override
@@ -775,11 +1037,15 @@ class _AdVideoItemState extends State<AdVideoItem>
           onTap: _togglePlay,
           child: Container(
             color: Colors.black,
-            child: _isInitialized && _controller != null
-                ? Center(
-                    child: AspectRatio(
-                      aspectRatio: _controller!.value.aspectRatio,
-                      child: VideoPlayer(_controller!),
+            child: _isInitialized && _controller != null && _isVideoAd
+                ? ClipRect(
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: _controller!.value.size.width,
+                        height: _controller!.value.size.height,
+                        child: VideoPlayer(_controller!),
+                      ),
                     ),
                   )
                 : widget.ad.imageUrl != null
@@ -800,10 +1066,10 @@ class _AdVideoItemState extends State<AdVideoItem>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withOpacity(0.3),
+                  Colors.black.withValues(alpha: 0.3),
                   Colors.transparent,
                   Colors.transparent,
-                  Colors.black.withOpacity(0.6),
+                  Colors.black.withValues(alpha: 0.6),
                 ],
                 stops: const [0.0, 0.2, 0.8, 1.0],
               ),
@@ -812,20 +1078,46 @@ class _AdVideoItemState extends State<AdVideoItem>
         ),
 
         // 2. Progress Bar (Top)
-        if (_isInitialized && _controller != null)
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            height: 2.5,
+            color: Colors.white.withValues(alpha: 0.22),
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: _progress,
+              child: Container(color: Colors.white),
+            ),
+          ),
+        ),
+
+        if (widget.ad.coinReward > 0)
           Positioned(
-            bottom: 60,
-            left: 0,
-            right: 0,
-            child: VideoProgressIndicator(
-              _controller!,
-              allowScrubbing: false,
-              colors: const VideoProgressColors(
-                playedColor: Colors.white,
-                bufferedColor: Colors.white24,
-                backgroundColor: Colors.white10,
+            top: 12,
+            left: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(999),
               ),
-              padding: EdgeInsets.zero,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(LucideIcons.coins, color: Colors.white, size: 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    '+${widget.ad.coinReward}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -845,6 +1137,13 @@ class _AdVideoItemState extends State<AdVideoItem>
               ),
               const SizedBox(height: 16),
               _buildGlassAction(
+                icon: _isDisliked ? Icons.thumb_down_alt : Icons.thumb_down_alt_outlined,
+                label: _isDisliked ? 'Disliked' : 'Dislike',
+                iconColor: _isDisliked ? Colors.blue : Colors.white,
+                onTap: _toggleDislike,
+              ),
+              const SizedBox(height: 16),
+              _buildGlassAction(
                 icon: LucideIcons.messageCircle,
                 label: _formatCount(widget.ad.commentsCount),
                 onTap: () => unawaited(widget.onOpenComments()),
@@ -852,7 +1151,7 @@ class _AdVideoItemState extends State<AdVideoItem>
               const SizedBox(height: 16),
               _buildGlassAction(
                 icon: LucideIcons.send,
-                label: _formatCount(widget.ad.sharesCount),
+                label: 'Share',
                 onTap: () {},
                 rotate: -0.2, // ~12 degrees
               ),
@@ -876,31 +1175,32 @@ class _AdVideoItemState extends State<AdVideoItem>
           ),
         ),
 
-        // 4. Mute Button (Floating)
-        Positioned(
-          right: 60,
-          bottom: 140,
-          child: GestureDetector(
-            onTap: () {
-              setState(() {
-                _isMuted = !_isMuted;
-                _controller?.setVolume(_isMuted ? 0 : 1);
-              });
-            },
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                color: Colors.white,
-                size: 16,
+        // 4. Mute Button (Floating) - video ads only
+        if (_isVideoAd)
+          Positioned(
+            right: 60,
+            bottom: 140,
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _isMuted = !_isMuted;
+                  _controller?.setVolume(_isMuted ? 0 : 1);
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                  color: Colors.white,
+                  size: 16,
+                ),
               ),
             ),
           ),
-        ),
 
         // 5. Bottom Info Overlay
         Positioned(
@@ -918,7 +1218,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                          color: Colors.white.withOpacity(0.3), width: 1),
+                          color: Colors.white.withValues(alpha: 0.3), width: 1),
                     ),
                     child: CircleAvatar(
                       radius: 16,
@@ -964,9 +1264,9 @@ class _AdVideoItemState extends State<AdVideoItem>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: Colors.amber.withOpacity(0.2),
+                              color: Colors.amber.withValues(alpha: 0.2),
                               border: Border.all(
-                                  color: Colors.amber.withOpacity(0.4)),
+                                  color: Colors.amber.withValues(alpha: 0.4)),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Row(
@@ -991,17 +1291,26 @@ class _AdVideoItemState extends State<AdVideoItem>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
+                            color: _isFollowing
+                                ? Colors.green.withValues(alpha: 0.15)
+                                : Colors.white.withValues(alpha: 0.1),
                             border: Border.all(
-                                color: Colors.white.withOpacity(0.4)),
+                                color: _isFollowing
+                                    ? Colors.green.withValues(alpha: 0.45)
+                                    : Colors.white.withValues(alpha: 0.4)),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Text(
-                            'Follow',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
+                          child: GestureDetector(
+                            onTap: _isFollowLoading ? null : _toggleFollow,
+                            child: Text(
+                              _isFollowLoading
+                                  ? '...'
+                                  : (_isFollowing ? 'Following' : 'Follow'),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
@@ -1013,15 +1322,60 @@ class _AdVideoItemState extends State<AdVideoItem>
               const SizedBox(height: 8),
 
               // Description
-              Text(
-                (widget.ad.caption ?? widget.ad.description).isNotEmpty
-                    ? (widget.ad.caption ?? widget.ad.description)
-                    : 'Sponsored',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 14, height: 1.4),
-              ),
+              Builder(builder: (context) {
+                final caption =
+                    (widget.ad.caption ?? widget.ad.description).trim().isEmpty
+                        ? 'Sponsored'
+                        : (widget.ad.caption ?? widget.ad.description);
+                final words = caption.trim().split(RegExp(r'\s+'));
+                final isLong = words.length > 5;
+                final preview = isLong ? words.take(5).join(' ') : caption;
+                return RichText(
+                  text: TextSpan(
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 14, height: 1.4),
+                    children: [
+                      TextSpan(text: _captionExpanded || !isLong ? caption : preview),
+                      if (!_captionExpanded && isLong)
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: GestureDetector(
+                            onTap: () => setState(() => _captionExpanded = true),
+                            child: const Padding(
+                              padding: EdgeInsets.only(left: 3),
+                              child: Text(
+                                '... more',
+                                style: TextStyle(
+                                  color: Color(0xCCFFFFFF),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (_captionExpanded && isLong)
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: GestureDetector(
+                            onTap: () => setState(() => _captionExpanded = false),
+                            child: const Padding(
+                              padding: EdgeInsets.only(left: 4),
+                              child: Text(
+                                'less',
+                                style: TextStyle(
+                                  color: Color(0xCCFFFFFF),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }),
               const SizedBox(height: 4),
 
               // Category
@@ -1030,7 +1384,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                 Text(
                   widget.ad.category ?? widget.ad.targetCategories.first,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withValues(alpha: 0.6),
                     fontSize: 12,
                   ),
                 ),
@@ -1081,7 +1435,7 @@ class _AdVideoItemState extends State<AdVideoItem>
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               shape: BoxShape.circle,
               border: Border.all(
                   color:
@@ -1135,7 +1489,7 @@ class _AdVideoItemState extends State<AdVideoItem>
         decoration: BoxDecoration(
           color: Colors.black87,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.2), width: 8),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 8),
         ),
         child: CircleAvatar(
           backgroundImage: widget.ad.companyLogo != null
@@ -1275,8 +1629,32 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
       setState(() {
         _comments = list;
       });
+      await _autoLoadRepliesForComments(list);
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _autoLoadRepliesForComments(
+      List<Map<String, dynamic>> comments) async {
+    final futures = <Future<void>>[];
+    for (final comment in comments) {
+      final commentId = _commentId(comment);
+      if (commentId.isEmpty) continue;
+      futures.add(() async {
+        try {
+          final replies = await _adsService.fetchAdCommentReplies(commentId);
+          if (!mounted) return;
+          if (replies.isNotEmpty) {
+            setState(() {
+              _repliesByComment[commentId] = replies;
+            });
+          }
+        } catch (_) {}
+      }());
+    }
+    if (futures.isNotEmpty) {
+      await Future.wait(futures);
     }
   }
 
@@ -1371,6 +1749,28 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value) ?? 0;
     return 0;
+  }
+
+  int _commentReplyCount(Map<String, dynamic> c, String id) {
+    final loaded = (_repliesByComment[id] ?? const <Map<String, dynamic>>[]).length;
+    int parseCount(dynamic value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
+    final meta = [
+      c['reply_count'],
+      c['replies_count'],
+      c['replyCount'],
+      c['repliesCount'],
+      c['total_replies'],
+      c['totalReplies'],
+      c['children_count'],
+      c['childrenCount'],
+    ].map(parseCount).fold<int>(0, (maxValue, current) => current > maxValue ? current : maxValue);
+    return loaded > meta ? loaded : meta;
   }
 
   Future<void> _toggleCommentLike({
@@ -1684,13 +2084,18 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
             ),
           ),
           const SizedBox(height: 10),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
                 Text(
-                  'Comments',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  'Comments (${_comments.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => Navigator.of(context).maybePop(),
                 ),
               ],
             ),
@@ -1717,6 +2122,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                           final dislikesCount = _commentDislikeCount(c);
                           final replies = _repliesByComment[id] ??
                               const <Map<String, dynamic>>[];
+                          final replyCount = _commentReplyCount(c, id);
                           final showReplies = _expandedReplies.contains(id);
                           final isLoadingReplies = _loadingReplies.contains(id);
                           return Column(
@@ -1806,7 +2212,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                                 ),
                                 child: const Text('Reply'),
                               ),
-                              if (id.isNotEmpty)
+                              if (id.isNotEmpty && replyCount > 0)
                                 TextButton(
                                   onPressed: isLoadingReplies
                                       ? null
@@ -1820,7 +2226,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                                         ? 'Loading replies...'
                                         : (showReplies
                                             ? 'Hide replies'
-                                            : 'View replies'),
+                                            : 'View replies ($replyCount)'),
                                   ),
                                 ),
                               if (showReplies)

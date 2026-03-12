@@ -20,6 +20,9 @@ class Ad {
   final int commentsCount;
   final int sharesCount;
   final bool isLikedByMe;
+  final bool isDislikedByMe;
+  final bool isSavedByMe;
+  final String? userId;
   final String? userName;
   final String? userAvatarUrl;
   final String? vendorBusinessName;
@@ -53,6 +56,9 @@ class Ad {
     this.commentsCount = 0,
     this.sharesCount = 0,
     this.isLikedByMe = false,
+    this.isDislikedByMe = false,
+    this.isSavedByMe = false,
+    this.userId,
     this.userName,
     this.userAvatarUrl,
     this.vendorBusinessName,
@@ -145,6 +151,16 @@ class Ad {
       isLikedByMe:
           (raw['is_liked_by_me'] ?? raw['isLikedByMe'] ?? userStatus['is_liked'] ?? userStatus['liked'] ?? false) ==
               true,
+      isDislikedByMe: (raw['is_disliked_by_me'] ??
+              raw['isDislikedByMe'] ??
+              userStatus['is_disliked'] ??
+              userStatus['disliked'] ??
+              false) ==
+          true,
+      isSavedByMe:
+          (raw['is_saved_by_me'] ?? raw['isSavedByMe'] ?? userStatus['is_saved'] ?? userStatus['saved'] ?? false) ==
+              true,
+      userId: (user['_id'] ?? user['id'] ?? raw['user_id'] ?? raw['userId'])?.toString(),
       userName: _asNullableString(user['username'] ?? user['full_name']),
       userAvatarUrl: _normalizeUrl(user['avatar_url'] ?? user['avatarUrl'] ?? raw['avatar_url'] ?? raw['avatar']),
       vendorBusinessName: _asNullableString(

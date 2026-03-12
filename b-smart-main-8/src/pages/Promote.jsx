@@ -253,12 +253,18 @@ const Promote = () => {
             </div>
           </div>
 
-          <div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-800 rounded-md overflow-hidden mt-2 cursor-pointer shadow-sm">
-            <img
-              src={`https://i.pravatar.cc/150?u=${promotes[currentIndex].username}`}
-              className="w-full h-full object-cover"
-              alt="music"
-            />
+          <div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-800 rounded-md overflow-hidden mt-2 cursor-pointer shadow-sm bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+            {promotes[currentIndex].avatar_url ? (
+              <img
+                src={promotes[currentIndex].avatar_url}
+                className="w-full h-full object-cover"
+                alt={promotes[currentIndex].username || 'user'}
+              />
+            ) : (
+              <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200">
+                {String(promotes[currentIndex].username || 'U').charAt(0).toUpperCase()}
+              </span>
+            )}
           </div>
         </div>
 

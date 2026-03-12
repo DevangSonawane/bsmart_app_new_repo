@@ -8,188 +8,13 @@ import {
   Lock,
   Building2,
   Briefcase,
-  Globe,
-  MapPin,
-  Users,
-  Target,
   Sparkles,
+  CalendarDays,
   ArrowLeft,
   ArrowRight,
-  CheckCircle2,
   Eye,
   EyeOff
 } from 'lucide-react';
-
-const COUNTRIES = [
-  'Afghanistan',
-  'Albania',
-  'Algeria',
-  'Andorra',
-  'Angola',
-  'Argentina',
-  'Armenia',
-  'Australia',
-  'Austria',
-  'Azerbaijan',
-  'Bahamas',
-  'Bahrain',
-  'Bangladesh',
-  'Belarus',
-  'Belgium',
-  'Belize',
-  'Benin',
-  'Bhutan',
-  'Bolivia',
-  'Bosnia and Herzegovina',
-  'Botswana',
-  'Brazil',
-  'Brunei',
-  'Bulgaria',
-  'Burkina Faso',
-  'Burundi',
-  'Cambodia',
-  'Cameroon',
-  'Canada',
-  'Cape Verde',
-  'Central African Republic',
-  'Chad',
-  'Chile',
-  'China',
-  'Colombia',
-  'Comoros',
-  'Costa Rica',
-  'Croatia',
-  'Cuba',
-  'Cyprus',
-  'Czech Republic',
-  'Democratic Republic of the Congo',
-  'Denmark',
-  'Djibouti',
-  'Dominican Republic',
-  'Ecuador',
-  'Egypt',
-  'El Salvador',
-  'Equatorial Guinea',
-  'Eritrea',
-  'Estonia',
-  'Ethiopia',
-  'Fiji',
-  'Finland',
-  'France',
-  'Gabon',
-  'Gambia',
-  'Georgia',
-  'Germany',
-  'Ghana',
-  'Greece',
-  'Guatemala',
-  'Guinea',
-  'Guinea-Bissau',
-  'Guyana',
-  'Haiti',
-  'Honduras',
-  'Hungary',
-  'Iceland',
-  'India',
-  'Indonesia',
-  'Iran',
-  'Iraq',
-  'Ireland',
-  'Israel',
-  'Italy',
-  'Ivory Coast',
-  'Jamaica',
-  'Japan',
-  'Jordan',
-  'Kazakhstan',
-  'Kenya',
-  'Kuwait',
-  'Kyrgyzstan',
-  'Laos',
-  'Latvia',
-  'Lebanon',
-  'Lesotho',
-  'Liberia',
-  'Libya',
-  'Lithuania',
-  'Luxembourg',
-  'Madagascar',
-  'Malawi',
-  'Malaysia',
-  'Maldives',
-  'Mali',
-  'Malta',
-  'Mauritania',
-  'Mauritius',
-  'Mexico',
-  'Moldova',
-  'Monaco',
-  'Mongolia',
-  'Montenegro',
-  'Morocco',
-  'Mozambique',
-  'Myanmar',
-  'Namibia',
-  'Nepal',
-  'Netherlands',
-  'New Zealand',
-  'Nicaragua',
-  'Niger',
-  'Nigeria',
-  'North Macedonia',
-  'Norway',
-  'Oman',
-  'Pakistan',
-  'Panama',
-  'Papua New Guinea',
-  'Paraguay',
-  'Peru',
-  'Philippines',
-  'Poland',
-  'Portugal',
-  'Qatar',
-  'Republic of the Congo',
-  'Romania',
-  'Russia',
-  'Rwanda',
-  'Saudi Arabia',
-  'Senegal',
-  'Serbia',
-  'Sierra Leone',
-  'Singapore',
-  'Slovakia',
-  'Slovenia',
-  'Somalia',
-  'South Africa',
-  'South Korea',
-  'South Sudan',
-  'Spain',
-  'Sri Lanka',
-  'Sudan',
-  'Sweden',
-  'Switzerland',
-  'Syria',
-  'Taiwan',
-  'Tajikistan',
-  'Tanzania',
-  'Thailand',
-  'Togo',
-  'Trinidad and Tobago',
-  'Tunisia',
-  'Turkey',
-  'Uganda',
-  'Ukraine',
-  'United Arab Emirates',
-  'United Kingdom',
-  'United States',
-  'Uruguay',
-  'Uzbekistan',
-  'Venezuela',
-  'Vietnam',
-  'Yemen',
-  'Zambia',
-  'Zimbabwe'
-];
 
 const VendorSignup = () => {
   const navigate = useNavigate();
@@ -211,16 +36,10 @@ const VendorSignup = () => {
     companyName: '',
     companyLegalName: '',
     industry: '',
-    website: '',
-    companyEmail: '',
-    companyPhone: '',
-    address: '',
-    city: '',
-    country: '',
-    businessNote: '',
-    targetPeople: '',
-    locationTarget: '',
-    campaignIdea: ''
+    registrationNumber: '',
+    taxId: '',
+    yearEstablished: '',
+    companyType: ''
   });
 
   const handleChange = (e) => {
@@ -241,7 +60,7 @@ const VendorSignup = () => {
     }
 
     if (step === 2) {
-      if (!form.companyName || !form.industry || !form.city || !form.country) {
+      if (!form.companyName || !form.companyLegalName || !form.industry || !form.registrationNumber || !form.taxId || !form.yearEstablished || !form.companyType) {
         setError('Please complete the key company details.');
         return false;
       }
@@ -278,14 +97,12 @@ const VendorSignup = () => {
       role: 'vendor',
       company_details: {
         company_name: form.companyName,
-        legal_business_name: form.companyLegalName,
+        "Registered Name": form.companyLegalName,
         industry: form.industry,
-        website: form.website,
-        business_email: form.companyEmail,
-        business_phone: form.companyPhone,
-        country: form.country,
-        city: form.city,
-        note: form.businessNote
+        "Registration Number": form.registrationNumber,
+        "Tax ID / VAT / GST": form.taxId,
+        "Year Established": form.yearEstablished,
+        "Company Type": form.companyType
       },
       credits: 200000,
     };
@@ -451,7 +268,7 @@ const VendorSignup = () => {
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Legal Business Name (optional)</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Registered Name</label>
             <div className="relative group">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
                 <Briefcase size={18} />
@@ -462,7 +279,42 @@ const VendorSignup = () => {
                 onChange={handleChange}
                 placeholder="Registered legal name"
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                required
               />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Registration Number</label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
+                  <Building2 size={18} />
+                </div>
+                <input
+                  name="registrationNumber"
+                  value={form.registrationNumber}
+                  onChange={handleChange}
+                  placeholder="Business Reg. No."
+                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Tax ID / VAT / GST</label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
+                  <Building2 size={18} />
+                </div>
+                <input
+                  name="taxId"
+                  value={form.taxId}
+                  onChange={handleChange}
+                  placeholder="Tax Identification Number"
+                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                  required
+                />
+              </div>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -483,96 +335,44 @@ const VendorSignup = () => {
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Website (optional)</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Company Type</label>
               <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
-                  <Globe size={18} />
+                  <Building2 size={18} />
                 </div>
-                <input
-                  name="website"
-                  value={form.website}
+                <select
+                  name="companyType"
+                  value={form.companyType}
                   onChange={handleChange}
-                  placeholder="https://yourwebsite.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
-                />
-              </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Business Email (optional)</label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
-                  <Mail size={18} />
-                </div>
-                <input
-                  name="companyEmail"
-                  value={form.companyEmail}
-                  onChange={handleChange}
-                  placeholder="contact@company.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Business Phone (optional)</label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
-                  <Phone size={18} />
-                </div>
-                <input
-                  name="companyPhone"
-                  value={form.companyPhone}
-                  onChange={handleChange}
-                  placeholder="+1 987 654 321"
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
-                />
-              </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">City</label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
-                  <MapPin size={18} />
-                </div>
-                <input
-                  name="city"
-                  value={form.city}
-                  onChange={handleChange}
-                  placeholder="City"
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all text-gray-900 dark:text-white appearance-none"
                   required
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Country</label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
-                  <Globe size={18} />
-                </div>
-                <input
-                  name="country"
-                  value={form.country}
-                  onChange={handleChange}
-                  placeholder="Country"
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
-                  required
-                />
+                >
+                  <option value="">Select Type</option>
+                  <option value="Private Limited">Private Limited</option>
+                  <option value="Public Limited">Public Limited</option>
+                  <option value="LLP">LLP</option>
+                  <option value="Partnership">Partnership</option>
+                  <option value="Sole Proprietorship">Sole Proprietorship</option>
+                  <option value="NGO / Trust">NGO / Trust</option>
+                </select>
               </div>
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Business Overview (optional)</label>
-            <textarea
-              name="businessNote"
-              value={form.businessNote}
-              onChange={handleChange}
-              placeholder="Tell us about your products, services and goals."
-              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white min-h-[80px] resize-none"
-            />
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Year Established</label>
+            <div className="relative group">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
+                <CalendarDays size={18} />
+              </div>
+              <input
+                name="yearEstablished"
+                value={form.yearEstablished}
+                onChange={handleChange}
+                placeholder="YYYY"
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                required
+              />
+            </div>
           </div>
         </div>
       );

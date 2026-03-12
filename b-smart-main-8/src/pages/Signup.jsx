@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import api from '../lib/api';
@@ -14,6 +14,13 @@ const Signup = () => {
     username: '',
     email: '',
     phone: '',
+    gender: '',
+    addressLine1: '',
+    addressLine2: '',
+    pincode: '',
+    city: '',
+    state: '',
+    country: '',
     password: '',
     confirmPassword: ''
   });
@@ -45,7 +52,16 @@ const Signup = () => {
         username: form.username,
         full_name: form.name,
         phone: form.phone,
-        role: 'member'
+        role: 'member',
+        gender: form.gender,
+        address: {
+          address_line1: form.addressLine1,
+          address_line2: form.addressLine2,
+          pincode: form.pincode,
+          city: form.city,
+          state: form.state,
+          country: form.country
+        }
       });
 
       const { token, user } = response.data;
@@ -111,9 +127,9 @@ const Signup = () => {
   };
 
   return (
-    <div className="min-h-screen flex bg-white dark:bg-black">
+    <div className="min-h-screen flex bg-white dark:bg-black lg:h-screen lg:overflow-hidden">
       {/* Left Side - Visuals (Hidden on mobile) */}
-      <div className="hidden lg:flex lg:w-1/2 relative bg-insta-gradient overflow-hidden">
+      <div className="hidden lg:flex lg:w-1/2 lg:h-screen lg:sticky lg:top-0 relative bg-insta-gradient overflow-hidden">
         <div className="absolute inset-0 bg-black/10" />
         <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-12 text-center z-10">
           <div className="w-24 h-24 bg-white/20 backdrop-blur-lg rounded-3xl flex items-center justify-center mb-8 shadow-xl border border-white/30">
@@ -130,8 +146,8 @@ const Signup = () => {
         </div>
       </div>
 
-      {/* Right Side - Form */}
-      <div className="w-full lg:w-1/2 flex flex-col justify-center px-6 sm:px-12 xl:px-24 bg-white dark:bg-black py-12">
+      {/* Right Side - Form (scrollable on desktop) */}
+      <div className="w-full lg:w-1/2 lg:h-screen lg:overflow-y-auto flex flex-col justify-start px-6 sm:px-12 xl:px-24 bg-white dark:bg-black py-12">
         <div className="max-w-md w-full mx-auto">
           <div className="mb-8">
             {/* <Link to="/" className="inline-flex items-center text-gray-500 hover:text-insta-pink transition-colors mb-6 group">
@@ -210,6 +226,91 @@ const Signup = () => {
                   placeholder="+1 234 567 890"
                   className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
                   required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Gender</label>
+              <select
+                name="gender"
+                value={form.gender}
+                onChange={handleChange}
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all text-gray-900 dark:text-white"
+                required
+              >
+                <option value="" disabled>Select gender</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Address Line 1</label>
+              <input
+                name="addressLine1"
+                value={form.addressLine1}
+                onChange={handleChange}
+                placeholder="Address line 1"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Address Line 2</label>
+              <input
+                name="addressLine2"
+                value={form.addressLine2}
+                onChange={handleChange}
+                placeholder="Address line 2"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Pincode</label>
+                <input
+                  name="pincode"
+                  value={form.pincode}
+                  onChange={handleChange}
+                  placeholder="560001"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">City</label>
+                <input
+                  name="city"
+                  value={form.city}
+                  onChange={handleChange}
+                  placeholder="Bengaluru"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">State</label>
+                <input
+                  name="state"
+                  value={form.state}
+                  onChange={handleChange}
+                  placeholder="Karnataka"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Country</label>
+                <input
+                  name="country"
+                  value={form.country}
+                  onChange={handleChange}
+                  placeholder="India"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
                 />
               </div>
             </div>

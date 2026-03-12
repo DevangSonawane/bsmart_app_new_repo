@@ -16,6 +16,7 @@ import 'theme/design_tokens.dart';
 import 'routes.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/profile_screen.dart';
+import 'widgets/profile_setup_gate.dart';
 
 void main() async {
   runZonedGuarded(() async {
@@ -75,10 +76,18 @@ class BSmartApp extends StatefulWidget {
 class _BSmartAppState extends State<BSmartApp> {
   bool _isInitialized = false;
   bool _isAuthenticated = false;
+  int _routeVersion = 0;
+  late final _RouteChangeObserver _routeObserver;
 
   @override
   void initState() {
     super.initState();
+    _routeObserver = _RouteChangeObserver(() {
+      if (!mounted) return;
+      setState(() {
+        _routeVersion++;
+      });
+    });
     _checkAuthStatus();
   }
 
@@ -136,6 +145,13 @@ class _BSmartAppState extends State<BSmartApp> {
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       home: _isAuthenticated ? const HomeDashboard() : const LoginScreen(),
       routes: staticRoutes,
+      navigatorObservers: [_routeObserver],
+      builder: (context, child) {
+        return ProfileSetupGate(
+          routeVersion: _routeVersion,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       onGenerateRoute: (settings) {
         final name = settings.name ?? '';
         final uri = Uri.parse(name);
@@ -166,5 +182,35 @@ class _BSmartAppState extends State<BSmartApp> {
         return null;
       },
     );
+  }
+}
+
+class _RouteChangeObserver extends NavigatorObserver {
+  final VoidCallback onRouteChanged;
+
+  _RouteChangeObserver(this.onRouteChanged);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    onRouteChanged();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    onRouteChanged();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    onRouteChanged();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didRemove(route, previousRoute);
+    onRouteChanged();
   }
 }
