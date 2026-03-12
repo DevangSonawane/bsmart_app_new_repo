@@ -160,7 +160,11 @@ class Ad {
       isSavedByMe:
           (raw['is_saved_by_me'] ?? raw['isSavedByMe'] ?? userStatus['is_saved'] ?? userStatus['saved'] ?? false) ==
               true,
-      userId: (user['_id'] ?? user['id'] ?? raw['user_id'] ?? raw['userId'])?.toString(),
+      userId: (user['_id'] ??
+              user['id'] ??
+              ((raw['user_id'] is String || raw['user_id'] is num) ? raw['user_id'] : null) ??
+              raw['userId'])
+          ?.toString(),
       userName: _asNullableString(user['username'] ?? user['full_name']),
       userAvatarUrl: _normalizeUrl(user['avatar_url'] ?? user['avatarUrl'] ?? raw['avatar_url'] ?? raw['avatar']),
       vendorBusinessName: _asNullableString(

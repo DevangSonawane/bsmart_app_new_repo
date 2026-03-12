@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:visibility_detector/visibility_detector.dart';
 import 'package:extended_image/extended_image.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'package:video_player/video_player.dart';
 import '../models/feed_post_model.dart';
 import '../api/api_client.dart';
@@ -41,6 +41,10 @@ class PostCard extends StatefulWidget {
 }
 
 class _PostCardState extends State<PostCard> {
+  static Map<String, String>? _sharedAuthHeaders;
+  static Future<Map<String, String>>? _sharedAuthHeadersFuture;
+  static Future<void> _videoInitQueue = Future<void>.value();
+
   VideoPlayerController? _videoCtl;
   Map<String, String>? _authHeaders;
   double? _mediaAspect;
@@ -56,6 +60,8 @@ class _PostCardState extends State<PostCard> {
   bool _initStarted = false;
   bool _showDoubleTapLike = false;
   Timer? _doubleTapLikeTimer;
+  Timer? _visibleInitTimer;
+  Timer? _offscreenDisposeTimer;
 
   bool get _isVideoPost =>
       widget.post.mediaType == PostMediaType.video ||
@@ -64,12 +70,12 @@ class _PostCardState extends State<PostCard> {
   @override
   void initState() {
     super.initState();
-    debugPrint('[PostCard] initState for ${widget.post.id}, mediaType: ${widget.post.mediaType}');
     if (widget.post.aspectRatio != null && widget.post.aspectRatio! > 0) {
       _mediaAspect = _normalizedAspect(widget.post.aspectRatio!);
     }
-    // Load auth token eagerly — video init starts once visible
-    _loadAuthHeaders();
+    _authHeaders = _sharedAuthHeaders;
+    // Load auth token once globally — video init starts once visible
+    unawaited(_loadAuthHeaders());
   }
 
   double _normalizedAspect(double raw) {
@@ -79,16 +85,25 @@ class _PostCardState extends State<PostCard> {
   }
 
   Future<void> _loadAuthHeaders() async {
-    final token = await ApiClient().getToken();
-    if (!mounted) return;
-    final next = <String, String>{
-      'User-Agent': 'PostCard-App',
-    };
-    if (token != null && token.isNotEmpty) {
-      next['Authorization'] = 'Bearer $token';
+    if (_sharedAuthHeaders != null) {
+      _authHeaders = _sharedAuthHeaders;
+      if (_isVisible && _isVideoPost && !_initStarted) {
+        _startVideoInit();
+      }
+      return;
     }
-    setState(() => _authHeaders = next);
-    debugPrint('[PostCard] Headers loaded for ${widget.post.id}. Visible: $_isVisible, IsVideo: $_isVideoPost, InitStarted: $_initStarted');
+    _sharedAuthHeadersFuture ??= () async {
+      final token = await ApiClient().getToken();
+      final next = <String, String>{'User-Agent': 'PostCard-App'};
+      if (token != null && token.isNotEmpty) {
+        next['Authorization'] = 'Bearer $token';
+      }
+      _sharedAuthHeaders = next;
+      return next;
+    }();
+    final next = await _sharedAuthHeadersFuture!;
+    if (!mounted) return;
+    _authHeaders = next;
     // If visibility callback already fired before headers loaded, start init now
     if (_isVisible && _isVideoPost && !_initStarted) {
       _startVideoInit();
@@ -96,42 +111,42 @@ class _PostCardState extends State<PostCard> {
   }
 
   Map<String, String> _getHeaders(String url) {
-    if (_authHeaders == null) return {};
+    final headers = _authHeaders ?? _sharedAuthHeaders;
+    if (headers == null) return {};
     try {
       final uri = Uri.parse(url);
       final baseUri = Uri.parse(ApiConfig.baseUrl);
-      if (uri.host == baseUri.host) return _authHeaders!;
+      if (uri.host == baseUri.host) return headers;
     } catch (_) {}
     if (url.startsWith('http://localhost') || url.startsWith('http://10.0.2.2')) {
-      return _authHeaders!;
+      return headers;
     }
     return {};
   }
 
   /// Called once when the card becomes visible AND headers are ready.
   void _startVideoInit() {
-    debugPrint('[PostCard] _startVideoInit called for ${widget.post.id}');
     if (_initStarted || !_isVideoPost) {
-       debugPrint('[PostCard] Skipping init: Started=$_initStarted, IsVideo=$_isVideoPost');
-       return;
+      return;
     }
     if (widget.post.mediaUrls.isEmpty) {
-      debugPrint('[PostCard] No media URLs for ${widget.post.id}');
       return;
     }
 
     final rawUrl = widget.post.mediaUrls.first;
     final url = UrlHelper.absoluteUrl(rawUrl);
-    debugPrint('[PostCard] Video URL for ${widget.post.id}: $url');
     
     if (url.isEmpty) return;
 
     _initStarted = true;
-    _initVideo(url);
+    _videoInitQueue = _videoInitQueue.then((_) => _initVideo(url));
   }
 
   Future<void> _initVideo(String url) async {
-    debugPrint('[PostCard] Initializing video controller for ${widget.post.id}...');
+    if (!mounted || !_isVisible) {
+      _initStarted = false;
+      return;
+    }
     try {
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(url),
@@ -139,11 +154,15 @@ class _PostCardState extends State<PostCard> {
       );
 
       await controller.initialize();
-      debugPrint('[PostCard] Video initialized for ${widget.post.id}');
-
       // After initialize(), check if we're still mounted and still want to play
       if (!mounted) {
         controller.dispose();
+        return;
+      }
+
+      if (!_isVisible) {
+        controller.dispose();
+        _initStarted = false;
         return;
       }
 
@@ -158,23 +177,21 @@ class _PostCardState extends State<PostCard> {
 
       // Only play if still visible and user hasn't manually paused
       if (widget.isTabActive && _isVisible && !_userWantsPaused) {
-        debugPrint('[PostCard] Auto-playing video for ${widget.post.id}');
         await controller.play();
       }
     } catch (e) {
-      debugPrint('[PostCard] Video init error for ${widget.post.id}: $e');
-      if (mounted) setState(() {}); // Show thumbnail fallback
+      _initStarted = false;
     }
   }
 
   void _onVisibilityChanged(VisibilityInfo info) {
-    final nowVisible = info.visibleFraction >= 0.5;
-    debugPrint('[PostCard] Visibility changed for ${widget.post.id}: ${info.visibleFraction}');
+    final nowVisible = info.visibleFraction >= 0.70;
 
     if (nowVisible == _isVisible) return; // No change
     _isVisible = nowVisible;
 
     if (nowVisible) {
+      _offscreenDisposeTimer?.cancel();
       if (!widget.isTabActive) {
         _videoCtl?.pause();
         return;
@@ -182,19 +199,34 @@ class _PostCardState extends State<PostCard> {
       // Card came into view
       if (_isVideoPost) {
         if (!_initStarted && _authHeaders != null) {
-          // Headers ready — start init
-          _startVideoInit();
+          // Debounce init to avoid churn during fast flings.
+          _visibleInitTimer?.cancel();
+          _visibleInitTimer = Timer(const Duration(milliseconds: 220), () {
+            if (!mounted || !_isVisible || _initStarted) return;
+            _startVideoInit();
+          });
         } else if (_videoInitialized && !_userWantsPaused) {
           // Already initialized — just resume
           _videoCtl?.play();
-          if (mounted) setState(() {});
         }
         // If headers not ready yet, _loadAuthHeaders will call _startVideoInit when done
       }
     } else {
+      _visibleInitTimer?.cancel();
       // Card left view — pause to save resources
       _videoCtl?.pause();
-      if (mounted) setState(() {});
+      if (_isVideoPost && _videoCtl != null) {
+        // Release decoder shortly after leaving viewport to keep scrolling smooth.
+        _offscreenDisposeTimer?.cancel();
+        _offscreenDisposeTimer = Timer(const Duration(milliseconds: 250), () {
+          if (!mounted || _isVisible) return;
+          _videoCtl?.dispose();
+          _videoCtl = null;
+          _videoInitialized = false;
+          _initStarted = false;
+          if (mounted) setState(() {});
+        });
+      }
     }
   }
 
@@ -252,22 +284,30 @@ class _PostCardState extends State<PostCard> {
     final now = DateTime.now();
     final difference = now.difference(date);
 
-    if (difference.inDays > 7) {
-      return '${date.day}/${date.month}/${date.year}';
-    } else if (difference.inDays >= 1) {
-      return '${difference.inDays} days ago';
-    } else if (difference.inHours >= 1) {
-      return '${difference.inHours} hours ago';
-    } else if (difference.inMinutes >= 1) {
-      return '${difference.inMinutes} minutes ago';
-    } else {
+    if (difference.inSeconds < 60) {
       return 'Just now';
     }
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m';
+    }
+    if (difference.inHours < 24) {
+      return '${difference.inHours}h';
+    }
+    if (difference.inDays < 7) {
+      return '${difference.inDays}d';
+    }
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${months[date.month - 1]} ${date.day}';
   }
 
   @override
   void dispose() {
     _doubleTapLikeTimer?.cancel();
+    _visibleInitTimer?.cancel();
+    _offscreenDisposeTimer?.cancel();
     _videoCtl?.dispose();
     super.dispose();
   }
@@ -290,82 +330,71 @@ class _PostCardState extends State<PostCard> {
             child: GestureDetector(
               onTap: _onTapMedia,
               onDoubleTap: _onDoubleTapMedia,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (_isVideoPost)
-                    _buildVideoPlayer(post, isDark)
-                  else
-                    _buildImageWidget(post, isDark),
+              child: RepaintBoundary(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (_isVideoPost)
+                      _buildVideoPlayer(post, isDark)
+                    else
+                      _buildImageWidget(post, isDark),
 
-                  // Mute button for videos
-                  if (_isVideoPost && _videoInitialized)
-                    Positioned(
-                      bottom: 10,
-                      right: 10,
-                      child: GestureDetector(
-                        onTap: _toggleMute,
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                            color: Colors.white,
-                            size: 16,
+                    // Mute button for videos
+                    if (_isVideoPost && _videoInitialized)
+                      Positioned(
+                        bottom: 10,
+                        right: 10,
+                        child: GestureDetector(
+                          onTap: _toggleMute,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                              color: Colors.white,
+                              size: 16,
+                            ),
                           ),
                         ),
                       ),
-                    ),
 
-                  // Play/pause overlay icon
-                  if (_isVideoPost && _userWantsPaused)
-                    const Center(
-                      child: Icon(LucideIcons.play, color: Colors.white, size: 50),
-                    ),
-
-                  // Loading spinner while video initializes
-                  if (_isVideoPost && _isVisible && !_videoInitialized && _initStarted)
-                    const Center(
-                      child: SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          color: Colors.white70,
-                        ),
+                    // Play/pause overlay icon
+                    if (_isVideoPost && _userWantsPaused)
+                      const Center(
+                        child: Icon(LucideIcons.play, color: Colors.white, size: 50),
                       ),
-                    ),
 
-                  IgnorePointer(
-                    child: Center(
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 180),
-                        curve: Curves.easeOut,
-                        opacity: _showDoubleTapLike ? 1 : 0,
-                        child: AnimatedScale(
-                          duration: const Duration(milliseconds: 280),
-                          curve: Curves.easeOutBack,
-                          scale: _showDoubleTapLike ? 1 : 0.65,
-                          child: const Icon(
-                            Icons.favorite,
-                            size: 92,
-                            color: Colors.white,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black54,
-                                blurRadius: 12,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
+                    IgnorePointer(
+                      child: Center(
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          opacity: _showDoubleTapLike ? 1 : 0,
+                          child: AnimatedScale(
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeOutBack,
+                            scale: _showDoubleTapLike ? 1 : 0.65,
+                            child: const Icon(
+                              Icons.favorite,
+                              size: 92,
+                              color: Colors.white,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black54,
+                                  blurRadius: 12,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -391,16 +420,16 @@ class _PostCardState extends State<PostCard> {
     if (post.thumbnailUrl != null && post.thumbnailUrl!.isNotEmpty) {
       final thumbUrl = UrlHelper.absoluteUrl(post.thumbnailUrl!);
       if (thumbUrl.isNotEmpty) {
-        return ExtendedImage.network(
+        return Image.network(
           thumbUrl,
           headers: _getHeaders(thumbUrl),
           fit: BoxFit.cover,
-          loadStateChanged: (state) {
-            if (state.extendedImageLoadState == LoadState.failed) {
-              return _buildPlaceholder(isDark, isVideo: true);
-            }
-            return null;
+          filterQuality: FilterQuality.low,
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+            if (wasSynchronouslyLoaded || frame != null) return child;
+            return const ColoredBox(color: Colors.black);
           },
+          errorBuilder: (_, __, ___) => _buildPlaceholder(isDark, isVideo: true),
         );
       }
     }
@@ -417,6 +446,7 @@ class _PostCardState extends State<PostCard> {
       url,
       headers: _getHeaders(url),
       fit: BoxFit.cover,
+      filterQuality: FilterQuality.low,
       loadStateChanged: (state) {
         if (state.extendedImageLoadState == LoadState.completed) {
           final info = state.extendedImageInfo;
@@ -440,11 +470,15 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _buildPlaceholder(bool isDark, {bool isVideo = false}) {
+    if (isVideo) {
+      // Video placeholders must stay dark so feed doesn't flash white.
+      return const ColoredBox(color: Colors.black);
+    }
     return Container(
       color: isDark ? const Color(0xFF262626) : Colors.grey.shade200,
       child: Center(
         child: Icon(
-          isVideo ? LucideIcons.video : LucideIcons.imageOff,
+          LucideIcons.imageOff,
           color: isDark ? Colors.white24 : Colors.grey.shade400,
           size: 40,
         ),
@@ -455,37 +489,90 @@ class _PostCardState extends State<PostCard> {
   Widget _buildHeader(FeedPost post, bool isDark, ThemeData theme) {
     final avatarUrl =
         post.userAvatar != null ? UrlHelper.absoluteUrl(post.userAvatar!) : '';
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      leading: GestureDetector(
-        onTap: widget.onUserTap,
-        child: CircleAvatar(
-          backgroundImage:
-              avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-          backgroundColor: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
-          child: avatarUrl.isEmpty
-              ? Text(
-                  post.userName.isNotEmpty
-                      ? post.userName[0].toUpperCase()
-                      : 'U',
-                  style: TextStyle(color: theme.colorScheme.onSurface),
-                )
-              : null,
-        ),
-      ),
-      title: GestureDetector(
-        onTap: widget.onUserTap,
-        child: Text(
-          post.userName,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-        ),
-      ),
-      subtitle: post.location != null && post.location!.isNotEmpty
-          ? Text(post.location!, style: const TextStyle(fontSize: 12))
-          : null,
-      trailing: GestureDetector(
-        onTap: widget.onMore,
-        child: const Icon(LucideIcons.ellipsis),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: widget.onUserTap,
+            child: Container(
+              width: 36,
+              height: 36,
+              padding: const EdgeInsets.all(2),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [Color(0xFFFACC15), Color(0xFFF97316), Color(0xFFEC4899)],
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: theme.scaffoldBackgroundColor,
+                ),
+                padding: const EdgeInsets.all(1),
+                child: CircleAvatar(
+                  backgroundImage:
+                      avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                  backgroundColor: isDark
+                      ? const Color(0xFF3D3D3D)
+                      : Colors.grey.shade200,
+                  child: avatarUrl.isEmpty
+                      ? Text(
+                          post.userName.isNotEmpty
+                              ? post.userName[0].toUpperCase()
+                              : 'U',
+                          style: TextStyle(color: theme.colorScheme.onSurface),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: GestureDetector(
+              onTap: widget.onUserTap,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    post.userName,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 13.5),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (post.fullName != null && post.fullName!.trim().isNotEmpty)
+                    Text(
+                      post.fullName!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          Text(
+            _formatTimestamp(post.createdAt),
+            style: TextStyle(
+              fontSize: 11,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+            ),
+          ),
+          const SizedBox(width: 4),
+          if (widget.onMore != null)
+            GestureDetector(
+              onTap: widget.onMore,
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(LucideIcons.ellipsis, size: 18),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -579,12 +666,50 @@ class _PostCardState extends State<PostCard> {
               ],
             ),
           ],
+          if (post.comments > 1) ...[
+            const SizedBox(height: 4),
+            GestureDetector(
+              onTap: widget.onComment,
+              child: Text(
+                'View all ${post.comments >= 1000 ? '${(post.comments / 1000).toStringAsFixed(1)}K' : post.comments} comments',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                ),
+              ),
+            ),
+          ],
+          if (post.latestCommentText != null &&
+              post.latestCommentText!.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurface,
+                ),
+                children: [
+                  TextSpan(
+                    text: '${(post.latestCommentUser ?? post.userName).trim()} ',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  TextSpan(
+                    text: post.latestCommentText!.trim(),
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 4),
           Text(
-            _formatTimestamp(post.createdAt),
+            _formatTimestamp(post.createdAt).toUpperCase(),
             style: const TextStyle(
               color: Colors.grey,
-              fontSize: 11,
+              fontSize: 10.5,
+              letterSpacing: 0.4,
             ),
           ),
         ],

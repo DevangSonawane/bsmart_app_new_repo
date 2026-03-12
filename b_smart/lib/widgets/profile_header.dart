@@ -11,6 +11,7 @@ class ProfileHeader extends StatelessWidget {
   final int followers;
   final int following;
   final bool isMe;
+  final bool isVendor;
   final bool isFollowing;
   final VoidCallback? onEdit;
   final VoidCallback? onFollow;
@@ -26,6 +27,7 @@ class ProfileHeader extends StatelessWidget {
     this.followers = 0,
     this.following = 0,
     this.isMe = false,
+    this.isVendor = false,
     this.isFollowing = false,
     this.onEdit,
     this.onFollow,
@@ -89,6 +91,24 @@ class ProfileHeader extends StatelessWidget {
             fullName?.trim().isNotEmpty == true ? fullName!.trim() : username,
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: fgColor),
           ),
+          if (isVendor) ...[
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEDD5),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Text(
+                'Vendor',
+                style: TextStyle(
+                  color: Color(0xFFEA580C),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
           if (bio != null && bio!.trim().isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(bio!, style: TextStyle(fontSize: 14, color: fgColor)),
@@ -128,9 +148,15 @@ class ProfileHeader extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         decoration: BoxDecoration(
                           gradient: isFollowing ? null : DesignTokens.instaGradient,
-                          color: isFollowing ? Colors.grey.withOpacity(0.2) : null,
+                          color: isFollowing
+                              ? Colors.grey.withValues(alpha: 0.2)
+                              : null,
                           borderRadius: const BorderRadius.all(Radius.circular(10)),
-                          border: isFollowing ? Border.all(color: Colors.grey.withOpacity(0.3)) : null,
+                          border: isFollowing
+                              ? Border.all(
+                                  color: Colors.grey.withValues(alpha: 0.3),
+                                )
+                              : null,
                         ),
                         alignment: Alignment.center,
                         child: AnimatedSwitcher(

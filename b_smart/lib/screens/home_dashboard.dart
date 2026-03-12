@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:redux/redux.dart';
@@ -21,6 +23,7 @@ import '../widgets/comments_sheet.dart';
 import 'ads_page_screen.dart';
 import 'promote_screen.dart';
 import 'reels_screen.dart';
+import '../services/reels_service.dart';
 import 'story_viewer_screen.dart';
 import 'own_story_viewer_screen.dart';
 import 'create_upload_screen.dart';
@@ -45,6 +48,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
   final FeedService _feedService = FeedService();
   final SupabaseService _supabase = SupabaseService();
   final WalletService _walletService = WalletService();
+  final ReelsService _reelsService = ReelsService();
   String? _currentLocation;
   bool _locationLoading = false;
 
@@ -56,6 +60,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
   Map<String, Map<String, bool>> _storyStatuses = {};
   int _currentIndex = 0;
   int _balance = 0;
+  bool _reelsPrefetched = false;
 
   /// Current user profile from `users` table (same source as React web app) for header avatar.
   Map<String, dynamic>? _currentUserProfile;
@@ -282,6 +287,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
         store.dispatch(SetProfile(mergedProfile));
       }
       store.dispatch(SetFeedLoading(false));
+    }
+
+    // Warm reels feed in background once so opening Reels tab is instant.
+    if (!_reelsPrefetched) {
+      _reelsPrefetched = true;
+      unawaited(_reelsService.fetchReels(limit: 20, offset: 0));
     }
   }
 
@@ -1226,8 +1237,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     child: CircularProgressIndicator(
                         color: DesignTokens.instaPink))
                 : CustomScrollView(
-                    cacheExtent:
-                        1500, // Preload content (especially reels) before it appears
+                    cacheExtent: 180,
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
                       SliverToBoxAdapter(
@@ -1315,23 +1325,26 @@ class _HomeDashboardState extends State<HomeDashboard> {
                               final p = posts[index];
                               final isOwnPost = _currentUserId != null &&
                                   p.userId == _currentUserId;
-                              return PostCard(
-                                key: ValueKey(
-                                    'card-${p.id}'), // Prevent unnecessary rebuilds
-                                post: p,
-                                isTabActive: _currentIndex == 0,
-                                onUserTap: p.userId.isNotEmpty
-                                    ? () => Navigator.of(context)
-                                        .pushNamed('/profile/${p.userId}')
-                                    : null,
-                                onLike: () => _onLikePost(p),
-                                onDoubleTapLike: () => _onDoubleTapLikePost(p),
-                                onComment: () => _onCommentPost(p),
-                                onShare: () => _onSharePost(p),
-                                onSave: () => _onSavePost(p),
-                                onFollow:
-                                    isOwnPost ? null : () => _onFollowPost(p),
-                                onMore: () => _onMorePost(context, p),
+                              return RepaintBoundary(
+                                child: PostCard(
+                                  key: ValueKey(
+                                      'card-${p.id}'), // Prevent unnecessary rebuilds
+                                  post: p,
+                                  isTabActive: _currentIndex == 0,
+                                  onUserTap: p.userId.isNotEmpty
+                                      ? () => Navigator.of(context)
+                                          .pushNamed('/profile/${p.userId}')
+                                      : null,
+                                  onLike: () => _onLikePost(p),
+                                  onDoubleTapLike: () =>
+                                      _onDoubleTapLikePost(p),
+                                  onComment: () => _onCommentPost(p),
+                                  onShare: () => _onSharePost(p),
+                                  onSave: () => _onSavePost(p),
+                                  onFollow:
+                                      isOwnPost ? null : () => _onFollowPost(p),
+                                  onMore: () => _onMorePost(context, p),
+                                ),
                               );
                             },
                             childCount: posts.length,
@@ -1341,14 +1354,16 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     ],
                   ),
           ),
-          // Ads tab
-          const AdsPageScreen(),
+          // Ads tab (lazy instantiate only when active)
+          _currentIndex == 1 ? const AdsPageScreen() : const SizedBox.shrink(),
           // Placeholder for create (kept empty since create opens modal/route)
           Container(),
-          // Promote tab
-          const PromoteScreen(),
-          // Reels tab
-          ReelsScreen(isActive: _currentIndex == 4),
+          // Promote tab (lazy instantiate only when active)
+          _currentIndex == 3 ? const PromoteScreen() : const SizedBox.shrink(),
+          // Reels tab (lazy instantiate only when active)
+          _currentIndex == 4
+              ? ReelsScreen(isActive: true)
+              : const SizedBox.shrink(),
         ],
       ),
       bottomNavigationBar: isDesktop

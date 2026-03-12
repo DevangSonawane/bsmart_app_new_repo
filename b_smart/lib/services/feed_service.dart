@@ -500,6 +500,48 @@ class FeedService {
             peopleTags: (item['people_tags'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList(),
             isShared: false,
             isAd: false,
+            latestCommentUser: () {
+              final latest = item['latest_comments'];
+              if (latest is List && latest.isNotEmpty) {
+                final first = latest.first;
+                if (first is Map) {
+                  final u = first['user'];
+                  if (u is Map) {
+                    return (u['username'] ?? u['full_name'])?.toString();
+                  }
+                  return (first['username'] ?? first['user_name'])?.toString();
+                }
+              }
+              final comments = item['comments'];
+              if (comments is List && comments.isNotEmpty) {
+                final first = comments.first;
+                if (first is Map) {
+                  final u = first['user'];
+                  if (u is Map) {
+                    return (u['username'] ?? u['full_name'])?.toString();
+                  }
+                  return (first['username'] ?? first['user_name'])?.toString();
+                }
+              }
+              return null;
+            }(),
+            latestCommentText: () {
+              final latest = item['latest_comments'];
+              if (latest is List && latest.isNotEmpty) {
+                final first = latest.first;
+                if (first is Map) {
+                  return (first['text'] ?? first['content'])?.toString();
+                }
+              }
+              final comments = item['comments'];
+              if (comments is List && comments.isNotEmpty) {
+                final first = comments.first;
+                if (first is Map) {
+                  return (first['text'] ?? first['content'])?.toString();
+                }
+              }
+              return null;
+            }(),
             rawLikes: rawLikesAny.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList(),
           );
 
@@ -529,7 +571,6 @@ class FeedService {
       final Map data = item as Map;
       final user = data['user'] as Map<String, dynamic>? ?? {};
       final preview = data['preview_item'] as Map<String, dynamic>? ?? {};
-      final itemsCount = (data['items_count'] as int?) ?? 0;
       final seen = (data['seen'] as bool?) ?? false;
       final storyId = (data['_id'] as String?) ?? (data['id'] as String?);
       final previewUserId = (preview['user_id'] as String?) ?? '';

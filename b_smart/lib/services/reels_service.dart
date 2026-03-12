@@ -122,7 +122,7 @@ class ReelsService {
 
     final userId = _string(userMap['_id']) ??
         _string(userMap['id']) ??
-        _string(userField) ??
+        (userField is String || userField is num ? _string(userField) : null) ??
         '';
     final userName = _string(userMap['username']) ??
         _string(userMap['full_name']) ??
@@ -275,10 +275,14 @@ class ReelsService {
   }
 
   void toggleFollow(String userId) {
+    final first = _cache.where((r) => r.userId == userId);
+    if (first.isEmpty) return;
+    final next = !first.first.isFollowing;
     for (var i = 0; i < _cache.length; i++) {
       if (_cache[i].userId == userId) {
-        _cache[i] = _cache[i].copyWith(isFollowing: !_cache[i].isFollowing);
+        _cache[i] = _cache[i].copyWith(isFollowing: next);
       }
     }
+    globalStore.dispatch(UpdateUserFollowed(userId, next));
   }
 }

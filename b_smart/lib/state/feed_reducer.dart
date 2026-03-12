@@ -10,6 +10,7 @@ final feedReducer = combineReducers<FeedState>([
   TypedReducer<FeedState, UpdatePostLikedWithCount>(_updatePostLikedWithCount).call,
   TypedReducer<FeedState, UpdatePostSaved>(_updatePostSaved).call,
   TypedReducer<FeedState, UpdatePostFollowed>(_updatePostFollowed).call,
+  TypedReducer<FeedState, UpdateUserFollowed>(_updateUserFollowed).call,
   TypedReducer<FeedState, UpdatePostCommentsCount>(_updatePostCommentsCount).call,
   TypedReducer<FeedState, RemovePost>(_removePost).call,
 ]);
@@ -63,11 +64,30 @@ FeedState _updatePostLikedWithCount(FeedState state, UpdatePostLikedWithCount ac
 FeedState _updatePostFollowed(FeedState state, UpdatePostFollowed action) {
   final idx = state.posts.indexWhere((p) => p.id == action.postId);
   if (idx == -1) return state;
-  final prev = state.posts[idx];
-  if (prev.isFollowed == action.followed) return state;
-  final updated = prev.copyWith(isFollowed: action.followed);
-  final next = List<FeedPost>.from(state.posts);
-  next[idx] = updated;
+  final targetUserId = state.posts[idx].userId;
+  var changed = false;
+  final next = state.posts.map((post) {
+    final matchesUser = targetUserId.isNotEmpty && post.userId == targetUserId;
+    final matchesPost = post.id == action.postId;
+    if (!matchesUser && !matchesPost) return post;
+    if (post.isFollowed == action.followed) return post;
+    changed = true;
+    return post.copyWith(isFollowed: action.followed);
+  }).toList(growable: false);
+  if (!changed) return state;
+  return state.copyWith(posts: next);
+}
+
+FeedState _updateUserFollowed(FeedState state, UpdateUserFollowed action) {
+  if (action.userId.isEmpty) return state;
+  var changed = false;
+  final next = state.posts.map((post) {
+    if (post.userId != action.userId) return post;
+    if (post.isFollowed == action.followed) return post;
+    changed = true;
+    return post.copyWith(isFollowed: action.followed);
+  }).toList(growable: false);
+  if (!changed) return state;
   return state.copyWith(posts: next);
 }
 

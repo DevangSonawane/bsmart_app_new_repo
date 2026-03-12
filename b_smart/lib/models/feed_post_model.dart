@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 enum PostMediaType {
   image,
   video,
@@ -36,6 +34,8 @@ class FeedPost {
   final String? adCompanyId;
   final String? adCompanyName;
   final String? location; // Added location field
+  final String? latestCommentUser;
+  final String? latestCommentText;
   final List<Map<String, dynamic>>? rawLikes;
   final List<Map<String, dynamic>>? peopleTags;
 
@@ -68,6 +68,8 @@ class FeedPost {
     this.adCompanyId,
     this.adCompanyName,
     this.location, // Added
+    this.latestCommentUser,
+    this.latestCommentText,
     this.rawLikes,
     this.peopleTags,
   });
@@ -103,8 +105,9 @@ class FeedPost {
       final first = (json['mediaUrls'] as List).first;
       if (first is Map) {
         final t = first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
-        if (t is String) thumbUrl = t;
-        else if (t is List && t.isNotEmpty && t.first is Map) {
+        if (t is String) {
+          thumbUrl = t;
+        } else if (t is List && t.isNotEmpty && t.first is Map) {
            // Handle structured thumbnail object from reel payload
            thumbUrl = (t.first as Map)['url'] ?? (t.first as Map)['fileUrl'];
         }
@@ -140,6 +143,8 @@ class FeedPost {
       adCompanyId: json['adCompanyId'],
       adCompanyName: json['adCompanyName'],
       location: json['location'], // Map location
+      latestCommentUser: json['latestCommentUser'],
+      latestCommentText: json['latestCommentText'],
       rawLikes: (json['likes_data'] as List?)?.map((e) => e as Map<String, dynamic>).toList(),
       peopleTags: (json['people_tags'] as List?)?.map((e) => e as Map<String, dynamic>).toList(),
     );
@@ -173,6 +178,8 @@ class FeedPost {
     String? adTitle,
     String? adCompanyId,
     String? adCompanyName,
+    String? latestCommentUser,
+    String? latestCommentText,
     List<Map<String, dynamic>>? rawLikes,
     List<Map<String, dynamic>>? peopleTags,
   }) {
@@ -204,6 +211,8 @@ class FeedPost {
       adTitle: adTitle ?? this.adTitle,
       adCompanyId: adCompanyId ?? this.adCompanyId,
       adCompanyName: adCompanyName ?? this.adCompanyName,
+      latestCommentUser: latestCommentUser ?? this.latestCommentUser,
+      latestCommentText: latestCommentText ?? this.latestCommentText,
       rawLikes: rawLikes ?? this.rawLikes,
       peopleTags: peopleTags ?? this.peopleTags,
     );

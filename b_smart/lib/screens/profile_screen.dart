@@ -368,6 +368,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 (map['media_type'] as String?) ??
                 'post')
             .toLowerCase();
+        final isAdType = typeStr == 'ad' || toBool(map['is_ad']);
         bool hasVideo = false;
         for (final m in media) {
           if (m is Map) {
@@ -437,6 +438,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           isLiked: toBool(map['is_liked_by_me']) || toBool(map['liked_by_me']),
           isSaved: toBool(map['is_saved_by_me']) || toBool(map['saved_by_me']),
           isFollowed: toBool(map['is_followed_by_me']) || toBool(map['followed_by_me']),
+          isAd: isAdType,
+          adCompanyId: map['ad_company_id']?.toString(),
+          adCompanyName: map['ad_company_name']?.toString(),
         );
       }).toList();
     }
@@ -681,7 +685,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _followLoading = true;
     final current = (_profile?['is_followed_by_me'] as bool?) ?? false;
     final next = !current;
-    final username = (_profile?['username'] as String?) ?? 'user';
     int followersCount = (_profile?['followers_count'] as int?) ?? 0;
     final delta = next ? 1 : -1;
     final nextFollowers =
@@ -698,7 +701,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
     }
 
-    final messenger = ScaffoldMessenger.of(context);
     final success = next
         ? await _svc.followUser(targetId)
         : await _svc.unfollowUser(targetId);
@@ -723,12 +725,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (success && mounted) {
       final store = StoreProvider.of<AppState>(context);
-      final feedPosts = store.state.feedState.posts;
-      for (final p in feedPosts) {
-        if (p.userId == targetId) {
-          store.dispatch(UpdatePostFollowed(p.id, next));
-        }
-      }
+      store.dispatch(UpdateUserFollowed(targetId, next));
       try {
         final serverFollowers = await _svc.getFollowersCount(targetId);
         if (mounted) {
@@ -783,10 +780,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _openCreateUpload({UploadMode mode = UploadMode.post}) async {
+  Future<void> _openCreateUpload({
+    UploadMode mode = UploadMode.post,
+    bool isAdFlow = false,
+  }) async {
     final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (context) => CreateUploadScreen(initialMode: mode),
+        builder: (context) =>
+            CreateUploadScreen(initialMode: mode, isAdFlow: isAdFlow),
       ),
     );
     if (created == true && mounted) {
@@ -1017,6 +1018,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             (displayProfile?['posts_count'] as int?) ?? _posts.length;
         final followers = (displayProfile?['followers_count'] as int?) ?? 0;
         final following = (displayProfile?['following_count'] as int?) ?? 0;
+        final isVendor =
+            (displayProfile?['role'] as String?)?.toLowerCase() == 'vendor';
+        final adPosts = _posts.where((p) => p.isAd).toList();
 
         final theme = Theme.of(context);
         final fgColor = theme.colorScheme.onSurface;
@@ -1024,6 +1028,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final tabs = <Tab>[
           const Tab(icon: Icon(LucideIcons.layoutGrid)),
           const Tab(icon: Icon(LucideIcons.video)),
+          if (isVendor) const Tab(icon: Icon(LucideIcons.megaphone)),
           if (isMe) const Tab(icon: Icon(LucideIcons.bookmark)),
           const Tab(icon: Icon(LucideIcons.tag)),
         ];
@@ -1143,6 +1148,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     },
                   ),
                 ),
+          if (isVendor)
+            (adPosts.isEmpty
+                ? SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 48),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: theme.dividerColor,
+                                width: 2,
+                              ),
+                            ),
+                            child: Icon(
+                              LucideIcons.megaphone,
+                              size: 28,
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.5),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No Ads Yet',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: fgColor,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Published ads will appear here.',
+                            style: TextStyle(
+                              color: theme.textTheme.bodyMedium?.color ??
+                                  Colors.grey.shade600,
+                              fontSize: 14,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          if (isMe) ...[
+                            const SizedBox(height: 16),
+                            TextButton(
+                              onPressed: () => _openCreateUpload(
+                                mode: UploadMode.post,
+                                isAdFlow: true,
+                              ),
+                              child: const Text(
+                                'Create your first ad',
+                                style: TextStyle(
+                                  color: DesignTokens.instaPink,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: PostsGrid(
+                      posts: adPosts,
+                      onTap: (p) => _onPostTap(p),
+                    ),
+                  )),
           if (isMe)
             (_saved.isEmpty
                 ? ListView(
@@ -1200,6 +1274,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     colorFilter: const ColorFilter.mode(
                         Color(0xFF3B82F6), BlendMode.srcIn),
                   ),
+                  if (isVendor) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFEDD5),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        'Vendor',
+                        style: TextStyle(
+                          color: Color(0xFFEA580C),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
               actions: [
@@ -1232,6 +1327,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       followers: followers,
                       following: following,
                       isMe: isMe,
+                      isVendor: isVendor,
                       isFollowing:
                           (displayProfile?['is_followed_by_me'] as bool?) ??
                               false,

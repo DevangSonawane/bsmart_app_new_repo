@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 import 'package:video_player/video_player.dart';
@@ -10,6 +12,7 @@ import '../api/api_client.dart';
 import '../config/api_config.dart';
 import '../models/reel_model.dart';
 import '../services/reels_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/url_helper.dart';
 import '../widgets/comments_sheet.dart';
 
@@ -23,7 +26,9 @@ class ReelsScreen extends StatefulWidget {
 
 class _ReelsScreenState extends State<ReelsScreen> {
   final ReelsService _reelsService = ReelsService();
+  final SupabaseService _supabase = SupabaseService();
   final PreloadPageController _pageController = PreloadPageController();
+  final FocusNode _keyboardFocusNode = FocusNode(debugLabel: 'reels-feed-focus');
 
   final Map<String, VideoPlayerController> _controllers = {};
   final Map<String, bool> _isInitializing = {};
@@ -34,17 +39,28 @@ class _ReelsScreenState extends State<ReelsScreen> {
   int _currentIndex = 0;
   bool _isLoading = true;
   bool _isMuted = true;
+  bool _isFollowLoading = false;
+  bool _isCommentsOpen = false;
+  bool _isNavigating = false;
+  Timer? _navigationUnlockTimer;
   String? _error;
   Map<String, String>? _mediaHeaders;
 
   @override
   void initState() {
     super.initState();
+    final cached = _reelsService.getReels();
+    if (cached.isNotEmpty) {
+      _reels = cached;
+      _isLoading = false;
+    }
     _loadReels();
   }
 
   @override
   void dispose() {
+    _navigationUnlockTimer?.cancel();
+    _keyboardFocusNode.dispose();
     _pageController.dispose();
     _disposeAllControllers();
     super.dispose();
@@ -63,8 +79,9 @@ class _ReelsScreenState extends State<ReelsScreen> {
   }
 
   Future<void> _loadReels() async {
+    final hasCached = _reelsService.getReels().isNotEmpty;
     setState(() {
-      _isLoading = true;
+      _isLoading = !hasCached;
       _error = null;
     });
 
@@ -75,11 +92,12 @@ class _ReelsScreenState extends State<ReelsScreen> {
       setState(() {
         _reels = reels;
         _currentIndex = 0;
+        _isLoading = false;
       });
 
       if (_reels.isNotEmpty) {
         unawaited(_reelsService.incrementViews(_reels.first.id));
-        await _ensureControllerForIndex(0);
+        unawaited(_ensureControllerForIndex(0));
         unawaited(_ensureControllerForIndex(1));
       }
     } catch (e) {
@@ -88,7 +106,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
         _error = e.toString();
       });
     } finally {
-      if (mounted) {
+      if (mounted && _reels.isEmpty) {
         setState(() {
           _isLoading = false;
         });
@@ -299,38 +317,161 @@ class _ReelsScreenState extends State<ReelsScreen> {
     }
   }
 
-  void _toggleFollow() {
+  Future<void> _toggleFollow() async {
     if (_reels.isEmpty) return;
-    _reelsService.toggleFollow(_reels[_currentIndex].userId);
+    if (_isFollowLoading) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to follow users')),
+        );
+      }
+      return;
+    }
+
+    final reel = _reels[_currentIndex];
+    final userId = reel.userId;
+    if (userId.trim().isEmpty) return;
+
+    final wasFollowing = reel.isFollowing;
+    setState(() {
+      _isFollowLoading = true;
+    });
+
+    _reelsService.toggleFollow(userId);
     setState(() {
       _reels = _reelsService.getReels();
     });
+
+    try {
+      final ok = wasFollowing
+          ? await _supabase.unfollowUser(userId)
+          : await _supabase.followUser(userId);
+      if (!ok) {
+        throw Exception('follow_update_failed');
+      }
+    } catch (_) {
+      _reelsService.toggleFollow(userId);
+      if (mounted) {
+        setState(() {
+          _reels = _reelsService.getReels();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update follow status')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFollowLoading = false;
+        });
+      }
+    }
   }
 
-  void _openComments() {
+  Future<void> _openComments() async {
     if (_reels.isEmpty) return;
-    unawaited(() async {
-      await CommentsSheet.show(context, _reels[_currentIndex].id);
-      if (!mounted) return;
-      await _loadReels();
-    }());
+    setState(() {
+      _isCommentsOpen = true;
+    });
+    try {
+      final postId = _reels[_currentIndex].id;
+      final isDesktop = MediaQuery.of(context).size.width >= 768;
+      if (isDesktop) {
+        await showGeneralDialog<void>(
+          context: context,
+          barrierDismissible: true,
+          barrierLabel: 'Comments',
+          barrierColor: Colors.black.withValues(alpha: 0.50),
+          transitionDuration: const Duration(milliseconds: 220),
+          pageBuilder: (context, _, __) {
+            final height = MediaQuery.of(context).size.height * 0.78;
+            return SafeArea(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 84),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: SizedBox(
+                      width: 340,
+                      height: height.clamp(0.0, 640.0),
+                      child: CommentsSheet(postId: postId),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+          transitionBuilder: (context, animation, _, child) {
+            final curve = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            );
+            return FadeTransition(
+              opacity: curve,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0.08, 0),
+                  end: Offset.zero,
+                ).animate(curve),
+                child: child,
+              ),
+            );
+          },
+        );
+      } else {
+        await CommentsSheet.show(context, postId);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCommentsOpen = false;
+        });
+      }
+    }
   }
 
-  void _shareCurrent() {
+  Future<void> _shareCurrent() async {
     if (_reels.isEmpty) return;
     unawaited(_reelsService.incrementShares(_reels[_currentIndex].id));
+    final url = _buildShareUrl(_reels[_currentIndex].id);
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Reel link copied')),
     );
   }
 
   void _goToIndex(int index) {
+    if (_isCommentsOpen) return;
+    if (_isNavigating) return;
     if (index < 0 || index >= _reels.length) return;
+    _isNavigating = true;
+    _navigationUnlockTimer?.cancel();
+    _navigationUnlockTimer = Timer(const Duration(milliseconds: 500), () {
+      _isNavigating = false;
+    });
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeOut,
     );
+  }
+
+  String _buildShareUrl(String reelId) {
+    try {
+      final apiUri = Uri.parse(ApiConfig.baseUrl);
+      final scheme = apiUri.scheme.isEmpty ? 'https' : apiUri.scheme;
+      final apiHost = apiUri.host;
+      final appHost = apiHost.startsWith('api.')
+          ? 'app.${apiHost.substring(4)}'
+          : 'app.bebsmart.online';
+      return '$scheme://$appHost/reels/$reelId';
+    } catch (_) {
+      return 'https://app.bebsmart.online/reels/$reelId';
+    }
   }
 
   @override
@@ -409,39 +550,68 @@ class _ReelsScreenState extends State<ReelsScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: MediaQuery.removePadding(
-        context: context,
-        removeTop: true,
-        removeBottom: true,
-        child: Stack(
-          children: [
-            if (!isDesktop)
-              _buildVideoCard(isDesktop: false)
-            else
-              Row(
+      body: KeyboardListener(
+        focusNode: _keyboardFocusNode,
+        autofocus: true,
+        onKeyEvent: (event) {
+          if (event is! KeyDownEvent || _isCommentsOpen) return;
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _goToIndex(_currentIndex + 1);
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            _goToIndex(_currentIndex - 1);
+          }
+        },
+        child: Listener(
+          onPointerSignal: (event) {
+            if (event is! PointerScrollEvent || _isCommentsOpen) return;
+            if (event.scrollDelta.dy.abs() < 20) return;
+            _goToIndex(
+              event.scrollDelta.dy > 0 ? _currentIndex + 1 : _currentIndex - 1,
+            );
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              if (!_keyboardFocusNode.hasFocus) {
+                _keyboardFocusNode.requestFocus();
+              }
+            },
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              removeBottom: true,
+              child: Stack(
                 children: [
-                  Expanded(
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: SizedBox(
-                          width: 380,
-                          child: _buildVideoCard(isDesktop: true),
+                  if (!isDesktop)
+                    _buildVideoCard(isDesktop: false)
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              child: SizedBox(
+                                width: 380,
+                                child: _buildVideoCard(isDesktop: true),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 28, bottom: 26),
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: _buildDesktopActions(),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 28, bottom: 26),
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: _buildDesktopActions(),
-                    ),
-                  ),
+                  if (isDesktop) _buildDesktopArrows(),
                 ],
               ),
-            if (isDesktop) _buildDesktopArrows(),
-          ],
+            ),
+          ),
         ),
       ),
     );
@@ -648,11 +818,11 @@ class _ReelsScreenState extends State<ReelsScreen> {
         _buildMobileAction(
           icon: LucideIcons.messageCircle,
           count: _formatCount(reel.comments),
-          onTap: _openComments,
+          onTap: () => unawaited(_openComments()),
         ),
         const SizedBox(height: 18),
         IconButton(
-          onPressed: _shareCurrent,
+          onPressed: () => unawaited(_shareCurrent()),
           icon: const Icon(LucideIcons.send, color: Colors.white, size: 24),
         ),
         const SizedBox(height: 8),
@@ -733,7 +903,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
             style: const TextStyle(color: Colors.white, fontSize: 12)),
         const SizedBox(height: 14),
         circleButton(
-          onTap: _openComments,
+          onTap: () => unawaited(_openComments()),
           child: const Icon(LucideIcons.messageCircle,
               size: 21, color: Colors.white),
         ),
@@ -742,7 +912,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
             style: const TextStyle(color: Colors.white, fontSize: 12)),
         const SizedBox(height: 14),
         circleButton(
-          onTap: _shareCurrent,
+          onTap: () => unawaited(_shareCurrent()),
           child: const Icon(LucideIcons.send, size: 21, color: Colors.white),
         ),
         const SizedBox(height: 14),
@@ -846,26 +1016,30 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (!reel.isFollowing)
-              GestureDetector(
-                onTap: _toggleFollow,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white54),
-                    borderRadius: BorderRadius.circular(8),
-                    color: Colors.white.withValues(alpha: 0.08),
+            GestureDetector(
+              onTap: _isFollowLoading ? null : () => unawaited(_toggleFollow()),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: reel.isFollowing ? Colors.white30 : Colors.white54,
                   ),
-                  child: const Text(
-                    'Follow',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600),
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+                child: Text(
+                  _isFollowLoading
+                      ? '...'
+                      : (reel.isFollowing ? 'Following' : 'Follow'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
+            ),
           ],
         ),
         const SizedBox(height: 8),

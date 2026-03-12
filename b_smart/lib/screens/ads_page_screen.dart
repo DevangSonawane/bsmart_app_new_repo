@@ -5,11 +5,14 @@ import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
 import 'dart:math' as math;
+import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
-import '../api/follows_api.dart';
 import '../models/ad_model.dart';
 import '../models/ad_category_model.dart';
 import '../services/ads_service.dart';
+import '../services/supabase_service.dart';
+import '../state/feed_actions.dart';
+import '../state/store.dart';
 import '../utils/current_user.dart';
 
 class AdsPageScreen extends StatefulWidget {
@@ -556,7 +559,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     with SingleTickerProviderStateMixin {
   VideoPlayerController? _controller;
   final AdsService _adsService = AdsService();
-  final FollowsApi _followsApi = FollowsApi();
+  final SupabaseService _supabase = SupabaseService();
   bool _isInitialized = false;
   bool _isLiked = false;
   bool _isDisliked = false;
@@ -587,6 +590,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       duration: const Duration(seconds: 5),
       vsync: this,
     );
+    unawaited(_loadFollowState());
     if (widget.isActive) _discController.repeat();
     _initializeVideo();
     _startOrStopProgress();
@@ -607,6 +611,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       _controller?.removeListener(_onVideoTick);
       unawaited(_controller?.dispose());
       _controller = null;
+      unawaited(_loadFollowState());
       _initializeVideo();
       _startOrStopProgress();
     }
@@ -993,24 +998,37 @@ class _AdVideoItemState extends State<AdVideoItem>
     if (_isFollowLoading) return;
     final targetUserId = widget.ad.userId?.trim() ?? '';
     if (targetUserId.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to follow users')),
+        );
+      }
+      return;
+    }
 
     final previous = _isFollowing;
+    final next = !previous;
     setState(() {
       _isFollowLoading = true;
-      _isFollowing = !previous;
+      _isFollowing = next;
     });
+    globalStore.dispatch(UpdateUserFollowed(targetUserId, next));
 
     try {
-      if (previous) {
-        await _followsApi.unfollow(targetUserId);
-      } else {
-        await _followsApi.follow(targetUserId);
+      final ok = previous
+          ? await _supabase.unfollowUser(targetUserId)
+          : await _supabase.followUser(targetUserId);
+      if (!ok) {
+        throw Exception('follow_update_failed');
       }
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _isFollowing = previous;
       });
+      globalStore.dispatch(UpdateUserFollowed(targetUserId, previous));
     } finally {
       if (mounted) {
         setState(() {
@@ -1018,6 +1036,21 @@ class _AdVideoItemState extends State<AdVideoItem>
         });
       }
     }
+  }
+
+  Future<void> _loadFollowState() async {
+    final targetUserId = widget.ad.userId?.trim() ?? '';
+    if (targetUserId.isEmpty) return;
+    final meId = await CurrentUser.id;
+    if (meId == null || meId.trim().isEmpty) return;
+
+    try {
+      final followed = await _supabase.getFollowedUserIds(meId);
+      if (!mounted) return;
+      setState(() {
+        _isFollowing = followed.contains(targetUserId);
+      });
+    } catch (_) {}
   }
 
   Future<void> _toggleSaveAd() async {
