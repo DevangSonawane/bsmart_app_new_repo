@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:ui' as ui;
 
 const String _kDarkModeKey = 'dark_mode';
 
@@ -15,13 +14,8 @@ class ThemeNotifier extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final stored = prefs.getBool(_kDarkModeKey);
-      bool initial;
-      if (stored != null) {
-        initial = stored;
-      } else {
-        final brightness = ui.PlatformDispatcher.instance.platformBrightness;
-        initial = brightness == ui.Brightness.dark;
-      }
+      // Default app startup theme is always light unless user explicitly set it.
+      final initial = stored ?? false;
       return ThemeNotifier(initialDark: initial);
     } catch (e) {
       debugPrint('Error initializing ThemeNotifier: $e');
