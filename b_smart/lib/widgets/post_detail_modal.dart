@@ -68,6 +68,52 @@ class _PostDetailModalState extends State<PostDetailModal> {
     return false;
   }
 
+  bool? _asNullableBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      if (v == 'true' || v == '1') return true;
+      if (v == 'false' || v == '0') return false;
+    }
+    return null;
+  }
+
+  bool? _extractLikedFlag(Map<String, dynamic>? post, {String? currentUserId}) {
+    if (post == null) return null;
+    final direct = _asNullableBool(post['is_liked_by_me']) ??
+        _asNullableBool(post['liked_by_me']) ??
+        _asNullableBool(post['is_liked']) ??
+        _asNullableBool(post['liked']);
+    if (direct != null) return direct;
+
+    final likes = post['likes'];
+    if (likes is! List || currentUserId == null || currentUserId.isEmpty)
+      return null;
+    for (final e in likes) {
+      if (e is String && e == currentUserId) return true;
+      if (e is Map) {
+        final uid = _extractId(e['user_id']) ??
+            _extractId(e['id']) ??
+            _extractId(e['_id']) ??
+            (e['user'] is Map ? _extractId(e['user']) : null);
+        if (uid != null && uid == currentUserId) return true;
+      }
+    }
+    return false;
+  }
+
+  int? _extractLikesCount(Map<String, dynamic>? post) {
+    if (post == null) return null;
+    final raw = post['likes_count'] ?? post['likesCount'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw);
+    final likes = post['likes'];
+    if (likes is List) return likes.length;
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -103,32 +149,12 @@ class _PostDetailModalState extends State<PostDetailModal> {
       if (fetched != null) user = fetched;
     }
     final comments = await _svc.getComments(widget.postId);
-    final rawLikes = post['likes'] as List<dynamic>? ?? [];
     final currentUserId = await CurrentUser.id;
-    bool isLiked = false;
-    for (final e in rawLikes) {
-      if (e is Map) {
-        String? uid = _extractId(e['user_id']) ??
-            _extractId(e['id']) ??
-            _extractId(e['_id']);
-        if (uid == null && e['user'] is Map) {
-          uid = _extractId(e['user']);
-        }
-        if (uid != null &&
-            currentUserId != null &&
-            uid.toString() == currentUserId.toString()) {
-          isLiked = true;
-          break;
-        }
-      } else if (e is String &&
-          currentUserId != null &&
-          e.toString() == currentUserId.toString()) {
-        isLiked = true;
-        break;
-      }
-    }
-    int likeCount = (post['likes_count'] as int?) ?? rawLikes.length;
-    final isSaved = _asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']);
+    final isLiked =
+        _extractLikedFlag(post, currentUserId: currentUserId) ?? false;
+    final likeCount = _extractLikesCount(post) ?? 0;
+    final isSaved =
+        _asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']);
     if (mounted) {
       setState(() {
         _post = post;
@@ -158,38 +184,18 @@ class _PostDetailModalState extends State<PostDetailModal> {
     final desired = !_isLiked;
     setState(() {
       _isLiked = desired;
-      _likeCount = desired ? _likeCount + 1 : _likeCount - 1;
+      _likeCount =
+          desired ? _likeCount + 1 : (_likeCount > 0 ? _likeCount - 1 : 0);
       _likeAnimate = true;
     });
     final liked = await _svc.setPostLike(widget.postId, like: desired);
     if (!mounted) return;
     try {
       final p = await SupabaseService().getPostById(widget.postId);
-      final rawLikes = (p?['likes'] as List<dynamic>?) ?? [];
-      bool serverLiked = false;
       final currentUserId = await CurrentUser.id;
-      for (final e in rawLikes) {
-        if (e is Map) {
-          String? uid = _extractId(e['user_id']) ??
-              _extractId(e['id']) ??
-              _extractId(e['_id']);
-          if (uid == null && e['user'] is Map) {
-            uid = _extractId(e['user']);
-          }
-          if (uid != null &&
-              currentUserId != null &&
-              uid.toString() == currentUserId.toString()) {
-            serverLiked = true;
-            break;
-          }
-        } else if (e is String &&
-            currentUserId != null &&
-            e.toString() == currentUserId.toString()) {
-          serverLiked = true;
-          break;
-        }
-      }
-      final likesCount = (p?['likes_count'] as int?) ?? rawLikes.length;
+      final serverLiked =
+          _extractLikedFlag(p, currentUserId: currentUserId) ?? liked;
+      final likesCount = _extractLikesCount(p) ?? _likeCount;
       setState(() {
         _isLiked = serverLiked;
         _likeCount = likesCount;
@@ -239,7 +245,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
     if (!mounted) return;
     try {
       final p = await _svc.getPostById(widget.postId);
-      final serverSaved = _asBool(p?['is_saved_by_me']) || _asBool(p?['saved_by_me']) || saved;
+      final serverSaved =
+          _asBool(p?['is_saved_by_me']) || _asBool(p?['saved_by_me']) || saved;
       setState(() => _isSaved = serverSaved);
       StoreProvider.of<AppState>(context, listen: false)
           .dispatch(UpdatePostSaved(widget.postId, serverSaved));

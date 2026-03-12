@@ -56,11 +56,62 @@ class _HomeDashboardState extends State<HomeDashboard> {
   Map<String, Map<String, bool>> _storyStatuses = {};
   int _currentIndex = 0;
   int _balance = 0;
+
   /// Current user profile from `users` table (same source as React web app) for header avatar.
   Map<String, dynamic>? _currentUserProfile;
   String? _currentUserId;
   bool get _isVendor =>
-      (_currentUserProfile?['role']?.toString().toLowerCase() ?? '') == 'vendor';
+      (_currentUserProfile?['role']?.toString().toLowerCase() ?? '') ==
+      'vendor';
+
+  bool? _parseBoolLike(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final lower = value.trim().toLowerCase();
+      if (lower == 'true' || lower == '1') return true;
+      if (lower == 'false' || lower == '0') return false;
+    }
+    return null;
+  }
+
+  bool? _extractLikedFlag(Map<String, dynamic>? payload) {
+    if (payload == null) return null;
+    final direct = _parseBoolLike(payload['is_liked_by_me']) ??
+        _parseBoolLike(payload['liked_by_me']) ??
+        _parseBoolLike(payload['is_liked']) ??
+        _parseBoolLike(payload['liked']) ??
+        _parseBoolLike(payload['isLiked']);
+    if (direct != null) return direct;
+
+    final currentUserId = _currentUserId;
+    if (currentUserId == null || currentUserId.isEmpty) return null;
+    final rawLikes = payload['likes'];
+    if (rawLikes is! List) return null;
+    for (final e in rawLikes) {
+      if (e is String && e == currentUserId) return true;
+      if (e is Map) {
+        final uid = (e['user_id'] ??
+                e['id'] ??
+                e['_id'] ??
+                (e['user'] is Map ? (e['user'] as Map)['_id'] : null))
+            ?.toString();
+        if (uid != null && uid == currentUserId) return true;
+      }
+    }
+    return false;
+  }
+
+  int? _extractLikesCount(Map<String, dynamic>? payload) {
+    if (payload == null) return null;
+    final value = payload['likes_count'] ?? payload['likesCount'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    final likes = payload['likes'];
+    if (likes is List) return likes.length;
+    return null;
+  }
 
   Map<String, dynamic>? _normalizeProfile(Map<String, dynamic>? raw) {
     if (raw == null) return null;
@@ -134,7 +185,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     if (store.state.feedState.posts.isEmpty) {
       store.dispatch(SetFeedLoading(true));
     }
-    
+
     // Use REST API-backed CurrentUser helper for the authenticated user ID.
     final currentUserId = await CurrentUser.id;
     Map<String, dynamic>? meRaw;
@@ -142,19 +193,20 @@ class _HomeDashboardState extends State<HomeDashboard> {
       meRaw = await AuthApi().me();
     } catch (_) {}
     final meProfile = _normalizeProfile(meRaw);
-    final currentProfileRaw =
-        currentUserId != null ? await _supabase.getUserById(currentUserId) : null;
+    final currentProfileRaw = currentUserId != null
+        ? await _supabase.getUserById(currentUserId)
+        : null;
     final currentProfile = _normalizeProfile(currentProfileRaw);
     final mergedProfile = <String, dynamic>{
       ...?currentProfile,
       ...?meProfile,
     };
-    final effectiveUserId =
-        currentUserId ??
+    final effectiveUserId = currentUserId ??
         (mergedProfile['id']?.toString()) ??
         (mergedProfile['_id']?.toString());
     // Same as React Home.jsx: fetch all posts, order by created_at desc
-    final fetched = await _feedService.fetchFeedFromBackend(currentUserId: currentUserId);
+    final fetched =
+        await _feedService.fetchFeedFromBackend(currentUserId: currentUserId);
     final bal = await _walletService.getCoinBalance();
     // Stories feed from backend
     final groups = await _feedService.fetchStoriesFeed();
@@ -167,7 +219,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
         : allGroups;
 
     final baseStatuses = _computeStoryStatuses(otherGroups);
-    final previousStatuses = Map<String, Map<String, bool>>.from(_storyStatuses);
+    final previousStatuses =
+        Map<String, Map<String, bool>>.from(_storyStatuses);
     final mergedStatuses = <String, Map<String, bool>>{};
     for (final g in otherGroups) {
       final uid = g.userId;
@@ -192,8 +245,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
       if (aHasUnseen != bHasUnseen) {
         return aHasUnseen ? -1 : 1;
       }
-      final ad = a.stories.isNotEmpty ? a.stories.first.createdAt : DateTime.fromMillisecondsSinceEpoch(0);
-      final bd = b.stories.isNotEmpty ? b.stories.first.createdAt : DateTime.fromMillisecondsSinceEpoch(0);
+      final ad = a.stories.isNotEmpty
+          ? a.stories.first.createdAt
+          : DateTime.fromMillisecondsSinceEpoch(0);
+      final bd = b.stories.isNotEmpty
+          ? b.stories.first.createdAt
+          : DateTime.fromMillisecondsSinceEpoch(0);
       return bd.compareTo(ad);
     });
 
@@ -235,12 +292,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) {
         if (mounted) setState(() => _locationLoading = false);
         return;
       }
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
-      final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.low);
+      final placemarks =
+          await placemarkFromCoordinates(pos.latitude, pos.longitude);
       String loc;
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
@@ -253,13 +313,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
         ];
         loc = parts.where((e) => e.trim().isNotEmpty).toList().join(', ');
       } else {
-        loc = '${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}';
+        loc =
+            '${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}';
       }
       if (mounted) {
         setState(() {
-        _currentLocation = loc;
-        _locationLoading = false;
-      });
+          _currentLocation = loc;
+          _locationLoading = false;
+        });
       }
     } catch (_) {
       if (mounted) setState(() => _locationLoading = false);
@@ -278,19 +339,23 @@ class _HomeDashboardState extends State<HomeDashboard> {
       return;
     }
     final desired = !post.isLiked;
+    final optimisticLikes =
+        desired ? post.likes + 1 : (post.likes > 0 ? post.likes - 1 : 0);
     final store = StoreProvider.of<AppState>(context);
     store.dispatch(UpdatePostLiked(post.id, desired));
-    if (mounted) setState(() {}); // trigger rebuild to reflect optimistic change
+    if (mounted)
+      setState(() {}); // trigger rebuild to reflect optimistic change
     final liked = await _supabase.setPostLike(post.id, like: desired);
     if (!mounted) return;
     try {
       final p = await SupabaseService().getPostById(post.id);
-      final serverLiked = (p?['is_liked_by_me'] as bool?) ?? liked;
-      final likesCount = (p?['likes_count'] as int?) ?? (post.likes + (desired ? 1 : -1));
-      store.dispatch(UpdatePostLikedWithCount(post.id, serverLiked, likesCount));
+      final serverLiked = _extractLikedFlag(p) ?? liked;
+      final likesCount = _extractLikesCount(p) ?? optimisticLikes;
+      store
+          .dispatch(UpdatePostLikedWithCount(post.id, serverLiked, likesCount));
       if (mounted) setState(() {}); // reflect reconciled count/color
     } catch (_) {
-      store.dispatch(UpdatePostLiked(post.id, liked));
+      store.dispatch(UpdatePostLikedWithCount(post.id, liked, optimisticLikes));
       if (mounted) setState(() {}); // reflect reconciled state
     }
   }
@@ -362,11 +427,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
   void _onFollowPost(FeedPost post) {
     final followed = !post.isFollowed;
     final store = StoreProvider.of<AppState>(context);
-    
+
     // 1. Optimistic UI Update
     store.dispatch(UpdatePostFollowed(post.id, followed));
     if (mounted) setState(() {});
-    
+
     // Snackbar notification removed for a cleaner experience
 
     // 2. Call Service & Handle Result
@@ -385,10 +450,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
         // Success: Update "My Profile" following count in Redux
         final meId = await CurrentUser.id;
         if (meId == null || meId.isEmpty) return;
-        
+
         final cachedProfile = store.state.profileState.profile;
-        final cachedId = cachedProfile?['id']?.toString() ?? cachedProfile?['_id']?.toString();
-        
+        final cachedId = cachedProfile?['id']?.toString() ??
+            cachedProfile?['_id']?.toString();
+
         // Only update if the cached profile belongs to the current user
         if (cachedId != null && cachedId == meId) {
           final delta = followed ? 1 : -1;
@@ -397,6 +463,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
       }
     }();
   }
+
   void _onMorePost(BuildContext context, FeedPost post) {
     final messenger = ScaffoldMessenger.of(context);
     showModalBottomSheet(
@@ -421,7 +488,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
               onTap: () {
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('We\'ll show you less like this')),
+                  const SnackBar(
+                      content: Text('We\'ll show you less like this')),
                 );
               },
             ),
@@ -431,18 +499,22 @@ class _HomeDashboardState extends State<HomeDashboard> {
               onTap: () {
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Link copied'), behavior: SnackBarBehavior.floating),
+                  const SnackBar(
+                      content: Text('Link copied'),
+                      behavior: SnackBarBehavior.floating),
                 );
               },
             ),
             FutureBuilder<String?>(
               future: CurrentUser.id,
               builder: (context, snapshot) {
-                final isOwner = snapshot.data != null && snapshot.data == post.userId;
+                final isOwner =
+                    snapshot.data != null && snapshot.data == post.userId;
                 if (!isOwner) return const SizedBox.shrink();
                 return ListTile(
                   leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: const Text('Delete Post', style: TextStyle(color: Colors.red)),
+                  title: const Text('Delete Post',
+                      style: TextStyle(color: Colors.red)),
                   onTap: () async {
                     Navigator.pop(ctx);
                     bool isDeleting = false;
@@ -456,13 +528,16 @@ class _HomeDashboardState extends State<HomeDashboard> {
                               child: Material(
                                 color: Colors.transparent,
                                 child: Container(
-                                  width: MediaQuery.of(context).size.width * 0.9,
-                                  constraints: const BoxConstraints(maxWidth: 360),
+                                  width:
+                                      MediaQuery.of(context).size.width * 0.9,
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 360),
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
                                     color: Theme.of(context).cardColor,
                                     borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: Theme.of(context).dividerColor),
+                                    border: Border.all(
+                                        color: Theme.of(context).dividerColor),
                                   ),
                                   child: isDeleting
                                       ? Column(
@@ -481,7 +556,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                             Text(
                                               'Deleting post...',
                                               style: TextStyle(
-                                                color: Theme.of(context).textTheme.bodyMedium?.color,
+                                                color: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.color,
                                                 fontWeight: FontWeight.w600,
                                               ),
                                             ),
@@ -495,13 +573,19 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                             const Text(
                                               'Delete Post?',
                                               textAlign: TextAlign.center,
-                                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                              style: TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold),
                                             ),
                                             const SizedBox(height: 8),
                                             Text(
                                               'Are you sure you want to delete this post? This action cannot be undone.',
                                               textAlign: TextAlign.center,
-                                              style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+                                              style: TextStyle(
+                                                  color: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.color),
                                             ),
                                             const SizedBox(height: 16),
                                             Row(
@@ -517,39 +601,76 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                                 const SizedBox(width: 8),
                                                 Expanded(
                                                   child: ElevatedButton(
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: Colors.red,
-                                                      foregroundColor: Colors.white,
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                          Colors.red,
+                                                      foregroundColor:
+                                                          Colors.white,
                                                     ),
                                                     onPressed: () async {
-                                                      setState(() => isDeleting = true);
+                                                      setState(() =>
+                                                          isDeleting = true);
                                                       try {
-                                                        final ok = await SupabaseService().deletePost(post.id);
-                                                        await Future.delayed(const Duration(milliseconds: 1500));
+                                                        final ok =
+                                                            await SupabaseService()
+                                                                .deletePost(
+                                                                    post.id);
+                                                        await Future.delayed(
+                                                            const Duration(
+                                                                milliseconds:
+                                                                    1500));
                                                         if (ok) {
                                                           if (mounted) {
-                                                            StoreProvider.of<AppState>(context).dispatch(RemovePost(post.id));
-                                                            Navigator.pop(context);
-                                                            messenger.showSnackBar(const SnackBar(content: Text('Post deleted')));
+                                                            StoreProvider.of<
+                                                                        AppState>(
+                                                                    context)
+                                                                .dispatch(
+                                                                    RemovePost(
+                                                                        post.id));
+                                                            Navigator.pop(
+                                                                context);
+                                                            messenger.showSnackBar(
+                                                                const SnackBar(
+                                                                    content: Text(
+                                                                        'Post deleted')));
                                                           }
                                                         } else {
                                                           if (mounted) {
-                                                            setState(() => isDeleting = false);
-                                                            Navigator.pop(context);
-                                                            messenger.showSnackBar(const SnackBar(content: Text('Failed to delete post')));
+                                                            setState(() =>
+                                                                isDeleting =
+                                                                    false);
+                                                            Navigator.pop(
+                                                                context);
+                                                            messenger.showSnackBar(
+                                                                const SnackBar(
+                                                                    content: Text(
+                                                                        'Failed to delete post')));
                                                           }
                                                         }
                                                       } on ApiException catch (e) {
                                                         if (mounted) {
-                                                          setState(() => isDeleting = false);
-                                                          Navigator.pop(context);
-                                                          messenger.showSnackBar(SnackBar(content: Text(e.message)));
+                                                          setState(() =>
+                                                              isDeleting =
+                                                                  false);
+                                                          Navigator.pop(
+                                                              context);
+                                                          messenger.showSnackBar(
+                                                              SnackBar(
+                                                                  content: Text(
+                                                                      e.message)));
                                                         }
                                                       } catch (e) {
                                                         if (mounted) {
-                                                          setState(() => isDeleting = false);
-                                                          Navigator.pop(context);
-                                                          messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+                                                          setState(() =>
+                                                              isDeleting =
+                                                                  false);
+                                                          Navigator.pop(
+                                                              context);
+                                                          messenger.showSnackBar(
+                                                              SnackBar(
+                                                                  content: Text(
+                                                                      e.toString())));
                                                         }
                                                       }
                                                     },
@@ -588,7 +709,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
           border: Border(
-            bottom: BorderSide(color: isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade200),
+            bottom: BorderSide(
+                color: isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade200),
           ),
         ),
         child: Row(
@@ -613,7 +735,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     ),
                     TextSpan(
                       text: _currentLocation == null
-                          ? (_locationLoading ? 'Detecting current location...' : 'Tap to detect location')
+                          ? (_locationLoading
+                              ? 'Detecting current location...'
+                              : 'Tap to detect location')
                           : _currentLocation!,
                       style: TextStyle(
                         color: isDark ? Colors.white70 : Colors.black54,
@@ -638,7 +762,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
     );
   }
 
-  List<StoryGroup> _buildStoryGroupsFromUsers(List<Map<String, dynamic>> users) {
+  List<StoryGroup> _buildStoryGroupsFromUsers(
+      List<Map<String, dynamic>> users) {
     final now = DateTime.now();
     return users.asMap().entries.map((entry) {
       final idx = entry.key;
@@ -658,12 +783,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
             userId: userId,
             userName: username,
             userAvatar: u['avatar_url'] as String?,
-            mediaUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400',
+            mediaUrl:
+                'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400',
             mediaType: StoryMediaType.image,
             createdAt: now.subtract(const Duration(hours: 2)),
             views: 0,
             isViewed: idx % 3 == 0,
-            productUrl: idx == 0 ? 'https://bsmart.asynk.store/product/123' : null,
+            productUrl:
+                idx == 0 ? 'https://bsmart.asynk.store/product/123' : null,
             externalLink: idx == 3 ? 'https://example.com' : null,
             hasPollQuiz: idx == 4,
           ),
@@ -672,11 +799,13 @@ class _HomeDashboardState extends State<HomeDashboard> {
     }).toList();
   }
 
-  Map<String, Map<String, bool>> _computeStoryStatuses(List<StoryGroup> groups) {
+  Map<String, Map<String, bool>> _computeStoryStatuses(
+      List<StoryGroup> groups) {
     final map = <String, Map<String, bool>>{};
     for (final g in groups) {
       final hasUnseen = g.stories.any((s) => s.isViewed == false);
-      final allViewed = g.stories.isNotEmpty && g.stories.every((s) => s.isViewed == true);
+      final allViewed =
+          g.stories.isNotEmpty && g.stories.every((s) => s.isViewed == true);
       map[g.userId] = {
         'isCloseFriend': g.isCloseFriend,
         'hasUnseen': hasUnseen,
@@ -695,9 +824,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
       Story(
         id: 'my-story-1',
         userId: (profile['id'] ?? 'me').toString(),
-        userName: (profile['username'] ?? profile['full_name'] ?? 'You').toString(),
+        userName:
+            (profile['username'] ?? profile['full_name'] ?? 'You').toString(),
         userAvatar: profile['avatar_url'] as String?,
-        mediaUrl: 'https://images.unsplash.com/photo-1606787366850-de6330128bfc?w=400',
+        mediaUrl:
+            'https://images.unsplash.com/photo-1606787366850-de6330128bfc?w=400',
         mediaType: StoryMediaType.image,
         createdAt: now.subtract(const Duration(minutes: 30)),
         views: 12,
@@ -741,9 +872,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
   }
 
   void _openVendorAdComposer(String contentType) {
-    final mode = contentType.toLowerCase() == 'reel'
-        ? UploadMode.reel
-        : UploadMode.post;
+    final mode =
+        contentType.toLowerCase() == 'reel' ? UploadMode.reel : UploadMode.post;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => CreateUploadScreen(
@@ -774,13 +904,13 @@ class _HomeDashboardState extends State<HomeDashboard> {
       _openProfile();
       return;
     }
-    
+
     // If switching back to Home, refresh data
     if (idx == 0 && _currentIndex != 0) {
       final store = StoreProvider.of<AppState>(context);
       _loadData(store);
     }
-    
+
     if (idx != _currentIndex) {
       setState(() {
         _currentIndex = idx;
@@ -797,27 +927,44 @@ class _HomeDashboardState extends State<HomeDashboard> {
           decoration: BoxDecoration(
             color: Theme.of(ctx).cardColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, -4))],
+            boxShadow: const [
+              BoxShadow(
+                  color: Colors.black26, blurRadius: 12, offset: Offset(0, -4))
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 12),
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2))),
+              Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.grey.shade400,
+                      borderRadius: BorderRadius.circular(2))),
               const SizedBox(height: 16),
-              Text('Create', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+              Text('Create',
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 16),
               ListTile(
                 leading: Container(
                   width: 44,
                   height: 44,
-                  decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(LucideIcons.image, color: Colors.white, size: 22),
+                  decoration: BoxDecoration(
+                      gradient: DesignTokens.instaGradient,
+                      borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(LucideIcons.image,
+                      color: Colors.white, size: 22),
                 ),
                 title: Text(_isVendor ? 'Create Ads' : 'Create Post'),
                 subtitle: Text(
                   _isVendor ? 'Upload ad campaign' : 'Photo or video',
-                  style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant),
                 ),
                 onTap: () {
                   Navigator.of(ctx).pop();
@@ -843,11 +990,17 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   leading: Container(
                     width: 44,
                     height: 44,
-                    decoration: BoxDecoration(gradient: DesignTokens.instaGradient, borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(LucideIcons.video, color: Colors.white, size: 22),
+                    decoration: BoxDecoration(
+                        gradient: DesignTokens.instaGradient,
+                        borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(LucideIcons.video,
+                        color: Colors.white, size: 22),
                   ),
                   title: const Text('Upload Reel'),
-                  subtitle: Text('Short video', style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                  subtitle: Text('Short video',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
                   onTap: () {
                     Navigator.of(ctx).pop();
                     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -878,23 +1031,38 @@ class _HomeDashboardState extends State<HomeDashboard> {
     final posts = feedState.posts;
     final isLoading = feedState.isLoading;
     final isDesktop = MediaQuery.sizeOf(context).width >= 768;
-    final isFullScreen = _currentIndex == 1 || _currentIndex == 3 || _currentIndex == 4; // Ads, Promote, Reels
+    final isFullScreen = _currentIndex == 1 ||
+        _currentIndex == 3 ||
+        _currentIndex == 4; // Ads, Promote, Reels
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final appBarBg = theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
-    final appBarFg = theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
+    final appBarBg =
+        theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
+    final appBarFg =
+        theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
     final content = Scaffold(
       extendBody: _currentIndex != 4,
-      backgroundColor: isFullScreen ? (isDark ? const Color(0xFF121212) : Colors.black) : null,
+      backgroundColor: isFullScreen
+          ? (isDark ? const Color(0xFF121212) : Colors.black)
+          : null,
       appBar: isFullScreen
           ? null
           : AppBar(
               title: ShaderMask(
                 shaderCallback: (bounds) => const LinearGradient(
-                  colors: [DesignTokens.instaPurple, DesignTokens.instaPink, DesignTokens.instaOrange],
+                  colors: [
+                    DesignTokens.instaPurple,
+                    DesignTokens.instaPink,
+                    DesignTokens.instaOrange
+                  ],
                 ).createShader(bounds),
-                child: Text('b_smart', style: TextStyle(color: appBarFg, fontWeight: FontWeight.bold, fontSize: 22, fontFamily: 'cursive')),
+                child: Text('b_smart',
+                    style: TextStyle(
+                        color: appBarFg,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 22,
+                        fontFamily: 'cursive')),
               ),
               elevation: 0,
               backgroundColor: appBarBg,
@@ -908,18 +1076,27 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          onPressed: () => Navigator.of(context).pushNamed('/search'),
-                          icon: Icon(LucideIcons.search, size: 24, color: appBarFg),
+                          onPressed: () =>
+                              Navigator.of(context).pushNamed('/search'),
+                          icon: Icon(LucideIcons.search,
+                              size: 24, color: appBarFg),
                         ),
                         const SizedBox(width: 8),
                         GestureDetector(
-                          onTap: () => Navigator.of(context).pushNamed('/wallet'),
+                          onTap: () =>
+                              Navigator.of(context).pushNamed('/wallet'),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF2D2D2D) : Colors.grey.shade100,
+                              color: isDark
+                                  ? const Color(0xFF2D2D2D)
+                                  : Colors.grey.shade100,
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200),
+                              border: Border.all(
+                                  color: isDark
+                                      ? const Color(0xFF3D3D3D)
+                                      : Colors.grey.shade200),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -927,11 +1104,18 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                 Container(
                                   width: 20,
                                   height: 20,
-                                  decoration: const BoxDecoration(gradient: DesignTokens.instaGradient, shape: BoxShape.circle),
-                                  child: const Icon(LucideIcons.wallet, size: 12, color: Colors.white),
+                                  decoration: const BoxDecoration(
+                                      gradient: DesignTokens.instaGradient,
+                                      shape: BoxShape.circle),
+                                  child: const Icon(LucideIcons.wallet,
+                                      size: 12, color: Colors.white),
                                 ),
                                 const SizedBox(width: 6),
-                                Text('$_balance', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: appBarFg)),
+                                Text('$_balance',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: appBarFg)),
                               ],
                             ),
                           ),
@@ -940,8 +1124,25 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            IconButton(onPressed: () => Navigator.of(context).pushNamed('/notifications'), icon: Icon(LucideIcons.heart, size: 24, color: appBarFg)),
-                            Positioned(right: 8, top: 8, child: Container(width: 8, height: 8, decoration: BoxDecoration(color: DesignTokens.instaPink, shape: BoxShape.circle, border: Border.all(color: isDark ? const Color(0xFFE8E8E8) : Colors.white, width: 1.5)))),
+                            IconButton(
+                                onPressed: () => Navigator.of(context)
+                                    .pushNamed('/notifications'),
+                                icon: Icon(LucideIcons.heart,
+                                    size: 24, color: appBarFg)),
+                            Positioned(
+                                right: 8,
+                                top: 8,
+                                child: Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                        color: DesignTokens.instaPink,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: isDark
+                                                ? const Color(0xFFE8E8E8)
+                                                : Colors.white,
+                                            width: 1.5)))),
                           ],
                         ),
                         GestureDetector(
@@ -958,25 +1159,50 @@ class _HomeDashboardState extends State<HomeDashboard> {
                               ),
                               child: CircleAvatar(
                                 radius: 14,
-                                backgroundColor: isDark ? Colors.black : Colors.white,
+                                backgroundColor:
+                                    isDark ? Colors.black : Colors.white,
                                 child: CircleAvatar(
                                   radius: 13,
-                                  backgroundColor: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
-                                  backgroundImage: _currentUserProfile != null &&
-                                          _currentUserProfile!['avatar_url'] != null &&
-                                          (_currentUserProfile!['avatar_url'] as String).isNotEmpty
-                                      ? NetworkImage(_currentUserProfile!['avatar_url'] as String)
+                                  backgroundColor: isDark
+                                      ? const Color(0xFF3D3D3D)
+                                      : Colors.grey.shade200,
+                                  backgroundImage: _currentUserProfile !=
+                                              null &&
+                                          _currentUserProfile!['avatar_url'] !=
+                                              null &&
+                                          (_currentUserProfile!['avatar_url']
+                                                  as String)
+                                              .isNotEmpty
+                                      ? NetworkImage(
+                                          _currentUserProfile!['avatar_url']
+                                              as String)
                                       : null,
                                   child: _currentUserProfile == null ||
-                                          _currentUserProfile!['avatar_url'] == null ||
-                                          (_currentUserProfile!['avatar_url'] as String).isEmpty
+                                          _currentUserProfile!['avatar_url'] ==
+                                              null ||
+                                          (_currentUserProfile!['avatar_url']
+                                                  as String)
+                                              .isEmpty
                                       ? Text(
                                           _currentUserProfile != null
-                                              ? ((_currentUserProfile!['username'] ?? _currentUserProfile!['full_name'] ?? 'U') as String).isNotEmpty
-                                                  ? ((_currentUserProfile!['username'] ?? _currentUserProfile!['full_name'] ?? 'U') as String).substring(0, 1).toUpperCase()
+                                              ? ((_currentUserProfile![
+                                                              'username'] ??
+                                                          _currentUserProfile![
+                                                              'full_name'] ??
+                                                          'U') as String)
+                                                      .isNotEmpty
+                                                  ? ((_currentUserProfile![
+                                                              'username'] ??
+                                                          _currentUserProfile![
+                                                              'full_name'] ??
+                                                          'U') as String)
+                                                      .substring(0, 1)
+                                                      .toUpperCase()
                                                   : 'U'
                                               : 'U',
-                                          style: TextStyle(fontWeight: FontWeight.bold, color: appBarFg),
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: appBarFg),
                                         )
                                       : null,
                                 ),
@@ -996,9 +1222,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
           RefreshIndicator(
             onRefresh: _onRefresh,
             child: isLoading
-                ? const Center(child: CircularProgressIndicator(color: DesignTokens.instaPink))
+                ? const Center(
+                    child: CircularProgressIndicator(
+                        color: DesignTokens.instaPink))
                 : CustomScrollView(
-                    cacheExtent: 1500, // Preload content (especially reels) before it appears
+                    cacheExtent:
+                        1500, // Preload content (especially reels) before it appears
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
                       SliverToBoxAdapter(
@@ -1015,7 +1244,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                       builder: (_) => OwnStoryViewerScreen(
                                         stories: _myStories,
                                         storyId: _myStoryId,
-                                        userName: (_currentUserProfile?['username'] ?? _currentUserProfile?['full_name'] ?? 'You').toString(),
+                                        userName:
+                                            (_currentUserProfile?['username'] ??
+                                                    _currentUserProfile?[
+                                                        'full_name'] ??
+                                                    'You')
+                                                .toString(),
                                       ),
                                     ),
                                   );
@@ -1024,7 +1258,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                 }
                               },
                               onYourStoryAddTap: _openStoryCamera,
-                              onUserStoryTap: _storyGroups.isEmpty ? null : _onStoryTap,
+                              onUserStoryTap:
+                                  _storyGroups.isEmpty ? null : _onStoryTap,
                               yourStoryHasActive: _yourStoryHasActive,
                               showYourStory: true,
                               userStatuses: _storyStatuses,
@@ -1035,19 +1270,26 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       if (posts.isEmpty)
                         SliverFillRemaining(
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 24),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(LucideIcons.image, size: 48, color: Theme.of(context).textTheme.bodyMedium?.color),
+                                Icon(LucideIcons.image,
+                                    size: 48,
+                                    color: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.color),
                                 const SizedBox(height: 12),
                                 Text(
                                   'No posts yet',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 16,
-                                    color: Theme.of(context).colorScheme.onSurface,
+                                    color:
+                                        Theme.of(context).colorScheme.onSurface,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -1055,7 +1297,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                   'Create your first post from the + button',
                                   style: TextStyle(
                                     fontSize: 13,
-                                    color: Theme.of(context).textTheme.bodyMedium?.color,
+                                    color: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.color,
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
@@ -1068,21 +1313,24 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
                               final p = posts[index];
-                              final isOwnPost =
-                                  _currentUserId != null && p.userId == _currentUserId;
+                              final isOwnPost = _currentUserId != null &&
+                                  p.userId == _currentUserId;
                               return PostCard(
-                                key: ValueKey('card-${p.id}'), // Prevent unnecessary rebuilds
+                                key: ValueKey(
+                                    'card-${p.id}'), // Prevent unnecessary rebuilds
                                 post: p,
                                 isTabActive: _currentIndex == 0,
                                 onUserTap: p.userId.isNotEmpty
-                                    ? () => Navigator.of(context).pushNamed('/profile/${p.userId}')
+                                    ? () => Navigator.of(context)
+                                        .pushNamed('/profile/${p.userId}')
                                     : null,
                                 onLike: () => _onLikePost(p),
                                 onDoubleTapLike: () => _onDoubleTapLikePost(p),
                                 onComment: () => _onCommentPost(p),
                                 onShare: () => _onSharePost(p),
                                 onSave: () => _onSavePost(p),
-                                onFollow: isOwnPost ? null : () => _onFollowPost(p),
+                                onFollow:
+                                    isOwnPost ? null : () => _onFollowPost(p),
                                 onMore: () => _onMorePost(context, p),
                               );
                             },
@@ -1103,7 +1351,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
           ReelsScreen(isActive: _currentIndex == 4),
         ],
       ),
-      bottomNavigationBar: isDesktop ? null : BottomNav(currentIndex: _currentIndex, onTap: _onNavTap),
+      bottomNavigationBar: isDesktop
+          ? null
+          : BottomNav(currentIndex: _currentIndex, onTap: _onNavTap),
     );
 
     if (isDesktop) {
@@ -1168,10 +1418,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
 
 class _DesktopNotificationsButton extends StatefulWidget {
   @override
-  State<_DesktopNotificationsButton> createState() => _DesktopNotificationsButtonState();
+  State<_DesktopNotificationsButton> createState() =>
+      _DesktopNotificationsButtonState();
 }
 
-class _DesktopNotificationsButtonState extends State<_DesktopNotificationsButton> {
+class _DesktopNotificationsButtonState
+    extends State<_DesktopNotificationsButton> {
   bool _showDropdown = false;
 
   @override
@@ -1197,12 +1449,32 @@ class _DesktopNotificationsButtonState extends State<_DesktopNotificationsButton
               child: Container(
                 width: 40,
                 height: 40,
-                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade100)),
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF3D3D3D)
+                            : Colors.grey.shade100)),
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Center(child: Icon(LucideIcons.heart, size: 20, color: fgColor)),
-                    Positioned(right: 8, top: 8, child: Container(width: 8, height: 8, decoration: BoxDecoration(color: DesignTokens.instaPink, shape: BoxShape.circle, border: Border.all(color: isDark ? const Color(0xFFE8E8E8) : Colors.white, width: 1.5)))),
+                    Center(
+                        child:
+                            Icon(LucideIcons.heart, size: 20, color: fgColor)),
+                    Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                                color: DesignTokens.instaPink,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                    color: isDark
+                                        ? const Color(0xFFE8E8E8)
+                                        : Colors.white,
+                                    width: 1.5)))),
                   ],
                 ),
               ),
@@ -1218,7 +1490,13 @@ class _DesktopNotificationsButtonState extends State<_DesktopNotificationsButton
                 child: Container(
                   width: 320,
                   constraints: const BoxConstraints(maxHeight: 320),
-                  decoration: BoxDecoration(color: surfaceColor, borderRadius: BorderRadius.circular(12), border: Border.all(color: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade100)),
+                  decoration: BoxDecoration(
+                      color: surfaceColor,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF3D3D3D)
+                              : Colors.grey.shade100)),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1227,8 +1505,18 @@ class _DesktopNotificationsButtonState extends State<_DesktopNotificationsButton
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Notifications', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: fgColor)),
-                            GestureDetector(onTap: () {}, child: const Text('Mark all read', style: TextStyle(fontSize: 12, color: DesignTokens.instaPink, fontWeight: FontWeight.w500))),
+                            Text('Notifications',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: fgColor)),
+                            GestureDetector(
+                                onTap: () {},
+                                child: const Text('Mark all read',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: DesignTokens.instaPink,
+                                        fontWeight: FontWeight.w500))),
                           ],
                         ),
                       ),
@@ -1238,9 +1526,21 @@ class _DesktopNotificationsButtonState extends State<_DesktopNotificationsButton
                           shrinkWrap: true,
                           padding: EdgeInsets.zero,
                           children: const [
-                            _NotificationTile(icon: LucideIcons.bell, iconColor: Colors.blue, title: 'New follower: Sarah', time: '2 min ago'),
-                            _NotificationTile(icon: LucideIcons.heart, iconColor: DesignTokens.instaPink, title: 'Mike liked your post', time: '1 hour ago'),
-                            _NotificationTile(icon: LucideIcons.messageCircle, iconColor: DesignTokens.instaPurple, title: 'Anna commented: "Amazing!"', time: '2 hours ago'),
+                            _NotificationTile(
+                                icon: LucideIcons.bell,
+                                iconColor: Colors.blue,
+                                title: 'New follower: Sarah',
+                                time: '2 min ago'),
+                            _NotificationTile(
+                                icon: LucideIcons.heart,
+                                iconColor: DesignTokens.instaPink,
+                                title: 'Mike liked your post',
+                                time: '1 hour ago'),
+                            _NotificationTile(
+                                icon: LucideIcons.messageCircle,
+                                iconColor: DesignTokens.instaPurple,
+                                title: 'Anna commented: "Amazing!"',
+                                time: '2 hours ago'),
                           ],
                         ),
                       ),
@@ -1261,15 +1561,23 @@ class _NotificationTile extends StatelessWidget {
   final String title;
   final String time;
 
-  const _NotificationTile({required this.icon, required this.iconColor, required this.title, required this.time});
+  const _NotificationTile(
+      {required this.icon,
+      required this.iconColor,
+      required this.title,
+      required this.time});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final mutedColor = theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600;
+    final mutedColor =
+        theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600;
     return ListTile(
-      leading: CircleAvatar(backgroundColor: iconColor.withAlpha(40), child: Icon(icon, size: 14, color: iconColor)),
-      title: Text(title, style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface)),
+      leading: CircleAvatar(
+          backgroundColor: iconColor.withAlpha(40),
+          child: Icon(icon, size: 14, color: iconColor)),
+      title: Text(title,
+          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface)),
       subtitle: Text(time, style: TextStyle(fontSize: 12, color: mutedColor)),
     );
   }
@@ -1297,7 +1605,8 @@ class _FloatingWallet extends StatelessWidget {
           decoration: BoxDecoration(
             color: surfaceColor,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade100),
+            border: Border.all(
+                color: isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade100),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1305,16 +1614,33 @@ class _FloatingWallet extends StatelessWidget {
               Container(
                 width: 40,
                 height: 40,
-                decoration: BoxDecoration(gradient: DesignTokens.instaGradient, shape: BoxShape.circle, boxShadow: [BoxShadow(color: DesignTokens.instaPink.withAlpha(80), blurRadius: 8)]),
-                child: const Icon(LucideIcons.wallet, size: 20, color: Colors.white),
+                decoration: BoxDecoration(
+                    gradient: DesignTokens.instaGradient,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                          color: DesignTokens.instaPink.withAlpha(80),
+                          blurRadius: 8)
+                    ]),
+                child: const Icon(LucideIcons.wallet,
+                    size: 20, color: Colors.white),
               ),
               const SizedBox(width: 12),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Balance', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600)),
-                  Text('$balance', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: fgColor)),
+                  Text('Balance',
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          color: theme.textTheme.bodyMedium?.color ??
+                              Colors.grey.shade600)),
+                  Text('$balance',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: fgColor)),
                 ],
               ),
             ],

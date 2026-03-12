@@ -810,38 +810,53 @@ class SupabaseService {
   /// Calls `/posts/:id/like` when [like] is true, otherwise `/posts/:id/unlike`.
   /// Returns the server's authoritative `liked` state.
   Future<bool> setPostLike(String postId, {required bool like}) async {
+    bool? parseLiked(Map<String, dynamic>? payload) {
+      if (payload == null) return null;
+      final candidates = [
+        payload['liked'],
+        payload['is_liked'],
+        payload['isLiked'],
+        payload['is_liked_by_me'],
+        payload['liked_by_me'],
+      ];
+      for (final value in candidates) {
+        if (value is bool) return value;
+        if (value is num) return value != 0;
+        if (value is String) {
+          final lower = value.trim().toLowerCase();
+          if (lower == 'true' || lower == '1') return true;
+          if (lower == 'false' || lower == '0') return false;
+        }
+      }
+      return null;
+    }
+
     try {
       final res = like
           ? await _postsApi.likePost(postId)
           : await _postsApi.unlikePost(postId);
-      final liked = res['liked'] as bool?;
+      final liked = parseLiked(res);
       if (liked != null) return liked;
-      final lc = res['likes_count'] as int?;
-      if (lc != null) return lc > 0;
       // As a final fallback, re-fetch the post to derive authoritative state.
       try {
         final post = await _postsApi.getPost(postId);
-        final isLikedByMe = post['is_liked_by_me'] as bool?;
+        final isLikedByMe = parseLiked(post);
         if (isLikedByMe != null) return isLikedByMe;
-        final likesCount = post['likes_count'] as int?;
-        if (likesCount != null) return likesCount > 0;
       } catch (_) {}
       return like;
     } on BadRequestException {
       // Already in desired state; fetch current state to avoid incorrect flips.
       try {
         final post = await _postsApi.getPost(postId);
-        final isLikedByMe = post['is_liked_by_me'] as bool?;
+        final isLikedByMe = parseLiked(post);
         if (isLikedByMe != null) return isLikedByMe;
-        final likesCount = post['likes_count'] as int?;
-        if (likesCount != null) return likesCount > 0;
       } catch (_) {}
       return like;
     } on UnauthorizedException {
       // Token missing/expired – cannot persist. Try to read current state; otherwise keep desired for UI.
       try {
         final post = await _postsApi.getPost(postId);
-        final isLikedByMe = post['is_liked_by_me'] as bool?;
+        final isLikedByMe = parseLiked(post);
         if (isLikedByMe != null) return isLikedByMe;
       } catch (_) {}
       return like;

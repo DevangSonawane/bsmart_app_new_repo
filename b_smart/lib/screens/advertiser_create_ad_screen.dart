@@ -424,6 +424,56 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
     }
   }
 
+  Future<void> _showAddCategoryDialog() async {
+    final controller = TextEditingController();
+    final categoryName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Category'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(
+            hintText: 'Enter category name',
+          ),
+          onSubmitted: (_) => Navigator.of(context).pop(controller.text.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    final name = categoryName?.trim() ?? '';
+    if (name.isEmpty) return;
+
+    try {
+      await _adsApi.addCategory(name);
+      await _loadCategories();
+      if (!mounted) return;
+
+      final matched = _categories
+          .where((c) => c.toLowerCase() == name.toLowerCase())
+          .cast<String?>()
+          .firstWhere((c) => c != null, orElse: () => null);
+
+      setState(() {
+        _selectedCategory = matched ?? name;
+      });
+      _showSnack('Category added successfully.');
+    } catch (e) {
+      _showSnack('Could not add category: $e');
+    }
+  }
+
   Future<void> _pickMedia() async {
     try {
       final items = await _picker.pickMultipleMedia();
@@ -594,6 +644,11 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
         'x': 0,
         'y': 0,
       },
+      'timing_window': {
+        'start': 0,
+        'end': 0,
+      },
+      'thumbnails': const <Map<String, dynamic>>[],
     };
 
     if (!item.isVideo) {
@@ -613,7 +668,11 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
       };
     } else {
       media['video_meta'] = {
-        'duration_milliseconds': 0,
+        'original_length_seconds': 0,
+        'selected_start': 0,
+        'selected_end': 0,
+        'final_duration': 0,
+        'thumbnail_time': 0,
       };
     }
 
@@ -664,7 +723,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
       _showSnack('Please select an ad category.');
       return;
     }
-    final budgetCoins = double.tryParse(_budgetCtl.text.trim());
+    final budgetCoinsInput = num.tryParse(_budgetCtl.text.trim());
+    final budgetCoins = budgetCoinsInput?.round();
     if (budgetCoins == null || budgetCoins <= 0) {
       _showSnack('Please enter total budget in coins.');
       return;
@@ -1473,6 +1533,14 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                 onSelected: (_) => setState(() => _selectedCategory = c),
               );
             }).toList(),
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _loadingCategories ? null : _showAddCategoryDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('Add category'),
           ),
         ),
       ],

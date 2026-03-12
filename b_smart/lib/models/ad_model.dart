@@ -72,6 +72,10 @@ class Ad {
         raw['vendor_id'] is Map ? Map<String, dynamic>.from(raw['vendor_id'] as Map) : <String, dynamic>{};
     final user =
         raw['user_id'] is Map ? Map<String, dynamic>.from(raw['user_id'] as Map) : <String, dynamic>{};
+    final userStatus = raw['user_status'] is Map
+        ? Map<String, dynamic>.from(raw['user_status'] as Map)
+        : <String, dynamic>{};
+    final stats = raw['stats'] is Map ? Map<String, dynamic>.from(raw['stats'] as Map) : <String, dynamic>{};
 
     final media = _asList(raw['media']);
     String? videoUrl;
@@ -134,10 +138,13 @@ class Ad {
       maxRewardableViews:
           _toInt(raw['max_rewardable_views'] ?? raw['maxRewardableViews'] ?? raw['max_views']) ?? 0,
       currentViews: _toInt(raw['likes_count'] ?? raw['views_count'] ?? raw['currentViews']) ?? 0,
-      likesCount: _toInt(raw['likes_count'] ?? raw['likesCount']) ?? 0,
-      commentsCount: _toInt(raw['comments_count'] ?? raw['commentsCount']) ?? 0,
-      sharesCount: _toInt(raw['shares_count'] ?? raw['sharesCount']) ?? 0,
-      isLikedByMe: (raw['is_liked_by_me'] ?? raw['isLikedByMe'] ?? false) == true,
+      likesCount: _toInt(raw['likes_count'] ?? raw['likesCount'] ?? stats['likes']) ?? 0,
+      commentsCount: _toInt(raw['comments_count'] ?? raw['commentsCount'] ?? stats['comments']) ??
+          (_asList(raw['comments']).length),
+      sharesCount: _toInt(raw['shares_count'] ?? raw['sharesCount'] ?? stats['shares']) ?? 0,
+      isLikedByMe:
+          (raw['is_liked_by_me'] ?? raw['isLikedByMe'] ?? userStatus['is_liked'] ?? userStatus['liked'] ?? false) ==
+              true,
       userName: _asNullableString(user['username'] ?? user['full_name']),
       userAvatarUrl: _normalizeUrl(user['avatar_url'] ?? user['avatarUrl'] ?? raw['avatar_url'] ?? raw['avatar']),
       vendorBusinessName: _asNullableString(
@@ -200,21 +207,34 @@ class Ad {
     );
     if (direct != null && direct.isNotEmpty) return direct;
 
-    final name = media['fileName']?.toString();
-    if (name != null && name.trim().isNotEmpty) {
-      return '${_apiOrigin()}/uploads/${name.trim()}';
+    final name = media['fileName']?.toString().trim();
+    if (name != null && name.isNotEmpty && !_isPlaceholderToken(name)) {
+      return '${_apiOrigin()}/uploads/$name';
     }
     return null;
   }
 
   static String? _normalizeUrl(dynamic value) {
     final raw = value?.toString().trim();
-    if (raw == null || raw.isEmpty || raw == 'null') return null;
+    if (raw == null || raw.isEmpty) return null;
+    if (_isPlaceholderToken(raw)) {
+      return null;
+    }
     if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
     if (raw.startsWith('/uploads/')) return '${_apiOrigin()}$raw';
     if (raw.startsWith('uploads/')) return '${_apiOrigin()}/$raw';
     if (raw.startsWith('/')) return '${_apiOrigin()}$raw';
     return '${_apiOrigin()}/uploads/$raw';
+  }
+
+  static bool _isPlaceholderToken(String value) {
+    final lowered = value.trim().toLowerCase();
+    return lowered == 'null' ||
+        lowered == 'string' ||
+        lowered == 'undefined' ||
+        lowered == 'none' ||
+        lowered == 'n/a' ||
+        lowered == 'na';
   }
 
   static int? _toInt(dynamic value) {

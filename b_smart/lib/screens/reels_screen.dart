@@ -190,7 +190,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
       if (uri.host == baseUri.host) return headers;
     } catch (_) {}
 
-    if (url.startsWith('http://localhost') || url.startsWith('http://10.0.2.2')) {
+    if (url.startsWith('http://localhost') ||
+        url.startsWith('http://10.0.2.2')) {
       return headers;
     }
     return const {};
@@ -216,7 +217,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
       if (index + 1 < _reels.length) _reels[index + 1].id,
     };
 
-    final toDispose = _controllers.keys.where((id) => !keepIds.contains(id)).toList();
+    final toDispose =
+        _controllers.keys.where((id) => !keepIds.contains(id)).toList();
     for (final id in toDispose) {
       final c = _controllers.remove(id);
       _cleanupController(c);
@@ -343,10 +345,12 @@ class _ReelsScreenState extends State<ReelsScreen> {
               SizedBox(
                 width: 30,
                 height: 30,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
               ),
               SizedBox(height: 12),
-              Text('Loading reels...', style: TextStyle(color: Colors.white70, fontSize: 13)),
+              Text('Loading reels...',
+                  style: TextStyle(color: Colors.white70, fontSize: 13)),
             ],
           ),
         ),
@@ -364,7 +368,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
               children: [
                 const Text(
                   'Failed to load reels',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -394,7 +399,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
       return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(
-          child: Text('No reels found', style: TextStyle(color: Colors.white70)),
+          child:
+              Text('No reels found', style: TextStyle(color: Colors.white70)),
         ),
       );
     }
@@ -434,7 +440,6 @@ class _ReelsScreenState extends State<ReelsScreen> {
                   ),
                 ],
               ),
-
             if (isDesktop) _buildDesktopArrows(),
           ],
         ),
@@ -461,7 +466,6 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 return _buildReelPlayer(_reels[index], isDesktop: isDesktop);
               },
             ),
-
             const Positioned(
               left: 0,
               right: 0,
@@ -482,7 +486,6 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 ),
               ),
             ),
-
             Positioned(
               right: 12,
               top: 60,
@@ -511,14 +514,12 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 ),
               ),
             ),
-
             if (!isDesktop)
               Positioned(
                 right: 10,
                 bottom: 10,
                 child: _buildMobileActions(current),
               ),
-
             Positioned(
               left: 12,
               right: isDesktop ? 14 : 66,
@@ -535,7 +536,9 @@ class _ReelsScreenState extends State<ReelsScreen> {
     final controller = _controllers[reel.id];
     final isInitialized = controller != null && controller.value.isInitialized;
     final hasError = _hasError[reel.id] ?? false;
-    final thumb = reel.thumbnailUrl == null ? null : UrlHelper.absoluteUrl(reel.thumbnailUrl!);
+    final thumb = reel.thumbnailUrl == null
+        ? null
+        : UrlHelper.absoluteUrl(reel.thumbnailUrl!);
     final mobileAspect = _mobileAspectForReel(reel);
 
     return SizedBox.expand(
@@ -543,7 +546,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
         builder: (context, constraints) {
           final frameHeight = isDesktop
               ? constraints.maxHeight
-              : (constraints.maxWidth / mobileAspect).clamp(0.0, constraints.maxHeight);
+              : (constraints.maxWidth / mobileAspect)
+                  .clamp(0.0, constraints.maxHeight);
 
           return Stack(
             fit: StackFit.expand,
@@ -560,11 +564,11 @@ class _ReelsScreenState extends State<ReelsScreen> {
                           imageUrl: thumb,
                           fit: BoxFit.contain,
                           httpHeaders: _headersForUrl(thumb),
-                          errorWidget: (_, __, ___) => Container(color: Colors.black),
+                          errorWidget: (_, __, ___) =>
+                              Container(color: Colors.black),
                         )
                       else
                         Container(color: Colors.black),
-
                       if (isInitialized)
                         FittedBox(
                           fit: BoxFit.contain,
@@ -578,24 +582,25 @@ class _ReelsScreenState extends State<ReelsScreen> {
                   ),
                 ),
               ),
-
               if (!isInitialized && !hasError)
                 const Center(
                   child: SizedBox(
                     width: 28,
                     height: 28,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white70),
                   ),
                 ),
-
               if (hasError)
                 Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline, color: Colors.white70, size: 32),
+                      const Icon(Icons.error_outline,
+                          color: Colors.white70, size: 32),
                       const SizedBox(height: 10),
-                      const Text('Could not load video', style: TextStyle(color: Colors.white70)),
+                      const Text('Could not load video',
+                          style: TextStyle(color: Colors.white70)),
                       const SizedBox(height: 10),
                       OutlinedButton(
                         onPressed: () {
@@ -608,7 +613,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
                             setState(() {});
                           }
                         },
-                        style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+                        style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white),
                         child: const Text('Retry'),
                       ),
                     ],
@@ -696,9 +702,13 @@ class _ReelsScreenState extends State<ReelsScreen> {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: active ? const Color(0xFF3B82F6) : Colors.white.withValues(alpha: 0.10),
+            color: active
+                ? const Color(0xFF3B82F6)
+                : Colors.white.withValues(alpha: 0.10),
             border: Border.all(
-              color: active ? const Color(0xFF60A5FA) : Colors.white.withValues(alpha: 0.22),
+              color: active
+                  ? const Color(0xFF60A5FA)
+                  : Colors.white.withValues(alpha: 0.22),
             ),
             borderRadius: BorderRadius.circular(22),
           ),
@@ -719,14 +729,17 @@ class _ReelsScreenState extends State<ReelsScreen> {
           ),
         ),
         const SizedBox(height: 4),
-        Text(_formatCount(reel.likes), style: const TextStyle(color: Colors.white, fontSize: 12)),
+        Text(_formatCount(reel.likes),
+            style: const TextStyle(color: Colors.white, fontSize: 12)),
         const SizedBox(height: 14),
         circleButton(
           onTap: _openComments,
-          child: const Icon(LucideIcons.messageCircle, size: 21, color: Colors.white),
+          child: const Icon(LucideIcons.messageCircle,
+              size: 21, color: Colors.white),
         ),
         const SizedBox(height: 4),
-        Text(_formatCount(reel.comments), style: const TextStyle(color: Colors.white, fontSize: 12)),
+        Text(_formatCount(reel.comments),
+            style: const TextStyle(color: Colors.white, fontSize: 12)),
         const SizedBox(height: 14),
         circleButton(
           onTap: _shareCurrent,
@@ -735,12 +748,17 @@ class _ReelsScreenState extends State<ReelsScreen> {
         const SizedBox(height: 14),
         circleButton(
           onTap: _toggleSave,
-          child: Icon(LucideIcons.bookmark, size: 21, color: reel.isSaved ? Colors.white : Colors.white),
+          child: Icon(
+            reel.isSaved ? Icons.bookmark : Icons.bookmark_border,
+            size: 21,
+            color: Colors.white,
+          ),
         ),
         const SizedBox(height: 14),
         circleButton(
           onTap: () {},
-          child: const Icon(LucideIcons.ellipsis, size: 21, color: Colors.white),
+          child:
+              const Icon(LucideIcons.ellipsis, size: 21, color: Colors.white),
         ),
         const SizedBox(height: 10),
         _buildAvatarThumb(reel, size: 36),
@@ -786,7 +804,9 @@ class _ReelsScreenState extends State<ReelsScreen> {
   Widget _buildBottomInfo(Reel reel) {
     final isExpanded = _captionExpanded[reel.id] ?? false;
     final caption = reel.caption ?? '';
-    final words = caption.trim().isEmpty ? <String>[] : caption.trim().split(RegExp(r'\s+'));
+    final words = caption.trim().isEmpty
+        ? <String>[]
+        : caption.trim().split(RegExp(r'\s+'));
     final isLong = words.length > 5;
     final preview = isLong ? words.take(5).join(' ') : caption;
 
@@ -799,13 +819,19 @@ class _ReelsScreenState extends State<ReelsScreen> {
             CircleAvatar(
               radius: 15,
               backgroundColor: Colors.grey[700],
-              backgroundImage: reel.userAvatarUrl != null && reel.userAvatarUrl!.isNotEmpty
-                  ? CachedNetworkImageProvider(UrlHelper.absoluteUrl(reel.userAvatarUrl!))
-                  : null,
+              backgroundImage:
+                  reel.userAvatarUrl != null && reel.userAvatarUrl!.isNotEmpty
+                      ? CachedNetworkImageProvider(
+                          UrlHelper.absoluteUrl(reel.userAvatarUrl!))
+                      : null,
               child: reel.userAvatarUrl == null || reel.userAvatarUrl!.isEmpty
                   ? Text(
-                      (reel.userName.isEmpty ? 'U' : reel.userName[0]).toUpperCase(),
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      (reel.userName.isEmpty ? 'U' : reel.userName[0])
+                          .toUpperCase(),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold),
                     )
                   : null,
             ),
@@ -813,7 +839,10 @@ class _ReelsScreenState extends State<ReelsScreen> {
             Expanded(
               child: Text(
                 reel.userName,
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -821,7 +850,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
               GestureDetector(
                 onTap: _toggleFollow,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.white54),
                     borderRadius: BorderRadius.circular(8),
@@ -829,7 +859,10 @@ class _ReelsScreenState extends State<ReelsScreen> {
                   ),
                   child: const Text(
                     'Follow',
-                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -839,7 +872,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
         if (caption.isNotEmpty)
           RichText(
             text: TextSpan(
-              style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.35),
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 13, height: 1.35),
               children: [
                 TextSpan(text: isExpanded || !isLong ? caption : preview),
                 if (isLong)
@@ -855,7 +889,10 @@ class _ReelsScreenState extends State<ReelsScreen> {
                         padding: const EdgeInsets.only(left: 5),
                         child: Text(
                           isExpanded ? 'less' : '... more',
-                          style: const TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
@@ -895,7 +932,10 @@ class _ReelsScreenState extends State<ReelsScreen> {
     final canGoUp = _currentIndex > 0;
     final canGoDown = _currentIndex < _reels.length - 1;
 
-    Widget arrowButton({required bool enabled, required IconData icon, required VoidCallback onTap}) {
+    Widget arrowButton(
+        {required bool enabled,
+        required IconData icon,
+        required VoidCallback onTap}) {
       return GestureDetector(
         onTap: enabled ? onTap : null,
         child: Opacity(

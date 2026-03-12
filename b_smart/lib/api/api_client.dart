@@ -130,6 +130,18 @@ class ApiClient {
     }
   }
 
+  /// `PATCH <baseUrl>/<path>` with JSON body.
+  Future<dynamic> patch(String path, {Map<String, dynamic>? body}) async {
+    try {
+      final response = await _http
+          .patch(_uri(path), headers: await _headers(), body: body != null ? jsonEncode(body) : null)
+          .timeout(ApiConfig.timeout);
+      return _handleResponse(response);
+    } on SocketException {
+      throw NetworkException();
+    }
+  }
+
   /// `DELETE <baseUrl>/<path>`
   Future<dynamic> delete(String path) async {
     try {
