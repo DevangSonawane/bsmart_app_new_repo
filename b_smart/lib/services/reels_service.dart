@@ -120,7 +120,7 @@ class ReelsService {
     if (mediaList.isNotEmpty) {
       final first = mediaList.first;
       if (first is String) {
-        videoUrl = first;
+        videoUrl = _string(first);
       } else if (first is Map) {
         final media = Map<String, dynamic>.from(first);
         videoUrl = _string(media['fileUrl']) ??
@@ -131,7 +131,7 @@ class ReelsService {
         final thumbField =
             media['thumbnail'] ?? media['thumbnailUrl'] ?? media['thumb'];
         if (thumbField is String) {
-          thumbnailUrl = thumbField;
+          thumbnailUrl = _string(thumbField);
         } else if (thumbField is Map) {
           final thumbMap = Map<String, dynamic>.from(thumbField);
           thumbnailUrl = _string(thumbMap['fileUrl']) ??

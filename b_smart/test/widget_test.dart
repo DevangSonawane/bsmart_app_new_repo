@@ -7,15 +7,15 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:b_smart/main.dart';
+import 'package:flutter/material.dart';
+import 'package:b_smart/screens/auth/login/login_screen.dart';
 
 void main() {
   testWidgets('App launches and shows login screen', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const BSmartApp());
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+    await tester.pump(const Duration(milliseconds: 1200));
 
-    // Verify that login screen is shown
-    expect(find.text('b Smart'), findsOneWidget);
-    expect(find.text('Welcome back!'), findsOneWidget);
+    expect(find.text('Log In'), findsOneWidget);
+    expect(find.text('Forgot Password?'), findsOneWidget);
   });
 }

@@ -45,6 +45,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   bool _isFollowLoading = false;
   bool _isCommentsOpen = false;
   bool _isNavigating = false;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
   Timer? _navigationUnlockTimer;
   String? _error;
   Map<String, String>? _mediaHeaders;
@@ -121,6 +123,7 @@ class _ReelsScreenState extends State<ReelsScreen>
         _reels = reels;
         _currentIndex = 0;
         _isLoading = false;
+        _hasMore = reels.length >= 20;
       });
 
       if (_reels.isNotEmpty) {
@@ -177,8 +180,8 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (_controllerSetupInProgress.contains(index)) return null;
     _controllerSetupInProgress.add(index);
     final reel = _reels[index];
-    final url = UrlHelper.absoluteUrl(reel.videoUrl);
-    if (url.isEmpty) {
+    final urlCandidates = _urlCandidates(reel.videoUrl);
+    if (urlCandidates.isEmpty) {
       _controllerSetupInProgress.remove(index);
       return null;
     }
@@ -186,52 +189,94 @@ class _ReelsScreenState extends State<ReelsScreen>
     try {
       await _ensureMediaHeaders();
       if (!mounted) return null;
-      final headerCandidates = _playbackHeaderCandidates(url);
       Object? lastError;
-      for (final headers in headerCandidates) {
-        VideoPlayerController? controller;
-        try {
-          debugPrint(
-            '[Reels] preparing source index=$index id=${reel.id} url=$url authHeader=${headers.containsKey('Authorization')}',
-          );
-          controller = VideoPlayerController.networkUrl(
-            Uri.parse(url),
-            httpHeaders: headers,
-          );
-          await controller.initialize();
-          if (!mounted || generation != _poolGeneration) {
-            await controller.dispose();
-            return null;
-          }
-          await controller.setLooping(true);
-          await controller.setVolume(_isMuted ? 0 : 1);
-          _videoControllers[index] = controller;
-          debugPrint('[Reels] video initialized index=$index id=${reel.id}');
-          if (mounted) {
-            setState(() {});
-          }
-          if (index == _currentIndex && widget.isActive) {
-            unawaited(controller.play().catchError((_) {}));
-          }
-          _failedControllerIndexes.remove(index);
-          _controllerRetryAttempts.remove(index);
-          debugPrint('[Reels] controller created index=$index id=${reel.id}');
-          return controller;
-        } catch (e) {
-          lastError = e;
+      for (final url in urlCandidates) {
+        final headerCandidates = _playbackHeaderCandidates(url);
+        for (final headers in headerCandidates) {
+          VideoPlayerController? controller;
           try {
-            await controller?.dispose();
-          } catch (_) {}
+            debugPrint(
+              '[Reels] preparing source index=$index id=${reel.id} url=$url authHeader=${headers.containsKey('Authorization')}',
+            );
+            controller = VideoPlayerController.networkUrl(
+              Uri.parse(url),
+              httpHeaders: headers,
+            );
+            await controller.initialize();
+            if (!mounted || generation != _poolGeneration) {
+              await controller.dispose();
+              return null;
+            }
+            await controller.setLooping(true);
+            await controller.setVolume(_isMuted ? 0 : 1);
+            _videoControllers[index] = controller;
+            debugPrint('[Reels] video initialized index=$index id=${reel.id}');
+            if (mounted) {
+              setState(() {});
+            }
+            if (index == _currentIndex && widget.isActive) {
+              unawaited(controller.play().catchError((_) {}));
+            }
+            _failedControllerIndexes.remove(index);
+            _controllerRetryAttempts.remove(index);
+            debugPrint('[Reels] controller created index=$index id=${reel.id}');
+            return controller;
+          } catch (e) {
+            lastError = e;
+            debugPrint('[Reels] load failed index=$index id=${reel.id} url=$url headersAuth=${headers.containsKey('Authorization')} error=$e');
+            if (mounted) {
+              // Surface the failing URL on device to collect it for debugging.
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  duration: const Duration(seconds: 4),
+                  content: Text('Reel load failed (403): $url'),
+                ),
+              );
+            }
+            try {
+              await controller?.dispose();
+            } catch (_) {}
+          }
         }
+        debugPrint('[Reels] tried url=$url for index=$index id=${reel.id} lastError=$lastError');
       }
       _failedControllerIndexes.add(index);
       debugPrint(
-        '[Reels] controller create failed index=$index id=${reel.id} url=$url error=$lastError',
+        '[Reels] controller create failed index=$index id=${reel.id} lastUrl=${urlCandidates.isNotEmpty ? urlCandidates.last : ''} error=$lastError',
       );
       return null;
     } finally {
       _controllerSetupInProgress.remove(index);
     }
+  }
+
+  List<String> _urlCandidates(String raw) {
+    final seen = <String>{};
+    void add(String v) {
+      if (v.isEmpty) return;
+      if (seen.add(v)) {}
+    }
+
+    final canonical = UrlHelper.absoluteUrl(raw);
+    add(canonical);
+    debugPrint('[Reels] url candidates base=$raw canonical=$canonical');
+
+    // Try HTTPS variant if original was HTTP (some CDNs block HTTP requests on devices).
+    if (canonical.startsWith('http://')) {
+      add(canonical.replaceFirst('http://', 'https://'));
+    }
+
+    // Try both with and without /api prefix to mirror web behavior.
+    try {
+      final uri = Uri.parse(canonical);
+      if (uri.path.startsWith('/api/')) {
+        add(uri.replace(path: uri.path.replaceFirst('/api', '')).toString());
+      } else {
+        add(uri.replace(path: '/api${uri.path}').toString());
+      }
+    } catch (_) {}
+
+    return seen.toList();
   }
 
   Future<void> _ensureMediaHeaders() async {
@@ -245,12 +290,15 @@ class _ReelsScreenState extends State<ReelsScreen>
   }
 
   Map<String, String> _headersForUrl(String url) {
-    // React web uses plain <video src="..."> without auth headers for media.
-    // Keep parity and avoid 403s on media/CDN URLs that reject bearer auth.
+    // Attach auth only when the media host matches the API host (CDNs often reject auth).
+    if (_mediaHeaders != null && UrlHelper.shouldAttachAuthHeader(url)) {
+      return _mediaHeaders!;
+    }
     return const {};
   }
 
   List<Map<String, String>> _playbackHeaderCandidates(String url) {
+    // Try without auth first, then with auth (some CDNs need auth, some reject it).
     final candidates = <Map<String, String>>[const <String, String>{}];
     final authHeaders = _mediaHeaders;
     if (authHeaders != null && authHeaders.containsKey('Authorization')) {
@@ -351,6 +399,34 @@ class _ReelsScreenState extends State<ReelsScreen>
     _poolOps = _poolOps
         .then<void>((_) => _rotatePoolToIndex(index))
         .catchError((_) {});
+    _maybeLoadMore(index);
+  }
+
+  void _maybeLoadMore(int index) {
+    if (_isLoadingMore || !_hasMore) return;
+    if (index >= _reels.length - 3) {
+      unawaited(_loadMoreReels());
+    }
+  }
+
+  Future<void> _loadMoreReels() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final next = await _reelsService.fetchReels(
+        limit: 20,
+        offset: _reels.length,
+      );
+      if (!mounted) return;
+      setState(() {
+        _reels.addAll(next);
+        if (next.length < 20) _hasMore = false;
+      });
+    } catch (_) {
+      // ignore fetch errors for background pagination
+    } finally {
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
   }
 
   void _scheduleControllerRetry(int index) {

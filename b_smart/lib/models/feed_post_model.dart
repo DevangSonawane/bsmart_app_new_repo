@@ -1,3 +1,5 @@
+import '../utils/url_helper.dart';
+
 enum PostMediaType {
   image,
   video,
@@ -77,14 +79,25 @@ class FeedPost {
   factory FeedPost.fromJson(Map<String, dynamic> json) {
     // 1. Handle the Media URL extraction (The fix for your 404 error)
     List<String> extractedUrls = [];
-    if (json['mediaUrls'] != null) {
-      for (var item in (json['mediaUrls'] as List)) {
+    final mediaList = json['mediaUrls'] as List? ?? json['media'] as List?;
+    if (mediaList != null) {
+      for (var item in mediaList) {
         if (item is Map) {
           // If backend sends [{ "fileUrl": "...", "fileName": "..." }]
-          extractedUrls.add(item['fileUrl']?.toString() ?? '');
+          final normalized = UrlHelper.normalizeUrl(
+            item['fileUrl'] ??
+                item['file_url'] ??
+                item['url'] ??
+                item['path'] ??
+                item['image'] ??
+                item['imageUrl'] ??
+                item['videoUrl'],
+          );
+          if (normalized.isNotEmpty) extractedUrls.add(normalized);
         } else {
           // If backend sends ["url1", "url2"]
-          extractedUrls.add(item.toString());
+          final normalized = UrlHelper.normalizeUrl(item.toString());
+          if (normalized.isNotEmpty) extractedUrls.add(normalized);
         }
       }
     }
@@ -98,7 +111,7 @@ class FeedPost {
       default: type = PostMediaType.image;
     }
 
-    String? thumbUrl = json['thumbnailUrl'];
+    String? thumbUrl = UrlHelper.normalizeUrl(json['thumbnailUrl'] ?? json['thumbnail']);
     
     // Fallback: Check if first media item is a map and has a thumbnail
     if (thumbUrl == null && json['mediaUrls'] != null && (json['mediaUrls'] as List).isNotEmpty) {
@@ -106,10 +119,10 @@ class FeedPost {
       if (first is Map) {
         final t = first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
         if (t is String) {
-          thumbUrl = t;
+          thumbUrl = UrlHelper.normalizeUrl(t);
         } else if (t is List && t.isNotEmpty && t.first is Map) {
            // Handle structured thumbnail object from reel payload
-           thumbUrl = (t.first as Map)['url'] ?? (t.first as Map)['fileUrl'];
+           thumbUrl = UrlHelper.normalizeUrl((t.first as Map)['url'] ?? (t.first as Map)['fileUrl']);
         }
       }
     }
@@ -119,7 +132,7 @@ class FeedPost {
       userId: json['user_id'] ?? json['userId'] ?? '',
       userName: json['username'] ?? json['userName'] ?? 'User',
       fullName: json['fullName'],
-      userAvatar: json['userAvatar'],
+      userAvatar: UrlHelper.normalizeUrl(json['userAvatar'] ?? json['avatar_url']),
       isVerified: json['isVerified'] ?? false,
       mediaType: type,
       mediaUrls: extractedUrls.where((url) => url.isNotEmpty).toList(),

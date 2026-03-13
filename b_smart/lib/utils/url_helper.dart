@@ -35,6 +35,16 @@ class UrlHelper {
     } else if (fixed.startsWith('https:/') && !fixed.startsWith('https://')) {
       fixed = fixed.replaceFirst('https:/', 'https://');
     }
+
+    // Force https for known bsmart hosts to mirror web and avoid 403s on CDNs.
+    try {
+      final uri = Uri.parse(fixed);
+      final host = uri.host.toLowerCase();
+      if (uri.scheme == 'http' && (host.contains('bsmart') || host.contains('asynk.store'))) {
+        fixed = uri.replace(scheme: 'https').toString();
+      }
+    } catch (_) {}
+
     return fixed;
   }
 
@@ -101,7 +111,7 @@ class UrlHelper {
     // If it's already a full URL, return it
     if (u.startsWith('http://') || u.startsWith('https://')) return u;
 
-    // Clean the base URL
+    // Clean the base URL (keep /api because backend serves media under /api/uploads)
     String base = ApiConfig.baseUrl;
     if (base.endsWith('/')) base = base.substring(0, base.length - 1);
 
@@ -156,6 +166,7 @@ class UrlHelper {
       if (baseHost.isEmpty) return false;
       if (host == baseHost) return true;
 
+      // Only attach for the exact API host/root-domain (or localhost). CDNs often reject auth.
       return _rootDomain(host) == _rootDomain(baseHost);
     } catch (_) {
       return false;

@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:cached_network_image/cached_network_image.dart';
 import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
 import '../models/ad_model.dart';
@@ -14,6 +15,7 @@ import '../services/supabase_service.dart';
 import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/current_user.dart';
+import '../utils/url_helper.dart';
 
 class AdsPageScreen extends StatefulWidget {
   final bool isTabActive;
@@ -31,6 +33,12 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   String _selectedCategoryId = 'All';
   String _searchQuery = '';
   List<Ad> _ads = [];
+
+  // Pagination state
+  int _page = 1;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+  static const int _pageSize = 10;
 
   bool _isLoading = true;
   String? _error;
@@ -68,25 +76,14 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
           categories.any((c) => c.id == _selectedCategoryId);
       final selectedCategory =
           hasSelectedCategory ? _selectedCategoryId : 'All';
-      final normalizedSearch = _searchQuery.trim();
-      final ads = normalizedSearch.isNotEmpty
-          ? ((await _adsService.searchAds(
-                q: normalizedSearch,
-                category: selectedCategory == 'All' ? null : selectedCategory,
-              ))['ads'] as List<Ad>? ??
-              const <Ad>[])
-          : await _adsService.fetchAds(category: selectedCategory);
       if (!mounted) return;
       setState(() {
         _categories = categories;
         _selectedCategoryId = selectedCategory;
-        _ads = ads;
-        _isLoading = false;
+        _focusedIndex = 0;
       });
-      if (_ads.isNotEmpty) {
-        final initialIndex = _focusedIndex.clamp(0, _ads.length - 1).toInt();
-        unawaited(_recordViewForAd(_ads[initialIndex]));
-      }
+
+      await _fetchAdsPage(reset: true);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -94,6 +91,69 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
         _ads = [];
         _error = e.toString();
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _fetchAdsPage({bool reset = false}) async {
+    if (!mounted) return;
+    if (!reset && (_isLoadingMore || !_hasMore)) return;
+
+    if (reset) {
+      _page = 1;
+      _hasMore = true;
+    }
+
+    if (reset) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+        _ads = [];
+        _focusedIndex = 0;
+      });
+    } else {
+      setState(() => _isLoadingMore = true);
+    }
+
+    try {
+      final normalizedSearch = _searchQuery.trim();
+      final result = await _adsService.searchAds(
+        q: normalizedSearch.isEmpty ? null : normalizedSearch,
+        category: _selectedCategoryId == 'All' ? null : _selectedCategoryId,
+        page: _page,
+        limit: _pageSize,
+      );
+
+      final ads = (result['ads'] as List<Ad>? ?? const <Ad>[]);
+      final totalPages = (result['totalPages'] as int?) ?? _page;
+
+      if (!mounted) return;
+      setState(() {
+        if (reset) {
+          _ads = ads;
+        } else {
+          _ads.addAll(ads);
+        }
+        _hasMore = ads.length >= _pageSize && _page < totalPages;
+        _page += 1;
+        _error = null;
+      });
+
+      if (_ads.isNotEmpty && reset) {
+        final initialIndex =
+            _focusedIndex.clamp(0, _ads.length - 1).toInt();
+        unawaited(_recordViewForAd(_ads[initialIndex]));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
       });
     }
   }
@@ -109,7 +169,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     if (_pageController.hasClients) {
       _pageController.jumpToPage(0);
     }
-    await _loadCategoriesAndAds();
+    await _fetchAdsPage(reset: true);
   }
 
   Future<void> _openSearchDialog() async {
@@ -153,7 +213,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     if (_pageController.hasClients) {
       _pageController.jumpToPage(0);
     }
-    await _loadCategoriesAndAds();
+    await _fetchAdsPage(reset: true);
   }
 
   Future<void> _recordViewForAd(Ad ad) async {
@@ -265,6 +325,9 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
             });
             if (index >= 0 && index < _ads.length) {
               unawaited(_recordViewForAd(_ads[index]));
+              if (index >= _ads.length - 2) {
+                unawaited(_fetchAdsPage());
+              }
             }
           },
           itemCount: _ads.length,
@@ -368,6 +431,37 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                         : null,
                   ),
                 ],
+              ),
+            ),
+          if (_isLoadingMore)
+            Positioned(
+              bottom: isDesktop ? 16 : 90,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Loading more ads...',
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
         ],
@@ -592,6 +686,7 @@ class _AdVideoItemState extends State<AdVideoItem>
   double _progress = 0;
   Timer? _imageProgressTimer;
   bool _captionExpanded = false;
+  Map<String, String>? _mediaHeaders;
 
   // Animation for music disc
   late AnimationController _discController;
@@ -630,6 +725,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       duration: const Duration(seconds: 5),
       vsync: this,
     );
+    _loadMediaHeaders();
     unawaited(_loadFollowState());
     if (widget.isActive) _discController.repeat();
     _initializeVideo();
@@ -684,7 +780,8 @@ class _AdVideoItemState extends State<AdVideoItem>
     if (url != null && url.isNotEmpty) {
       _controller?.removeListener(_onVideoTick);
       await _controller?.dispose();
-      _controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      final headers = await _videoHeadersFor(url);
+      _controller = VideoPlayerController.networkUrl(Uri.parse(url), httpHeaders: headers);
       try {
         await _controller!.initialize();
         await _controller!.setLooping(true);
@@ -702,6 +799,22 @@ class _AdVideoItemState extends State<AdVideoItem>
       } catch (e) {
         debugPrint('Error initializing video: $e');
       }
+    }
+  }
+
+  Future<Map<String, String>> _videoHeadersFor(String url) async {
+    if (_mediaHeaders != null && _mediaHeaders!.isNotEmpty) return _mediaHeaders!;
+    if (!UrlHelper.shouldAttachAuthHeader(url)) return const {};
+    await _loadMediaHeaders();
+    return _mediaHeaders ?? const {};
+  }
+
+  Future<void> _loadMediaHeaders() async {
+    if (_mediaHeaders != null) return;
+    final token = await ApiClient().getToken();
+    if (token != null && token.isNotEmpty) {
+      _mediaHeaders = {'Authorization': 'Bearer $token'};
+      if (mounted) setState(() {});
     }
   }
 
@@ -1030,9 +1143,19 @@ class _AdVideoItemState extends State<AdVideoItem>
                     ),
                   )
                 : widget.ad.imageUrl != null
-                    ? Image.network(
-                        widget.ad.imageUrl!,
+                    ? CachedNetworkImage(
+                        imageUrl: widget.ad.imageUrl!,
                         fit: BoxFit.cover,
+                        httpHeaders: UrlHelper.shouldAttachAuthHeader(widget.ad.imageUrl!)
+                            ? (_mediaHeaders ?? const {})
+                            : null,
+                        placeholder: (context, _) => const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                        errorWidget: (context, _, __) => const Icon(
+                          Icons.broken_image,
+                          color: Colors.white54,
+                        ),
                       )
                     : const Center(
                         child: CircularProgressIndicator(color: Colors.white)),

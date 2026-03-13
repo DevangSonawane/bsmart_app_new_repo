@@ -628,12 +628,16 @@ class FeedService {
         final ad = Ad.fromApi(Map<String, dynamic>.from(raw));
         if (ad.id.isEmpty) continue;
 
-        final primaryUrl = (ad.videoUrl != null && ad.videoUrl!.isNotEmpty)
-            ? ad.videoUrl!
-            : (ad.imageUrl ?? '');
+        final primaryUrl = UrlHelper.normalizeUrl(
+          (ad.videoUrl != null && ad.videoUrl!.isNotEmpty)
+              ? ad.videoUrl!
+              : (ad.imageUrl ?? ''),
+        );
         if (primaryUrl.isEmpty) continue;
 
-        final isVideo = ad.videoUrl != null && ad.videoUrl!.isNotEmpty;
+        final isVideo = primaryUrl.toLowerCase().endsWith('.mp4') ||
+            primaryUrl.toLowerCase().endsWith('.mov') ||
+            (ad.videoUrl != null && ad.videoUrl!.isNotEmpty);
         final mediaType = isVideo ? PostMediaType.video : PostMediaType.image;
         final caption = (ad.caption?.trim().isNotEmpty ?? false)
             ? ad.caption!.trim()
@@ -653,10 +657,12 @@ class FeedService {
             userId: ad.userId ?? ad.companyId,
             userName: ownerName,
             fullName: null,
-            userAvatar: ad.userAvatarUrl ?? ad.companyLogo,
+            userAvatar:
+                UrlHelper.normalizeUrl(ad.userAvatarUrl ?? ad.companyLogo),
             mediaType: mediaType,
             mediaUrls: [primaryUrl],
-            thumbnailUrl: isVideo ? ad.imageUrl : null,
+            thumbnailUrl:
+                isVideo ? UrlHelper.normalizeUrl(ad.imageUrl) : null,
             aspectRatio: _extractMediaAspectFromRawAd(raw),
             caption: caption,
             hashtags: ad.hashtags,

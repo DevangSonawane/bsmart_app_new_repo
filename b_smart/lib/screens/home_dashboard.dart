@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../services/feed_service.dart';
 import '../services/supabase_service.dart';
 import '../services/wallet_service.dart';
+import '../services/video_pool.dart';
 import '../state/app_state.dart';
 import '../state/profile_actions.dart';
 import '../state/feed_actions.dart';
@@ -33,6 +34,7 @@ import '../api/api_exceptions.dart';
 import '../api/api_client.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'profile_screen.dart';
 
 class HomeDashboard extends StatefulWidget {
@@ -61,6 +63,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
   int _currentIndex = 0;
   int _balance = 0;
   bool _reelsPrefetched = false;
+  String? _activeFeedPostId;
+  Timer? _activeFeedDebounce;
 
   /// Current user profile from `users` table (same source as React web app) for header avatar.
   Map<String, dynamic>? _currentUserProfile;
@@ -185,6 +189,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
     });
   }
 
+  @override
+  void dispose() {
+    _activeFeedDebounce?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadData(Store<AppState> store) async {
     // Only set loading if it's the initial load or a full refresh, not for pagination
     if (store.state.feedState.posts.isEmpty) {
@@ -299,6 +309,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
         _myStoryId = myGroups.isNotEmpty ? myGroups.first.storyId : null;
         _yourStoryHasActive = _myStories.isNotEmpty;
         _balance = bal;
+        _activeFeedPostId = fetched.isNotEmpty ? fetched.first.id : null;
       });
       // Preload profile into Redux so ProfileScreen opens instantly
       if (effectiveUserId != null && mergedProfile.isNotEmpty) {
@@ -306,6 +317,19 @@ class _HomeDashboardState extends State<HomeDashboard> {
       }
       store.dispatch(SetFeedLoading(false));
     }
+  }
+
+  void _onFeedItemVisibilityChanged(String postId, double visibleFraction) {
+    if (_currentIndex != 0) return;
+    if (visibleFraction < 0.65) return;
+    if (_activeFeedPostId == postId) return;
+    _activeFeedDebounce?.cancel();
+    _activeFeedDebounce = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      if (_currentIndex != 0) return;
+      if (_activeFeedPostId == postId) return;
+      setState(() => _activeFeedPostId = postId);
+    });
   }
 
   Future<void> _fetchCurrentLocation() async {
@@ -861,6 +885,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
   }
 
   void _onStoryTap(int userIndex) async {
+    // Stop any currently playing feed video audio before opening stories.
+    await VideoPool.instance.disposeActive();
     if (userIndex < 0 || userIndex >= _storyGroups.length) return;
     final group = _storyGroups[userIndex];
     await Navigator.of(context).push(
@@ -942,6 +968,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
     }
 
     if (idx != _currentIndex) {
+      // Pause any in-feed video audio while switching away from Home.
+      if (_currentIndex == 0) {
+        unawaited(VideoPool.instance.disposeActive());
+      }
       setState(() {
         _currentIndex = idx;
       });
@@ -1345,39 +1375,50 @@ class _HomeDashboardState extends State<HomeDashboard> {
                               final isSponsoredPost = p.isAd;
                               final isOwnPost = _currentUserId != null &&
                                   p.userId == _currentUserId;
-                              return RepaintBoundary(
-                                child: PostCard(
-                                  key: ValueKey(
-                                      'card-${p.id}'), // Prevent unnecessary rebuilds
-                                  post: p,
-                                  isTabActive: _currentIndex == 0,
-                                  onUserTap: isSponsoredPost
-                                      ? _openAdsTabFromDashboardFeed
-                                      : p.userId.isNotEmpty
-                                          ? () => Navigator.of(context)
-                                              .pushNamed('/profile/${p.userId}')
-                                          : null,
-                                  onLike: isSponsoredPost
-                                      ? null
-                                      : () => _onLikePost(p),
-                                  onDoubleTapLike: isSponsoredPost
-                                      ? null
-                                      : () => _onDoubleTapLikePost(p),
-                                  onComment: isSponsoredPost
-                                      ? _openAdsTabFromDashboardFeed
-                                      : () => _onCommentPost(p),
-                                  onShare: isSponsoredPost
-                                      ? _openAdsTabFromDashboardFeed
-                                      : () => _onSharePost(p),
-                                  onSave: isSponsoredPost
-                                      ? null
-                                      : () => _onSavePost(p),
-                                  onFollow: isSponsoredPost || isOwnPost
-                                      ? null
-                                      : () => _onFollowPost(p),
-                                  onMore: isSponsoredPost
-                                      ? null
-                                      : () => _onMorePost(context, p),
+                              return VisibilityDetector(
+                                key: ValueKey('feed-vis-${p.id}'),
+                                onVisibilityChanged: (info) {
+                                  _onFeedItemVisibilityChanged(
+                                    p.id,
+                                    info.visibleFraction,
+                                  );
+                                },
+                                child: RepaintBoundary(
+                                  child: PostCard(
+                                    key: ValueKey(
+                                        'card-${p.id}'), // Prevent unnecessary rebuilds
+                                    post: p,
+                                    isTabActive: _currentIndex == 0,
+                                    isActive: _activeFeedPostId == p.id,
+                                    onUserTap: isSponsoredPost
+                                        ? _openAdsTabFromDashboardFeed
+                                        : p.userId.isNotEmpty
+                                            ? () => Navigator.of(context)
+                                                .pushNamed(
+                                                    '/profile/${p.userId}')
+                                            : null,
+                                    onLike: isSponsoredPost
+                                        ? null
+                                        : () => _onLikePost(p),
+                                    onDoubleTapLike: isSponsoredPost
+                                        ? null
+                                        : () => _onDoubleTapLikePost(p),
+                                    onComment: isSponsoredPost
+                                        ? _openAdsTabFromDashboardFeed
+                                        : () => _onCommentPost(p),
+                                    onShare: isSponsoredPost
+                                        ? _openAdsTabFromDashboardFeed
+                                        : () => _onSharePost(p),
+                                    onSave: isSponsoredPost
+                                        ? null
+                                        : () => _onSavePost(p),
+                                    onFollow: isSponsoredPost || isOwnPost
+                                        ? null
+                                        : () => _onFollowPost(p),
+                                    onMore: isSponsoredPost
+                                        ? null
+                                        : () => _onMorePost(context, p),
+                                  ),
                                 ),
                               );
                             },
