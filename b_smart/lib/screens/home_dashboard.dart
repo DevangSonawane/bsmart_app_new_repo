@@ -210,11 +210,29 @@ class _HomeDashboardState extends State<HomeDashboard> {
         (mergedProfile['id']?.toString()) ??
         (mergedProfile['_id']?.toString());
     // Same as React Home.jsx: fetch all posts, order by created_at desc
-    final fetched =
-        await _feedService.fetchFeedFromBackend(currentUserId: currentUserId);
-    final bal = await _walletService.getCoinBalance();
+    List<FeedPost> fetched = const <FeedPost>[];
+    try {
+      fetched = await _feedService.fetchFeedFromBackend(
+        currentUserId: currentUserId,
+      );
+    } catch (_) {}
+    int bal = 0;
+    try {
+      bal = await _walletService.getCoinBalance();
+    } catch (_) {}
+    if (!_reelsPrefetched) {
+      _reelsPrefetched = true;
+      unawaited(() async {
+        try {
+          await _reelsService.fetchReels(limit: 20, offset: 0);
+        } catch (_) {}
+      }());
+    }
     // Stories feed from backend
-    final groups = await _feedService.fetchStoriesFeed();
+    List<StoryGroup> groups = const <StoryGroup>[];
+    try {
+      groups = await _feedService.fetchStoriesFeed();
+    } catch (_) {}
     final allGroups = List<StoryGroup>.from(groups);
     final myGroups = effectiveUserId != null
         ? allGroups.where((g) => g.userId == effectiveUserId).toList()
@@ -287,12 +305,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
         store.dispatch(SetProfile(mergedProfile));
       }
       store.dispatch(SetFeedLoading(false));
-    }
-
-    // Warm reels feed in background once so opening Reels tab is instant.
-    if (!_reelsPrefetched) {
-      _reelsPrefetched = true;
-      unawaited(_reelsService.fetchReels(limit: 20, offset: 0));
     }
   }
 
@@ -882,6 +894,13 @@ class _HomeDashboardState extends State<HomeDashboard> {
     await _onRefresh();
   }
 
+  void _openAdsTabFromDashboardFeed() {
+    if (_currentIndex == 1) return;
+    setState(() {
+      _currentIndex = 1;
+    });
+  }
+
   void _openVendorAdComposer(String contentType) {
     final mode =
         contentType.toLowerCase() == 'reel' ? UploadMode.reel : UploadMode.post;
@@ -1323,6 +1342,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
                               final p = posts[index];
+                              final isSponsoredPost = p.isAd;
                               final isOwnPost = _currentUserId != null &&
                                   p.userId == _currentUserId;
                               return RepaintBoundary(
@@ -1331,19 +1351,33 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                       'card-${p.id}'), // Prevent unnecessary rebuilds
                                   post: p,
                                   isTabActive: _currentIndex == 0,
-                                  onUserTap: p.userId.isNotEmpty
-                                      ? () => Navigator.of(context)
-                                          .pushNamed('/profile/${p.userId}')
-                                      : null,
-                                  onLike: () => _onLikePost(p),
-                                  onDoubleTapLike: () =>
-                                      _onDoubleTapLikePost(p),
-                                  onComment: () => _onCommentPost(p),
-                                  onShare: () => _onSharePost(p),
-                                  onSave: () => _onSavePost(p),
-                                  onFollow:
-                                      isOwnPost ? null : () => _onFollowPost(p),
-                                  onMore: () => _onMorePost(context, p),
+                                  onUserTap: isSponsoredPost
+                                      ? _openAdsTabFromDashboardFeed
+                                      : p.userId.isNotEmpty
+                                          ? () => Navigator.of(context)
+                                              .pushNamed('/profile/${p.userId}')
+                                          : null,
+                                  onLike: isSponsoredPost
+                                      ? null
+                                      : () => _onLikePost(p),
+                                  onDoubleTapLike: isSponsoredPost
+                                      ? null
+                                      : () => _onDoubleTapLikePost(p),
+                                  onComment: isSponsoredPost
+                                      ? _openAdsTabFromDashboardFeed
+                                      : () => _onCommentPost(p),
+                                  onShare: isSponsoredPost
+                                      ? _openAdsTabFromDashboardFeed
+                                      : () => _onSharePost(p),
+                                  onSave: isSponsoredPost
+                                      ? null
+                                      : () => _onSavePost(p),
+                                  onFollow: isSponsoredPost || isOwnPost
+                                      ? null
+                                      : () => _onFollowPost(p),
+                                  onMore: isSponsoredPost
+                                      ? null
+                                      : () => _onMorePost(context, p),
                                 ),
                               );
                             },
@@ -1354,16 +1388,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     ],
                   ),
           ),
-          // Ads tab (lazy instantiate only when active)
-          _currentIndex == 1 ? const AdsPageScreen() : const SizedBox.shrink(),
+          // Ads tab
+          AdsPageScreen(isTabActive: _currentIndex == 1),
           // Placeholder for create (kept empty since create opens modal/route)
           Container(),
-          // Promote tab (lazy instantiate only when active)
-          _currentIndex == 3 ? const PromoteScreen() : const SizedBox.shrink(),
-          // Reels tab (lazy instantiate only when active)
-          _currentIndex == 4
-              ? ReelsScreen(isActive: true)
-              : const SizedBox.shrink(),
+          // Promote tab
+          const PromoteScreen(),
+          // Reels tab
+          ReelsScreen(isActive: _currentIndex == 4),
         ],
       ),
       bottomNavigationBar: isDesktop
@@ -1447,14 +1479,13 @@ class _DesktopNotificationsButtonState
     final isDark = theme.brightness == Brightness.dark;
     final surfaceColor = theme.cardColor;
     final fgColor = theme.colorScheme.onSurface;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _showDropdown = true),
-      onExit: (_) => setState(() => _showDropdown = false),
+    return TapRegion(
+      onTapOutside: (_) => setState(() => _showDropdown = false),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Material(
-            color: surfaceColor,
+            color: Colors.transparent,
             elevation: 4,
             shadowColor: Colors.black26,
             shape: const CircleBorder(),
@@ -1465,31 +1496,35 @@ class _DesktopNotificationsButtonState
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                        color: isDark
-                            ? const Color(0xFF3D3D3D)
-                            : Colors.grey.shade100)),
+                  shape: BoxShape.circle,
+                  gradient: _showDropdown ? DesignTokens.instaGradient : null,
+                  color: _showDropdown ? null : surfaceColor,
+                  border: Border.all(
+                    color: _showDropdown
+                        ? Colors.transparent
+                        : (isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade100),
+                  ),
+                ),
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Center(
-                        child:
-                            Icon(LucideIcons.heart, size: 20, color: fgColor)),
+                    Center(child: Icon(LucideIcons.heart, size: 20, color: _showDropdown ? Colors.white : fgColor)),
                     Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                                color: DesignTokens.instaPink,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: isDark
-                                        ? const Color(0xFFE8E8E8)
-                                        : Colors.white,
-                                    width: 1.5)))),
+                      right: 7,
+                      top: 7,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: DesignTokens.instaPink,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isDark ? Colors.black : Colors.white,
+                            width: 1.0,
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1506,17 +1541,24 @@ class _DesktopNotificationsButtonState
                   width: 320,
                   constraints: const BoxConstraints(maxHeight: 320),
                   decoration: BoxDecoration(
-                      color: surfaceColor,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: isDark
-                              ? const Color(0xFF3D3D3D)
-                              : Colors.grey.shade100)),
+                    color: surfaceColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                    ),
+                  ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.all(12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                            ),
+                          ),
+                        ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -1535,7 +1577,6 @@ class _DesktopNotificationsButtonState
                           ],
                         ),
                       ),
-                      const Divider(height: 1),
                       Flexible(
                         child: ListView(
                           shrinkWrap: true,
@@ -1585,15 +1626,43 @@ class _NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final mutedColor =
         theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600;
-    return ListTile(
-      leading: CircleAvatar(
-          backgroundColor: iconColor.withAlpha(40),
-          child: Icon(icon, size: 14, color: iconColor)),
-      title: Text(title,
-          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface)),
-      subtitle: Text(time, style: TextStyle(fontSize: 12, color: mutedColor)),
+    return InkWell(
+      onTap: () {},
+      hoverColor: isDark ? Colors.grey.shade800 : Colors.grey.shade50,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: iconColor.withAlpha(35),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 14, color: iconColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(time, style: TextStyle(fontSize: 12, color: mutedColor)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -17,6 +17,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   final NotificationService _notificationService = NotificationService();
   List<NotificationItem> _notifications = [];
   bool _isLoading = true;
+  int _unreadCount = 0;
 
   @override
   void initState() {
@@ -24,34 +25,36 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     _loadNotifications();
   }
 
-  void _loadNotifications() {
+  Future<void> _loadNotifications() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
 
-    // Simulate loading
-    Future.delayed(const Duration(milliseconds: 300), () {
-      setState(() {
-        _notifications = _notificationService.getNotifications();
-        _isLoading = false;
-      });
+    final notifications = await _notificationService.getNotifications();
+    final unreadCount = await _notificationService.getUnreadCount();
+    if (!mounted) return;
+    setState(() {
+      _notifications = notifications;
+      _unreadCount = unreadCount;
+      _isLoading = false;
     });
   }
 
-  void _markAsRead(String notificationId) {
-    _notificationService.markAsRead(notificationId);
-    _loadNotifications();
+  Future<void> _markAsRead(String notificationId) async {
+    await _notificationService.markAsRead(notificationId);
+    await _loadNotifications();
   }
 
-  void _markAllAsRead() {
-    _notificationService.markAllAsRead();
-    _loadNotifications();
+  Future<void> _markAllAsRead() async {
+    await _notificationService.markAllAsRead();
+    await _loadNotifications();
   }
 
   void _clearAllNotifications() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: InstagramTheme.surfaceWhite,
         title: const Text('Clear All Notifications', 
             style: TextStyle(color: InstagramTheme.textBlack)),
@@ -61,14 +64,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              _notificationService.clearAll();
-              Navigator.of(context).pop();
-              _loadNotifications();
+            onPressed: () async {
+              await _notificationService.clearAll();
+              if (!dialogContext.mounted) return;
+              Navigator.of(dialogContext).pop();
+              await _loadNotifications();
+              if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('All notifications cleared')),
               );
@@ -81,11 +86,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  void _handleNotificationTap(NotificationItem notification) {
+  Future<void> _handleNotificationTap(NotificationItem notification) async {
     // Mark as read
     if (!notification.isRead) {
-      _markAsRead(notification.id);
+      await _markAsRead(notification.id);
     }
+    if (!mounted) return;
 
     // Navigate based on notification type
     if (notification.type == NotificationType.ad && notification.relatedId != null) {
@@ -130,8 +136,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final unreadCount = _notificationService.getUnreadCount();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notifications'),
@@ -150,11 +154,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             },
           ),
           if (_notifications.isNotEmpty) ...[
-            if (unreadCount > 0)
+            if (_unreadCount > 0)
               IconButton(
                 icon: const Icon(Icons.done_all),
                 tooltip: 'Mark all as read',
-                onPressed: _markAllAsRead,
+                onPressed: () => _markAllAsRead(),
               ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
@@ -174,7 +178,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ? _buildEmptyState()
               : RefreshIndicator(
                   onRefresh: () async {
-                    _loadNotifications();
+                    await _loadNotifications();
                   },
                   color: InstagramTheme.primaryPink,
                   backgroundColor: InstagramTheme.surfaceWhite,

@@ -5,7 +5,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:preload_page_view/preload_page_view.dart';
 import 'package:video_player/video_player.dart';
 
 import '../api/api_client.dart';
@@ -24,15 +23,19 @@ class ReelsScreen extends StatefulWidget {
   State<ReelsScreen> createState() => _ReelsScreenState();
 }
 
-class _ReelsScreenState extends State<ReelsScreen> {
+class _ReelsScreenState extends State<ReelsScreen>
+    with AutomaticKeepAliveClientMixin {
   final ReelsService _reelsService = ReelsService();
   final SupabaseService _supabase = SupabaseService();
-  final PreloadPageController _pageController = PreloadPageController();
-  final FocusNode _keyboardFocusNode = FocusNode(debugLabel: 'reels-feed-focus');
+  final PageController _pageController = PageController();
+  final FocusNode _keyboardFocusNode =
+      FocusNode(debugLabel: 'reels-feed-focus');
 
-  final Map<String, VideoPlayerController> _controllers = {};
-  final Map<String, bool> _isInitializing = {};
-  final Map<String, bool> _hasError = {};
+  final Map<int, VideoPlayerController> _videoControllers =
+      <int, VideoPlayerController>{};
+  final Set<int> _controllerSetupInProgress = <int>{};
+  final Set<int> _failedControllerIndexes = <int>{};
+  final Map<int, int> _controllerRetryAttempts = <int, int>{};
   final Map<String, bool> _captionExpanded = {};
 
   List<Reel> _reels = [];
@@ -45,6 +48,12 @@ class _ReelsScreenState extends State<ReelsScreen> {
   Timer? _navigationUnlockTimer;
   String? _error;
   Map<String, String>? _mediaHeaders;
+  Future<void> _poolOps = Future<void>.value();
+  int _poolGeneration = 0;
+  bool _autoplayKickScheduled = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -53,6 +62,15 @@ class _ReelsScreenState extends State<ReelsScreen> {
     if (cached.isNotEmpty) {
       _reels = cached;
       _isLoading = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _reels.isEmpty || !widget.isActive) return;
+        _poolOps = _poolOps.then<void>((_) async {
+          await _initializePoolAt(_currentIndex);
+          if (!mounted) return;
+          await _activateCurrentReelPlayback();
+          if (mounted) setState(() {});
+        }).catchError((_) {});
+      });
     }
     _loadReels();
   }
@@ -70,12 +88,22 @@ class _ReelsScreenState extends State<ReelsScreen> {
   void didUpdateWidget(covariant ReelsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isActive == widget.isActive) return;
-    if (widget.isActive && mounted) {
-      setState(() {
-        _reels = _reelsService.getReels();
-      });
+    if (_reels.isEmpty || _currentIndex < 0 || _currentIndex >= _reels.length) {
+      return;
     }
-    _syncActivePlayback();
+    if (widget.isActive) {
+      _poolOps = _poolOps.then<void>((_) async {
+        if (_controllerForIndex(_currentIndex) == null) {
+          await _initializePoolAt(_currentIndex);
+        }
+        await _activateCurrentReelPlayback();
+      }).catchError((_) {});
+    } else {
+      for (final controller in _videoControllers.values) {
+        unawaited(_setControllerVolumeSafely(controller, 0));
+      }
+      _disposeAllControllers();
+    }
   }
 
   Future<void> _loadReels() async {
@@ -97,13 +125,18 @@ class _ReelsScreenState extends State<ReelsScreen> {
 
       if (_reels.isNotEmpty) {
         unawaited(_reelsService.incrementViews(_reels.first.id));
-        unawaited(_ensureControllerForIndex(0));
-        unawaited(_ensureControllerForIndex(1));
+        if (!widget.isActive) return;
+        _poolOps = _poolOps.then<void>((_) async {
+          await _initializePoolAt(_currentIndex);
+          if (!mounted) return;
+          await _activateCurrentReelPlayback();
+          if (mounted) setState(() {});
+        }).catchError((_) {});
       }
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = _reels.isEmpty ? e.toString() : null;
       });
     } finally {
       if (mounted && _reels.isEmpty) {
@@ -114,76 +147,90 @@ class _ReelsScreenState extends State<ReelsScreen> {
     }
   }
 
-  void _disposeAllControllers() {
-    for (final c in _controllers.values) {
-      _cleanupController(c);
-    }
-    _controllers.clear();
-    _isInitializing.clear();
-    _hasError.clear();
-  }
-
-  void _cleanupController(VideoPlayerController? c) {
-    if (c == null) return;
+  void _disposeController(VideoPlayerController? controller, int? index) {
+    if (controller == null) return;
     try {
-      c.pause();
-      c.setVolume(0);
-      c.dispose();
+      unawaited(controller.dispose());
+      debugPrint('[Reels] controller disposed index=$index');
     } catch (_) {}
   }
 
-  Future<void> _ensureControllerForIndex(int index) async {
-    if (index < 0 || index >= _reels.length) return;
+  void _disposeAllControllers() {
+    _poolGeneration++;
+    for (final entry in _videoControllers.entries) {
+      _disposeController(entry.value, entry.key);
+    }
+    _videoControllers.clear();
+    _controllerSetupInProgress.clear();
+  }
 
+  VideoPlayerController? _controllerForIndex(int index) =>
+      _videoControllers[index];
+
+  Future<VideoPlayerController?> _createControllerForIndex(
+    int index, {
+    required int generation,
+  }) async {
+    if (index < 0 || index >= _reels.length) return null;
+    final existing = _videoControllers[index];
+    if (existing != null) return existing;
+    if (_controllerSetupInProgress.contains(index)) return null;
+    _controllerSetupInProgress.add(index);
     final reel = _reels[index];
     final url = UrlHelper.absoluteUrl(reel.videoUrl);
-    if (url.isEmpty) return;
-
-    if (_controllers.containsKey(reel.id)) {
-      final c = _controllers[reel.id]!;
-      if (c.value.isInitialized) {
-        c.setVolume(widget.isActive && !_isMuted ? 1 : 0);
-        if (widget.isActive && index == _currentIndex) {
-          unawaited(c.play());
-        }
-      }
-      return;
+    if (url.isEmpty) {
+      _controllerSetupInProgress.remove(index);
+      return null;
     }
-
-    if (_isInitializing[reel.id] == true) return;
-    _isInitializing[reel.id] = true;
-    _hasError[reel.id] = false;
 
     try {
       await _ensureMediaHeaders();
-      if (!mounted) return;
-
-      final c = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        httpHeaders: _headersForUrl(url),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-      );
-
-      _controllers[reel.id] = c;
-      await c.initialize();
-      if (!mounted) return;
-
-      c.setLooping(true);
-      c.setVolume(widget.isActive && !_isMuted ? 1 : 0);
-      if (widget.isActive && index == _currentIndex) {
-        unawaited(c.play());
+      if (!mounted) return null;
+      final headerCandidates = _playbackHeaderCandidates(url);
+      Object? lastError;
+      for (final headers in headerCandidates) {
+        VideoPlayerController? controller;
+        try {
+          debugPrint(
+            '[Reels] preparing source index=$index id=${reel.id} url=$url authHeader=${headers.containsKey('Authorization')}',
+          );
+          controller = VideoPlayerController.networkUrl(
+            Uri.parse(url),
+            httpHeaders: headers,
+          );
+          await controller.initialize();
+          if (!mounted || generation != _poolGeneration) {
+            await controller.dispose();
+            return null;
+          }
+          await controller.setLooping(true);
+          await controller.setVolume(_isMuted ? 0 : 1);
+          _videoControllers[index] = controller;
+          debugPrint('[Reels] video initialized index=$index id=${reel.id}');
+          if (mounted) {
+            setState(() {});
+          }
+          if (index == _currentIndex && widget.isActive) {
+            unawaited(controller.play().catchError((_) {}));
+          }
+          _failedControllerIndexes.remove(index);
+          _controllerRetryAttempts.remove(index);
+          debugPrint('[Reels] controller created index=$index id=${reel.id}');
+          return controller;
+        } catch (e) {
+          lastError = e;
+          try {
+            await controller?.dispose();
+          } catch (_) {}
+        }
       }
-
-      setState(() {});
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _hasError[reel.id] = true;
-        final c = _controllers.remove(reel.id);
-        _cleanupController(c);
-      });
+      _failedControllerIndexes.add(index);
+      debugPrint(
+        '[Reels] controller create failed index=$index id=${reel.id} url=$url error=$lastError',
+      );
+      return null;
     } finally {
-      _isInitializing[reel.id] = false;
+      _controllerSetupInProgress.remove(index);
     }
   }
 
@@ -198,80 +245,150 @@ class _ReelsScreenState extends State<ReelsScreen> {
   }
 
   Map<String, String> _headersForUrl(String url) {
-    final headers = _mediaHeaders;
-    if (headers == null || headers.isEmpty) return const {};
-    if (!headers.containsKey('Authorization')) return const {};
-
-    try {
-      final uri = Uri.parse(url);
-      final baseUri = Uri.parse(ApiConfig.baseUrl);
-      if (uri.host == baseUri.host) return headers;
-    } catch (_) {}
-
-    if (url.startsWith('http://localhost') ||
-        url.startsWith('http://10.0.2.2')) {
-      return headers;
-    }
+    // React web uses plain <video src="..."> without auth headers for media.
+    // Keep parity and avoid 403s on media/CDN URLs that reject bearer auth.
     return const {};
+  }
+
+  List<Map<String, String>> _playbackHeaderCandidates(String url) {
+    final candidates = <Map<String, String>>[const <String, String>{}];
+    final authHeaders = _mediaHeaders;
+    if (authHeaders != null && authHeaders.containsKey('Authorization')) {
+      candidates.add(Map<String, String>.from(authHeaders));
+    }
+    return candidates;
+  }
+
+  Future<void> _initializePoolAt(int index) async {
+    if (index < 0 || index >= _reels.length) return;
+    if (!widget.isActive) return;
+    final generation = ++_poolGeneration;
+    _currentIndex = index;
+    final next = index + 1 < _reels.length ? index + 1 : null;
+    final keep = <int>{index, if (next != null) next};
+
+    final remove = _videoControllers.keys.where((k) => !keep.contains(k)).toList();
+    for (final k in remove) {
+      _disposeController(_videoControllers.remove(k), k);
+    }
+
+    // Prioritize current reel startup first, then warm neighbors in background.
+    await _createControllerForIndex(index, generation: generation);
+    if (next != null) {
+      unawaited(_createControllerForIndex(next, generation: generation));
+    }
+    if (_controllerForIndex(index) == null) {
+      _scheduleControllerRetry(index);
+    }
+  }
+
+  Future<void> _rotatePoolToIndex(int newIndex) async {
+    if (newIndex < 0 || newIndex >= _reels.length) return;
+    if (!widget.isActive) return;
+    await _initializePoolAt(newIndex);
+    if (!mounted) return;
+    await _activateCurrentReelPlayback();
+  }
+
+  Future<void> _pauseControllerForIndex(int index) async {
+    final controller = _controllerForIndex(index);
+    if (controller == null) return;
+    try {
+      await controller.pause();
+      await controller.seekTo(Duration.zero);
+    } catch (_) {}
+  }
+
+  Future<void> _setControllerVolumeSafely(
+    VideoPlayerController? controller,
+    double volume,
+  ) async {
+    if (controller == null) return;
+    try {
+      await controller.setVolume(volume);
+    } catch (_) {}
+  }
+
+  Future<void> _playControllerForIndex(int index) async {
+    final controller = _controllerForIndex(index);
+    if (controller == null) return;
+    try {
+      await controller.setVolume(widget.isActive && !_isMuted ? 1 : 0);
+      if (!mounted || _controllerForIndex(index) != controller) return;
+      if (widget.isActive) {
+        await controller.play();
+        debugPrint(
+          '[Reels] video started playing index=$index id=${_reels[index].id}',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        '[Reels] play failed index=$index id=${_reels[index].id} error=$e',
+      );
+    }
+  }
+
+  Future<void> _activateCurrentReelPlayback() async {
+    if (!widget.isActive) return;
+    final index = _currentIndex;
+    if (_controllerForIndex(index) == null) {
+      await _initializePoolAt(index);
+    }
+    if (!mounted || index != _currentIndex) return;
+    final otherIndexes = _videoControllers.keys.where((k) => k != index).toList();
+    for (final i in otherIndexes) {
+      await _pauseControllerForIndex(i);
+    }
+    await _playControllerForIndex(index);
   }
 
   void _onPageChanged(int index) {
     if (_reels.isEmpty || index < 0 || index >= _reels.length) return;
-
-    if (_currentIndex >= 0 && _currentIndex < _reels.length) {
-      final prevId = _reels[_currentIndex].id;
-      _controllers[prevId]?.pause();
-      _controllers[prevId]?.seekTo(Duration.zero);
-    }
-
     setState(() {
       _currentIndex = index;
     });
-
     unawaited(_reelsService.incrementViews(_reels[index].id));
-
-    final keepIds = <String>{
-      _reels[index].id,
-      if (index + 1 < _reels.length) _reels[index + 1].id,
-    };
-
-    final toDispose =
-        _controllers.keys.where((id) => !keepIds.contains(id)).toList();
-    for (final id in toDispose) {
-      final c = _controllers.remove(id);
-      _cleanupController(c);
-      _isInitializing.remove(id);
-      _hasError.remove(id);
-    }
-
-    unawaited(_ensureControllerForIndex(index));
-    unawaited(_ensureControllerForIndex(index + 1));
+    _poolOps = _poolOps
+        .then<void>((_) => _rotatePoolToIndex(index))
+        .catchError((_) {});
   }
 
-  void _syncActivePlayback() {
-    if (_reels.isEmpty || _currentIndex < 0 || _currentIndex >= _reels.length) {
-      for (final c in _controllers.values) {
-        if (!c.value.isInitialized) continue;
-        c.setVolume(0);
-        c.pause();
+  void _scheduleControllerRetry(int index) {
+    final attempts = _controllerRetryAttempts[index] ?? 0;
+    if (attempts >= 2) {
+      if (index == _currentIndex && _reels.length > 1) {
+        final nextIndex = (_currentIndex + 1) % _reels.length;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _goToIndex(nextIndex);
+        });
       }
       return;
     }
-    final activeReelId = _reels[_currentIndex].id;
-    for (final entry in _controllers.entries) {
-      final c = entry.value;
-      if (!c.value.isInitialized) continue;
-      if (!widget.isActive) {
-        c.setVolume(0);
-        c.pause();
-      } else if (entry.key == activeReelId) {
-        c.setVolume(_isMuted ? 0 : 1);
-        unawaited(c.play());
-      } else {
-        c.setVolume(0);
-        c.pause();
-      }
-    }
+    _controllerRetryAttempts[index] = attempts + 1;
+    Future<void>.delayed(const Duration(milliseconds: 450), () {
+      if (!mounted) return;
+      if (index != _currentIndex) return;
+      if (_controllerForIndex(index) != null) return;
+      unawaited(() async {
+        await _initializePoolAt(index);
+        if (!mounted) return;
+        await _activateCurrentReelPlayback();
+        if (mounted) setState(() {});
+      }());
+    });
+  }
+
+  Future<void> _retryCurrentReel() async {
+    if (_reels.isEmpty) return;
+    final idx = _currentIndex;
+    _failedControllerIndexes.remove(idx);
+    _controllerRetryAttempts.remove(idx);
+    setState(() {});
+    await _initializePoolAt(idx);
+    if (!mounted) return;
+    await _activateCurrentReelPlayback();
+    if (mounted) setState(() {});
   }
 
   Future<void> _toggleLike() async {
@@ -460,6 +577,28 @@ class _ReelsScreenState extends State<ReelsScreen> {
     );
   }
 
+  void _scheduleAutoplayKick() {
+    if (_autoplayKickScheduled) return;
+    _autoplayKickScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoplayKickScheduled = false;
+      if (!mounted || !widget.isActive || _reels.isEmpty) return;
+      final controller = _controllerForIndex(_currentIndex);
+      if (controller == null || !controller.value.isInitialized) {
+        if (_controllerSetupInProgress.contains(_currentIndex)) return;
+        _poolOps = _poolOps
+            .then<void>((_) => _rotatePoolToIndex(_currentIndex))
+            .catchError((_) {});
+        return;
+      }
+      if (!controller.value.isPlaying) {
+        _poolOps = _poolOps
+            .then<void>((_) => _activateCurrentReelPlayback())
+            .catchError((_) {});
+      }
+    });
+  }
+
   String _buildShareUrl(String reelId) {
     try {
       final apiUri = Uri.parse(ApiConfig.baseUrl);
@@ -476,6 +615,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    _scheduleAutoplayKick();
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.black,
@@ -498,7 +639,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
       );
     }
 
-    if (_error != null) {
+    if (_error != null && _reels.isEmpty) {
       return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
@@ -626,14 +767,18 @@ class _ReelsScreenState extends State<ReelsScreen> {
         color: Colors.black,
         child: Stack(
           children: [
-            PreloadPageView.builder(
+            PageView.builder(
               controller: _pageController,
-              preloadPagesCount: 2,
               scrollDirection: Axis.vertical,
+              physics: const BouncingScrollPhysics(),
               itemCount: _reels.length,
               onPageChanged: _onPageChanged,
               itemBuilder: (context, index) {
-                return _buildReelPlayer(_reels[index], isDesktop: isDesktop);
+                return _buildReelPlayer(
+                  index,
+                  _reels[index],
+                  isDesktop: isDesktop,
+                );
               },
             ),
             const Positioned(
@@ -664,10 +809,9 @@ class _ReelsScreenState extends State<ReelsScreen> {
                   setState(() {
                     _isMuted = !_isMuted;
                   });
-                  for (final c in _controllers.values) {
-                    if (c.value.isInitialized) {
-                      c.setVolume(widget.isActive && !_isMuted ? 1 : 0);
-                    }
+                  final volume = _isMuted ? 0.0 : 1.0;
+                  for (final controller in _videoControllers.values) {
+                    unawaited(_setControllerVolumeSafely(controller, volume));
                   }
                 },
                 child: Container(
@@ -702,106 +846,39 @@ class _ReelsScreenState extends State<ReelsScreen> {
     );
   }
 
-  Widget _buildReelPlayer(Reel reel, {required bool isDesktop}) {
-    final controller = _controllers[reel.id];
-    final isInitialized = controller != null && controller.value.isInitialized;
-    final hasError = _hasError[reel.id] ?? false;
+  Widget _buildReelPlayer(int index, Reel reel, {required bool isDesktop}) {
+    final controller = _controllerForIndex(index);
     final thumb = reel.thumbnailUrl == null
         ? null
         : UrlHelper.absoluteUrl(reel.thumbnailUrl!);
-    final mobileAspect = _mobileAspectForReel(reel);
+    final aspectRatio = _aspectRatioForReel(reel);
 
-    return SizedBox.expand(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final frameHeight = isDesktop
-              ? constraints.maxHeight
-              : (constraints.maxWidth / mobileAspect)
-                  .clamp(0.0, constraints.maxHeight);
-
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              Center(
-                child: SizedBox(
-                  width: constraints.maxWidth,
-                  height: frameHeight,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (thumb != null && thumb.isNotEmpty)
-                        CachedNetworkImage(
-                          imageUrl: thumb,
-                          fit: BoxFit.contain,
-                          httpHeaders: _headersForUrl(thumb),
-                          errorWidget: (_, __, ___) =>
-                              Container(color: Colors.black),
-                        )
-                      else
-                        Container(color: Colors.black),
-                      if (isInitialized)
-                        FittedBox(
-                          fit: BoxFit.contain,
-                          child: SizedBox(
-                            width: controller.value.size.width,
-                            height: controller.value.size.height,
-                            child: VideoPlayer(controller),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              if (!isInitialized && !hasError)
-                const Center(
-                  child: SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white70),
-                  ),
-                ),
-              if (hasError)
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline,
-                          color: Colors.white70, size: 32),
-                      const SizedBox(height: 10),
-                      const Text('Could not load video',
-                          style: TextStyle(color: Colors.white70)),
-                      const SizedBox(height: 10),
-                      OutlinedButton(
-                        onPressed: () {
-                          final idx = _reels.indexWhere((r) => r.id == reel.id);
-                          if (idx != -1) {
-                            _hasError[reel.id] = false;
-                            final c = _controllers.remove(reel.id);
-                            _cleanupController(c);
-                            unawaited(_ensureControllerForIndex(idx));
-                            setState(() {});
-                          }
-                        },
-                        style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white),
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
+    return _ReelPlayerItem(
+      key: ValueKey('reel-item-$index-${reel.id}'),
+      controller: controller,
+      thumbnailUrl: thumb,
+      headers:
+          thumb == null || thumb.isEmpty ? const {} : _headersForUrl(thumb),
+      aspectRatio: aspectRatio,
+      isFailed: _failedControllerIndexes.contains(index),
+      onRetry: index == _currentIndex ? _retryCurrentReel : null,
     );
   }
 
-  double _mobileAspectForReel(Reel reel) {
+  double _aspectRatioForReel(Reel reel) {
     final ratio = reel.aspectRatio?.trim();
-    if (ratio == '1:1') return 1 / 1;
+    if (ratio == '1:1') return 1.0;
     if (ratio == '16:9') return 16 / 9;
     if (ratio == '4:5') return 4 / 5;
+    if (ratio == '9:16') return 9 / 16;
+    if (ratio != null) {
+      final parts = ratio.split(':');
+      if (parts.length == 2) {
+        final w = double.tryParse(parts[0]);
+        final h = double.tryParse(parts[1]);
+        if (w != null && h != null && h > 0) return w / h;
+      }
+    }
     return 9 / 16;
   }
 
@@ -1157,5 +1234,132 @@ class _ReelsScreenState extends State<ReelsScreen> {
     if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
     return count.toString();
+  }
+}
+
+class _ReelPlayerItem extends StatefulWidget {
+  final VideoPlayerController? controller;
+  final String? thumbnailUrl;
+  final Map<String, String> headers;
+  final double aspectRatio;
+  final bool isFailed;
+  final VoidCallback? onRetry;
+
+  const _ReelPlayerItem({
+    super.key,
+    required this.controller,
+    required this.thumbnailUrl,
+    required this.headers,
+    required this.aspectRatio,
+    required this.isFailed,
+    required this.onRetry,
+  });
+
+  @override
+  State<_ReelPlayerItem> createState() => _ReelPlayerItemState();
+}
+
+class _ReelPlayerItemState extends State<_ReelPlayerItem>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final thumbnailUrl = widget.thumbnailUrl;
+    final controller = widget.controller;
+    final isInitialized = controller?.value.isInitialized == true;
+
+    return SizedBox.expand(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child: AspectRatio(
+              aspectRatio: widget.aspectRatio,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
+                    CachedNetworkImage(
+                      imageUrl: thumbnailUrl,
+                      fit: BoxFit.cover,
+                      httpHeaders: widget.headers,
+                      errorWidget: (_, __, ___) =>
+                          Container(color: Colors.black),
+                    )
+                  else
+                    Container(color: Colors.black),
+                  if (controller != null && isInitialized)
+                    FittedBox(
+                      fit: BoxFit.contain,
+                      child: SizedBox(
+                        width: controller.value.size.width,
+                        height: controller.value.size.height,
+                        child: VideoPlayer(controller),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (!isInitialized)
+            Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.50),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!widget.isFailed)
+                      const SizedBox(
+                        width: 26,
+                        height: 26,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white70,
+                        ),
+                      )
+                    else
+                      const Icon(
+                        Icons.wifi_tethering_error_rounded,
+                        color: Colors.white70,
+                        size: 20,
+                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.isFailed ? 'Could not load reel' : 'Loading reel',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (widget.isFailed && widget.onRetry != null) ...[
+                      const SizedBox(height: 8),
+                      FilledButton.tonal(
+                        onPressed: widget.onRetry,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white12,
+                          foregroundColor: Colors.white,
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

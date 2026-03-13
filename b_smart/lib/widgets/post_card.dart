@@ -8,7 +8,6 @@ import 'package:video_player/video_player.dart';
 import '../models/feed_post_model.dart';
 import '../api/api_client.dart';
 import '../utils/url_helper.dart';
-import '../config/api_config.dart';
 
 class PostCard extends StatefulWidget {
   final FeedPost post;
@@ -43,7 +42,6 @@ class PostCard extends StatefulWidget {
 class _PostCardState extends State<PostCard> {
   static Map<String, String>? _sharedAuthHeaders;
   static Future<Map<String, String>>? _sharedAuthHeadersFuture;
-  static Future<void> _videoInitQueue = Future<void>.value();
 
   VideoPlayerController? _videoCtl;
   Map<String, String>? _authHeaders;
@@ -59,9 +57,34 @@ class _PostCardState extends State<PostCard> {
   // Whether we've already started the init process
   bool _initStarted = false;
   bool _showDoubleTapLike = false;
-  Timer? _doubleTapLikeTimer;
-  Timer? _visibleInitTimer;
+  bool _autoplayKickScheduled = false;
   Timer? _offscreenDisposeTimer;
+  Timer? _doubleTapLikeTimer;
+
+  void _safePause() {
+    final controller = _videoCtl;
+    if (controller == null) return;
+    unawaited(controller.pause().catchError((_) {}));
+  }
+
+  void _safePlay() {
+    final controller = _videoCtl;
+    if (controller == null) return;
+    unawaited(controller.play().catchError((_) {}));
+  }
+
+  void _safeDisposeController() {
+    _offscreenDisposeTimer?.cancel();
+    _offscreenDisposeTimer = null;
+    final controller = _videoCtl;
+    _videoCtl = null;
+    _videoInitialized = false;
+    _initStarted = false;
+    if (controller == null) return;
+    try {
+      controller.dispose();
+    } catch (_) {}
+  }
 
   bool get _isVideoPost =>
       widget.post.mediaType == PostMediaType.video ||
@@ -80,7 +103,6 @@ class _PostCardState extends State<PostCard> {
 
   double _normalizedAspect(double raw) {
     if (raw.isNaN || raw <= 0) return 4 / 5;
-    if (widget.post.isAd) return 1.0;
     return raw.clamp(0.5625, 1.91);
   }
 
@@ -111,17 +133,8 @@ class _PostCardState extends State<PostCard> {
   }
 
   Map<String, String> _getHeaders(String url) {
-    final headers = _authHeaders ?? _sharedAuthHeaders;
-    if (headers == null) return {};
-    try {
-      final uri = Uri.parse(url);
-      final baseUri = Uri.parse(ApiConfig.baseUrl);
-      if (uri.host == baseUri.host) return headers;
-    } catch (_) {}
-    if (url.startsWith('http://localhost') || url.startsWith('http://10.0.2.2')) {
-      return headers;
-    }
-    return {};
+    // React web media tags do not attach Authorization header.
+    return const {};
   }
 
   /// Called once when the card becomes visible AND headers are ready.
@@ -135,11 +148,11 @@ class _PostCardState extends State<PostCard> {
 
     final rawUrl = widget.post.mediaUrls.first;
     final url = UrlHelper.absoluteUrl(rawUrl);
-    
+
     if (url.isEmpty) return;
 
     _initStarted = true;
-    _videoInitQueue = _videoInitQueue.then((_) => _initVideo(url));
+    unawaited(_initVideo(url));
   }
 
   Future<void> _initVideo(String url) async {
@@ -148,85 +161,106 @@ class _PostCardState extends State<PostCard> {
       return;
     }
     try {
-      final controller = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        httpHeaders: _getHeaders(url),
-      );
+      final headerCandidates = <Map<String, String>>[
+        const <String, String>{},
+        if ((_authHeaders ?? const {}).containsKey('Authorization'))
+          Map<String, String>.from(_authHeaders!),
+      ];
+      Object? lastError;
 
-      await controller.initialize();
-      // After initialize(), check if we're still mounted and still want to play
-      if (!mounted) {
-        controller.dispose();
-        return;
+      for (final headers in headerCandidates) {
+        VideoPlayerController? controller;
+        try {
+          controller = VideoPlayerController.networkUrl(
+            Uri.parse(url),
+            httpHeaders: headers,
+          );
+
+          await controller.initialize();
+          // After initialize(), check if we're still mounted and still want to play
+          if (!mounted) {
+            await controller.dispose();
+            return;
+          }
+
+          if (!_isVisible) {
+            await controller.dispose();
+            _initStarted = false;
+            return;
+          }
+
+          final existing = _videoCtl;
+          if (existing != null && existing != controller) {
+            try {
+              await existing.dispose();
+            } catch (_) {}
+          }
+
+          final readyController = controller;
+          await readyController.setLooping(true);
+          await readyController.setVolume(
+            widget.isTabActive && !_isMuted ? 1.0 : 0.0,
+          );
+
+          setState(() {
+            _videoCtl = readyController;
+            _videoInitialized = true;
+            _mediaAspect = _normalizedAspect(readyController.value.aspectRatio);
+          });
+
+          // Only play if still visible and user hasn't manually paused
+          if (widget.isTabActive && _isVisible && !_userWantsPaused) {
+            await readyController.play();
+          }
+          return;
+        } catch (e) {
+          lastError = e;
+          try {
+            await controller?.dispose();
+          } catch (_) {}
+        }
       }
-
-      if (!_isVisible) {
-        controller.dispose();
-        _initStarted = false;
-        return;
-      }
-
-      controller.setLooping(true);
-      controller.setVolume(widget.isTabActive && !_isMuted ? 1.0 : 0.0);
-
-      setState(() {
-        _videoCtl = controller;
-        _videoInitialized = true;
-        _mediaAspect = _normalizedAspect(controller.value.aspectRatio);
-      });
-
-      // Only play if still visible and user hasn't manually paused
-      if (widget.isTabActive && _isVisible && !_userWantsPaused) {
-        await controller.play();
-      }
+      _initStarted = false;
+      debugPrint(
+          '[PostCard] video init failed post=${widget.post.id} url=$url error=$lastError');
     } catch (e) {
+      debugPrint(
+          '[PostCard] video init failed post=${widget.post.id} url=$url error=$e');
       _initStarted = false;
     }
   }
 
   void _onVisibilityChanged(VisibilityInfo info) {
-    final nowVisible = info.visibleFraction >= 0.70;
+    final nowVisible = info.visibleFraction >= 0.25;
 
     if (nowVisible == _isVisible) return; // No change
     _isVisible = nowVisible;
 
     if (nowVisible) {
       _offscreenDisposeTimer?.cancel();
+      _offscreenDisposeTimer = null;
       if (!widget.isTabActive) {
-        _videoCtl?.pause();
+        _safePause();
         return;
       }
       // Card came into view
       if (_isVideoPost) {
         if (!_initStarted && _authHeaders != null) {
-          // Debounce init to avoid churn during fast flings.
-          _visibleInitTimer?.cancel();
-          _visibleInitTimer = Timer(const Duration(milliseconds: 220), () {
-            if (!mounted || !_isVisible || _initStarted) return;
-            _startVideoInit();
-          });
+          _startVideoInit();
         } else if (_videoInitialized && !_userWantsPaused) {
           // Already initialized — just resume
-          _videoCtl?.play();
+          _safePlay();
         }
         // If headers not ready yet, _loadAuthHeaders will call _startVideoInit when done
       }
     } else {
-      _visibleInitTimer?.cancel();
       // Card left view — pause to save resources
-      _videoCtl?.pause();
-      if (_isVideoPost && _videoCtl != null) {
-        // Release decoder shortly after leaving viewport to keep scrolling smooth.
-        _offscreenDisposeTimer?.cancel();
-        _offscreenDisposeTimer = Timer(const Duration(milliseconds: 250), () {
-          if (!mounted || _isVisible) return;
-          _videoCtl?.dispose();
-          _videoCtl = null;
-          _videoInitialized = false;
-          _initStarted = false;
-          if (mounted) setState(() {});
-        });
-      }
+      _safePause();
+      _offscreenDisposeTimer?.cancel();
+      _offscreenDisposeTimer = Timer(const Duration(milliseconds: 1200), () {
+        if (!mounted || _isVisible) return;
+        _safeDisposeController();
+      });
     }
   }
 
@@ -235,9 +269,9 @@ class _PostCardState extends State<PostCard> {
     setState(() {
       _userWantsPaused = !_userWantsPaused;
       if (_userWantsPaused) {
-        _videoCtl?.pause();
+        _safePause();
       } else {
-        _videoCtl?.play();
+        _safePlay();
       }
     });
   }
@@ -256,14 +290,21 @@ class _PostCardState extends State<PostCard> {
     if (oldWidget.isTabActive == widget.isTabActive) return;
     if (!widget.isTabActive) {
       _videoCtl?.setVolume(0.0);
-      _videoCtl?.pause();
+      _safePause();
+      _offscreenDisposeTimer?.cancel();
+      _offscreenDisposeTimer = Timer(const Duration(milliseconds: 800), () {
+        if (!mounted || _isVisible) return;
+        _safeDisposeController();
+      });
       return;
     }
     if (_videoInitialized) {
       _videoCtl?.setVolume(_isMuted ? 0.0 : 1.0);
       if (_isVisible && !_userWantsPaused) {
-        _videoCtl?.play();
+        _safePlay();
       }
+    } else if (_isVisible && !_initStarted && _authHeaders != null) {
+      _startVideoInit();
     }
   }
 
@@ -276,6 +317,24 @@ class _PostCardState extends State<PostCard> {
     _doubleTapLikeTimer = Timer(const Duration(milliseconds: 700), () {
       if (mounted) {
         setState(() => _showDoubleTapLike = false);
+      }
+    });
+  }
+
+  void _scheduleAutoplayKick() {
+    if (_autoplayKickScheduled) return;
+    _autoplayKickScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoplayKickScheduled = false;
+      if (!mounted || !widget.isTabActive || !_isVisible || _userWantsPaused) {
+        return;
+      }
+      if (_isVideoPost && !_initStarted && _authHeaders != null) {
+        _startVideoInit();
+        return;
+      }
+      if (_videoInitialized) {
+        _safePlay();
       }
     });
   }
@@ -297,23 +356,35 @@ class _PostCardState extends State<PostCard> {
       return '${difference.inDays}d';
     }
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
   }
 
   @override
   void dispose() {
-    _doubleTapLikeTimer?.cancel();
-    _visibleInitTimer?.cancel();
     _offscreenDisposeTimer?.cancel();
-    _videoCtl?.dispose();
+    _doubleTapLikeTimer?.cancel();
+    _safeDisposeController();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isVideoPost && _isVisible) {
+      _scheduleAutoplayKick();
+    }
     final post = widget.post;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -328,8 +399,9 @@ class _PostCardState extends State<PostCard> {
           AspectRatio(
             aspectRatio: _mediaAspect ?? 1.0,
             child: GestureDetector(
-              onTap: _onTapMedia,
-              onDoubleTap: _onDoubleTapMedia,
+              onTap: (_isVideoPost && _videoInitialized) ? _onTapMedia : null,
+              onDoubleTap:
+                  widget.onDoubleTapLike != null ? _onDoubleTapMedia : null,
               child: RepaintBoundary(
                 child: Stack(
                   fit: StackFit.expand,
@@ -353,7 +425,9 @@ class _PostCardState extends State<PostCard> {
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
-                              _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                              _isMuted
+                                  ? LucideIcons.volumeX
+                                  : LucideIcons.volume2,
                               color: Colors.white,
                               size: 16,
                             ),
@@ -364,7 +438,8 @@ class _PostCardState extends State<PostCard> {
                     // Play/pause overlay icon
                     if (_isVideoPost && _userWantsPaused)
                       const Center(
-                        child: Icon(LucideIcons.play, color: Colors.white, size: 50),
+                        child: Icon(LucideIcons.play,
+                            color: Colors.white, size: 50),
                       ),
 
                     IgnorePointer(
@@ -429,7 +504,8 @@ class _PostCardState extends State<PostCard> {
             if (wasSynchronouslyLoaded || frame != null) return child;
             return const ColoredBox(color: Colors.black);
           },
-          errorBuilder: (_, __, ___) => _buildPlaceholder(isDark, isVideo: true),
+          errorBuilder: (_, __, ___) =>
+              _buildPlaceholder(isDark, isVideo: true),
         );
       }
     }
@@ -502,7 +578,11 @@ class _PostCardState extends State<PostCard> {
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
-                  colors: [Color(0xFFFACC15), Color(0xFFF97316), Color(0xFFEC4899)],
+                  colors: [
+                    Color(0xFFFACC15),
+                    Color(0xFFF97316),
+                    Color(0xFFEC4899)
+                  ],
                 ),
               ),
               child: Container(
@@ -514,9 +594,8 @@ class _PostCardState extends State<PostCard> {
                 child: CircleAvatar(
                   backgroundImage:
                       avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-                  backgroundColor: isDark
-                      ? const Color(0xFF3D3D3D)
-                      : Colors.grey.shade200,
+                  backgroundColor:
+                      isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
                   child: avatarUrl.isEmpty
                       ? Text(
                           post.userName.isNotEmpty
@@ -543,12 +622,25 @@ class _PostCardState extends State<PostCard> {
                         fontWeight: FontWeight.w600, fontSize: 13.5),
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (post.fullName != null && post.fullName!.trim().isNotEmpty)
+                  if (post.isAd)
+                    Text(
+                      'Sponsored',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  if (!post.isAd &&
+                      post.fullName != null &&
+                      post.fullName!.trim().isNotEmpty)
                     Text(
                       post.fullName!,
                       style: TextStyle(
                         fontSize: 11,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.55),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -609,7 +701,9 @@ class _PostCardState extends State<PostCard> {
                 child: Row(
                   children: [
                     Icon(
-                      post.isFollowed ? LucideIcons.userCheck : LucideIcons.userPlus,
+                      post.isFollowed
+                          ? LucideIcons.userCheck
+                          : LucideIcons.userPlus,
                       size: 16,
                       color: theme.colorScheme.onSurface,
                     ),
@@ -648,6 +742,15 @@ class _PostCardState extends State<PostCard> {
             '${post.likes} likes',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
           ),
+          if (post.isAd &&
+              post.adTitle != null &&
+              post.adTitle!.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              post.adTitle!.trim(),
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            ),
+          ],
           if (post.caption != null && post.caption!.isNotEmpty) ...[
             const SizedBox(height: 4),
             Wrap(
@@ -656,7 +759,8 @@ class _PostCardState extends State<PostCard> {
                   onTap: widget.onUserTap,
                   child: Text(
                     '${post.userName} ',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ),
                 Text(
@@ -690,13 +794,15 @@ class _PostCardState extends State<PostCard> {
                 ),
                 children: [
                   TextSpan(
-                    text: '${(post.latestCommentUser ?? post.userName).trim()} ',
+                    text:
+                        '${(post.latestCommentUser ?? post.userName).trim()} ',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   TextSpan(
                     text: post.latestCommentText!.trim(),
                     style: TextStyle(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+                      color:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.78),
                     ),
                   ),
                 ],

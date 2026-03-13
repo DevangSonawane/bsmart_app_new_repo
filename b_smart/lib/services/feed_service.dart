@@ -1,4 +1,5 @@
 import '../api/api.dart';
+import '../models/ad_model.dart';
 import '../models/feed_post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
@@ -12,6 +13,7 @@ class FeedService {
   FeedService._internal();
 
   final PostsApi _postsApi = PostsApi();
+  final AdsApi _adsApi = AdsApi();
   final AuthApi _authApi = AuthApi();
   final StoriesApi _storiesApi = StoriesApi();
 
@@ -47,9 +49,8 @@ class FeedService {
       // Interest matching
       if (userInterests != null) {
         final matchingHashtags = post.hashtags
-            .where((tag) => userInterests
-                .any((interest) =>
-                    tag.toLowerCase().contains(interest.toLowerCase())))
+            .where((tag) => userInterests.any((interest) =>
+                tag.toLowerCase().contains(interest.toLowerCase())))
             .length;
         score += matchingHashtags * 10.0;
       }
@@ -64,16 +65,15 @@ class FeedService {
       }
 
       // Recent posts get slight boost
-      final hoursSincePost =
-          DateTime.now().difference(post.createdAt).inHours;
+      final hoursSincePost = DateTime.now().difference(post.createdAt).inHours;
       score += (24 - hoursSincePost).clamp(0, 24) * 0.5;
 
       return {'post': post, 'score': score};
     }).toList();
 
     // Sort by score (highest first)
-    rankedPosts.sort(
-        (a, b) => (b['score'] as double).compareTo(a['score'] as double));
+    rankedPosts
+        .sort((a, b) => (b['score'] as double).compareTo(a['score'] as double));
 
     // Insert ads every 5 posts
     final finalFeed = <FeedPost>[];
@@ -112,8 +112,11 @@ class FeedService {
         userId: 'user-3',
         userName: 'Bob Johnson',
         mediaType: PostMediaType.video,
-        mediaUrls: ['https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4'],
-        thumbnailUrl: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80',
+        mediaUrls: [
+          'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4'
+        ],
+        thumbnailUrl:
+            'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80',
         caption: 'Working on something exciting! 💻 #coding #tech',
         hashtags: ['coding', 'tech'],
         createdAt: now.subtract(const Duration(hours: 5)),
@@ -128,7 +131,10 @@ class FeedService {
         userId: 'user-4',
         userName: 'Emma Wilson',
         mediaType: PostMediaType.carousel,
-        mediaUrls: ['https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800&q=80', 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=800&q=80'],
+        mediaUrls: [
+          'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800&q=80',
+          'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=800&q=80'
+        ],
         caption: 'Tagged you in this! @JohnDoe #friends #memories',
         hashtags: ['friends', 'memories'],
         createdAt: now.subtract(const Duration(hours: 1)),
@@ -142,7 +148,9 @@ class FeedService {
         userId: 'user-5',
         userName: 'Mike Brown',
         mediaType: PostMediaType.carousel,
-        mediaUrls: ['https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&q=80'],
+        mediaUrls: [
+          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&q=80'
+        ],
         caption: 'Check out my new collection! 🎨 #art #design',
         hashtags: ['art', 'design'],
         createdAt: now.subtract(const Duration(hours: 3)),
@@ -156,8 +164,11 @@ class FeedService {
         userId: 'user-6',
         userName: 'Sarah Davis',
         mediaType: PostMediaType.reel,
-        mediaUrls: ['https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4'],
-        thumbnailUrl: 'https://images.unsplash.com/photo-1547153760-18fc86324498?w=800&q=80',
+        mediaUrls: [
+          'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4'
+        ],
+        thumbnailUrl:
+            'https://images.unsplash.com/photo-1547153760-18fc86324498?w=800&q=80',
         caption: 'Quick tutorial! #tutorial #tips',
         hashtags: ['tutorial', 'tips'],
         createdAt: now.subtract(const Duration(hours: 4)),
@@ -246,8 +257,10 @@ class FeedService {
           items = (map['posts'] as List).cast<Map<String, dynamic>>();
         } else if (map['data'] is List) {
           items = (map['data'] as List).cast<Map<String, dynamic>>();
-        } else if (map['data'] is Map && (map['data'] as Map)['posts'] is List) {
-          items = ((map['data'] as Map)['posts'] as List).cast<Map<String, dynamic>>();
+        } else if (map['data'] is Map &&
+            (map['data'] as Map)['posts'] is List) {
+          items = ((map['data'] as Map)['posts'] as List)
+              .cast<Map<String, dynamic>>();
         }
       }
 
@@ -259,7 +272,7 @@ class FeedService {
               Map<String, dynamic>.from(raw as Map<dynamic, dynamic>);
 
           final postId = item['_id'] as String? ?? item['id'] as String? ?? '';
-        // The API nests the author info inside `user_id` as a populated object.
+          // The API nests the author info inside `user_id` as a populated object.
           Map<String, dynamic> user = {};
           if (item['user_id'] is Map) {
             user = Map<String, dynamic>.from(item['user_id'] as Map);
@@ -267,161 +280,183 @@ class FeedService {
             user = Map<String, dynamic>.from(item['users'] as Map);
           }
 
-        final rawLikesAny = (item['likes'] as List<dynamic>?) ??
-            (item['liked_by'] as List<dynamic>?) ??
-            const [];
-        final likesCount = (item['likes_count'] as int?) ?? rawLikesAny.length;
-        bool computedLiked = false;
-        if (currentUserId != null && rawLikesAny.isNotEmpty) {
-          for (final e in rawLikesAny) {
-            if (e is Map) {
-              String? uid = (e['user_id'] as String?) ??
-                  (e['id'] as String?) ??
-                  (e['_id'] as String?);
-              if (uid == null && e['user'] is Map) {
-                final u = (e['user'] as Map);
-                uid = (u['id'] as String?) ?? (u['_id'] as String?);
-              }
-              if (uid != null && uid.toString() == currentUserId.toString()) {
+          final rawLikesAny = (item['likes'] as List<dynamic>?) ??
+              (item['liked_by'] as List<dynamic>?) ??
+              const [];
+          final likesCount =
+              (item['likes_count'] as int?) ?? rawLikesAny.length;
+          bool computedLiked = false;
+          if (currentUserId != null && rawLikesAny.isNotEmpty) {
+            for (final e in rawLikesAny) {
+              if (e is Map) {
+                String? uid = (e['user_id'] as String?) ??
+                    (e['id'] as String?) ??
+                    (e['_id'] as String?);
+                if (uid == null && e['user'] is Map) {
+                  final u = (e['user'] as Map);
+                  uid = (u['id'] as String?) ?? (u['_id'] as String?);
+                }
+                if (uid != null && uid.toString() == currentUserId.toString()) {
+                  computedLiked = true;
+                  break;
+                }
+              } else if (e is String &&
+                  e.toString() == currentUserId.toString()) {
                 computedLiked = true;
                 break;
               }
-            } else if (e is String && e.toString() == currentUserId.toString()) {
-              computedLiked = true;
-              break;
             }
           }
-        }
-        final hasLikesArray = rawLikesAny.isNotEmpty;
-        final isLikedByMe = hasLikesArray
-            ? computedLiked
-            : ((item['is_liked_by_me'] as bool?) ?? false);
+          final hasLikesArray = rawLikesAny.isNotEmpty;
+          final isLikedByMe = hasLikesArray
+              ? computedLiked
+              : ((item['is_liked_by_me'] as bool?) ?? false);
 
-        bool isSavedByMe = (item['is_saved_by_me'] as bool?) ?? false;
-        if (!isSavedByMe && currentUserId != null) {
-          final savedBy = (item['saved_by'] as List<dynamic>?) ??
-              (item['bookmarks'] as List<dynamic>?) ??
-              const [];
-          for (final entry in savedBy) {
-            if (entry is String && entry == currentUserId) {
-              isSavedByMe = true;
-              break;
-            }
-            if (entry is Map) {
-              final id = (entry['id'] as String?) ??
-                  (entry['_id'] as String?) ??
-                  (entry['user_id'] as String?);
-              if (id != null && id == currentUserId) {
+          bool isSavedByMe = (item['is_saved_by_me'] as bool?) ?? false;
+          if (!isSavedByMe && currentUserId != null) {
+            final savedBy = (item['saved_by'] as List<dynamic>?) ??
+                (item['bookmarks'] as List<dynamic>?) ??
+                const [];
+            for (final entry in savedBy) {
+              if (entry is String && entry == currentUserId) {
                 isSavedByMe = true;
                 break;
               }
+              if (entry is Map) {
+                final id = (entry['id'] as String?) ??
+                    (entry['_id'] as String?) ??
+                    (entry['user_id'] as String?);
+                if (id != null && id == currentUserId) {
+                  isSavedByMe = true;
+                  break;
+                }
+              }
             }
           }
-        }
-        if (!isSavedByMe && locallySaved.isNotEmpty) {
-          if (locallySaved.contains(postId)) {
-            isSavedByMe = true;
+          if (!isSavedByMe && locallySaved.isNotEmpty) {
+            if (locallySaved.contains(postId)) {
+              isSavedByMe = true;
+            }
           }
-        }
 
-        final authorId = user['_id'] as String? ??
-            user['id'] as String? ??
-            (item['user_id'] is String ? item['user_id'] as String : '');
+          final authorId = user['_id'] as String? ??
+              user['id'] as String? ??
+              (item['user_id'] is String ? item['user_id'] as String : '');
 
-        bool isFollowedByMe = (item['is_followed_by_me'] as bool?) ?? false;
-        if (!isFollowedByMe && followedUsers.isNotEmpty && authorId.isNotEmpty) {
-          if (followedUsers.contains(authorId)) {
-            isFollowedByMe = true;
+          bool isFollowedByMe = (item['is_followed_by_me'] as bool?) ?? false;
+          if (!isFollowedByMe &&
+              followedUsers.isNotEmpty &&
+              authorId.isNotEmpty) {
+            if (followedUsers.contains(authorId)) {
+              isFollowedByMe = true;
+            }
           }
-        }
 
-          final dynamic rawMedia = item['media'] ?? item['images'] ?? item['attachments'];
+          final dynamic rawMedia =
+              item['media'] ?? item['images'] ?? item['attachments'];
           final List<dynamic> media = rawMedia is List
               ? rawMedia
               : rawMedia is Map
                   ? <dynamic>[rawMedia]
                   : <dynamic>[];
 
-          List<String> mediaUrls = media.map((m) {
-          String? url;
-          if (m is String) {
-            url = m;
-          } else if (m is Map) {
-            if (m['file'] is Map) {
-              final f = (m['file'] as Map);
-              url = (f['fileUrl'] ?? f['file_url'] ?? f['url'] ?? f['path'])?.toString();
-            } else if (m['file'] is String) {
-              url = (m['file'] as String);
-            }
-            url ??= (m['fileUrl'] ??
-                    m['file_url'] ??
-                    m['image'] ??
-                    m['imageUrl'] ??
-                    m['url'] ??
-                    m['file_path'])
-                ?.toString();
-            if ((url == null || url.isEmpty) && m['fileName'] != null) {
-              final fn = m['fileName'].toString();
-              url = '/uploads/$fn';
-            }
-          }
-            return UrlHelper.normalizeUrl(url);
-          }).where((u) => u.isNotEmpty).cast<String>().toList();
+          List<String> mediaUrls = media
+              .map((m) {
+                String? url;
+                if (m is String) {
+                  url = m;
+                } else if (m is Map) {
+                  if (m['file'] is Map) {
+                    final f = (m['file'] as Map);
+                    url =
+                        (f['fileUrl'] ?? f['file_url'] ?? f['url'] ?? f['path'])
+                            ?.toString();
+                  } else if (m['file'] is String) {
+                    url = (m['file'] as String);
+                  }
+                  url ??= (m['fileUrl'] ??
+                          m['file_url'] ??
+                          m['image'] ??
+                          m['imageUrl'] ??
+                          m['url'] ??
+                          m['file_path'])
+                      ?.toString();
+                  if ((url == null || url.isEmpty) && m['fileName'] != null) {
+                    final fn = m['fileName'].toString();
+                    url = '/uploads/$fn';
+                  }
+                }
+                return UrlHelper.normalizeUrl(url);
+              })
+              .where((u) => u.isNotEmpty)
+              .cast<String>()
+              .toList();
           if (mediaUrls.isEmpty) {
-          final single = (item['imageUrl'] ??
-                  item['image'] ??
-                  item['fileUrl'] ??
-                  item['file_url'] ??
-                  item['url'] ??
-                  item['file_path'])
-              ?.toString();
-          final normalized = UrlHelper.normalizeUrl(single);
+            final single = (item['imageUrl'] ??
+                    item['image'] ??
+                    item['fileUrl'] ??
+                    item['file_url'] ??
+                    item['url'] ??
+                    item['file_path'])
+                ?.toString();
+            final normalized = UrlHelper.normalizeUrl(single);
             if (normalized.isNotEmpty) {
               mediaUrls = [normalized];
             }
           }
           if (mediaUrls.isEmpty) {
-          final single = (item['imageUrl'] ?? item['image'] ?? item['url'])?.toString();
-          if (single != null && single.isNotEmpty) {
-            mediaUrls.add(single);
-          }
+            final single =
+                (item['imageUrl'] ?? item['image'] ?? item['url'])?.toString();
+            if (single != null && single.isNotEmpty) {
+              mediaUrls.add(single);
+            }
           }
 
-          final typeStr = ((item['type'] as String?) ?? (item['media_type'] as String?) ?? 'post').toLowerCase();
+          final typeStr = ((item['type'] as String?) ??
+                  (item['media_type'] as String?) ??
+                  'post')
+              .toLowerCase();
           bool hasVideo = false;
           for (final mm in media) {
-          if (mm is Map) {
-            final t = (mm['type'] as String?)?.toLowerCase();
-            if (t == 'video' || t == 'reel') {
-              hasVideo = true;
-              break;
+            if (mm is Map) {
+              final t = (mm['type'] as String?)?.toLowerCase();
+              if (t == 'video' || t == 'reel') {
+                hasVideo = true;
+                break;
+              }
+              final cand = (mm['fileUrl'] ??
+                      mm['file_url'] ??
+                      mm['url'] ??
+                      mm['file_path'] ??
+                      (mm['file'] is String ? mm['file'] : null) ??
+                      (mm['file'] is Map
+                          ? ((mm['file'] as Map)['url'] ??
+                              (mm['file'] as Map)['fileUrl'])
+                          : null))
+                  ?.toString()
+                  .toLowerCase();
+              if (cand != null &&
+                  (cand.endsWith('.mp4') ||
+                      cand.endsWith('.mov') ||
+                      cand.contains('.m3u8'))) {
+                hasVideo = true;
+                break;
+              }
+            } else if (mm is String) {
+              final s = mm.toLowerCase();
+              if (s.endsWith('.mp4') || s.endsWith('.mov')) {
+                hasVideo = true;
+                break;
+              }
             }
-            final cand = (mm['fileUrl'] ??
-                    mm['file_url'] ??
-                    mm['url'] ??
-                    mm['file_path'] ??
-                    (mm['file'] is String ? mm['file'] : null) ??
-                    (mm['file'] is Map ? ((mm['file'] as Map)['url'] ?? (mm['file'] as Map)['fileUrl']) : null))
-                ?.toString()
-                .toLowerCase();
-            if (cand != null &&
-                (cand.endsWith('.mp4') || cand.endsWith('.mov') || cand.contains('.m3u8'))) {
-              hasVideo = true;
-              break;
-            }
-          } else if (mm is String) {
-            final s = mm.toLowerCase();
-            if (s.endsWith('.mp4') || s.endsWith('.mov')) {
-              hasVideo = true;
-              break;
-            }
-          }
           }
           PostMediaType mediaType = PostMediaType.image;
           if (typeStr == 'reel') {
             mediaType = PostMediaType.reel;
           } else if (hasVideo) {
-            mediaType = mediaUrls.length == 1 ? PostMediaType.reel : PostMediaType.video;
+            mediaType = mediaUrls.length == 1
+                ? PostMediaType.reel
+                : PostMediaType.video;
           } else if (mediaUrls.length > 1) {
             mediaType = PostMediaType.carousel;
           }
@@ -432,18 +467,22 @@ class FeedService {
             final first = media.first;
             if (first is Map) {
               // Handle thumbnail being String, Map, or List
-              dynamic rawThumb = first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
-              
+              dynamic rawThumb =
+                  first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
+
               if (rawThumb is String) {
                 thumbnailUrl = rawThumb;
               } else if (rawThumb is Map) {
-                thumbnailUrl = (rawThumb['url'] ?? rawThumb['fileUrl'] ?? rawThumb['path'])?.toString();
+                thumbnailUrl =
+                    (rawThumb['url'] ?? rawThumb['fileUrl'] ?? rawThumb['path'])
+                        ?.toString();
               } else if (rawThumb is List && rawThumb.isNotEmpty) {
                 final t = rawThumb.first;
                 if (t is Map) {
-                   thumbnailUrl = (t['url'] ?? t['fileUrl'] ?? t['path'])?.toString();
+                  thumbnailUrl =
+                      (t['url'] ?? t['fileUrl'] ?? t['path'])?.toString();
                 } else if (t is String) {
-                   thumbnailUrl = t;
+                  thumbnailUrl = t;
                 }
               }
 
@@ -452,9 +491,11 @@ class FeedService {
               }
 
               // Parse stored aspect ratio from upload
-              final rawAr = first['aspect_ratio']
-                  ?? first['aspectRatio']
-                  ?? (first['crop'] is Map ? (first['crop'] as Map)['aspect_ratio'] : null);
+              final rawAr = first['aspect_ratio'] ??
+                  first['aspectRatio'] ??
+                  (first['crop'] is Map
+                      ? (first['crop'] as Map)['aspect_ratio']
+                      : null);
               if (rawAr != null) {
                 if (rawAr is double) {
                   aspectRatio = rawAr > 0 ? rawAr : null;
@@ -462,7 +503,8 @@ class FeedService {
                   aspectRatio = rawAr > 0 ? rawAr.toDouble() : null;
                 } else if (rawAr is String) {
                   aspectRatio = double.tryParse(rawAr);
-                  if (aspectRatio != null && aspectRatio <= 0) aspectRatio = null;
+                  if (aspectRatio != null && aspectRatio <= 0)
+                    aspectRatio = null;
                 }
               }
             }
@@ -471,9 +513,13 @@ class FeedService {
           final post = FeedPost(
             id: postId,
             userId: authorId,
-            userName: user['username'] as String? ?? (item['username'] as String?) ?? 'user',
-            fullName: user['full_name'] as String? ?? (item['full_name'] as String?),
-            userAvatar: user['avatar_url'] as String? ?? (item['userAvatar'] as String?),
+            userName: user['username'] as String? ??
+                (item['username'] as String?) ??
+                'user',
+            fullName:
+                user['full_name'] as String? ?? (item['full_name'] as String?),
+            userAvatar: user['avatar_url'] as String? ??
+                (item['userAvatar'] as String?),
             isVerified: user['is_verified'] as bool? ?? false,
             mediaType: mediaType,
             mediaUrls: mediaUrls,
@@ -486,18 +532,22 @@ class FeedService {
             createdAt: item['createdAt'] is String
                 ? DateTime.parse(item['createdAt'] as String)
                 : (item['created_at'] is String
-                    ? DateTime.tryParse(item['created_at'] as String) ?? DateTime.now()
+                    ? DateTime.tryParse(item['created_at'] as String) ??
+                        DateTime.now()
                     : DateTime.now()),
             likes: likesCount,
             comments: item['comments'] is List
                 ? (item['comments'] as List).length
-                : (item['comments_count'] as int? ?? (item['commentCount'] as int? ?? 0)),
+                : (item['comments_count'] as int? ??
+                    (item['commentCount'] as int? ?? 0)),
             views: 0,
             isLiked: isLikedByMe,
             isSaved: isSavedByMe,
             isFollowed: isFollowedByMe,
             isTagged: (item['people_tags'] as List?)?.isNotEmpty ?? false,
-            peopleTags: (item['people_tags'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList(),
+            peopleTags: (item['people_tags'] as List?)
+                ?.map((e) => Map<String, dynamic>.from(e))
+                .toList(),
             isShared: false,
             isAd: false,
             latestCommentUser: () {
@@ -542,7 +592,10 @@ class FeedService {
               }
               return null;
             }(),
-            rawLikes: rawLikesAny.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList(),
+            rawLikes: rawLikesAny
+                .whereType<Map>()
+                .map((m) => Map<String, dynamic>.from(m))
+                .toList(),
           );
 
           mapped.add(post);
@@ -552,11 +605,114 @@ class FeedService {
         }
       }
 
-      return mapped;
+      List<FeedPost> sponsored = const <FeedPost>[];
+      try {
+        final rawAds = await _adsApi.getFeed();
+        sponsored = _mapAdsToFeedPosts(rawAds.take(1).toList());
+      } catch (_) {
+        sponsored = const <FeedPost>[];
+      }
+
+      return _injectSingleSponsoredPost(mapped, sponsored);
     } catch (_) {
       // On any top-level error, fall back to empty list so UI can recover.
       return [];
     }
+  }
+
+  List<FeedPost> _mapAdsToFeedPosts(List<Map<String, dynamic>> rawAds) {
+    final ads = <FeedPost>[];
+
+    for (final raw in rawAds) {
+      try {
+        final ad = Ad.fromApi(Map<String, dynamic>.from(raw));
+        if (ad.id.isEmpty) continue;
+
+        final primaryUrl = (ad.videoUrl != null && ad.videoUrl!.isNotEmpty)
+            ? ad.videoUrl!
+            : (ad.imageUrl ?? '');
+        if (primaryUrl.isEmpty) continue;
+
+        final isVideo = ad.videoUrl != null && ad.videoUrl!.isNotEmpty;
+        final mediaType = isVideo ? PostMediaType.video : PostMediaType.image;
+        final caption = (ad.caption?.trim().isNotEmpty ?? false)
+            ? ad.caption!.trim()
+            : ((ad.description.trim().isNotEmpty)
+                ? ad.description.trim()
+                : ad.title);
+
+        final ownerName = (ad.vendorBusinessName?.trim().isNotEmpty ?? false)
+            ? ad.vendorBusinessName!.trim()
+            : ((ad.companyName.trim().isNotEmpty)
+                ? ad.companyName.trim()
+                : 'Sponsored');
+
+        ads.add(
+          FeedPost(
+            id: 'ad-${ad.id}',
+            userId: ad.userId ?? ad.companyId,
+            userName: ownerName,
+            fullName: null,
+            userAvatar: ad.userAvatarUrl ?? ad.companyLogo,
+            mediaType: mediaType,
+            mediaUrls: [primaryUrl],
+            thumbnailUrl: isVideo ? ad.imageUrl : null,
+            aspectRatio: _extractMediaAspectFromRawAd(raw),
+            caption: caption,
+            hashtags: ad.hashtags,
+            createdAt: ad.createdAt,
+            likes: ad.likesCount,
+            comments: ad.commentsCount,
+            isAd: true,
+            adTitle: ad.title,
+            adCompanyId: ad.companyId,
+            adCompanyName: ad.companyName,
+          ),
+        );
+      } catch (_) {
+        continue;
+      }
+    }
+
+    return ads;
+  }
+
+  List<FeedPost> _injectSingleSponsoredPost(
+    List<FeedPost> posts,
+    List<FeedPost> ads,
+  ) {
+    if (posts.any((p) => p.isAd)) return posts;
+    if (ads.isEmpty) return posts;
+    final selected = ads.first;
+    if (posts.isEmpty) return [selected];
+
+    final insertAt = posts.length >= 2 ? 2 : posts.length;
+    final merged = List<FeedPost>.from(posts);
+    merged.insert(
+      insertAt,
+      selected.copyWith(id: '${selected.id}-slot-home'),
+    );
+    return merged;
+  }
+
+  double? _extractMediaAspectFromRawAd(Map<String, dynamic> raw) {
+    final media = raw['media'];
+    if (media is! List || media.isEmpty) return null;
+    final first = media.first;
+    if (first is! Map) return null;
+    final map = Map<String, dynamic>.from(first);
+    final rawAr = map['aspect_ratio'] ??
+        map['aspectRatio'] ??
+        (map['crop'] is Map ? (map['crop'] as Map)['aspect_ratio'] : null);
+    if (rawAr is num) {
+      final value = rawAr.toDouble();
+      return value > 0 ? value : null;
+    }
+    if (rawAr is String) {
+      final value = double.tryParse(rawAr);
+      if (value != null && value > 0) return value;
+    }
+    return null;
   }
 
   // Get stories for online users
@@ -598,17 +754,23 @@ class FeedService {
                   id: (preview['_id'] as String?) ?? 'item',
                   userId: previewUserId.isNotEmpty
                       ? previewUserId
-                      : (user['_id'] as String?) ?? (user['id'] as String?) ?? '',
+                      : (user['_id'] as String?) ??
+                          (user['id'] as String?) ??
+                          '',
                   userName: (user['username'] as String?) ?? 'User',
                   userAvatar: user['avatar_url'] as String?,
-                  mediaUrl: UrlHelper.normalizeUrl((media['url'] as String?) ?? ''),
+                  mediaUrl:
+                      UrlHelper.normalizeUrl((media['url'] as String?) ?? ''),
                   mediaType: (media['type'] as String?) == 'image'
                       ? StoryMediaType.image
                       : StoryMediaType.video,
-                  createdAt: DateTime.tryParse(preview['createdAt'] as String? ?? '') ?? DateTime.now(),
+                  createdAt: DateTime.tryParse(
+                          preview['createdAt'] as String? ?? '') ??
+                      DateTime.now(),
                   views: (data['views_count'] as int?) ?? 0,
                   isViewed: seen,
-                  expiresAt: DateTime.tryParse(preview['expiresAt'] as String? ?? ''),
+                  expiresAt:
+                      DateTime.tryParse(preview['expiresAt'] as String? ?? ''),
                   isDeleted: (preview['isDeleted'] as bool?) ?? false,
                 ),
               ],
@@ -637,14 +799,18 @@ class FeedService {
   }
 
   /// Fetch all items for a specific story.
-  Future<List<Story>> fetchStoryItems(String storyId, {String? ownerUserName, String? ownerAvatar}) async {
+  Future<List<Story>> fetchStoryItems(String storyId,
+      {String? ownerUserName, String? ownerAvatar}) async {
     final rawItems = await _storiesApi.items(storyId);
-    final items = List<Map<String, dynamic>>.from(rawItems.map((e) => Map<String, dynamic>.from(e as Map)));
+    final items = List<Map<String, dynamic>>.from(
+        rawItems.map((e) => Map<String, dynamic>.from(e as Map)));
 
     items.sort((a, b) {
-      final ad = DateTime.tryParse(a['createdAt'] as String? ?? a['created_at'] as String? ?? '') ??
+      final ad = DateTime.tryParse(
+              a['createdAt'] as String? ?? a['created_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0);
-      final bd = DateTime.tryParse(b['createdAt'] as String? ?? b['created_at'] as String? ?? '') ??
+      final bd = DateTime.tryParse(
+              b['createdAt'] as String? ?? b['created_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0);
       // Oldest first so that the latest story is viewed last
       return ad.compareTo(bd);
@@ -659,12 +825,30 @@ class FeedService {
         media = Map<String, dynamic>.from(rawMedia);
       }
       final mediaUrl = UrlHelper.normalizeUrl(media?['url'] as String? ?? '');
-      final mediaType = (media?['type'] == 'image') ? StoryMediaType.image : StoryMediaType.video;
-      final texts = (m['texts'] is List) ? (m['texts'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : null;
-      final mentions = (m['mentions'] is List) ? (m['mentions'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : null;
-      final transform = (m['transform'] is Map) ? Map<String, dynamic>.from(m['transform'] as Map) : null;
-      final filter = (m['filter'] is Map) ? Map<String, dynamic>.from(m['filter'] as Map) : null;
-      final int? durationSec = (media?['durationSec'] is int) ? (media?['durationSec'] as int) : (m['durationSec'] as int?);
+      final mediaType = (media?['type'] == 'image')
+          ? StoryMediaType.image
+          : StoryMediaType.video;
+      final texts = (m['texts'] is List)
+          ? (m['texts'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : null;
+      final mentions = (m['mentions'] is List)
+          ? (m['mentions'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : null;
+      final transform = (m['transform'] is Map)
+          ? Map<String, dynamic>.from(m['transform'] as Map)
+          : null;
+      final filter = (m['filter'] is Map)
+          ? Map<String, dynamic>.from(m['filter'] as Map)
+          : null;
+      final int? durationSec = (media?['durationSec'] is int)
+          ? (media?['durationSec'] as int)
+          : (m['durationSec'] as int?);
       return Story(
         id: (m['_id'] as String?) ?? 'item',
         userId: (m['user_id'] as String?) ?? '',
@@ -672,7 +856,8 @@ class FeedService {
         userAvatar: ownerAvatar,
         mediaUrl: mediaUrl,
         mediaType: mediaType,
-        createdAt: DateTime.tryParse(m['createdAt'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(m['createdAt'] as String? ?? '') ??
+            DateTime.now(),
         views: 0,
         isViewed: false,
         expiresAt: DateTime.tryParse(m['expiresAt'] as String? ?? ''),

@@ -25,18 +25,35 @@ class NotificationItem {
 
   factory NotificationItem.fromJson(Map<String, dynamic> json) {
     NotificationType t = NotificationType.system;
-    final typeStr = (json['type'] as String?) ?? 'system';
+    final typeStr = (json['type'] ?? json['notification_type'] ?? 'system')
+        .toString()
+        .toLowerCase();
     if (typeStr == 'ad') t = NotificationType.ad;
     if (typeStr == 'activity') t = NotificationType.activity;
 
+    final timestampValue =
+        json['timestamp'] ?? json['created_at'] ?? json['createdAt'];
+    DateTime parsedTime;
+    try {
+      parsedTime = DateTime.parse(
+          timestampValue?.toString() ?? DateTime.now().toIso8601String());
+    } catch (_) {
+      parsedTime = DateTime.now();
+    }
+
+    final readValue = json['is_read'] ?? json['isRead'] ?? json['read'];
+    final isRead = readValue == true ||
+        readValue == 1 ||
+        readValue?.toString().toLowerCase() == 'true';
+
     return NotificationItem(
-      id: json['id'] as String,
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
       type: t,
       title: json['title'] as String? ?? '',
       message: json['message'] as String? ?? '',
-      timestamp: DateTime.parse(json['timestamp'] as String? ?? DateTime.now().toIso8601String()),
-      isRead: json['is_read'] as bool? ?? false,
-      relatedId: json['related_id'] as String?,
+      timestamp: parsedTime,
+      isRead: isRead,
+      relatedId: (json['related_id'] ?? json['relatedId'])?.toString(),
     );
   }
 

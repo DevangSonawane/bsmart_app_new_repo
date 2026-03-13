@@ -6,6 +6,8 @@ import 'supabase_service.dart';
 import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/url_helper.dart';
+import '../api/api_client.dart';
+import 'package:video_player/video_player.dart';
 
 class ReelsService {
   static final ReelsService _instance = ReelsService._internal();
@@ -35,12 +37,45 @@ class ReelsService {
       _cache
         ..clear()
         ..addAll(synced);
-      globalStore.dispatch(SetFeedPosts(synced.map((r) => r.toFeedPost()).toList()));
+      globalStore
+          .dispatch(SetFeedPosts(synced.map((r) => r.toFeedPost()).toList()));
     } else {
       _cache.addAll(synced);
     }
 
     return offset == 0 ? getReels() : List.unmodifiable(synced);
+  }
+
+  Future<void> preWarmReels(int count) async {
+    if (count <= 0) return;
+    final reels = getReels();
+    final upperBound = reels.length < count ? reels.length : count;
+    final token = await ApiClient().getToken();
+    final authHeaders = <String, String>{};
+    if (token != null && token.isNotEmpty) {
+      authHeaders['Authorization'] = 'Bearer $token';
+    }
+
+    for (var i = 0; i < upperBound; i++) {
+      final url = UrlHelper.absoluteUrl(reels[i].videoUrl);
+      if (url.isEmpty) continue;
+      final headers =
+          UrlHelper.shouldAttachAuthHeader(url) ? authHeaders : const <String, String>{};
+      VideoPlayerController? controller;
+      try {
+        controller = VideoPlayerController.networkUrl(
+          Uri.parse(url),
+          httpHeaders: headers,
+        );
+        await controller.initialize();
+      } catch (_) {
+        // Best-effort warmup only.
+      } finally {
+        try {
+          await controller?.dispose();
+        } catch (_) {}
+      }
+    }
   }
 
   List<dynamic> _extractList(dynamic payload) {
@@ -63,7 +98,8 @@ class ReelsService {
     if (raw is! Map) return null;
     final item = Map<String, dynamic>.from(raw);
 
-    final id = _string(item['_id']) ?? _string(item['id']) ?? _string(item['post_id']);
+    final id =
+        _string(item['_id']) ?? _string(item['id']) ?? _string(item['post_id']);
     if (id == null || id.isEmpty) return null;
 
     final userField = item['user_id'];
@@ -75,7 +111,8 @@ class ReelsService {
                 ? Map<String, dynamic>.from(item['user'])
                 : <String, dynamic>{};
 
-    final mediaList = item['media'] is List ? (item['media'] as List) : const [];
+    final mediaList =
+        item['media'] is List ? (item['media'] as List) : const [];
     String? videoUrl;
     String? thumbnailUrl;
     String? aspectRatio;
@@ -91,7 +128,8 @@ class ReelsService {
             _string(media['videoUrl']) ??
             _string(media['file_url']);
 
-        final thumbField = media['thumbnail'] ?? media['thumbnailUrl'] ?? media['thumb'];
+        final thumbField =
+            media['thumbnail'] ?? media['thumbnailUrl'] ?? media['thumb'];
         if (thumbField is String) {
           thumbnailUrl = thumbField;
         } else if (thumbField is Map) {
@@ -106,19 +144,25 @@ class ReelsService {
         final mediaCrop = media['crop'] is Map
             ? Map<String, dynamic>.from(media['crop'])
             : const <String, dynamic>{};
-        aspectRatio = _string(mediaCrop['aspect_ratio']) ?? _string(media['aspect_ratio']);
+        aspectRatio = _string(mediaCrop['aspect_ratio']) ??
+            _string(media['aspect_ratio']);
       }
     }
 
     final reelCrop = item['crop'] is Map
         ? Map<String, dynamic>.from(item['crop'])
         : const <String, dynamic>{};
-    aspectRatio = aspectRatio ?? _string(reelCrop['aspect_ratio']) ?? _string(item['aspect_ratio']);
+    aspectRatio = aspectRatio ??
+        _string(reelCrop['aspect_ratio']) ??
+        _string(item['aspect_ratio']);
 
     final tagsRaw = item['tags'] ?? item['hashtags'] ?? const [];
-    final tags = tagsRaw is List ? tagsRaw.map((e) => e.toString()).toList() : <String>[];
+    final tags = tagsRaw is List
+        ? tagsRaw.map((e) => e.toString()).toList()
+        : <String>[];
 
-    final createdAtRaw = _string(item['created_at']) ?? _string(item['createdAt']);
+    final createdAtRaw =
+        _string(item['created_at']) ?? _string(item['createdAt']);
 
     final userId = _string(userMap['_id']) ??
         _string(userMap['id']) ??
@@ -227,11 +271,14 @@ class ReelsService {
     final nextLiked = !original.isLiked;
     final optimistic = original.copyWith(
       isLiked: nextLiked,
-      likes: nextLiked ? original.likes + 1 : (original.likes > 0 ? original.likes - 1 : 0),
+      likes: nextLiked
+          ? original.likes + 1
+          : (original.likes > 0 ? original.likes - 1 : 0),
     );
 
     _cache[idx] = optimistic;
-    globalStore.dispatch(UpdatePostLikedWithCount(reelId, optimistic.isLiked, optimistic.likes));
+    globalStore.dispatch(
+        UpdatePostLikedWithCount(reelId, optimistic.isLiked, optimistic.likes));
 
     try {
       if (nextLiked) {
@@ -241,7 +288,8 @@ class ReelsService {
       }
     } catch (_) {
       _cache[idx] = original;
-      globalStore.dispatch(UpdatePostLikedWithCount(reelId, original.isLiked, original.likes));
+      globalStore.dispatch(
+          UpdatePostLikedWithCount(reelId, original.isLiked, original.likes));
       rethrow;
     }
   }

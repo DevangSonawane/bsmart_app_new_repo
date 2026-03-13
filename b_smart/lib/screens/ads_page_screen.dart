@@ -16,7 +16,8 @@ import '../state/store.dart';
 import '../utils/current_user.dart';
 
 class AdsPageScreen extends StatefulWidget {
-  const AdsPageScreen({super.key});
+  final bool isTabActive;
+  const AdsPageScreen({super.key, this.isTabActive = true});
 
   @override
   State<AdsPageScreen> createState() => _AdsPageScreenState();
@@ -188,7 +189,8 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                 decoration: BoxDecoration(
                   color: Theme.of(context).scaffoldBackgroundColor,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.08)),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: AdCommentsSheet(adId: ad.id),
@@ -271,7 +273,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
             return AdVideoItem(
               key: ValueKey('ad-video-${ad.id}'),
               ad: ad,
-              isActive: index == _focusedIndex,
+              isActive: widget.isTabActive && index == _focusedIndex,
               onAutoNext: () {
                 if (index + 1 < _ads.length) {
                   _goToPage(index + 1);
@@ -305,11 +307,14 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                           ? Center(
                               child: Container(
                                 width: 360,
-                                height: MediaQuery.of(context).size.height * 0.9,
+                                height:
+                                    MediaQuery.of(context).size.height * 0.9,
                                 decoration: BoxDecoration(
                                   color: Colors.black,
                                   borderRadius: BorderRadius.circular(22),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                                  border: Border.all(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.12)),
                                   boxShadow: const [
                                     BoxShadow(
                                       color: Color(0xAA000000),
@@ -333,6 +338,16 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               child: _buildTopBar(isDesktop: isDesktop),
             ),
           ),
+          if (!_isLoading && _error == null && _ads.isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: isDesktop ? 20 : 66,
+              child: SafeArea(
+                top: false,
+                child: _buildBottomCategoryBar(isDesktop: isDesktop),
+              ),
+            ),
           if (!_isLoading && _error == null && _ads.isNotEmpty && isDesktop)
             Positioned(
               right: 20,
@@ -341,7 +356,9 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                 children: [
                   _navButton(
                     icon: Icons.keyboard_arrow_up,
-                    onTap: _focusedIndex > 0 ? () => _goToPage(_focusedIndex - 1) : null,
+                    onTap: _focusedIndex > 0
+                        ? () => _goToPage(_focusedIndex - 1)
+                        : null,
                   ),
                   const SizedBox(height: 10),
                   _navButton(
@@ -416,18 +433,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
           ),
 
           // Categories List
-          Expanded(
-            child: SizedBox(
-              height: 32,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                children: _categories
-                    .map((c) => _buildCategoryChip(c.id, c.name, isDesktop))
-                    .toList(),
-              ),
-            ),
-          ),
+          const Spacer(),
 
           // Search Button
           IconButton(
@@ -439,6 +445,19 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
             onPressed: _openSearchDialog,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBottomCategoryBar({required bool isDesktop}) {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        children: _categories
+            .map((c) => _buildCategoryChip(c.id, c.name, isDesktop))
+            .toList(),
       ),
     );
   }
@@ -491,8 +510,8 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
           const SizedBox(height: 16),
           Text(
             'No ads available in this category',
-            style:
-                TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
           ),
         ],
       ),
@@ -522,8 +541,8 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               textAlign: TextAlign.center,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style:
-                  TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
             ),
             const SizedBox(height: 16),
             TextButton(
@@ -562,12 +581,10 @@ class _AdVideoItemState extends State<AdVideoItem>
   final SupabaseService _supabase = SupabaseService();
   bool _isInitialized = false;
   bool _isLiked = false;
-  bool _isDisliked = false;
   bool _isSaved = false;
   bool _isFollowing = false;
   bool _isMuted = false;
   bool _isLikeLoading = false;
-  bool _isDislikeLoading = false;
   bool _isFollowLoading = false;
   int _likesCount = 0;
   bool _userPaused = false;
@@ -579,11 +596,34 @@ class _AdVideoItemState extends State<AdVideoItem>
   // Animation for music disc
   late AnimationController _discController;
 
+  Future<void> _safeSetVolume(double volume) async {
+    final controller = _controller;
+    if (controller == null) return;
+    try {
+      await controller.setVolume(volume);
+    } catch (_) {}
+  }
+
+  Future<void> _safePlay() async {
+    final controller = _controller;
+    if (controller == null) return;
+    try {
+      await controller.play();
+    } catch (_) {}
+  }
+
+  Future<void> _safePause() async {
+    final controller = _controller;
+    if (controller == null) return;
+    try {
+      await controller.pause();
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
     _isLiked = widget.ad.isLikedByMe;
-    _isDisliked = widget.ad.isDislikedByMe;
     _isSaved = widget.ad.isSavedByMe;
     _likesCount = widget.ad.likesCount;
     _discController = AnimationController(
@@ -601,7 +641,6 @@ class _AdVideoItemState extends State<AdVideoItem>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.ad.id != widget.ad.id) {
       _isLiked = widget.ad.isLikedByMe;
-      _isDisliked = widget.ad.isDislikedByMe;
       _isSaved = widget.ad.isSavedByMe;
       _likesCount = widget.ad.likesCount;
       _captionExpanded = false;
@@ -618,13 +657,13 @@ class _AdVideoItemState extends State<AdVideoItem>
     if (widget.isActive != oldWidget.isActive) {
       if (widget.isActive) {
         _userPaused = false;
-        _controller?.setVolume(_isMuted ? 0 : 1);
-        unawaited(_controller?.play());
+        unawaited(_safeSetVolume(_isMuted ? 0 : 1));
+        unawaited(_safePlay());
         _discController.repeat();
       } else {
-        _controller?.setVolume(0);
+        unawaited(_safeSetVolume(0));
         _userPaused = true;
-        unawaited(_controller?.pause());
+        unawaited(_safePause());
         _discController.stop();
       }
       _startOrStopProgress();
@@ -676,8 +715,9 @@ class _AdVideoItemState extends State<AdVideoItem>
     final value = controller.value;
     if (!value.isInitialized || value.hasError) return;
     if (value.duration > Duration.zero) {
-      final pct = (value.position.inMilliseconds / value.duration.inMilliseconds)
-          .clamp(0.0, 1.0);
+      final pct =
+          (value.position.inMilliseconds / value.duration.inMilliseconds)
+              .clamp(0.0, 1.0);
       if ((_progress - pct).abs() > 0.004 && mounted) {
         setState(() {
           _progress = pct;
@@ -686,16 +726,16 @@ class _AdVideoItemState extends State<AdVideoItem>
     }
 
     final duration = value.duration;
-    if (duration > Duration.zero &&
+      if (duration > Duration.zero &&
         value.position >= duration - const Duration(milliseconds: 180)) {
-      unawaited(controller.seekTo(Duration.zero));
+      unawaited(controller.seekTo(Duration.zero).catchError((_) {}));
       if (mounted) {
         setState(() {
           _progress = 0;
         });
       }
       if (!value.isPlaying) {
-        unawaited(controller.play());
+        unawaited(controller.play().catchError((_) {}));
       }
       return;
     }
@@ -733,7 +773,8 @@ class _AdVideoItemState extends State<AdVideoItem>
         return;
       }
       final elapsed = DateTime.now().difference(start);
-      final pct = (elapsed.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
+      final pct =
+          (elapsed.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
       setState(() {
         _progress = pct;
       });
@@ -749,12 +790,12 @@ class _AdVideoItemState extends State<AdVideoItem>
     setState(() {
       if (_controller!.value.isPlaying) {
         _userPaused = true;
-        unawaited(_controller!.pause());
+        unawaited(_safePause());
         _discController.stop();
       } else {
         _userPaused = false;
-        _controller!.setVolume(_isMuted ? 0 : 1);
-        unawaited(_controller!.play());
+        unawaited(_safeSetVolume(_isMuted ? 0 : 1));
+        unawaited(_safePlay());
         _discController.repeat();
       }
     });
@@ -774,9 +815,6 @@ class _AdVideoItemState extends State<AdVideoItem>
       _isLikeLoading = true;
       _isLiked = nextLiked;
       _likesCount = nextLikes;
-      if (nextLiked) {
-        _isDisliked = false;
-      }
     });
 
     try {
@@ -835,9 +873,6 @@ class _AdVideoItemState extends State<AdVideoItem>
             if (serverLiked != null) {
               _isLiked = serverLiked;
             }
-            if (_isLiked) {
-              _isDisliked = false;
-            }
           });
         }
       } else {
@@ -866,7 +901,6 @@ class _AdVideoItemState extends State<AdVideoItem>
             }
             if (isDisliked is bool && isDisliked) {
               _isLiked = false;
-              _isDisliked = true;
             }
           });
         }
@@ -904,92 +938,6 @@ class _AdVideoItemState extends State<AdVideoItem>
         setState(() {
           _isLikeLoading = false;
         });
-      }
-    }
-  }
-
-  Future<void> _toggleDislike() async {
-    if (_isDislikeLoading || widget.ad.id.isEmpty) return;
-
-    final previousDisliked = _isDisliked;
-    final previousLiked = _isLiked;
-    final previousLikes = _likesCount;
-    final nextDisliked = !previousDisliked;
-
-    setState(() {
-      _isDislikeLoading = true;
-      _isDisliked = nextDisliked;
-      if (nextDisliked && _isLiked) {
-        _isLiked = false;
-        _likesCount = _likesCount > 0 ? _likesCount - 1 : 0;
-      }
-    });
-
-    try {
-      final currentUserId = await CurrentUser.id;
-      final userId = currentUserId?.trim();
-      if (userId == null || userId.isEmpty) {
-        throw Exception('Please log in to dislike ads');
-      }
-
-      final res = nextDisliked
-          ? await _adsService.dislikeAd(adId: widget.ad.id, userId: userId)
-          : await _adsService.likeAd(adId: widget.ad.id, userId: userId);
-
-      bool? readBool(Map<String, dynamic> data, List<String> keys) {
-        for (final key in keys) {
-          final value = data[key];
-          if (value is bool) return value;
-          if (value is num) return value != 0;
-          if (value is String) {
-            final lower = value.trim().toLowerCase();
-            if (lower == 'true' || lower == '1') return true;
-            if (lower == 'false' || lower == '0') return false;
-          }
-        }
-        return null;
-      }
-
-      int? readInt(Map<String, dynamic> data, List<String> keys) {
-        for (final key in keys) {
-          final value = data[key];
-          if (value is int) return value;
-          if (value is num) return value.toInt();
-          if (value is String) {
-            final parsed = int.tryParse(value);
-            if (parsed != null) return parsed;
-          }
-        }
-        return null;
-      }
-
-      final serverDisliked =
-          readBool(res, const ['is_disliked', 'disliked', 'isDisliked']);
-      final serverLiked = readBool(res, const [
-        'is_liked',
-        'liked',
-        'isLiked',
-        'is_liked_by_me',
-        'liked_by_me'
-      ]);
-      final serverLikes = readInt(res, const ['likes_count', 'likesCount']);
-
-      if (!mounted) return;
-      setState(() {
-        if (serverDisliked != null) _isDisliked = serverDisliked;
-        if (serverLiked != null) _isLiked = serverLiked;
-        if (serverLikes != null) _likesCount = serverLikes;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _isDisliked = previousDisliked;
-        _isLiked = previousLiked;
-        _likesCount = previousLikes;
-      });
-    } finally {
-      if (mounted) {
-        setState(() => _isDislikeLoading = false);
       }
     }
   }
@@ -1170,13 +1118,6 @@ class _AdVideoItemState extends State<AdVideoItem>
               ),
               const SizedBox(height: 16),
               _buildGlassAction(
-                icon: _isDisliked ? Icons.thumb_down_alt : Icons.thumb_down_alt_outlined,
-                label: _isDisliked ? 'Disliked' : 'Dislike',
-                iconColor: _isDisliked ? Colors.blue : Colors.white,
-                onTap: _toggleDislike,
-              ),
-              const SizedBox(height: 16),
-              _buildGlassAction(
                 icon: LucideIcons.messageCircle,
                 label: _formatCount(widget.ad.commentsCount),
                 onTap: () => unawaited(widget.onOpenComments()),
@@ -1217,7 +1158,7 @@ class _AdVideoItemState extends State<AdVideoItem>
               onTap: () {
                 setState(() {
                   _isMuted = !_isMuted;
-                  _controller?.setVolume(_isMuted ? 0 : 1);
+                  unawaited(_safeSetVolume(_isMuted ? 0 : 1));
                 });
               },
               child: Container(
@@ -1368,12 +1309,15 @@ class _AdVideoItemState extends State<AdVideoItem>
                     style: const TextStyle(
                         color: Colors.white, fontSize: 14, height: 1.4),
                     children: [
-                      TextSpan(text: _captionExpanded || !isLong ? caption : preview),
+                      TextSpan(
+                          text:
+                              _captionExpanded || !isLong ? caption : preview),
                       if (!_captionExpanded && isLong)
                         WidgetSpan(
                           alignment: PlaceholderAlignment.middle,
                           child: GestureDetector(
-                            onTap: () => setState(() => _captionExpanded = true),
+                            onTap: () =>
+                                setState(() => _captionExpanded = true),
                             child: const Padding(
                               padding: EdgeInsets.only(left: 3),
                               child: Text(
@@ -1391,7 +1335,8 @@ class _AdVideoItemState extends State<AdVideoItem>
                         WidgetSpan(
                           alignment: PlaceholderAlignment.middle,
                           child: GestureDetector(
-                            onTap: () => setState(() => _captionExpanded = false),
+                            onTap: () =>
+                                setState(() => _captionExpanded = false),
                             child: const Padding(
                               padding: EdgeInsets.only(left: 4),
                               child: Text(
@@ -1522,7 +1467,8 @@ class _AdVideoItemState extends State<AdVideoItem>
         decoration: BoxDecoration(
           color: Colors.black87,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 8),
+          border:
+              Border.all(color: Colors.white.withValues(alpha: 0.2), width: 8),
         ),
         child: CircleAvatar(
           backgroundImage: widget.ad.companyLogo != null
@@ -1785,7 +1731,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
   }
 
   int _commentReplyCount(Map<String, dynamic> c, String id) {
-    final loaded = (_repliesByComment[id] ?? const <Map<String, dynamic>>[]).length;
+    final loaded =
+        (_repliesByComment[id] ?? const <Map<String, dynamic>>[]).length;
     int parseCount(dynamic value) {
       if (value is int) return value;
       if (value is num) return value.toInt();
@@ -1802,7 +1749,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
       c['totalReplies'],
       c['children_count'],
       c['childrenCount'],
-    ].map(parseCount).fold<int>(0, (maxValue, current) => current > maxValue ? current : maxValue);
+    ].map(parseCount).fold<int>(
+        0, (maxValue, current) => current > maxValue ? current : maxValue);
     return loaded > meta ? loaded : meta;
   }
 
@@ -2123,7 +2071,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
               children: [
                 Text(
                   'Comments (${_comments.length})',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 16),
                 ),
                 const Spacer(),
                 IconButton(

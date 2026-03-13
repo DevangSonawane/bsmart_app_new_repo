@@ -39,6 +39,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
   bool _showProfileSetup = false;
   bool _savingProfileSetup = false;
   bool _checkingProfileSetup = false;
+  bool _saveSuccess = false;
   String _error = '';
 
   @override
@@ -115,7 +116,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
 
   String _normalizeGender(dynamic rawGender) {
     final lower = (rawGender ?? '').toString().trim().toLowerCase();
-    if (lower == 'male' || lower == 'female') return lower;
+    if (lower == 'male' || lower == 'female' || lower == 'other') return lower;
     return '';
   }
 
@@ -162,6 +163,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
         setState(() {
           _showProfileSetup = false;
           _error = '';
+          _saveSuccess = false;
         });
         return;
       }
@@ -195,6 +197,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
         if (!needsSetup) {
           _showProfileSetup = false;
           _error = '';
+          _saveSuccess = false;
           return;
         }
         _showProfileSetup = !_dismissedSession.contains(dismissKey);
@@ -209,6 +212,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     setState(() {
       _showProfileSetup = false;
       _error = '';
+      _saveSuccess = false;
     });
   }
 
@@ -247,6 +251,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     setState(() {
       _savingProfileSetup = true;
       _error = '';
+      _saveSuccess = false;
     });
 
     final payload = <String, dynamic>{
@@ -281,7 +286,13 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     if (!mounted) return;
     setState(() {
       _savingProfileSetup = false;
+      _saveSuccess = true;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (!mounted) return;
+    setState(() {
       _showProfileSetup = false;
+      _saveSuccess = false;
     });
   }
 
@@ -343,6 +354,37 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     );
   }
 
+  Widget _genderOption(String value, String label) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final selected = _gender == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) {
+        setState(() {
+          _gender = value;
+          _error = '';
+        });
+      },
+      labelStyle: TextStyle(
+        color: selected
+            ? Colors.white
+            : (isDark ? Colors.white70 : Colors.black87),
+        fontWeight: FontWeight.w600,
+      ),
+      backgroundColor: isDark ? const Color(0xFF061633) : const Color(0xFFF5F5F5),
+      selectedColor: DesignTokens.instaPink,
+      side: BorderSide(
+        color: selected
+            ? DesignTokens.instaPink
+            : (isDark ? const Color(0xFF16305E) : const Color(0xFFE5E7EB)),
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      showCheckmark: false,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
   Widget _buildModal() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Positioned.fill(
@@ -351,7 +393,10 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
         alignment: Alignment.center,
         padding: const EdgeInsets.all(16),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 760),
+          constraints: BoxConstraints(
+            maxWidth: 520,
+            maxHeight: MediaQuery.of(context).size.height * 0.90,
+          ),
           child: Material(
             color: isDark ? const Color(0xFF1C1C1C) : Colors.white,
             borderRadius: BorderRadius.circular(20),
@@ -441,6 +486,31 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
                           ),
                           const SizedBox(height: 12),
                         ],
+                        if (_saveSuccess) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF1A3A2A)
+                                  : const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'Profile saved successfully!',
+                              style: TextStyle(
+                                color: isDark
+                                    ? const Color(0xFF86EFAC)
+                                    : const Color(0xFF166534),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         Text(
                           'Gender *',
                           style: TextStyle(
@@ -450,46 +520,14 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
                           ),
                         ),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          initialValue: _gender.isEmpty ? null : _gender,
-                          items: const [
-                            DropdownMenuItem(value: 'male', child: Text('Male')),
-                            DropdownMenuItem(
-                                value: 'female', child: Text('Female')),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _genderOption('male', 'Male'),
+                            _genderOption('female', 'Female'),
+                            _genderOption('other', 'Other'),
                           ],
-                          onChanged: (value) {
-                            _gender = value ?? '';
-                          },
-                          decoration: InputDecoration(
-                            hintText: 'Select gender',
-                            isDense: true,
-                            filled: true,
-                            fillColor: isDark
-                                ? const Color(0xFF061633)
-                                : const Color(0xFFF5F5F5),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: isDark
-                                    ? const Color(0xFF16305E)
-                                    : const Color(0xFFE5E7EB),
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: isDark
-                                    ? const Color(0xFF16305E)
-                                    : const Color(0xFFE5E7EB),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: DesignTokens.instaPink,
-                              ),
-                            ),
-                          ),
                         ),
                         const SizedBox(height: 14),
                         _field(
