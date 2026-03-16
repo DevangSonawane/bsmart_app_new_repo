@@ -431,21 +431,18 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   void _scheduleControllerRetry(int index) {
     final attempts = _controllerRetryAttempts[index] ?? 0;
-    if (attempts >= 2) {
-      if (index == _currentIndex && _reels.length > 1) {
-        final nextIndex = (_currentIndex + 1) % _reels.length;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          _goToIndex(nextIndex);
-        });
-      }
+    if (attempts >= 3) {
+      _failedControllerIndexes.add(index);
+      if (mounted) setState(() {});
       return;
     }
     _controllerRetryAttempts[index] = attempts + 1;
-    Future<void>.delayed(const Duration(milliseconds: 450), () {
+    final delayMs = switch (attempts) { 0 => 800, 1 => 1500, _ => 2500 };
+    Future<void>.delayed(Duration(milliseconds: delayMs), () {
       if (!mounted) return;
       if (index != _currentIndex) return;
       if (_controllerForIndex(index) != null) return;
+      if (_failedControllerIndexes.contains(index)) return;
       unawaited(() async {
         await _initializePoolAt(index);
         if (!mounted) return;
@@ -659,6 +656,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoplayKickScheduled = false;
       if (!mounted || !widget.isActive || _reels.isEmpty) return;
+      if (_failedControllerIndexes.contains(_currentIndex)) return;
       final controller = _controllerForIndex(_currentIndex);
       if (controller == null || !controller.value.isInitialized) {
         if (_controllerSetupInProgress.contains(_currentIndex)) return;

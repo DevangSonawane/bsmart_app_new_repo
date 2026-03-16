@@ -12,9 +12,9 @@ const Layout = () => {
   const location = useLocation();
   const dispatch = useDispatch();
   const { userObject } = useSelector((state) => state.auth);
-  const isExcludedPage = ['/profile', '/settings', '/reels', '/promote', '/ads'].includes(location.pathname);
+  const isExcludedPage = ['/profile', '/settings', '/promote'].includes(location.pathname);
   const isFullScreenPage = ['/reels', '/promote', '/ads'].includes(location.pathname);
-  const showTopBar = !isExcludedPage;
+  const showTopBar = !isExcludedPage && !isFullScreenPage;
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createType, setCreateType] = useState('post');
@@ -119,7 +119,7 @@ const Layout = () => {
     try {
       // Step 1: PATCH /api/users/{id}
       await api.patch(`/users/${userId}`, payload);
-    } catch (patchErr) {
+    } catch {
       // Fallback: try PUT if PATCH not supported
       try {
         await api.put(`/users/${userId}`, payload);

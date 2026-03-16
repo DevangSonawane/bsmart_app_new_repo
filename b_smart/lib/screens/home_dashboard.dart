@@ -36,6 +36,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'profile_screen.dart';
+import '../routes.dart';
 
 class HomeDashboard extends StatefulWidget {
   final int? initialIndex;
@@ -46,7 +47,7 @@ class HomeDashboard extends StatefulWidget {
   State<HomeDashboard> createState() => _HomeDashboardState();
 }
 
-class _HomeDashboardState extends State<HomeDashboard> {
+class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
   final FeedService _feedService = FeedService();
   final SupabaseService _supabase = SupabaseService();
   final WalletService _walletService = WalletService();
@@ -73,6 +74,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
       (_currentUserProfile?['role']?.toString().toLowerCase() ?? '') ==
       'vendor';
 
+  PageRoute<dynamic>? _subscribedRoute;
+  bool _isRouteActive = true;
+
   bool? _parseBoolLike(dynamic value) {
     if (value is bool) return value;
     if (value is num) return value != 0;
@@ -82,6 +86,18 @@ class _HomeDashboardState extends State<HomeDashboard> {
       if (lower == 'false' || lower == '0') return false;
     }
     return null;
+  }
+
+  String _extractAdId(String rawId) {
+    var id = rawId.trim();
+    if (id.startsWith('ad-')) {
+      id = id.substring(3);
+    }
+    final slotIdx = id.indexOf('-slot-');
+    if (slotIdx >= 0) {
+      id = id.substring(0, slotIdx);
+    }
+    return id.trim();
   }
 
   bool? _extractLikedFlag(Map<String, dynamic>? payload) {
@@ -190,8 +206,40 @@ class _HomeDashboardState extends State<HomeDashboard> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() {
+    if (!_isRouteActive) return;
+    _isRouteActive = false;
+    unawaited(VideoPool.instance.disposeActive());
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didPopNext() {
+    if (_isRouteActive) return;
+    _isRouteActive = true;
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
     _activeFeedDebounce?.cancel();
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+      _subscribedRoute = null;
+    }
     super.dispose();
   }
 
@@ -415,6 +463,58 @@ class _HomeDashboardState extends State<HomeDashboard> {
 
   void _onCommentPost(FeedPost post) {
     final isMobile = MediaQuery.sizeOf(context).width < 600;
+    final treatAsAd = post.isAd || (post.adTitle?.trim().isNotEmpty ?? false);
+    if (treatAsAd) {
+      final adId = _extractAdId(post.id);
+      if (adId.isEmpty) return;
+      if (isMobile) {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+          ),
+          builder: (_) => SizedBox(
+            height: MediaQuery.of(context).size.height * 0.82,
+            child: AdCommentsSheet(adId: adId),
+          ),
+        );
+      } else {
+        showGeneralDialog<void>(
+          context: context,
+          barrierDismissible: true,
+          barrierLabel: 'Comments',
+          barrierColor: Colors.black54,
+          transitionDuration: const Duration(milliseconds: 180),
+          pageBuilder: (context, _, __) {
+            return SafeArea(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Container(
+                  width: 360,
+                  height: MediaQuery.of(context).size.height * 0.78,
+                  margin: const EdgeInsets.only(right: 18),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.08),
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: AdCommentsSheet(adId: adId),
+                ),
+              ),
+            );
+          },
+        );
+      }
+      return;
+    }
     if (isMobile) {
       showModalBottomSheet(
         context: context,
@@ -920,13 +1020,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
     await _onRefresh();
   }
 
-  void _openAdsTabFromDashboardFeed() {
-    if (_currentIndex == 1) return;
-    setState(() {
-      _currentIndex = 1;
-    });
-  }
-
   void _openVendorAdComposer(String contentType) {
     final mode =
         contentType.toLowerCase() == 'reel' ? UploadMode.reel : UploadMode.post;
@@ -1372,7 +1465,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
                               final p = posts[index];
-                              final isSponsoredPost = p.isAd;
                               final isOwnPost = _currentUserId != null &&
                                   p.userId == _currentUserId;
                               return VisibilityDetector(
@@ -1388,36 +1480,21 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                     key: ValueKey(
                                         'card-${p.id}'), // Prevent unnecessary rebuilds
                                     post: p,
-                                    isTabActive: _currentIndex == 0,
+                                    isTabActive:
+                                        _currentIndex == 0 && _isRouteActive,
                                     isActive: _activeFeedPostId == p.id,
-                                    onUserTap: isSponsoredPost
-                                        ? _openAdsTabFromDashboardFeed
-                                        : p.userId.isNotEmpty
-                                            ? () => Navigator.of(context)
-                                                .pushNamed(
-                                                    '/profile/${p.userId}')
-                                            : null,
-                                    onLike: isSponsoredPost
-                                        ? null
-                                        : () => _onLikePost(p),
-                                    onDoubleTapLike: isSponsoredPost
-                                        ? null
-                                        : () => _onDoubleTapLikePost(p),
-                                    onComment: isSponsoredPost
-                                        ? _openAdsTabFromDashboardFeed
-                                        : () => _onCommentPost(p),
-                                    onShare: isSponsoredPost
-                                        ? _openAdsTabFromDashboardFeed
-                                        : () => _onSharePost(p),
-                                    onSave: isSponsoredPost
-                                        ? null
-                                        : () => _onSavePost(p),
-                                    onFollow: isSponsoredPost || isOwnPost
-                                        ? null
-                                        : () => _onFollowPost(p),
-                                    onMore: isSponsoredPost
-                                        ? null
-                                        : () => _onMorePost(context, p),
+                                    onUserTap: p.userId.isNotEmpty
+                                        ? () => Navigator.of(context)
+                                            .pushNamed('/profile/${p.userId}')
+                                        : null,
+                                    onLike: () => _onLikePost(p),
+                                    onDoubleTapLike: () =>
+                                        _onDoubleTapLikePost(p),
+                                    onComment: () => _onCommentPost(p),
+                                    onShare: () => _onSharePost(p),
+                                    onSave: () => _onSavePost(p),
+                                    onFollow: isOwnPost ? null : () => _onFollowPost(p),
+                                    onMore: () => _onMorePost(context, p),
                                   ),
                                 ),
                               );
@@ -1430,13 +1507,13 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   ),
           ),
           // Ads tab
-          AdsPageScreen(isTabActive: _currentIndex == 1),
+          AdsPageScreen(isTabActive: _currentIndex == 1 && _isRouteActive),
           // Placeholder for create (kept empty since create opens modal/route)
           Container(),
           // Promote tab
           const PromoteScreen(),
           // Reels tab
-          ReelsScreen(isActive: _currentIndex == 4),
+          ReelsScreen(isActive: _currentIndex == 4 && _isRouteActive),
         ],
       ),
       bottomNavigationBar: isDesktop

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate, Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import commentService from '../services/commentServiceJS';
 import {
@@ -398,7 +398,7 @@ const FollowButton = ({ userId, mobile = false }) => {
 };
 
 // ─── Action Buttons ────────────────────────────────────────────────────────────
-const ActionButtons = ({ ad, likedIds, toggleLike, dislikedIds, toggleDislike, savedIds, toggleSave, mobile = false, onComment }) => (
+const ActionButtons = ({ ad, likedIds, toggleLike, savedIds, toggleSave, mobile = false, onComment }) => (
   <div className="flex flex-col items-center gap-4">
     {/* Like */}
     <button onClick={() => toggleLike(ad._id)} className="flex flex-col items-center gap-1">
@@ -414,27 +414,7 @@ const ActionButtons = ({ ad, likedIds, toggleLike, dislikedIds, toggleDislike, s
     </button>
 
     {/* Dislike */}
-    <button onClick={() => toggleDislike(ad._id)} className="flex flex-col items-center gap-1">
-      <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
-        ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-        {/* Thumbs-down icon */}
-        <svg
-          width={20} height={20} viewBox="0 0 24 24" fill="none" strokeWidth="2"
-          strokeLinecap="round" strokeLinejoin="round" stroke="currentColor"
-          className={
-            dislikedIds.has(ad._id)
-              ? 'text-blue-500 fill-blue-500'
-              : mobile ? 'text-white' : 'text-gray-800 dark:text-white'
-          }
-        >
-          <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z" />
-          <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" />
-        </svg>
-      </div>
-      <span className={`text-xs font-semibold ${mobile ? 'text-white' : 'text-gray-700 dark:text-white'}`}>
-        {dislikedIds.has(ad._id) ? 'Disliked' : 'Dislike'}
-      </span>
-    </button>
+  
 
     {/* Comment */}
     <button onClick={() => onComment && onComment(ad)} className="flex flex-col items-center gap-1">
@@ -545,6 +525,50 @@ const Ads = ({ feedMode = 'user' }) => {
   const currentUserId = userObject?._id || userObject?.id || null;
   const currentUserAvatar = userObject?.avatar_url || null;
   const currentUserName = userObject?.full_name || userObject?.username || 'You';
+  const navigate = useNavigate();
+  const pageHeightClass = "h-[calc(100dvh-4rem)] md:h-[calc(100dvh-1rem)]";
+
+  useEffect(() => {
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
+  // ── Wallet balance state ─────────────────────────────────────────────────
+  const [walletBalance, setWalletBalance] = useState(
+    userObject?.wallet?.balance ? Math.floor(Number(userObject.wallet.balance)) : 0
+  );
+
+  const fetchWalletBalance = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/wallet`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      // Handle various backend response shapes
+      const bal =
+        data?.balance ??
+        data?.wallet?.balance ??
+        data?.data?.balance ??
+        data?.data?.wallet?.balance ??
+        data?.user?.wallet?.balance;
+      if (bal !== undefined && bal !== null) setWalletBalance(Math.floor(Number(bal)));
+    } catch { /* silent */ }
+  }, []);
+
+  // ── Search state ────────────────────────────────────────────────────────────
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchDropdownVisible, setSearchDropdownVisible] = useState(false);
+  const searchInputRef = React.useRef(null);
+  const searchContainerRef = React.useRef(null);
+
   const [categories] = useState(FALLBACK_CATEGORIES);
   const [activeCategory, setActiveCategory] = useState('All');
   const [ads, setAds] = useState([]);
@@ -555,8 +579,11 @@ const Ads = ({ feedMode = 'user' }) => {
   const [touchStartY, setTouchStartY] = useState(null);
   const [progress, setProgress] = useState(0);
   const [likedIds, setLikedIds] = useState(new Set());
-  const [dislikedIds, setDislikedIds] = useState(new Set());
   const [savedIds, setSavedIds] = useState(new Set());
+  const [coinToast, setCoinToast] = useState(null); // { amount, id }
+  // Popup modals for coin rewards
+  const [viewRewardPopup, setViewRewardPopup] = useState(null); // { amount } — shown first time only
+  const [likeRewardPopup, setLikeRewardPopup] = useState(null); // { amount, isLike } — shown on every like/dislike
 
   // Track which ad IDs the current user has already viewed this session.
   // Using a ref so it never triggers re-renders and persists across index changes.
@@ -601,6 +628,74 @@ const Ads = ({ feedMode = 'user' }) => {
   });
 
   // ── Fetch Ads ────────────────────────────────────────────────────────────────
+  // ── Search logic ────────────────────────────────────────────────────────────
+  const searchDebounceRef = React.useRef(null);
+
+  const runSearch = useCallback(async (q) => {
+    const query = q.trim();
+    if (!query) { setSearchResults([]); setSearchDropdownVisible(false); return; }
+    setSearchLoading(true);
+    try {
+      const params = new URLSearchParams({
+        q: query,
+        status: 'active',
+        page: 1,
+        limit: 20,
+      });
+      const res = await fetch(`${BASE_URL}/api/ads/search?${params}`, { headers: authHeaders() });
+      const data = await res.json();
+      // API may return { ads: [...] } or { data: [...] } or plain array
+      const ads = Array.isArray(data) ? data : (data.ads || data.data || data.results || []);
+      // Also try to extract user/profile results if the API bundles them
+      const users = data.users || data.vendors || [];
+      setSearchResults([
+        ...users.map(u => ({ _type: 'user', ...u })),
+        ...ads.map(a => ({ _type: 'ad', ...a })),
+      ]);
+      setSearchDropdownVisible(true);
+    } catch { setSearchResults([]); }
+    finally { setSearchLoading(false); }
+  }, []);
+
+  const handleSearchInput = (e) => {
+    const q = e.target.value;
+    setSearchQuery(q);
+    clearTimeout(searchDebounceRef.current);
+    if (!q.trim()) { setSearchResults([]); setSearchDropdownVisible(false); return; }
+    searchDebounceRef.current = setTimeout(() => runSearch(q), 350);
+  };
+
+  const handleSearchOpen = () => {
+    setSearchOpen(true);
+    setTimeout(() => searchInputRef.current?.focus(), 50);
+  };
+
+  const handleSearchClose = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchDropdownVisible(false);
+  };
+
+  const handleSearchResultClick = (item) => {
+    handleSearchClose();
+    if (item._type === 'user') {
+      navigate(`/profile/${item._id || item.id}`);
+    }
+    // For ads — just close and let user see feed; or navigate to ad detail if available
+  };
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setSearchDropdownVisible(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   const fetchAds = useCallback(async (category = 'All') => {
     setLoading(true);
     setError(null);
@@ -633,7 +728,7 @@ const Ads = ({ feedMode = 'user' }) => {
     } finally {
       setLoading(false);
     }
-  }, [feedMode]);
+  }, []);
 
   useEffect(() => { fetchAds(activeCategory); }, [activeCategory, fetchAds]);
 
@@ -647,9 +742,9 @@ const Ads = ({ feedMode = 'user' }) => {
   };
 
   // ── View Tracking ─────────────────────────────────────────────────────────────
-  // Fires POST /api/ads/{id}/view only ONCE per ad per session per user.
-  // For video ads — called when the video starts playing on the current slide.
-  // For image ads — called when the image ad becomes the current slide.
+  // Fires POST /api/ads/{id}/view ONLY when the ad is fully watched.
+  // For video ads — called when video ends (onEnded).
+  // For image ads — called when 15s timer completes (pct >= 100).
   const trackView = useCallback(async (adId) => {
     if (!adId) return;
     const key = String(adId);
@@ -670,56 +765,80 @@ const Ads = ({ feedMode = 'user' }) => {
         viewedIdsRef.current.delete(key);
         throw new Error(`HTTP ${res.status}`);
       }
+      // Parse response — backend may return updated wallet/coins directly
+      const resData = await res.json().catch(() => ({}));
+      const directBal =
+        resData?.wallet?.balance ??
+        resData?.user?.wallet?.balance ??
+        resData?.balance ??
+        resData?.data?.balance;
+      const coinsRewarded =
+        resData?.coins_rewarded ??
+        resData?.coins ??
+        resData?.reward ??
+        resData?.data?.coins_rewarded;
+      if (directBal !== undefined) {
+        setWalletBalance(Math.floor(Number(directBal)));
+      } else {
+        // Fallback: poll wallet endpoint (give backend 800ms to settle)
+        setTimeout(() => fetchWalletBalance(), 800);
+      }
+      // Show coin reward POPUP (first-time view only — guard already ensures this runs once)
+      const rewardAmount = (coinsRewarded && Number(coinsRewarded) > 0)
+        ? Number(coinsRewarded)
+        : (() => {
+            const adCoins = adsRef.current.find(a => String(a._id) === String(adId))?.coins_reward;
+            return adCoins && Number(adCoins) > 0 ? Number(adCoins) : 10;
+          })();
+      setViewRewardPopup({ amount: rewardAmount });
+      // Also keep the small toast as fallback
+      const toastId = Date.now();
+      setCoinToast({ amount: rewardAmount, id: toastId });
+      setTimeout(() => setCoinToast(t => t?.id === toastId ? null : t), 3000);
     } catch (err) {
       console.error('View tracking failed:', err);
     }
-  }, [currentUserId]);
+  }, [currentUserId, fetchWalletBalance]);
 
+  // tracks ad _id strings that have already received a view API call (never double-fires)
+  const viewFiredForAdId = useRef(new Set());
+
+  // ── Image-ad 15s progress timer ──────────────────────────────────────────────
+  // Video progress is handled entirely via JSX event props (onTimeUpdate / onEnded).
   useEffect(() => {
     const adsList = adsRef.current;
     if (!adsList.length) return;
-    clearTimers();
-
     const currentAd = adsList[currentIndex];
     if (!currentAd) return;
-
     const isVideo = currentAd.media?.[0]?.media_type === 'video';
 
-    if (isVideo) {
-      const vid = videoRefs.current[currentIndex];
-      if (!vid) return;
-      vid.currentTime = 0;
-      setProgress(0);
-      vid.play().catch(() => {});
+    // Reset progress bar on every slide change
+    setProgress(0);
+    clearTimers();
 
-      // Fire view once when video starts playing
-      trackView(currentAd._id);
+    if (isVideo) return; // video handles its own progress via JSX event handlers
 
-      progressIntervalRef.current = setInterval(() => {
-        if (vid.duration) setProgress((vid.currentTime / vid.duration) * 100);
-      }, 100);
-    } else {
-      setProgress(0);
-      const startTime = Date.now();
-      const totalMs = IMAGE_AD_DURATION * 1000;
+    const startTime = Date.now();
+    const totalMs = IMAGE_AD_DURATION * 1000;
 
-      // Fire view once when image ad becomes active
-      trackView(currentAd._id);
-
-      imageTimerRef.current = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        const pct = Math.min((elapsed / totalMs) * 100, 100);
-        setProgress(pct);
-        if (pct >= 100) {
-          clearInterval(imageTimerRef.current);
-          setCurrentIndex(prev => (prev + 1 < adsRef.current.length ? prev + 1 : prev));
+    progressIntervalRef.current = setInterval(() => {
+      const pct = Math.min(((Date.now() - startTime) / totalMs) * 100, 100);
+      setProgress(pct);
+      if (pct >= 100) {
+        clearInterval(progressIntervalRef.current);
+        const adId = String(currentAd._id);
+        if (!viewFiredForAdId.current.has(adId)) {
+          viewFiredForAdId.current.add(adId);
+          trackView(currentAd._id);
         }
-      }, 100);
-    }
+        setCurrentIndex(prev => (prev + 1 < adsRef.current.length ? prev + 1 : prev));
+      }
+    }, 250);
 
-    return () => clearTimers();
-  // Only re-run when the SLIDE changes, not when ads data mutates (like/count updates)
-  }, [currentIndex, trackView]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => clearInterval(progressIntervalRef.current);
+  }, [currentIndex, trackView]);
+
+
 
   // ── Navigation ───────────────────────────────────────────────────────────────
   const goToIndex = useCallback((index) => {
@@ -765,10 +884,6 @@ const Ads = ({ feedMode = 'user' }) => {
       isLiked ? s.delete(adId) : s.add(adId);
       return s;
     });
-    // If liking, remove any dislike
-    if (!isLiked) {
-      setDislikedIds(prev => { const s = new Set(prev); s.delete(adId); return s; });
-    }
     setAds(prev => prev.map(a => a._id === adId
       ? { ...a, likes_count: a.likes_count + (isLiked ? -1 : 1), is_liked_by_me: !isLiked }
       : a));
@@ -781,6 +896,8 @@ const Ads = ({ feedMode = 'user' }) => {
         body: JSON.stringify({ user: { id: currentUserId ? String(currentUserId) : '' } }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Show like/dislike coin reward popup
+      setLikeRewardPopup({ amount: 10, isLike: !isLiked });
     } catch (err) {
       console.error('Like failed:', err);
       // Rollback
@@ -792,36 +909,6 @@ const Ads = ({ feedMode = 'user' }) => {
   }, [likedIds, currentUserId]);
 
   // ── Dislike ───────────────────────────────────────────────────────────────────
-  const toggleDislike = useCallback(async (adId) => {
-    const isDisliked = dislikedIds.has(adId);
-
-    // Optimistic UI — disliking removes any existing like
-    setDislikedIds(prev => {
-      const s = new Set(prev);
-      isDisliked ? s.delete(adId) : s.add(adId);
-      return s;
-    });
-    if (!isDisliked && likedIds.has(adId)) {
-      setLikedIds(prev => { const s = new Set(prev); s.delete(adId); return s; });
-      setAds(prev => prev.map(a => a._id === adId
-        ? { ...a, likes_count: Math.max(0, a.likes_count - 1), is_liked_by_me: false }
-        : a));
-    }
-
-    try {
-      const endpoint = isDisliked ? `/api/ads/${adId}/like` : `/api/ads/${adId}/dislike`;
-      const res = await fetch(`${BASE_URL}${endpoint}`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ user: { id: currentUserId ? String(currentUserId) : '' } }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (err) {
-      console.error('Dislike failed:', err);
-      // Rollback
-      setDislikedIds(prev => { const s = new Set(prev); isDisliked ? s.add(adId) : s.delete(adId); return s; });
-    }
-  }, [dislikedIds, likedIds, currentUserId]);
 
   const toggleSave = useCallback((adId) => {
     setSavedIds(prev => { const s = new Set(prev); s.has(adId) ? s.delete(adId) : s.add(adId); return s; });
@@ -977,11 +1064,11 @@ const Ads = ({ feedMode = 'user' }) => {
   if (feedMode === 'user' && isVendorUser) return <Navigate to="/vendor-ads" replace />;
 
   return (
-    <div className="flex flex-col bg-black overflow-hidden h-screen">
+    <div className={`flex flex-col bg-black overflow-hidden ${pageHeightClass}`}>
 
       {/* Desktop top bar */}
       <div className="hidden md:flex items-center gap-2 px-4 py-2 border-b border-gray-200 dark:border-gray-800 shrink-0">
-        <button className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500 mr-1">
+        <button onClick={() => navigate(-1)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500 mr-1">
           <ChevronLeft size={16} />
         </button>
         <div className="flex items-center gap-1 overflow-x-auto scrollbar-none flex-1">
@@ -995,9 +1082,93 @@ const Ads = ({ feedMode = 'user' }) => {
             </button>
           ))}
         </div>
-        <button className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500 ml-4 shrink-0">
-          <Search size={18} />
-        </button>
+        {/* Desktop Search */}
+        <div ref={searchContainerRef} className="relative ml-4 shrink-0">
+          {searchOpen ? (
+            <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full px-3 py-1.5 w-64">
+              <Search size={14} className="text-gray-400 shrink-0" />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={handleSearchInput}
+                placeholder="Search ads, users…"
+                className="flex-1 bg-transparent text-sm outline-none text-gray-900 dark:text-white placeholder-gray-400"
+              />
+              {searchLoading
+                ? <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />
+                : <button onClick={handleSearchClose}><X size={14} className="text-gray-400 hover:text-gray-700 dark:hover:text-white" /></button>
+              }
+            </div>
+          ) : (
+            <button onClick={handleSearchOpen} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500">
+              <Search size={18} />
+            </button>
+          )}
+
+          {/* Desktop Dropdown */}
+          {searchDropdownVisible && searchResults.length > 0 && (
+            <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800 overflow-hidden z-50 max-h-96 overflow-y-auto">
+              {/* Users section */}
+              {searchResults.filter(r => r._type === 'user').length > 0 && (
+                <div>
+                  <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-50 dark:border-gray-800">People</div>
+                  {searchResults.filter(r => r._type === 'user').map(u => (
+                    <button key={u._id || u.id} onClick={() => handleSearchResultClick(u)}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left">
+                      <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[1.5px] shrink-0">
+                        <div className="w-full h-full rounded-full bg-white dark:bg-[#1c1c1e] overflow-hidden flex items-center justify-center">
+                          {u.avatar_url
+                            ? <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
+                            : <span className="text-xs font-bold text-gray-700 dark:text-white">{(u.username || u.full_name || '?')[0].toUpperCase()}</span>
+                          }
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.full_name || u.username}</div>
+                        {u.username && <div className="text-xs text-gray-400 truncate">@{u.username}</div>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Ads section */}
+              {searchResults.filter(r => r._type === 'ad').length > 0 && (
+                <div>
+                  <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-50 dark:border-gray-800">Ads</div>
+                  {searchResults.filter(r => r._type === 'ad').map(ad => {
+                    const adUser = ad.user_id || ad.vendor_id || {};
+                    const thumb = ad.media?.[0]?.fileUrl || ad.media?.[0]?.thumbnail_url;
+                    return (
+                      <button key={ad._id} onClick={() => handleSearchResultClick(ad)}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left">
+                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-200 dark:bg-gray-700 shrink-0">
+                          {thumb
+                            ? <img src={thumb} alt="" className="w-full h-full object-cover" />
+                            : <div className="w-full h-full flex items-center justify-center text-gray-400"><ShoppingBag size={14} /></div>
+                          }
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{ad.caption || ad.title || 'Ad'}</div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {ad.category && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium">{ad.category}</span>}
+                            {typeof adUser === 'object' && adUser.username && <span className="text-[10px] text-gray-400">@{adUser.username}</span>}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {/* No results */}
+              {searchResults.length === 0 && !searchLoading && searchQuery.trim() && (
+                <div className="flex flex-col items-center justify-center py-8 text-gray-400 gap-2">
+                  <Search size={20} className="opacity-40" />
+                  <span className="text-sm">No results for "{searchQuery}"</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Feed */}
@@ -1010,7 +1181,7 @@ const Ads = ({ feedMode = 'user' }) => {
 
           {/* Mobile top bar — floats over the card */}
           <div className="md:hidden absolute top-0 left-0 right-0 z-30 flex items-center px-3 pt-3 pb-1 gap-3 bg-gradient-to-b from-black/60 to-transparent">
-            <button className="w-8 h-8 flex items-center justify-center shrink-0">
+            <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center shrink-0">
               <ChevronLeft size={22} className="text-white" />
             </button>
             <div className="flex-1 flex items-center gap-2 overflow-x-auto scrollbar-none mask-linear-fade">
@@ -1024,10 +1195,20 @@ const Ads = ({ feedMode = 'user' }) => {
                 </button>
               ))}
             </div>
-            <button className="w-8 h-8 flex items-center justify-center shrink-0">
-              <Search size={20} className="text-white" />
-            </button>
+            {/* Mobile Wallet Balance Badge */}
+            <Link to="/wallet" className="shrink-0 flex items-center gap-1.5 bg-black/50 backdrop-blur-md border border-white/20 rounded-full px-2.5 py-1.5">
+              <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>
+                </svg>
+              </div>
+              <div className="flex flex-col leading-none">
+                <span className="text-[9px] text-white/60 font-medium">Balance</span>
+                <span className="text-[11px] font-bold text-white">Coins {walletBalance}</span>
+              </div>
+            </Link>
           </div>
+
 
           {/* Loading */}
           {loading && (
@@ -1066,7 +1247,7 @@ const Ads = ({ feedMode = 'user' }) => {
 
               {/* ── Progress bar ── */}
               <div className="absolute top-0 left-0 right-0 z-40 h-1 bg-white/20">
-                <div className="h-full bg-white" style={{ width: `${progress}%`, transition: 'width 0.1s linear' }} />
+                <div className="h-full bg-white transition-none" style={{ width: `${progress}%` }} />
               </div>
 
               {/* Slides */}
@@ -1085,10 +1266,57 @@ const Ads = ({ feedMode = 'user' }) => {
                       {/* Media */}
                       {isVideo ? (
                         <video
-                          ref={el => videoRefs.current[index] = el}
+                          ref={el => { videoRefs.current[index] = el; }}
                           src={src}
                           className="w-full h-full object-cover"
-                          loop muted={isMuted} playsInline autoPlay={isCurrent}
+                          muted={isMuted}
+                          playsInline
+                          autoPlay={isCurrent}
+                          loop={false}
+                          onLoadedMetadata={e => {
+                            // Seek to trimmed start once metadata (duration) is known
+                            if (!isCurrent) return;
+                            const m = a.media?.[0];
+                            const start = m?.timing_window?.start ?? m?.video_meta?.selected_start ?? 0;
+                            if (start > 0) e.target.currentTime = start;
+                          }}
+                          onTimeUpdate={e => {
+                            if (!isCurrent) return;
+                            const vid = e.target;
+                            const m = a.media?.[0];
+                            const start   = m?.timing_window?.start    ?? m?.video_meta?.selected_start  ?? 0;
+                            const end     = m?.timing_window?.end      ?? m?.video_meta?.selected_end    ?? null;
+                            const dur     = m?.video_meta?.final_duration ?? null;
+                            const ct      = vid.currentTime;
+
+                            // Hit the trim end → stop, mark 100%, fire view
+                            if (end !== null && ct >= end) {
+                              vid.pause();
+                              setProgress(100);
+                              const key = String(a._id);
+                              if (!viewFiredForAdId.current.has(key)) {
+                                viewFiredForAdId.current.add(key);
+                                trackView(a._id);
+                              }
+                              return;
+                            }
+
+                            // Move progress bar
+                            if (dur && dur > 0) {
+                              setProgress(Math.min(((ct - start) / dur) * 100, 100));
+                            } else if (vid.duration > 0) {
+                              setProgress((ct / vid.duration) * 100);
+                            }
+                          }}
+                          onEnded={() => {
+                            if (!isCurrent) return;
+                            setProgress(100);
+                            const key = String(a._id);
+                            if (!viewFiredForAdId.current.has(key)) {
+                              viewFiredForAdId.current.add(key);
+                              trackView(a._id);
+                            }
+                          }}
                         />
                       ) : src ? (
                         <img src={src} className="w-full h-full object-cover"
@@ -1111,7 +1339,7 @@ const Ads = ({ feedMode = 'user' }) => {
                       {/* Mute btn — video only */}
                       {isVideo && isCurrent && (
                         <button onClick={() => setIsMuted(m => !m)}
-                          className="absolute bottom-[145px] md:bottom-5 right-[52px] md:right-4 bg-black/50 p-2 rounded-full text-white backdrop-blur-sm hover:bg-black/70 z-20">
+                          className="absolute bottom-[10px] md:bottom-5 right-[55px] md:right-4 bg-black/50 p-2 rounded-full text-white backdrop-blur-sm hover:bg-black/70 z-20">
                           {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                         </button>
                       )}
@@ -1125,7 +1353,7 @@ const Ads = ({ feedMode = 'user' }) => {
                       )}
 
                       {/* Bottom info — clears bottom nav (64px) on mobile */}
-                      <div className="absolute bottom-0 left-0 w-full p-4 pb-[72px] md:pb-6 z-20" style={{ paddingRight: '60px' }}>
+                      <div className="absolute bottom-0 left-0 w-full p-4 md:pb-6 z-20" style={{ paddingRight: '60px' }}>
                         {/* Vendor row */}
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
                           {a.user_id?.avatar_url
@@ -1170,14 +1398,12 @@ const Ads = ({ feedMode = 'user' }) => {
 
                       {/* Mobile right actions — pinned above bottom nav */}
                       {isCurrent && (
-                        <div className="md:hidden absolute right-3 bottom-[72px] z-30">
+                        <div className="md:hidden absolute right-3 bottom-[10px] z-30">
                           <ActionButtons
                             ad={a}
                             mobile
                             likedIds={likedIds}
                             toggleLike={toggleLike}
-                            dislikedIds={dislikedIds}
-                            toggleDislike={toggleDislike}
                             savedIds={savedIds}
                             toggleSave={toggleSave}
                             onComment={openComments}
@@ -1198,8 +1424,6 @@ const Ads = ({ feedMode = 'user' }) => {
                 ad={ad}
                 likedIds={likedIds}
                 toggleLike={toggleLike}
-                dislikedIds={dislikedIds}
-                toggleDislike={toggleDislike}
                 savedIds={savedIds}
                 toggleSave={toggleSave}
                 onComment={openComments}
@@ -1302,10 +1526,106 @@ const Ads = ({ feedMode = 'user' }) => {
         </>
       )}
 
+      {/* ── View Reward Popup (first-time watch) ── */}
+      {viewRewardPopup && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
+          <div
+            className="pointer-events-auto bg-white dark:bg-[#1c1c1e] rounded-3xl shadow-2xl px-8 py-7 flex flex-col items-center gap-4 border border-amber-200 dark:border-amber-500/30"
+            style={{ animation: 'popupIn 0.4s cubic-bezier(0.22,1,0.36,1) forwards', minWidth: 260 }}
+          >
+            {/* Coin burst */}
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-yellow-300 via-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-300/50" style={{ animation: 'coinPulse 0.6s ease-out' }}>
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" fill="#FCD34D" stroke="#D97706" strokeWidth="1.5"/>
+                  <text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#7C2D12">B</text>
+                </svg>
+              </div>
+              <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-md">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-black text-amber-500">+{viewRewardPopup.amount} Coins!</p>
+              <p className="text-gray-700 dark:text-gray-300 font-semibold text-sm mt-0.5">Earned for watching the full ad</p>
+            </div>
+            <button
+              onClick={() => setViewRewardPopup(null)}
+              className="w-full bg-gradient-to-r from-amber-400 to-orange-500 text-white font-bold py-2.5 rounded-2xl text-sm hover:opacity-90 active:scale-95 transition-all shadow-md"
+            >
+              Awesome! 🎉
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Like / Dislike Coin Popup ── */}
+      {likeRewardPopup && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
+          <div
+            className="pointer-events-auto bg-white dark:bg-[#1c1c1e] rounded-3xl shadow-2xl px-8 py-7 flex flex-col items-center gap-4 border dark:border-white/10"
+            style={{ animation: 'popupIn 0.4s cubic-bezier(0.22,1,0.36,1) forwards', minWidth: 260, borderColor: likeRewardPopup.isLike ? '#fca5a5' : '#d1d5db' }}
+          >
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg ${likeRewardPopup.isLike ? 'bg-gradient-to-br from-red-400 to-pink-500 shadow-red-300/50' : 'bg-gradient-to-br from-gray-400 to-gray-500 shadow-gray-300/40'}`} style={{ animation: 'coinPulse 0.6s ease-out' }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill={likeRewardPopup.isLike ? 'white' : 'white'} stroke="none">
+                {likeRewardPopup.isLike
+                  ? <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                  : <><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/></>
+                }
+              </svg>
+            </div>
+            <div className="text-center">
+              <p className={`text-2xl font-black ${likeRewardPopup.isLike ? 'text-red-500' : 'text-gray-500'}`}>
+                {likeRewardPopup.isLike ? `+${likeRewardPopup.amount}` : `-${likeRewardPopup.amount}`} Coins
+              </p>
+              <p className="text-gray-700 dark:text-gray-300 font-semibold text-sm mt-0.5">
+                {likeRewardPopup.isLike ? 'Thanks for liking! 💖' : 'Dislike recorded'}
+              </p>
+            </div>
+            <button
+              onClick={() => setLikeRewardPopup(null)}
+              className={`w-full text-white font-bold py-2.5 rounded-2xl text-sm hover:opacity-90 active:scale-95 transition-all shadow-md ${likeRewardPopup.isLike ? 'bg-gradient-to-r from-red-400 to-pink-500' : 'bg-gradient-to-r from-gray-400 to-gray-600'}`}
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Coin Reward Toast ── */}
+      {coinToast && (
+        <div
+          key={coinToast.id}
+          className="fixed top-20 left-1/2 z-[100] -translate-x-1/2 flex items-center gap-2 bg-amber-500 text-white px-4 py-2.5 rounded-full shadow-2xl font-bold text-sm animate-bounce"
+          style={{ animation: 'coinToastIn 0.4s cubic-bezier(0.22,1,0.36,1) forwards' }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" fill="#FCD34D" stroke="#D97706" strokeWidth="1.5"/>
+            <text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#7C2D12">B</text>
+          </svg>
+          +{coinToast.amount} Coins Earned!
+        </div>
+      )}
+
       <style>{`
+        @keyframes popupIn {
+          0%   { opacity: 0; transform: scale(0.7); }
+          60%  { transform: scale(1.04); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes coinPulse {
+          0%   { transform: scale(0.5); opacity: 0; }
+          60%  { transform: scale(1.15); }
+          100% { transform: scale(1); opacity: 1; }
+        }
         @keyframes slideInRight {
           from { opacity: 0; transform: translateX(16px); }
           to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes coinToastIn {
+          0%   { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(0.85); }
+          60%  { transform: translateX(-50%) translateY(4px) scale(1.05); }
+          100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
         }
         @keyframes slideInLeft {
           from { opacity: 0; transform: translateX(-16px); }

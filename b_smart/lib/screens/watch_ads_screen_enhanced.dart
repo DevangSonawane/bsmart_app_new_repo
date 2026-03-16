@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../services/ads_service.dart';
 import '../services/wallet_service.dart';
 import '../services/notification_service.dart';
 import '../services/ad_service.dart';
 import '../services/ad_eligibility_service.dart';
 import '../models/ad_model.dart';
 import '../models/notification_model.dart';
+import '../utils/current_user.dart';
 import 'ad_company_detail_screen.dart';
 
 class WatchAdsScreenEnhanced extends StatefulWidget {
@@ -22,6 +24,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
   final NotificationService _notificationService = NotificationService();
   final AdService _adService = AdService();
   final AdEligibilityService _eligibilityService = AdEligibilityService();
+  final AdsService _adsService = AdsService();
 
   List<Ad> _availableAds = [];
   bool _isLoading = true;
@@ -34,13 +37,14 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
   int _totalPauseDuration = 0;
   DateTime? _pauseStartTime;
   bool _isInForeground = true;
-  final String _userId = 'user-1';
+  String _userId = 'unknown';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadAds();
+    unawaited(_loadUserId());
   }
 
   @override
@@ -75,6 +79,14 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     setState(() {
       _availableAds = targetedAds;
       _isLoading = false;
+    });
+  }
+
+  Future<void> _loadUserId() async {
+    final id = await CurrentUser.id;
+    if (!mounted) return;
+    setState(() {
+      _userId = (id == null || id.trim().isEmpty) ? 'unknown' : id.trim();
     });
   }
 
@@ -256,6 +268,12 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     );
 
     if (success) {
+      if (_userId != 'unknown') {
+        try {
+          await _adsService.recordAdView(adId: _currentAd!.id, userId: _userId);
+        } catch (_) {}
+      }
+
       // Record in eligibility service
       _eligibilityService.recordAdWatch(_userId, _currentAd!.id, _currentAd!.coinReward);
 

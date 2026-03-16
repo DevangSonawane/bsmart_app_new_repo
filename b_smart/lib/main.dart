@@ -145,7 +145,7 @@ class _BSmartAppState extends State<BSmartApp> {
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       home: _isAuthenticated ? const HomeDashboard() : const LoginScreen(),
       routes: staticRoutes,
-      navigatorObservers: [_routeObserver],
+      navigatorObservers: [_routeObserver, appRouteObserver],
       builder: (context, child) {
         return ProfileSetupGate(
           routeVersion: _routeVersion,

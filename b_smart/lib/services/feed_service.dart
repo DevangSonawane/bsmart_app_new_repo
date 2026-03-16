@@ -510,16 +510,38 @@ class FeedService {
             }
           }
 
+          final itemType =
+              (item['item_type'] ?? item['itemType'] ?? '').toString();
+          final vendorAny = item['vendor_id'] ?? item['vendorId'];
+          final isAdItem = itemType.toLowerCase() == 'ad' || vendorAny != null;
+          final vendor = vendorAny is Map ? Map<String, dynamic>.from(vendorAny) : <String, dynamic>{};
+
+          final authorName =
+              (user['username'] as String?) ?? (item['username'] as String?);
+          final vendorName = (vendor['business_name'] ??
+                  vendor['name'] ??
+                  vendor['company_name'] ??
+                  vendor['brand_name'])
+              ?.toString();
+          final resolvedUserName = (isAdItem
+                  ? (authorName ?? vendorName)
+                  : authorName) ??
+              vendorName ??
+              'user';
+          final resolvedFullName =
+              (user['full_name'] as String?) ??
+                  (item['full_name'] as String?) ??
+                  vendorName;
+
           final post = FeedPost(
             id: postId,
             userId: authorId,
-            userName: user['username'] as String? ??
-                (item['username'] as String?) ??
-                'user',
-            fullName:
-                user['full_name'] as String? ?? (item['full_name'] as String?),
+            userName: resolvedUserName,
+            fullName: resolvedFullName,
             userAvatar: user['avatar_url'] as String? ??
-                (item['userAvatar'] as String?),
+                (item['userAvatar'] as String?) ??
+                (vendor['logo_url'] as String?) ??
+                (vendor['avatar_url'] as String?),
             isVerified: user['is_verified'] as bool? ?? false,
             mediaType: mediaType,
             mediaUrls: mediaUrls,
@@ -549,7 +571,12 @@ class FeedService {
                 ?.map((e) => Map<String, dynamic>.from(e))
                 .toList(),
             isShared: false,
-            isAd: false,
+            isAd: isAdItem,
+            adTitle: isAdItem
+                ? (item['title'] as String?) ??
+                    (item['ad_title'] as String?) ??
+                    (item['adTitle'] as String?)
+                : null,
             latestCommentUser: () {
               final latest = item['latest_comments'];
               if (latest is List && latest.isNotEmpty) {
@@ -653,7 +680,7 @@ class FeedService {
 
         ads.add(
           FeedPost(
-            id: 'ad-${ad.id}',
+            id: ad.id,
             userId: ad.userId ?? ad.companyId,
             userName: ownerName,
             fullName: null,

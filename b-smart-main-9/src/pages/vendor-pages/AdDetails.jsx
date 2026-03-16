@@ -5,7 +5,9 @@ import {
   ArrowLeft, CheckCircle, BarChart2, Users, MessageCircle,
   ThumbsDown, Clock, Eye, MapPin, Globe, Tag,
   Film, Hash, Building2, Coins, Heart, AlertCircle,
-  ChevronDown, ChevronUp, RefreshCw
+  ChevronDown, ChevronUp, RefreshCw, ArrowDownLeft, ArrowUpRight,
+  ChevronLeft, ChevronRight, Wallet, TrendingUp, TrendingDown,
+  Activity, UserCheck
 } from "lucide-react";
 import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
@@ -245,6 +247,13 @@ export default function AdDetails() {
 
   const [showAllLikes, setShowAllLikes]       = useState(false);
 
+  // Wallet / Ad transaction history
+  const [walletHistory, setWalletHistory]         = useState(null);
+  const [walletLoading, setWalletLoading]         = useState(false);
+  const [walletError, setWalletError]             = useState("");
+  const [walletPage, setWalletPage]               = useState(1);
+  const WALLET_PER_PAGE = 5;
+
   const COLORS = ["#3b82f6", "#ec4899", "#8b5cf6", "#f59e0b", "#10b981", "#ef4444"];
 
   // Fetch Ad
@@ -289,7 +298,25 @@ export default function AdDetails() {
     })();
   }, [adId, commentsPage]);
 
-  // ── Loading ──────────────────────────────────────────────────────────────
+  // Fetch Wallet / Ad Transaction History
+  useEffect(() => {
+    if (!adId) return;
+    (async () => {
+      setWalletLoading(true);
+      setWalletError("");
+      try {
+        const res = await api.get(`/wallet/ads/${adId}/history`, {
+          params: { page: walletPage, limit: WALLET_PER_PAGE },
+        });
+        setWalletHistory(res.data);
+      } catch (err) {
+        console.error("Wallet history fetch failed", err);
+        setWalletError(err?.response?.data?.message || "Failed to load transaction history");
+      } finally {
+        setWalletLoading(false);
+      }
+    })();
+  }, [adId, walletPage]);
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-black flex items-center justify-center">
@@ -528,79 +555,6 @@ export default function AdDetails() {
                 </div>
               </Card>
 
-              {/* ── Likes & Dislikes Array ──────────────────────────────── */}
-              <Card
-                title={`Likes (${ad.likes_count || 0})`}
-                action={
-                  likesList.length > 8 && (
-                    <button
-                      onClick={() => setShowAllLikes(v => !v)}
-                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      {showAllLikes ? "Show Less" : `View All ${likesList.length}`}
-                    </button>
-                  )
-                }
-              >
-                {likesList.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">
-                    <Heart className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">No likes yet</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {visibleLikes.map((like, i) => {
-                      const u    = like.user_id || like.user || like;
-                      const name = u.full_name || u.username || `User ${i + 1}`;
-                      return (
-                        <div
-                          key={like._id || i}
-                          className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800/50 hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-colors"
-                        >
-                          <Avatar name={name} url={u.avatar_url || ""} />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{name}</div>
-                            {u.username && (
-                              <div className="text-xs text-gray-400 truncate">@{u.username}</div>
-                            )}
-                          </div>
-                          <Heart className="w-3.5 h-3.5 text-pink-500 flex-shrink-0" />
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Dislikes sub-section */}
-                {dislikesList.length > 0 && (
-                  <div className="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800">
-                    <div className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">
-                      <ThumbsDown className="w-3.5 h-3.5 text-red-400" />
-                      Dislikes ({ad.dislikes_count || dislikesList.length})
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {dislikesList.slice(0, 6).map((dislike, i) => {
-                        const u    = dislike.user_id || dislike.user || dislike;
-                        const name = u.full_name || u.username || `User ${i + 1}`;
-                        return (
-                          <div
-                            key={dislike._id || i}
-                            className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800/50"
-                          >
-                            <Avatar name={name} url={u.avatar_url || ""} />
-                            <div className="min-w-0 flex-1">
-                              <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{name}</div>
-                              {u.username && <div className="text-xs text-gray-400 truncate">@{u.username}</div>}
-                            </div>
-                            <ThumbsDown className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </Card>
-
               {/* ── Comments Section ────────────────────────────────────── */}
               <Card title={`Comments (${commentsTotal || ad.comments_count || 0})`}>
                 {commentsLoading ? (
@@ -775,6 +729,326 @@ export default function AdDetails() {
                   ))}
                 </div>
               </Card>
+
+              {/* Action Breakdown from wallet history */}
+              {walletHistory?.actions && (
+                <Card title="Action Breakdown">
+                  <div className="space-y-2">
+                    {[
+                      { label: "Views",    data: walletHistory.actions.views,    color: "bg-blue-500",   icon: "👁️" },
+                      { label: "Likes",    data: walletHistory.actions.likes,    color: "bg-pink-500",   icon: "❤️" },
+                      { label: "Comments", data: walletHistory.actions.comments, color: "bg-orange-500", icon: "💬" },
+                      { label: "Replies",  data: walletHistory.actions.replies,  color: "bg-purple-500", icon: "↩️" },
+                      { label: "Saves",    data: walletHistory.actions.saves,    color: "bg-green-500",  icon: "🔖" },
+                      { label: "Refunds",  data: walletHistory.actions.refunds,  color: "bg-red-500",    icon: "↩" },
+                    ].filter(a => a.data?.count > 0).map((item, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50">
+                        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                          <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${item.color}`} />
+                          <span>{item.icon} {item.label}</span>
+                          <span className="text-xs text-gray-400">×{item.data.count}</span>
+                        </div>
+                        <span className="font-bold text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                          <Coins className="w-3.5 h-3.5" />{item.data.total_coins.toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                    {walletHistory.unique_users > 0 && (
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 mt-2">
+                        <div className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400">
+                          <UserCheck className="w-4 h-4" /> Unique Users Reached
+                        </div>
+                        <span className="font-bold text-sm text-indigo-700 dark:text-indigo-300">
+                          {walletHistory.unique_users.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
+
+              {/* ── Likes & Dislikes ──────────────────────────────────── */}
+              <Card
+                title={`Likes (${ad.likes_count || 0})`}
+                action={
+                  likesList.length > 8 && (
+                    <button
+                      onClick={() => setShowAllLikes(v => !v)}
+                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {showAllLikes ? "Show Less" : `View All ${likesList.length}`}
+                    </button>
+                  )
+                }
+              >
+                {likesList.length === 0 ? (
+                  <div className="text-center py-6 text-gray-400">
+                    <Heart className="w-7 h-7 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No likes yet</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {visibleLikes.map((like, i) => {
+                      const u    = like.user_id || like.user || like;
+                      const name = u.full_name || u.username || `User ${i + 1}`;
+                      return (
+                        <div
+                          key={like._id || i}
+                          className="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50 dark:bg-gray-800/50 hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-colors"
+                        >
+                          <Avatar name={name} url={u.avatar_url || ""} size="w-7 h-7" textSize="text-[10px]" />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-semibold text-gray-900 dark:text-white truncate">{name}</div>
+                            {u.username && <div className="text-[10px] text-gray-400 truncate">@{u.username}</div>}
+                          </div>
+                          <Heart className="w-3 h-3 text-pink-500 flex-shrink-0" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Dislikes sub-section */}
+                {dislikesList.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+                    <div className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
+                      <ThumbsDown className="w-3.5 h-3.5 text-red-400" />
+                      Dislikes ({ad.dislikes_count || dislikesList.length})
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {dislikesList.slice(0, 6).map((dislike, i) => {
+                        const u    = dislike.user_id || dislike.user || dislike;
+                        const name = u.full_name || u.username || `User ${i + 1}`;
+                        return (
+                          <div
+                            key={dislike._id || i}
+                            className="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50 dark:bg-gray-800/50"
+                          >
+                            <Avatar name={name} url={u.avatar_url || ""} size="w-7 h-7" textSize="text-[10px]" />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-semibold text-gray-900 dark:text-white truncate">{name}</div>
+                              {u.username && <div className="text-[10px] text-gray-400 truncate">@{u.username}</div>}
+                            </div>
+                            <ThumbsDown className="w-3 h-3 text-red-400 flex-shrink-0" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </Card>
+
+            </div>
+          </div>
+
+          {/* ── Ad Transaction History (full width below) ────────────── */}
+          <div className="mt-8">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+
+              {/* Section header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
+                <div>
+                  <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-pink-500" /> Transaction History
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    All coin movements for this ad
+                  </p>
+                </div>
+                {walletHistory?.budget && (
+                  <div className="flex items-center gap-6 text-sm">
+                    <div className="text-right">
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Budget</div>
+                      <div className="font-bold text-gray-900 dark:text-white flex items-center gap-1">
+                        <Coins className="w-3.5 h-3.5 text-yellow-500" />
+                        {(walletHistory.budget.total_budget_coins || 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Spent</div>
+                      <div className="font-bold text-red-500 flex items-center gap-1">
+                        <TrendingDown className="w-3.5 h-3.5" />
+                        {(walletHistory.budget.total_coins_spent || 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Remaining</div>
+                      <div className="font-bold text-green-600 flex items-center gap-1">
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        {(walletHistory.budget.balance_remaining || 0).toLocaleString()}
+                      </div>
+                    </div>
+                    {/* Spend progress bar */}
+                    <div className="w-28">
+                      <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+                        <span>Used</span>
+                        <span className="font-bold">{Math.round(walletHistory.budget.spent_percentage || 0)}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-orange-500 to-pink-500"
+                          style={{ width: `${Math.min(100, walletHistory.budget.spent_percentage || 0)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Table */}
+              {walletLoading ? (
+                <div className="flex items-center justify-center py-14 gap-3">
+                  <RefreshCw className="w-6 h-6 animate-spin text-pink-500" />
+                  <span className="text-sm text-gray-400">Loading transactions…</span>
+                </div>
+              ) : walletError ? (
+                <div className="flex items-center justify-center py-14 gap-3 text-red-500">
+                  <AlertCircle className="w-5 h-5" />
+                  <span className="text-sm">{walletError}</span>
+                </div>
+              ) : !walletHistory?.transactions?.length ? (
+                <div className="flex flex-col items-center justify-center py-14 gap-3 text-gray-400">
+                  <Wallet className="w-10 h-10 opacity-30" />
+                  <p className="text-sm font-medium">No transactions yet</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+                        <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">User</th>
+                        <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">Transaction</th>
+                        <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">Amount</th>
+                        <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">Direction</th>
+                        <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">Status</th>
+                        <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                      {walletHistory.transactions.map((tx) => {
+                        const u = tx.user || {};
+                        const userName = u.full_name || u.username || "User";
+                        return (
+                          <tr key={tx._id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-2.5">
+                                {u.avatar_url ? (
+                                  <img src={u.avatar_url} alt={userName} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                    {userName[0]?.toUpperCase()}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold text-gray-900 dark:text-white truncate">{userName}</div>
+                                  {u.username && <div className="text-[10px] text-gray-400 truncate">@{u.username}</div>}
+                                  {u.role && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                                      {u.role}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-5 py-3">
+                              <div className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                                {tx.label || tx.type || "—"}
+                              </div>
+                              {tx.description && (
+                                <div className="text-[10px] text-gray-400 mt-0.5 max-w-[180px] truncate">{tx.description}</div>
+                              )}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`text-sm font-bold flex items-center gap-1 ${
+                                tx.direction === "credit" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                              }`}>
+                                <Coins className="w-3.5 h-3.5 text-yellow-500" />
+                                {tx.direction === "credit" ? "+" : "-"}{Number(tx.amount).toLocaleString()}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                                tx.direction === "credit"
+                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                              }`}>
+                                {tx.direction === "credit"
+                                  ? <ArrowDownLeft className="w-3 h-3" />
+                                  : <ArrowUpRight className="w-3 h-3" />
+                                }
+                                {tx.direction === "credit" ? "Credit" : "Debit"}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                                tx.status === "SUCCESS" ? "text-green-600 dark:text-green-400"
+                                : tx.status === "FAILED" ? "text-red-600 dark:text-red-400"
+                                : "text-amber-600 dark:text-amber-400"
+                              }`}>
+                                {tx.status === "SUCCESS" ? "✓" : tx.status === "FAILED" ? "✗" : "⏳"} {tx.status}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-xs text-gray-400 whitespace-nowrap">
+                              {tx.created_at ? new Date(tx.created_at).toLocaleString("en-IN", {
+                                day: "2-digit", month: "short", year: "numeric",
+                                hour: "2-digit", minute: "2-digit"
+                              }) : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Pagination */}
+              {(() => {
+                const txTotal = walletHistory?.pagination?.total ?? (walletHistory?.transactions?.length ?? 0);
+                const totalPg = Math.ceil(txTotal / WALLET_PER_PAGE);
+                if (!walletHistory || totalPg <= 1) return null;
+                const windowSize = Math.min(5, totalPg);
+                let start = Math.max(1, walletPage - Math.floor(windowSize / 2));
+                let end = start + windowSize - 1;
+                if (end > totalPg) { end = totalPg; start = Math.max(1, end - windowSize + 1); }
+                const pages = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+                return (
+                  <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+                    <span className="text-xs text-gray-400">
+                      Page {walletPage} of {totalPg} · {txTotal} transactions
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setWalletPage(p => Math.max(1, p - 1))}
+                        disabled={walletPage === 1 || walletLoading}
+                        className="p-2 rounded-xl border border-gray-200 dark:border-gray-700 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      {pages.map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setWalletPage(p)}
+                          className={`w-8 h-8 rounded-xl text-xs font-bold transition-colors ${
+                            walletPage === p
+                              ? "bg-gradient-to-r from-pink-600 to-orange-500 text-white shadow-sm"
+                              : "border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setWalletPage(p => Math.min(totalPg, p + 1))}
+                        disabled={walletPage === totalPg || walletLoading}
+                        className="p-2 rounded-xl border border-gray-200 dark:border-gray-700 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
 
             </div>
           </div>

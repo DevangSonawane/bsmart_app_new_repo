@@ -114,6 +114,146 @@ class _PostDetailModalState extends State<PostDetailModal> {
     return null;
   }
 
+  bool _isAdPost(Map<String, dynamic>? post) {
+    if (post == null) return false;
+    final itemType =
+        (post['item_type'] ?? post['itemType'] ?? '').toString().toLowerCase();
+    if (itemType == 'ad') return true;
+    if (post['vendor_id'] != null || post['vendorId'] != null) return true;
+    if (post['total_budget_coins'] != null || post['totalBudgetCoins'] != null) {
+      return true;
+    }
+    return false;
+  }
+
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
+    return n.toString();
+  }
+
+  List<String> _asStringList(dynamic raw) {
+    if (raw is List) {
+      return raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+    }
+    if (raw is String) {
+      final s = raw.trim();
+      if (s.isEmpty) return const [];
+      if (s.contains(',')) {
+        return s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      }
+      return [s];
+    }
+    return const [];
+  }
+
+  Widget _buildAdInfo() {
+    final post = _post;
+    if (!_isAdPost(post) || post == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final border = isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08);
+    final surface = isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
+    final muted = isDark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.55);
+
+    final category = (post['category'] ?? '').toString().trim();
+    final budget = _toInt(post['total_budget_coins'] ?? post['totalBudgetCoins']);
+    final views = _toInt(post['views_count'] ?? post['viewsCount']);
+    final unique = _toInt(post['unique_views_count'] ?? post['uniqueViewsCount']);
+    final completed = _toInt(post['completed_views_count'] ?? post['completedViewsCount']);
+    final targetLocations = _asStringList(post['target_location'] ?? post['targetLocation']);
+    final targetLanguages = _asStringList(post['target_language'] ?? post['target_languages'] ?? post['targetLanguage'] ?? post['targetLanguages']);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (category.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1A3B82F6),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x333B82F6)),
+                  ),
+                  child: Text(
+                    category,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                  ),
+                ),
+              if (budget > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1AF59E0B),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x33F59E0B)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(LucideIcons.coins, size: 14, color: Color(0xFFD97706)),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_fmt(budget)} coins budget',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFD97706)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          if (views > 0 || unique > 0 || completed > 0) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 14,
+              runSpacing: 6,
+              children: [
+                if (views > 0) Text('${_fmt(views)} views', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
+                if (unique > 0) Text('${_fmt(unique)} unique', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
+                if (completed > 0) Text('${_fmt(completed)} completed', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ],
+          if (targetLocations.isNotEmpty || targetLanguages.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            if (targetLocations.isNotEmpty)
+              Text(
+                '📍 ${targetLocations.join(', ')}',
+                style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+              ),
+            if (targetLanguages.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '🌐 ${targetLanguages.join(', ')}',
+                  style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -666,6 +806,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
   }
 
   Widget _buildDetails() {
+    final theme = Theme.of(context);
+    final baseTextColor = theme.textTheme.bodyMedium?.color ?? Colors.black;
     final username = _postUser?['username'] as String? ?? 'User';
     final avatarUrl = _postUser?['avatar_url'] as String?;
     final caption = _post?['caption'] as String? ?? '';
@@ -1015,8 +1157,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                           children: [
                             RichText(
                               text: TextSpan(
-                                style: const TextStyle(
-                                    color: Colors.black, fontSize: 14),
+                                style: TextStyle(color: baseTextColor, fontSize: 14),
                                 children: [
                                   TextSpan(
                                       text: '$username ',
@@ -1035,6 +1176,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                       ),
                     ],
                   ),
+                  _buildAdInfo(),
                   const SizedBox(height: 16),
                   if (_loadingComments)
                     const Center(
@@ -1079,8 +1221,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                 children: [
                                   RichText(
                                     text: TextSpan(
-                                      style: const TextStyle(
-                                          color: Colors.black, fontSize: 14),
+                                      style: TextStyle(color: baseTextColor, fontSize: 14),
                                       children: [
                                         TextSpan(
                                             text: '$un ',

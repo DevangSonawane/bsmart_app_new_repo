@@ -116,7 +116,7 @@ const WalletDetails = () => {
   const [filter, setFilter] = useState('All');
   const [isLifeTime, setIsLifeTime] = useState(true);
   const [openSection, setOpenSection] = useState('transaction');
-  const [redeemPackage, setRedeemPackage] = useState('');
+ 
 
   // API state
   const [walletData, setWalletData] = useState(null);
@@ -165,14 +165,14 @@ const WalletDetails = () => {
 
   return (
     <div
-      className="min-h-screen pb-24"
-      style={{ background: '#0a0a0a', fontFamily: "'DM Sans', system-ui, sans-serif" }}
+      className="min-h-screen pb-24 dark:bg-[#0a0a0a] bg-white"
+      style={{  fontFamily: "'DM Sans', system-ui, sans-serif" }}
     >
       {/* ── Google Font ── */}
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
 
       {/* ── Header ── */}
-      <div className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3.5 border-b border-white/[0.06]"
+      <div className="sticky top-0 z-20 flex dark:bg-[#0a0a0a] bg-white items-center gap-3 px-4 py-3.5 border-b border-white/[0.06]"
         style={{ background: 'rgba(10,10,10,0.9)', backdropFilter: 'blur(20px)' }}>
         <button onClick={() => navigate(-1)}
           className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/[0.06] hover:bg-white/10 transition-colors text-white">

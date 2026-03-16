@@ -38,6 +38,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   final TextEditingController _controller = TextEditingController();
   List<Map<String, dynamic>> _comments = [];
   bool _loading = true;
+  bool _loadingPost = true;
   bool _posting = false;
   final Set<String> _liked = {};
   final Set<String> _expandedComments = {};
@@ -47,6 +48,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   String? _replyingTo;
   final FocusNode _inputFocus = FocusNode();
   Map<String, dynamic>? _me;
+  Map<String, dynamic>? _post;
 
   void _dispatchCommentsDelta(int delta) {
     if (!mounted || delta == 0) return;
@@ -68,6 +70,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
     super.initState();
     _load();
     _initMe();
+    _loadPost();
   }
 
   @override
@@ -140,6 +143,215 @@ class _CommentsSheetState extends State<CommentsSheet> {
         });
       }());
     }
+  }
+
+  Future<void> _loadPost() async {
+    setState(() => _loadingPost = true);
+    try {
+      final post = await _svc.getPostById(widget.postId);
+      if (!mounted) return;
+      setState(() {
+        _post = post;
+        _loadingPost = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _post = null;
+        _loadingPost = false;
+      });
+    }
+  }
+
+  bool _isAdPost(Map<String, dynamic>? post) {
+    if (post == null) return false;
+    final itemType = (post['item_type'] ?? post['itemType'] ?? '').toString().toLowerCase();
+    if (itemType == 'ad') return true;
+    if (post['vendor_id'] != null || post['vendorId'] != null) return true;
+    if (post['total_budget_coins'] != null || post['totalBudgetCoins'] != null) return true;
+    return false;
+  }
+
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
+    return n.toString();
+  }
+
+  List<String> _asStringList(dynamic raw) {
+    if (raw is List) {
+      return raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+    }
+    if (raw is String) {
+      final s = raw.trim();
+      if (s.isEmpty) return const [];
+      if (s.contains(',')) {
+        return s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      }
+      return [s];
+    }
+    return const [];
+  }
+
+  Widget _buildPostIntro(Map<String, dynamic> post) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final user = post['user_id'] is Map
+        ? Map<String, dynamic>.from(post['user_id'] as Map)
+        : post['user'] is Map
+            ? Map<String, dynamic>.from(post['user'] as Map)
+            : post['users'] is Map
+                ? Map<String, dynamic>.from(post['users'] as Map)
+                : <String, dynamic>{};
+    final vendor = post['vendor_id'] is Map
+        ? Map<String, dynamic>.from(post['vendor_id'] as Map)
+        : <String, dynamic>{};
+    final username = (user['username'] ?? vendor['business_name'] ?? post['username'] ?? 'user').toString();
+    final avatar = (user['avatar_url'] ?? vendor['logo_url'] ?? post['avatar_url'])?.toString();
+    final created = (post['created_at'] ?? post['createdAt'] ?? '').toString();
+    final caption = (post['caption'] ?? '').toString();
+
+    final border = isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08);
+    final surface = isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _avatar(avatar, username.isNotEmpty ? username[0].toUpperCase() : 'U', size: 18, ring: avatar != null && avatar.isNotEmpty),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(username, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text(_relative(created), style: theme.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (caption.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(caption, style: theme.textTheme.bodyMedium),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdInfo(Map<String, dynamic> post) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final category = (post['category'] ?? '').toString().trim();
+    final budget = _toInt(post['total_budget_coins'] ?? post['totalBudgetCoins']);
+    final views = _toInt(post['views_count'] ?? post['viewsCount']);
+    final unique = _toInt(post['unique_views_count'] ?? post['uniqueViewsCount']);
+    final completed = _toInt(post['completed_views_count'] ?? post['completedViewsCount']);
+    final targetLocations = _asStringList(post['target_location'] ?? post['targetLocation']);
+    final targetLanguages = _asStringList(post['target_language'] ?? post['target_languages'] ?? post['targetLanguage'] ?? post['targetLanguages']);
+
+    final border = isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08);
+    final surface = isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
+    final muted = isDark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.55);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (category.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1A3B82F6),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x333B82F6)),
+                  ),
+                  child: Text(
+                    category,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                  ),
+                ),
+              if (budget > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1AF59E0B),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x33F59E0B)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(LucideIcons.coins, size: 14, color: Color(0xFFD97706)),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_fmt(budget)} coins budget',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFD97706)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          if (views > 0 || unique > 0 || completed > 0) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 14,
+              runSpacing: 6,
+              children: [
+                if (views > 0) Text('${_fmt(views)} views', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
+                if (unique > 0) Text('${_fmt(unique)} unique', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
+                if (completed > 0) Text('${_fmt(completed)} completed', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ],
+          if (targetLocations.isNotEmpty || targetLanguages.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            if (targetLocations.isNotEmpty)
+              Text(
+                '📍 ${targetLocations.join(', ')}',
+                style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+              ),
+            if (targetLanguages.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '🌐 ${targetLanguages.join(', ')}',
+                  style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
   }
 
   Future<void> _initMe() async {
@@ -530,6 +742,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDesktop = MediaQuery.of(context).size.width >= 768;
+    final showAdInfo = !_loadingPost && _isAdPost(_post);
+    final showPostIntro = !_loadingPost && _post != null;
+    final introCount = showPostIntro ? 1 : 0;
+    final adCount = showAdInfo ? 1 : 0;
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(
@@ -575,22 +791,26 @@ class _CommentsSheetState extends State<CommentsSheet> {
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator(color: DesignTokens.instaPink))
-                  : (_comments.isEmpty
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              'No comments yet.\nBe the first to comment.',
-                              textAlign: TextAlign.center,
-                              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: introCount + adCount + (_comments.isEmpty ? 1 : _comments.length),
+                      itemBuilder: (context, i) {
+                        if (showPostIntro && i == 0) return _buildPostIntro(_post!);
+                        if (showAdInfo && i == introCount) return _buildAdInfo(_post!);
+                        if (_comments.isEmpty) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                'No comments yet.\nBe the first to comment.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                              ),
                             ),
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          itemCount: _comments.length,
-                          itemBuilder: (context, i) {
-                            final c = _comments[i];
+                          );
+                        }
+                        final idx = i - introCount - adCount;
+                        final c = _comments[idx];
                             final u = c['user'] as Map<String, dynamic>? ?? {};
                             final un = u['username'] as String? ?? 'user';
                             final av = u['avatar_url'] as String?;
@@ -613,7 +833,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                   final likesCount = (c['likes_count'] as int?) ?? 0;
                                   final isPending = c['pending'] == true;
                                   return GestureDetector(
-                                    onLongPress: () => _onLongPressComment(c, isMine, i),
+                                    onLongPress: () => _onLongPressComment(c, isMine, idx),
                                     child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -699,7 +919,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                                     size: 20,
                                                     color: liked ? Colors.red : theme.iconTheme.color,
                                                   ),
-                                                  onPressed: () => _toggleLike(c, i),
+                                                  onPressed: () => _toggleLike(c, idx),
                                                   padding: EdgeInsets.zero,
                                                   constraints: const BoxConstraints(),
                                                 ),
@@ -715,7 +935,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                                       size: 14,
                                                       color: theme.colorScheme.onSurfaceVariant,
                                                     ),
-                                                    onPressed: () => _delete(c, i),
+                                                    onPressed: () => _delete(c, idx),
                                                     padding: EdgeInsets.zero,
                                                     constraints: const BoxConstraints(),
                                                   ),
@@ -877,8 +1097,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                 },
                               ),
                             );
-                          },
-                        )),
+                      },
+                    ),
             ),
             const Divider(height: 1),
             if (_replyParentId != null)

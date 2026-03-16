@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Heart, MessageCircle, Send, MoreHorizontal, Music2,
-  Volume2, VolumeX, Bookmark, Loader2, X, Trash2
+  Volume2, VolumeX, Bookmark, Loader2, X, Trash2, ChevronLeft
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import commentService from '../services/commentService';
@@ -11,9 +12,37 @@ const BASE_URL = 'https://api.bebsmart.in/api';
 
 const getToken = () => localStorage.getItem('token');
 const authHeaders = () => ({
-  'Authorization': `Bearer ${getToken()}`,
   'Content-Type': 'application/json',
+  ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
 });
+
+const normalizeApiArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  const candidates = [
+    value.data,
+    value?.data?.data,
+    value.posts,
+    value.reels,
+    value.feed,
+    value.items,
+    value.results,
+    value?.data?.posts,
+    value?.data?.reels,
+    value?.data?.feed,
+    value?.data?.items,
+    value?.data?.results,
+    value?.data?.data?.posts,
+    value?.data?.data?.reels,
+    value?.data?.data?.feed,
+    value?.data?.data?.items,
+    value?.data?.data?.results,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c;
+  }
+  return [];
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const formatCount = (count) => {
@@ -100,6 +129,72 @@ const FollowButton = ({ userId, initialFollowing = false }) => {
     >
       {loading ? <Loader2 size={10} className="animate-spin inline" /> : following ? 'Following' : 'Follow'}
     </button>
+  );
+};
+
+const ActionButtons = ({ reel, mobile = false, onLike, onComment, onShare, onSave }) => {
+  const reelId = reel?._id || reel?.post_id;
+  const likesCount = reel?.likes_count ?? 0;
+  const commentsCount = reel?.comments_count ?? reel?.comments?.length ?? 0;
+  const isLiked = !!reel?.is_liked_by_me;
+  const isSaved = !!reel?.is_saved_by_me;
+  const avatarUrl = reel?.user_id?.avatar_url;
+  const initial = (reel?.user_id?.username || reel?.user_id?.full_name || 'U')[0]?.toUpperCase();
+
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <button onClick={() => reelId && onLike?.(reelId, isLiked)} className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <Heart size={20} className={isLiked ? 'text-red-500 fill-red-500' : mobile ? 'text-white' : 'text-gray-800 dark:text-white'} />
+        </div>
+        <span className={`text-xs font-semibold ${mobile ? 'text-white' : 'text-gray-700 dark:text-white'}`}>
+          {formatCount(likesCount)}
+        </span>
+      </button>
+
+      <button onClick={() => onComment?.(reel)} className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <MessageCircle size={20} className={mobile ? 'text-white' : 'text-gray-800 dark:text-white'} />
+        </div>
+        <span className={`text-xs font-semibold ${mobile ? 'text-white' : 'text-gray-700 dark:text-white'}`}>
+          {formatCount(commentsCount)}
+        </span>
+      </button>
+
+      <button onClick={() => onShare?.(reel)} className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <Send size={18} className={`-rotate-12 relative left-[-2px] ${mobile ? 'text-white' : 'text-gray-800 dark:text-white'}`} />
+        </div>
+        <span className={`text-xs font-semibold ${mobile ? 'text-white' : 'text-gray-700 dark:text-white'}`}>Share</span>
+      </button>
+
+      <button onClick={() => reelId && onSave?.(reelId, isSaved)} className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <Bookmark size={20} className={isSaved ? (mobile ? 'text-yellow-400 fill-yellow-400' : 'text-yellow-500 fill-yellow-500') : mobile ? 'text-white' : 'text-gray-800 dark:text-white'} />
+        </div>
+        <span className={`text-xs font-semibold ${mobile ? 'text-white' : 'text-gray-700 dark:text-white'}`}>Save</span>
+      </button>
+
+      <button className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <MoreHorizontal size={20} className={mobile ? 'text-white' : 'text-gray-800 dark:text-white'} />
+        </div>
+      </button>
+
+      <div className={`w-9 h-9 rounded-full border-2 ${mobile ? 'border-white' : 'border-gray-300 dark:border-gray-600'} overflow-hidden shadow-md mt-1`}>
+        {avatarUrl
+          ? <img src={avatarUrl} className="w-full h-full object-cover" alt="user" />
+          : <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
+              {initial}
+            </div>
+        }
+      </div>
+    </div>
   );
 };
 
@@ -449,6 +544,7 @@ const CommentsBottomSheet = ({ reel, onClose, userObject }) => (
 
 // ─── Main Reels Component ─────────────────────────────────────────────────────
 const Reels = () => {
+  const navigate = useNavigate();
   const [reels, setReels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -463,6 +559,36 @@ const Reels = () => {
   const [actionPanelRight, setActionPanelRight] = useState(100);
 
   const { userObject } = useSelector((state) => state.auth);
+  const [walletBalance, setWalletBalance] = useState(
+    userObject?.wallet?.balance ? Math.floor(Number(userObject.wallet.balance)) : 0
+  );
+
+  useEffect(() => {
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const fetchWallet = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('https://api.bebsmart.in/api/wallet', {
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const bal = data?.balance ?? data?.wallet?.balance ?? data?.data?.balance;
+        if (bal !== undefined) setWalletBalance(Math.floor(Number(bal)));
+      } catch { /* silent */ }
+    };
+    fetchWallet();
+  }, []);
 
   useEffect(() => {
     const measure = () => {
@@ -481,10 +607,11 @@ const Reels = () => {
     const fetchReels = async () => {
       try {
         setLoading(true);
+        setError(null);
         const res = await fetch(`${BASE_URL}/posts/reels`, { headers: authHeaders() });
         if (!res.ok) throw new Error('Failed to fetch reels');
         const data = await res.json();
-        setReels(data);
+        setReels(normalizeApiArray(data));
       } catch (err) { setError(err.message); }
       finally { setLoading(false); }
     };
@@ -581,8 +708,10 @@ const Reels = () => {
     return 'aspect-[9/16]';
   };
 
+  const pageHeightClass = "h-[calc(100dvh-4rem)] md:h-[calc(100dvh-1rem)]";
+
   if (loading) return (
-    <div className="w-full h-screen flex justify-center items-center dark:bg-black bg-white">
+    <div className={`w-full ${pageHeightClass} flex justify-center items-center dark:bg-black bg-white overflow-hidden`}>
       <div className="flex flex-col items-center gap-3">
         <Loader2 size={36} className="text-white animate-spin" />
         <span className="text-white/60 text-sm">Loading reels...</span>
@@ -591,7 +720,7 @@ const Reels = () => {
   );
 
   if (error) return (
-    <div className="w-full h-screen flex justify-center items-center bg-black">
+    <div className={`w-full ${pageHeightClass} flex justify-center items-center bg-black overflow-hidden`}>
       <div className="flex flex-col items-center gap-4 px-6 text-center">
         <span className="text-white font-semibold">Failed to load reels</span>
         <span className="text-white/50 text-sm">{error}</span>
@@ -601,7 +730,7 @@ const Reels = () => {
   );
 
   if (!reels.length) return (
-    <div className="w-full h-screen flex justify-center items-center bg-black">
+    <div className={`w-full ${pageHeightClass} flex justify-center items-center bg-black overflow-hidden`}>
       <span className="text-white/60">No reels found</span>
     </div>
   );
@@ -612,14 +741,24 @@ const Reels = () => {
 
   return (
     <>
-      <div className="w-full lg:h-auto h-screen overflow-hidden flex items-center justify-center">
-        <div className="flex items-end justify-center h-full lg:py-2 py-4 gap-4">
+      <div className={`w-full ${pageHeightClass} overflow-hidden flex flex-col bg-black`}>
+        <div className="shrink-0 relative flex items-center px-3 py-2.5 md:px-4 md:py-3 border-b border-white/10">
+          <button onClick={() => navigate(-1)} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 text-white">
+            <ChevronLeft size={22} />
+          </button>
+          <div className="absolute left-1/2 -translate-x-1/2 text-white font-bold text-sm md:text-base">
+            Reels
+          </div>
+          <div className="w-9 h-9" />
+        </div>
+
+        <div className="flex-1 min-h-0 flex items-end justify-center lg:py-2 py-0 gap-4 overflow-hidden">
 
           {/* ── Video card ── */}
           <div
             className="relative bg-black flex-shrink-0 overflow-hidden
-              w-screen h-screen
-              md:w-[380px] md:h-[calc(100vh-2rem)] md:max-h-[760px] md:rounded-2xl
+              w-full h-full
+              md:w-[380px] md:h-full md:max-h-[760px] md:rounded-2xl
               md:shadow-[0_24px_80px_rgba(0,0,0,0.8)]"
             onWheel={handleWheel}
             onTouchStart={handleTouchStart}
@@ -635,6 +774,7 @@ const Reels = () => {
                 const thumbnail = getThumbnail(reel);
                 const hasError = videoErrors[reelId];
                 const aspectClass = getAspectClass(reel);
+                const isCurrent = index === currentIndex;
 
                 return (
                   <div key={reelId || index} className="relative w-full h-full bg-black flex items-center justify-center">
@@ -662,49 +802,30 @@ const Reels = () => {
                       style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, transparent 30%, transparent 55%, rgba(0,0,0,0.85) 100%)' }}
                     />
 
-                    <button
-                      onClick={() => setIsMuted(!isMuted)}
-                      className="absolute lg:bottom-5 bottom-14 right-4 bg-black/40 p-2 rounded-full text-white backdrop-blur-sm z-20"
-                    >
-                      {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                    </button>
-
-                    {/* Mobile action buttons */}
-                    <div className="md:hidden absolute right-3 top-[60%] -translate-y-1/2 flex flex-col gap-6 items-center z-20">
-                      <div className="flex flex-col items-center gap-1">
-                        <button onClick={() => handleLike(reelId, reel.is_liked_by_me)} className="active:scale-90 transition-transform">
-                          <Heart size={27} className={reel.is_liked_by_me ? 'text-red-500' : 'text-white'} style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.6))' }} fill={reel.is_liked_by_me ? 'currentColor' : 'none'} />
-                        </button>
-                        <span className="text-white text-xs font-semibold" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{formatCount(reel.likes_count)}</span>
-                      </div>
-
-                      <div className="flex flex-col items-center gap-1">
-                        <button onClick={() => { setCurrentIndex(index); setCommentsOpen(true); }} className="active:scale-90 transition-transform">
-                          <MessageCircle size={27} className={commentsOpen && index === currentIndex ? 'text-blue-400' : 'text-white'} style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.6))' }} />
-                        </button>
-                        <span className="text-white text-xs font-semibold" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{formatCount(reel.comments_count ?? reel.comments?.length ?? 0)}</span>
-                      </div>
-
-                      <button onClick={() => handleShare(reel)} className="active:scale-90 transition-transform">
-                        <Send size={25} className="text-white -rotate-12" style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.6))' }} />
+                    {videoUrl && !hasError && isCurrent && (
+                      <button
+                        onClick={() => setIsMuted(m => !m)}
+                        className="absolute bottom-[10px] md:bottom-5 right-[55px] md:right-4 bg-black/50 p-2 rounded-full text-white backdrop-blur-sm hover:bg-black/70 z-20"
+                      >
+                        {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                       </button>
+                    )}
 
-                      <button className="active:scale-90 transition-transform">
-                        <MoreHorizontal size={25} className="text-white" style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.6))' }} />
-                      </button>
-
-                      <div className="w-9 h-9 border-2 border-white/60 rounded-lg overflow-hidden shadow-lg">
-                        {reel.user_id?.avatar_url
-                          ? <img src={reel.user_id.avatar_url} className="w-full h-full object-cover" alt="" />
-                          : <div className="w-full h-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center">
-                              <span className="text-white text-xs font-bold">{(reel.user_id?.username || 'U')[0].toUpperCase()}</span>
-                            </div>
-                        }
+                    {isCurrent && (
+                      <div className="md:hidden absolute right-3 bottom-[10px] z-30">
+                        <ActionButtons
+                          reel={reel}
+                          mobile
+                          onLike={handleLike}
+                          onComment={() => { setCurrentIndex(index); setCommentsOpen(true); }}
+                          onShare={handleShare}
+                          onSave={handleSave}
+                        />
                       </div>
-                    </div>
+                    )}
 
                     {/* Bottom info */}
-                    <div className="absolute lg:bottom-[0%] bottom-[8%] left-0 z-20 px-4 pb-6 pr-16" style={{ maxWidth: 'calc(100% - 56px)' }}>
+                    <div className="absolute lg:bottom-[0%] bottom-[0%] left-0 z-20 px-4 pb-6 pr-16" style={{ maxWidth: 'calc(100% - 56px)' }}>
                       <div className="flex items-center gap-2 mb-2">
                         <div className="w-8 h-8 rounded-full border-2 border-white/50 overflow-hidden flex-shrink-0">
                           {reel.user_id?.avatar_url
@@ -736,46 +857,17 @@ const Reels = () => {
             </div>
           </div>
 
-          {/* Desktop action buttons */}
-          <div ref={actionPanelRef} className="hidden md:flex flex-col gap-5 items-center pb-2 flex-shrink-0">
-            <div className="flex flex-col items-center gap-1">
-              <button onClick={() => handleLike(currentReelId, currentReel?.is_liked_by_me)} className="w-11 h-11 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-lg">
-                <Heart size={22} className={currentReel?.is_liked_by_me ? 'text-red-500' : 'text-white'} fill={currentReel?.is_liked_by_me ? 'currentColor' : 'none'} />
-              </button>
-              <span className="text-xs font-medium text-white">{formatCount(currentReel?.likes_count)}</span>
+          {currentReel && (
+            <div ref={actionPanelRef} className="hidden md:flex flex-col gap-2 ml-4 justify-end h-full md:h-[85vh] pb-4">
+              <ActionButtons
+                reel={currentReel}
+                onLike={handleLike}
+                onComment={() => setCommentsOpen(v => !v)}
+                onShare={handleShare}
+                onSave={handleSave}
+              />
             </div>
-
-            <div className="flex flex-col items-center gap-1">
-              <button
-                onClick={() => setCommentsOpen(v => !v)}
-                className={`w-11 h-11 rounded-full backdrop-blur-sm border flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-lg ${commentsOpen ? 'bg-blue-500 border-blue-400' : 'bg-white/10 border-white/20'}`}
-              >
-                <MessageCircle size={22} className="text-white" />
-              </button>
-              <span className="text-xs font-medium text-white">{formatCount(commentCount)}</span>
-            </div>
-
-            <button onClick={() => handleShare(currentReel)} className="w-11 h-11 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-lg">
-              <Send size={22} className="text-white -rotate-12" />
-            </button>
-
-            <button onClick={() => handleSave(currentReelId, currentReel?.is_saved_by_me)} className="w-11 h-11 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-lg">
-              <Bookmark size={22} className="text-white" fill={currentReel?.is_saved_by_me ? 'currentColor' : 'none'} />
-            </button>
-
-            <button className="w-11 h-11 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm flex items-center justify-center hover:scale-110 transition-all shadow-lg">
-              <MoreHorizontal size={22} className="text-white" />
-            </button>
-
-            <div className="w-9 h-9 border-2 border-white/40 rounded-lg overflow-hidden cursor-pointer shadow-lg mt-1">
-              {currentReel?.user_id?.avatar_url
-                ? <img src={currentReel.user_id.avatar_url} className="w-full h-full object-cover" alt="" />
-                : <div className="w-full h-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">{(currentReel?.user_id?.username || 'U')[0].toUpperCase()}</span>
-                  </div>
-              }
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Nav arrows */}

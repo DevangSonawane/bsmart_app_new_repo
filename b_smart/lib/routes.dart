@@ -19,6 +19,9 @@ import 'screens/own_story_viewer_screen.dart';
 import '../models/media_model.dart';
 import 'screens/edit_video_screen.dart';
 
+final RouteObserver<PageRoute<dynamic>> appRouteObserver =
+    RouteObserver<PageRoute<dynamic>>();
+
 /// Centralized route definitions matching the React app structure.
 ///
 /// NOTE: '/profile' and '/post' are intentionally NOT in this map.

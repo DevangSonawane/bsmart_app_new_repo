@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../api/api_client.dart';
+import '../api/ads_api.dart';
 import '../api/api_exceptions.dart';
 import '../models/ad_model.dart';
 import '../models/ad_category_model.dart';
@@ -139,11 +140,6 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
         _error = null;
       });
 
-      if (_ads.isNotEmpty && reset) {
-        final initialIndex =
-            _focusedIndex.clamp(0, _ads.length - 1).toInt();
-        unawaited(_recordViewForAd(_ads[initialIndex]));
-      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -324,7 +320,6 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               _focusedIndex = index;
             });
             if (index >= 0 && index < _ads.length) {
-              unawaited(_recordViewForAd(_ads[index]));
               if (index >= _ads.length - 2) {
                 unawaited(_fetchAdsPage());
               }
@@ -337,6 +332,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               key: ValueKey('ad-video-${ad.id}'),
               ad: ad,
               isActive: widget.isTabActive && index == _focusedIndex,
+              onCompletedView: () => _recordViewForAd(ad),
               onAutoNext: () {
                 if (index + 1 < _ads.length) {
                   _goToPage(index + 1);
@@ -401,16 +397,6 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               child: _buildTopBar(isDesktop: isDesktop),
             ),
           ),
-          if (!_isLoading && _error == null && _ads.isNotEmpty)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: isDesktop ? 20 : 66,
-              child: SafeArea(
-                top: false,
-                child: _buildBottomCategoryBar(isDesktop: isDesktop),
-              ),
-            ),
           if (!_isLoading && _error == null && _ads.isNotEmpty && isDesktop)
             Positioned(
               right: 20,
@@ -497,47 +483,37 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
         horizontal: 4,
       ),
       decoration: BoxDecoration(
-        color: isDesktop ? const Color(0xE60A0A0A) : null,
-        border: isDesktop
-            ? Border(
-                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-              )
-            : null,
-        gradient: isDesktop
-            ? null
-            : LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.6),
-                  Colors.transparent,
-                ],
-              ),
+        color: Colors.transparent,
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Back Button
-          IconButton(
-            icon: Icon(
-              LucideIcons.chevronLeft,
-              color: isDesktop ? Colors.white70 : Colors.white,
-              size: isDesktop ? 22 : 28,
-            ),
-            onPressed: () => Navigator.of(context).maybePop(),
+          Row(
+            children: [
+              IconButton(
+                icon: Icon(
+                  LucideIcons.chevronLeft,
+                  color: isDesktop ? Colors.white70 : Colors.white,
+                  size: isDesktop ? 22 : 28,
+                ),
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(
+                  LucideIcons.search,
+                  color: isDesktop ? Colors.white70 : Colors.white,
+                  size: isDesktop ? 20 : 24,
+                ),
+                onPressed: _openSearchDialog,
+              ),
+            ],
           ),
-
-          // Categories List
-          const Spacer(),
-
-          // Search Button
-          IconButton(
-            icon: Icon(
-              LucideIcons.search,
-              color: isDesktop ? Colors.white70 : Colors.white,
-              size: isDesktop ? 20 : 24,
+          if (_categories.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.only(top: isDesktop ? 6 : 2),
+              child: _buildBottomCategoryBar(isDesktop: isDesktop),
             ),
-            onPressed: _openSearchDialog,
-          ),
         ],
       ),
     );
@@ -653,6 +629,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
 class AdVideoItem extends StatefulWidget {
   final Ad ad;
   final bool isActive;
+  final Future<void> Function() onCompletedView;
   final Future<void> Function() onOpenComments;
   final VoidCallback onAutoNext;
 
@@ -660,6 +637,7 @@ class AdVideoItem extends StatefulWidget {
     super.key,
     required this.ad,
     required this.isActive,
+    required this.onCompletedView,
     required this.onOpenComments,
     required this.onAutoNext,
   });
@@ -687,6 +665,9 @@ class _AdVideoItemState extends State<AdVideoItem>
   Timer? _imageProgressTimer;
   bool _captionExpanded = false;
   Map<String, String>? _mediaHeaders;
+  bool _viewMarked = false;
+  Timer? _likeRewardTimer;
+  _LikeRewardPopupData? _likeRewardPopup;
 
   // Animation for music disc
   late AnimationController _discController;
@@ -743,6 +724,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       _isInitialized = false;
       _userPaused = false;
       _progress = 0;
+      _viewMarked = false;
       _controller?.removeListener(_onVideoTick);
       unawaited(_controller?.dispose());
       _controller = null;
@@ -771,8 +753,34 @@ class _AdVideoItemState extends State<AdVideoItem>
     _controller?.removeListener(_onVideoTick);
     _controller?.dispose();
     _imageProgressTimer?.cancel();
+    _likeRewardTimer?.cancel();
     _discController.dispose();
     super.dispose();
+  }
+
+  void _showLikeRewardPopup({required bool isLike}) {
+    _likeRewardTimer?.cancel();
+    setState(() {
+      _likeRewardPopup = _LikeRewardPopupData(
+        id: DateTime.now().millisecondsSinceEpoch,
+        amount: 10,
+        isLike: isLike,
+      );
+    });
+    _likeRewardTimer = Timer(const Duration(milliseconds: 2200), () {
+      if (!mounted) return;
+      setState(() {
+        _likeRewardPopup = null;
+      });
+    });
+  }
+
+  void _hideLikeRewardPopup() {
+    _likeRewardTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _likeRewardPopup = null;
+    });
   }
 
   Future<void> _initializeVideo() async {
@@ -839,8 +847,12 @@ class _AdVideoItemState extends State<AdVideoItem>
     }
 
     final duration = value.duration;
-      if (duration > Duration.zero &&
+    if (duration > Duration.zero &&
         value.position >= duration - const Duration(milliseconds: 180)) {
+      if (!_viewMarked) {
+        _viewMarked = true;
+        unawaited(widget.onCompletedView());
+      }
       unawaited(controller.seekTo(Duration.zero).catchError((_) {}));
       if (mounted) {
         setState(() {
@@ -893,6 +905,10 @@ class _AdVideoItemState extends State<AdVideoItem>
       });
       if (pct >= 1) {
         timer.cancel();
+        if (!_viewMarked) {
+          _viewMarked = true;
+          unawaited(widget.onCompletedView());
+        }
         widget.onAutoNext();
       }
     });
@@ -988,6 +1004,9 @@ class _AdVideoItemState extends State<AdVideoItem>
             }
           });
         }
+        if (mounted) {
+          _showLikeRewardPopup(isLike: true);
+        }
       } else {
         final res =
             await _adsService.dislikeAd(adId: widget.ad.id, userId: userId);
@@ -1016,6 +1035,9 @@ class _AdVideoItemState extends State<AdVideoItem>
               _isLiked = false;
             }
           });
+        }
+        if (mounted) {
+          _showLikeRewardPopup(isLike: false);
         }
       }
     } on ApiException catch (e) {
@@ -1516,6 +1538,31 @@ class _AdVideoItemState extends State<AdVideoItem>
             ],
           ),
         ),
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: _likeRewardPopup == null,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutBack,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(scale: animation, child: child),
+                  );
+                },
+                child: _likeRewardPopup == null
+                    ? const SizedBox.shrink()
+                    : _LikeRewardPopupCard(
+                        key: ValueKey<int>(_likeRewardPopup!.id),
+                        data: _likeRewardPopup!,
+                        onOk: _hideLikeRewardPopup,
+                      ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1613,6 +1660,119 @@ class _AdVideoItemState extends State<AdVideoItem>
   }
 }
 
+class _LikeRewardPopupData {
+  final int id;
+  final int amount;
+  final bool isLike;
+
+  const _LikeRewardPopupData({
+    required this.id,
+    required this.amount,
+    required this.isLike,
+  });
+}
+
+class _LikeRewardPopupCard extends StatelessWidget {
+  final _LikeRewardPopupData data;
+  final VoidCallback onOk;
+
+  const _LikeRewardPopupCard({super.key, required this.data, required this.onOk});
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = data.isLike ? const Color(0xFFFCA5A5) : const Color(0xFFD1D5DB);
+    final pillTextColor = data.isLike ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
+    final circleGradient = data.isLike
+        ? const LinearGradient(colors: [Color(0xFFFB7185), Color(0xFFEC4899)], begin: Alignment.topLeft, end: Alignment.bottomRight)
+        : const LinearGradient(colors: [Color(0xFF9CA3AF), Color(0xFF6B7280)], begin: Alignment.topLeft, end: Alignment.bottomRight);
+    final buttonGradient = data.isLike
+        ? const LinearGradient(colors: [Color(0xFFFB7185), Color(0xFFEC4899)], begin: Alignment.centerLeft, end: Alignment.centerRight)
+        : const LinearGradient(colors: [Color(0xFF9CA3AF), Color(0xFF4B5563)], begin: Alignment.centerLeft, end: Alignment.centerRight);
+
+    return Material(
+      color: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 260, maxWidth: 320),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: borderColor),
+            boxShadow: const [
+              BoxShadow(color: Color(0x33000000), blurRadius: 30, offset: Offset(0, 18)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(shape: BoxShape.circle, gradient: circleGradient),
+                child: Icon(
+                  data.isLike ? Icons.favorite : LucideIcons.circleX,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                data.isLike ? '+${data.amount} Coins' : '-${data.amount} Coins',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: pillTextColor,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                data.isLike ? 'Thanks for liking!' : 'Dislike recorded',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF111827),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: buttonGradient,
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x22000000), blurRadius: 14, offset: Offset(0, 10)),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onOk,
+                      borderRadius: BorderRadius.circular(20),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: Text(
+                            'Okay',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class MarqueeWidget extends StatefulWidget {
   final String text;
   final TextStyle style;
@@ -1697,6 +1857,7 @@ class AdCommentsSheet extends StatefulWidget {
 
 class _AdCommentsSheetState extends State<AdCommentsSheet> {
   final AdsService _adsService = AdsService();
+  final AdsApi _adsApi = AdsApi();
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
@@ -1706,13 +1867,16 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
   final Set<String> _loadingReplies = <String>{};
   final Set<String> _expandedReplies = <String>{};
   bool _loading = true;
+  bool _loadingAd = true;
   bool _posting = false;
   String? _replyParentId;
   String? _replyingTo;
+  Ad? _ad;
 
   @override
   void initState() {
     super.initState();
+    _loadAd();
     _load();
   }
 
@@ -2172,315 +2336,488 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Column(
-        children: [
-          const SizedBox(height: 10),
-          Container(
-            width: 48,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade400,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Text(
-                  'Comments (${_comments.length})',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 16),
+  Future<void> _loadAd() async {
+    setState(() => _loadingAd = true);
+    try {
+      final raw = await _adsApi.getAdById(widget.adId);
+      if (!mounted) return;
+      setState(() {
+        _ad = raw == null ? null : Ad.fromApi(raw);
+        _loadingAd = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _ad = null;
+        _loadingAd = false;
+      });
+    }
+  }
+
+  String _fmtCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
+    return n.toString();
+  }
+
+  String _formatTimestamp(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+    if (difference.inSeconds < 60) return 'Just now';
+    if (difference.inMinutes < 60) return '${difference.inMinutes}m';
+    if (difference.inHours < 24) return '${difference.inHours}h';
+    if (difference.inDays < 7) return '${difference.inDays}d';
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    return '${months[date.month - 1]} ${date.day}';
+  }
+
+  String _commentCreatedAt(Map<String, dynamic> c) {
+    return ((c['created_at'] ?? c['createdAt'] ?? c['created'] ?? '')
+            ?.toString() ??
+        '')
+        .trim();
+  }
+
+  Map<String, dynamic> _commentUser(Map<String, dynamic> c) {
+    final user = c['user'];
+    if (user is Map) return Map<String, dynamic>.from(user);
+    return <String, dynamic>{};
+  }
+
+  String _commentAvatarUrl(Map<String, dynamic> c) {
+    final u = _commentUser(c);
+    return (u['avatar_url'] ??
+            u['avatarUrl'] ??
+            u['avatar'] ??
+            c['avatar_url'] ??
+            '')
+        .toString()
+        .trim();
+  }
+
+  bool _commentVerified(Map<String, dynamic> c) {
+    final u = _commentUser(c);
+    return u['is_verified'] == true || u['verified'] == true;
+  }
+
+  Widget _avatar(String url, String fallbackChar, {double size = 16}) {
+    final ring = url.trim().isNotEmpty;
+    return Container(
+      width: size * 2.25,
+      height: size * 2.25,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: ring
+            ? const LinearGradient(
+                colors: [Color(0xFFFACC15), Color(0xFFF97316), Color(0xFFEC4899)],
+              )
+            : null,
+        color: ring ? null : Colors.grey.shade300,
+      ),
+      child: Container(
+        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+        padding: const EdgeInsets.all(1),
+        child: CircleAvatar(
+          backgroundImage: ring ? NetworkImage(url) : null,
+          backgroundColor: Colors.grey.shade200,
+          child: ring
+              ? null
+              : Text(
+                  fallbackChar,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 20),
-                  onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdContextCard() {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final ad = _ad;
+    if (ad == null) return const SizedBox.shrink();
+
+    final border = isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08);
+    final surface = isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
+    final muted = isDark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.55);
+
+    final headline = (ad.caption?.trim().isNotEmpty ?? false) ? ad.caption!.trim() : ad.title;
+    final name = (ad.vendorBusinessName?.trim().isNotEmpty ?? false)
+        ? ad.vendorBusinessName!.trim()
+        : ((ad.userName?.trim().isNotEmpty ?? false) ? ad.userName!.trim() : ad.companyName);
+    final avatarUrl = (ad.userAvatarUrl?.trim().isNotEmpty ?? false) ? ad.userAvatarUrl!.trim() : (ad.companyLogo ?? '');
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _avatar(
+                avatarUrl,
+                name.isNotEmpty ? name[0].toUpperCase() : 'A',
+                size: 16,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _formatTimestamp(ad.createdAt),
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      'Sponsored',
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (headline.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(headline, style: theme.textTheme.bodyMedium),
+          ],
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (ad.category != null && ad.category!.trim().isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1A3B82F6),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x333B82F6)),
+                  ),
+                  child: Text(
+                    ad.category!.trim(),
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                  ),
+                ),
+              if (ad.totalBudgetCoins > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1AF59E0B),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x33F59E0B)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(LucideIcons.coins, size: 14, color: Color(0xFFD97706)),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_fmtCount(ad.totalBudgetCoins)} coins budget',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFD97706)),
+                      ),
+                    ],
+                  ),
+                ),
+              if (ad.currentViews > 0)
+                Text('${_fmtCount(ad.currentViews)} views', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          if (ad.targetLocations.isNotEmpty || ad.targetLanguages.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            if (ad.targetLocations.isNotEmpty)
+              Text(
+                '📍 ${ad.targetLocations.join(', ')}',
+                style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+              ),
+            if (ad.targetLanguages.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '🌐 ${ad.targetLanguages.join(', ')}',
+                  style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _commentTile({
+    required Map<String, dynamic> c,
+    required bool isReply,
+    String? parentId,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final id = _commentId(c);
+    final author = _commentAuthor(c);
+    final avatarUrl = _commentAvatarUrl(c);
+    final isVerified = _commentVerified(c);
+    final text = _commentText(c);
+    final created = _commentCreatedAt(c);
+    final likeCount = _commentLikeCount(c);
+    final liked = _isCommentLiked(c);
+
+    DateTime? dt;
+    if (created.isNotEmpty) {
+      dt = DateTime.tryParse(created);
+    }
+    final timeLabel = dt == null ? '' : _formatTimestamp(dt);
+
+    final border = isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.08);
+    final surface = isDark ? Colors.white.withValues(alpha: 0.02) : Colors.white;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _avatar(
+            avatarUrl,
+            author.isNotEmpty ? author[0].toUpperCase() : 'U',
+            size: 14,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Text(author, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          if (isVerified)
+                            const Padding(
+                              padding: EdgeInsets.only(left: 4),
+                              child: Icon(Icons.check_circle, size: 14, color: Colors.blueAccent),
+                            ),
+                          if (timeLabel.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Text(timeLabel, style: theme.textTheme.bodySmall),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (id.isNotEmpty)
+                      IconButton(
+                        icon: Icon(LucideIcons.trash2, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                        onPressed: () => _deleteComment(
+                          commentId: id,
+                          isReply: isReply,
+                          parentId: parentId,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(text.isEmpty ? '-' : text),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: id.isEmpty
+                          ? null
+                          : () => _toggleCommentLike(
+                                commentId: id,
+                                isReply: isReply,
+                                parentId: parentId,
+                              ),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 0),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(liked ? 'Unlike' : 'Like', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                    if (likeCount > 0) ...[
+                      const SizedBox(width: 8),
+                      Text('$likeCount', style: theme.textTheme.bodySmall),
+                    ],
+                    const SizedBox(width: 14),
+                    TextButton(
+                      onPressed: id.isEmpty
+                          ? null
+                          : () {
+                              setState(() {
+                                _replyParentId = isReply ? parentId : id;
+                                _replyingTo = author;
+                              });
+                              _focusNode.requestFocus();
+                            },
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 0),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Reply', style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _comments.isEmpty
-                    ? const Center(child: Text('No comments yet'))
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        itemCount: _comments.length,
-                        separatorBuilder: (_, __) => const Divider(height: 16),
-                        itemBuilder: (context, index) {
-                          final c = _comments[index];
-                          final text = _commentText(c);
-                          final author = _commentAuthor(c);
-                          final id = _commentId(c);
-                          final isLiked = _isCommentLiked(c);
-                          final likesCount = _commentLikeCount(c);
-                          final isDisliked = _isCommentDisliked(c);
-                          final dislikesCount = _commentDislikeCount(c);
-                          final replies = _repliesByComment[id] ??
-                              const <Map<String, dynamic>>[];
-                          final replyCount = _commentReplyCount(c, id);
-                          final showReplies = _expandedReplies.contains(id);
-                          final isLoadingReplies = _loadingReplies.contains(id);
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      author,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w600),
-                                    ),
-                                  ),
-                                  if (id.isNotEmpty)
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_outline,
-                                          size: 18),
-                                      tooltip: 'Delete comment',
-                                      onPressed: () => _deleteComment(
-                                        commentId: id,
-                                        isReply: false,
-                                      ),
-                                    ),
-                                ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = theme.scaffoldBackgroundColor;
+    final handleColor = isDark ? Colors.white.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.18);
+    final showAdContext = !_loadingAd && _ad != null;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        color: bg,
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 48,
+              height: 4,
+              decoration: BoxDecoration(
+                color: handleColor,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  const SizedBox(width: 40),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Comments (${_comments.length})',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(LucideIcons.x, color: theme.iconTheme.color, size: 20),
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                      itemCount: (showAdContext ? 1 : 0) + (_comments.isEmpty ? 1 : _comments.length),
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        if (showAdContext && index == 0) {
+                          return _buildAdContextCard();
+                        }
+                        if (_comments.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24),
+                            child: Center(
+                              child: Text(
+                                'No comments yet.\nBe the first to comment.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                               ),
-                              const SizedBox(height: 2),
-                              Text(text.isEmpty ? '-' : text),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  TextButton(
-                                    onPressed: id.isEmpty
-                                        ? null
-                                        : () => _toggleCommentLike(
-                                              commentId: id,
-                                              isReply: false,
-                                            ),
-                                    style: TextButton.styleFrom(
-                                      padding: EdgeInsets.zero,
-                                      minimumSize: const Size(0, 0),
-                                    ),
-                                    child: Text(isLiked ? 'Unlike' : 'Like'),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    '$likesCount like${likesCount == 1 ? '' : 's'}',
-                                    style: const TextStyle(
-                                        fontSize: 12, color: Colors.grey),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  TextButton(
-                                    onPressed: id.isEmpty
-                                        ? null
-                                        : () => _toggleCommentDislike(
-                                              commentId: id,
-                                              isReply: false,
-                                            ),
-                                    style: TextButton.styleFrom(
-                                      padding: EdgeInsets.zero,
-                                      minimumSize: const Size(0, 0),
-                                    ),
-                                    child: Text(
-                                        isDisliked ? 'Undislike' : 'Dislike'),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '$dislikesCount',
-                                    style: const TextStyle(
-                                        fontSize: 12, color: Colors.grey),
-                                  ),
-                                ],
-                              ),
-                              TextButton(
-                                onPressed: id.isEmpty
-                                    ? null
-                                    : () {
-                                        setState(() {
-                                          _replyParentId = id;
-                                          _replyingTo = author;
-                                        });
-                                        _focusNode.requestFocus();
-                                      },
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: const Size(0, 0),
-                                ),
-                                child: const Text('Reply'),
-                              ),
-                              if (id.isNotEmpty && replyCount > 0)
-                                TextButton(
-                                  onPressed: isLoadingReplies
-                                      ? null
-                                      : () => _toggleReplies(id),
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: const Size(0, 0),
-                                  ),
+                            ),
+                          );
+                        }
+                        final commentIndex = index - (showAdContext ? 1 : 0);
+                        final c = _comments[commentIndex];
+                        final id = _commentId(c);
+                        final replyCount = _commentReplyCount(c, id);
+                        final showReplies = _expandedReplies.contains(id);
+                        final isLoadingReplies = _loadingReplies.contains(id);
+                        final replies = _repliesByComment[id] ?? const <Map<String, dynamic>>[];
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _commentTile(c: c, isReply: false),
+                            if (id.isNotEmpty && replyCount > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 6, top: 6),
+                                child: TextButton(
+                                  onPressed: isLoadingReplies ? null : () => _toggleReplies(id),
                                   child: Text(
                                     isLoadingReplies
                                         ? 'Loading replies...'
-                                        : (showReplies
-                                            ? 'Hide replies'
-                                            : 'View replies ($replyCount)'),
+                                        : (showReplies ? 'Hide replies' : 'View replies ($replyCount)'),
+                                    style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
                                   ),
                                 ),
-                              if (showReplies)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.only(left: 12, top: 6),
-                                  child: replies.isEmpty
-                                      ? const Text(
-                                          'No replies',
-                                          style: TextStyle(
-                                              fontSize: 12, color: Colors.grey),
-                                        )
-                                      : Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: replies.map((reply) {
-                                            final replyId = _commentId(reply);
-                                            final replyLiked =
-                                                _isCommentLiked(reply);
-                                            final replyLikesCount =
-                                                _commentLikeCount(reply);
-                                            final replyDisliked =
-                                                _isCommentDisliked(reply);
-                                            final replyDislikesCount =
-                                                _commentDislikeCount(reply);
-                                            return Padding(
-                                              padding: const EdgeInsets.only(
-                                                  bottom: 8),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: Text(
-                                                          _commentAuthor(reply),
-                                                          style:
-                                                              const TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            fontSize: 12,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      if (replyId.isNotEmpty)
-                                                        IconButton(
-                                                          icon: const Icon(
-                                                              Icons
-                                                                  .delete_outline,
-                                                              size: 16),
-                                                          tooltip:
-                                                              'Delete reply',
-                                                          onPressed: () =>
-                                                              _deleteComment(
-                                                            commentId: replyId,
-                                                            isReply: true,
-                                                            parentId: id,
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    _commentText(reply).isEmpty
-                                                        ? '-'
-                                                        : _commentText(reply),
-                                                    style: const TextStyle(
-                                                        fontSize: 13),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Row(
-                                                    children: [
-                                                      TextButton(
-                                                        onPressed: replyId
-                                                                .isEmpty
-                                                            ? null
-                                                            : () =>
-                                                                _toggleCommentLike(
-                                                                  commentId:
-                                                                      replyId,
-                                                                  isReply: true,
-                                                                  parentId: id,
-                                                                ),
-                                                        style: TextButton
-                                                            .styleFrom(
-                                                          padding:
-                                                              EdgeInsets.zero,
-                                                          minimumSize:
-                                                              const Size(0, 0),
-                                                        ),
-                                                        child: Text(replyLiked
-                                                            ? 'Unlike'
-                                                            : 'Like'),
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Text(
-                                                        '$replyLikesCount',
-                                                        style: const TextStyle(
-                                                          fontSize: 12,
-                                                          color: Colors.grey,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 10),
-                                                      TextButton(
-                                                        onPressed: replyId
-                                                                .isEmpty
-                                                            ? null
-                                                            : () =>
-                                                                _toggleCommentDislike(
-                                                                  commentId:
-                                                                      replyId,
-                                                                  isReply: true,
-                                                                  parentId: id,
-                                                                ),
-                                                        style: TextButton
-                                                            .styleFrom(
-                                                          padding:
-                                                              EdgeInsets.zero,
-                                                          minimumSize:
-                                                              const Size(0, 0),
-                                                        ),
-                                                        child: Text(
-                                                          replyDisliked
-                                                              ? 'Undislike'
-                                                              : 'Dislike',
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 6),
-                                                      Text(
-                                                        '$replyDislikesCount',
-                                                        style: const TextStyle(
-                                                          fontSize: 12,
-                                                          color: Colors.grey,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }).toList(),
-                                        ),
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-          ),
+                              ),
+                            if (showReplies)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 18, top: 6),
+                                child: replies.isEmpty
+                                    ? Text('No replies', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant))
+                                    : Column(
+                                        children: [
+                                          for (final r in replies) ...[
+                                            _commentTile(c: r, isReply: true, parentId: id),
+                                            if (r != replies.last) const SizedBox(height: 8),
+                                          ],
+                                        ],
+                                      ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+            ),
           if (_replyingTo != null)
             Container(
               width: double.infinity,
@@ -2544,7 +2881,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
               ],
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
