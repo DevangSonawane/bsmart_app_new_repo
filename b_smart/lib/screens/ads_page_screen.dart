@@ -1858,6 +1858,7 @@ class AdCommentsSheet extends StatefulWidget {
 class _AdCommentsSheetState extends State<AdCommentsSheet> {
   final AdsService _adsService = AdsService();
   final AdsApi _adsApi = AdsApi();
+  final SupabaseService _supabase = SupabaseService();
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
@@ -1872,10 +1873,20 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
   String? _replyParentId;
   String? _replyingTo;
   Ad? _ad;
+  final Map<String, Map<String, dynamic>> _userCache =
+      <String, Map<String, dynamic>>{};
+  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
+    () async {
+      final id = await CurrentUser.id;
+      if (!mounted) return;
+      setState(() {
+        _currentUserId = id;
+      });
+    }();
     _loadAd();
     _load();
   }
@@ -1891,14 +1902,97 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     setState(() => _loading = true);
     try {
       final list = await _adsService.fetchAdComments(widget.adId);
+      final hydrated = await _hydrateUsersInComments(list);
       if (!mounted) return;
       setState(() {
-        _comments = list;
+        _comments = hydrated;
       });
-      await _autoLoadRepliesForComments(list);
+      await _autoLoadRepliesForComments(hydrated);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  String _extractUserId(Map<String, dynamic> c) {
+    String? fromMap(dynamic value) {
+      if (value is Map) {
+        final m = Map<String, dynamic>.from(value);
+        final id = (m['_id'] ?? m['id'] ?? m['user_id'] ?? m['userId'])?.toString();
+        if (id != null && id.trim().isNotEmpty) return id.trim();
+      }
+      return null;
+    }
+
+    final direct = (c['user_id'] ?? c['userId'] ?? c['uid'] ?? c['author_id'] ?? c['authorId']);
+    if (direct is String && direct.trim().isNotEmpty) return direct.trim();
+    if (direct is num) return direct.toString();
+    if (direct is Map) {
+      final id = fromMap(direct);
+      if (id != null) return id;
+    }
+    final user = c['user'] ?? c['users'] ?? c['author'] ?? c['posted_by'] ?? c['commented_by'];
+    final id = fromMap(user);
+    return id ?? '';
+  }
+
+  bool _hasName(Map<String, dynamic> u) {
+    final v = (u['username'] ??
+            u['userName'] ??
+            u['user_name'] ??
+            u['full_name'] ??
+            u['fullName'] ??
+            u['name'] ??
+            u['business_name'] ??
+            u['company_name'])
+        ?.toString()
+        .trim();
+    return v != null && v.isNotEmpty;
+  }
+
+  Future<void> _primeUsers(Iterable<String> userIds) async {
+    final missing = userIds.where((id) => id.isNotEmpty && !_userCache.containsKey(id)).toList();
+    if (missing.isEmpty) return;
+
+    final futures = <Future<void>>[];
+    for (final id in missing) {
+      futures.add(() async {
+        try {
+          final u = await _supabase.getUserById(id);
+          if (u == null) return;
+          _userCache[id] = Map<String, dynamic>.from(u);
+        } catch (_) {}
+      }());
+    }
+    await Future.wait(futures);
+  }
+
+  Future<List<Map<String, dynamic>>> _hydrateUsersInComments(
+      List<Map<String, dynamic>> list) async {
+    final ids = <String>{};
+    for (final c in list) {
+      final id = _extractUserId(c);
+      if (id.isNotEmpty) ids.add(id);
+    }
+    await _primeUsers(ids);
+
+    return list.map((c) {
+      final next = Map<String, dynamic>.from(c);
+      final uid = _extractUserId(next);
+      if (uid.isEmpty) return next;
+      final cached = _userCache[uid];
+      if (cached == null) return next;
+      final current = next['user'];
+      if (current is Map) {
+        final merged = Map<String, dynamic>.from(cached);
+        merged.addAll(Map<String, dynamic>.from(current));
+        next['user'] = merged;
+      } else if (!_hasName(next['user'] is Map ? Map<String, dynamic>.from(next['user'] as Map) : <String, dynamic>{})) {
+        next['user'] = cached;
+      } else {
+        next['user'] = cached;
+      }
+      return next;
+    }).toList();
   }
 
   Future<void> _autoLoadRepliesForComments(
@@ -1911,9 +2005,11 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
         try {
           final replies = await _adsService.fetchAdCommentReplies(commentId);
           if (!mounted) return;
-          if (replies.isNotEmpty) {
+          final hydrated = await _hydrateUsersInComments(replies);
+          if (!mounted) return;
+          if (hydrated.isNotEmpty) {
             setState(() {
-              _repliesByComment[commentId] = replies;
+              _repliesByComment[commentId] = hydrated;
             });
           }
         } catch (_) {}
@@ -1975,14 +2071,43 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
   }
 
   String _commentAuthor(Map<String, dynamic> c) {
-    final user = c['user'];
-    if (user is Map) {
-      final username = user['username'] ?? user['full_name'] ?? user['name'];
-      if (username != null && username.toString().trim().isNotEmpty) {
-        return username.toString();
+    Map<String, dynamic>? pick(dynamic value) {
+      if (value is Map) {
+        final m = Map<String, dynamic>.from(value);
+        final nested = m['user'];
+        if (nested is Map) return Map<String, dynamic>.from(nested);
+        return m;
       }
+      return null;
     }
-    return (c['username'] ?? c['author'] ?? 'user').toString();
+
+    final user = pick(c['user']) ??
+        pick(c['user_id']) ??
+        pick(c['userId']) ??
+        pick(c['users']) ??
+        pick(c['author']) ??
+        pick(c['posted_by']) ??
+        pick(c['commented_by']);
+
+    if (user != null) {
+      final username = (user['username'] ??
+              user['full_name'] ??
+              user['name'] ??
+              user['business_name'] ??
+              user['company_name'])
+          ?.toString()
+          .trim();
+      if (username != null && username.isNotEmpty) return username;
+    }
+
+    final fallback = (c['username'] ??
+            c['user_name'] ??
+            c['userName'] ??
+            c['author_name'] ??
+            c['authorName'])
+        ?.toString()
+        .trim();
+    return (fallback != null && fallback.isNotEmpty) ? fallback : 'user';
   }
 
   bool _isCommentLiked(Map<String, dynamic> c) {
@@ -2392,9 +2517,24 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
   }
 
   Map<String, dynamic> _commentUser(Map<String, dynamic> c) {
-    final user = c['user'];
-    if (user is Map) return Map<String, dynamic>.from(user);
-    return <String, dynamic>{};
+    Map<String, dynamic>? pick(dynamic value) {
+      if (value is Map) {
+        final m = Map<String, dynamic>.from(value);
+        final nested = m['user'];
+        if (nested is Map) return Map<String, dynamic>.from(nested);
+        return m;
+      }
+      return null;
+    }
+
+    return pick(c['user']) ??
+        pick(c['user_id']) ??
+        pick(c['userId']) ??
+        pick(c['users']) ??
+        pick(c['author']) ??
+        pick(c['posted_by']) ??
+        pick(c['commented_by']) ??
+        <String, dynamic>{};
   }
 
   String _commentAvatarUrl(Map<String, dynamic> c) {
@@ -2402,6 +2542,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     return (u['avatar_url'] ??
             u['avatarUrl'] ??
             u['avatar'] ??
+            u['profile_image'] ??
+            u['profileImage'] ??
             c['avatar_url'] ??
             '')
         .toString()
@@ -2593,6 +2735,10 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     final created = _commentCreatedAt(c);
     final likeCount = _commentLikeCount(c);
     final liked = _isCommentLiked(c);
+    final ownerId = _extractUserId(c);
+    final isOwner = _currentUserId != null &&
+        ownerId.isNotEmpty &&
+        ownerId.toString() == _currentUserId.toString();
 
     DateTime? dt;
     if (created.isNotEmpty) {
@@ -2600,85 +2746,76 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     }
     final timeLabel = dt == null ? '' : _formatTimestamp(dt);
 
-    final border = isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.08);
-    final surface = isDark ? Colors.white.withValues(alpha: 0.02) : Colors.white;
+    final surface = isDark ? Colors.transparent : Colors.transparent;
+
+    final nameStyle = TextStyle(
+      fontWeight: FontWeight.w700,
+      fontSize: isReply ? 12 : 13,
+      color: theme.colorScheme.onSurface,
+    );
+    final textStyle = TextStyle(
+      fontSize: isReply ? 12 : 13,
+      color: theme.colorScheme.onSurface.withValues(alpha: 0.9),
+      height: 1.2,
+    );
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border),
-      ),
+      color: surface,
+      padding: EdgeInsets.symmetric(vertical: isReply ? 8 : 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _avatar(
             avatarUrl,
             author.isNotEmpty ? author[0].toUpperCase() : 'U',
-            size: 14,
+            size: isReply ? 12 : 14,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Text(author, style: const TextStyle(fontWeight: FontWeight.w700)),
-                          if (isVerified)
-                            const Padding(
-                              padding: EdgeInsets.only(left: 4),
-                              child: Icon(Icons.check_circle, size: 14, color: Colors.blueAccent),
-                            ),
-                          if (timeLabel.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Text(timeLabel, style: theme.textTheme.bodySmall),
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (id.isNotEmpty)
-                      IconButton(
-                        icon: Icon(LucideIcons.trash2, size: 16, color: theme.colorScheme.onSurfaceVariant),
-                        onPressed: () => _deleteComment(
-                          commentId: id,
-                          isReply: isReply,
-                          parentId: parentId,
-                        ),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(text.isEmpty ? '-' : text),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: id.isEmpty
-                          ? null
-                          : () => _toggleCommentLike(
-                                commentId: id,
-                                isReply: isReply,
-                                parentId: parentId,
-                              ),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(0, 0),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(liked ? 'Unlike' : 'Like', style: const TextStyle(fontWeight: FontWeight.w700)),
-                    ),
-                    if (likeCount > 0) ...[
-                      const SizedBox(width: 8),
-                      Text('$likeCount', style: theme.textTheme.bodySmall),
+                RichText(
+                  text: TextSpan(
+                    style: textStyle,
+                    children: [
+                      TextSpan(text: author, style: nameStyle),
+                      if (isVerified)
+                        const WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: Padding(
+                            padding: EdgeInsets.only(left: 4, right: 4),
+                            child: Icon(Icons.check_circle, size: 13, color: Colors.blueAccent),
+                          ),
+                        )
+                      else
+                        const TextSpan(text: '  '),
+                      TextSpan(text: text.isEmpty ? '-' : text),
                     ],
-                    const SizedBox(width: 14),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    if (timeLabel.isNotEmpty)
+                      Text(
+                        timeLabel,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
+                      ),
+                    if (likeCount > 0) ...[
+                      const SizedBox(width: 10),
+                      Text(
+                        '$likeCount likes',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 10),
                     TextButton(
                       onPressed: id.isEmpty
                           ? null
@@ -2694,13 +2831,63 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                         minimumSize: const Size(0, 0),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('Reply', style: TextStyle(fontWeight: FontWeight.w700)),
+                      child: Text(
+                        'Reply',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
+                    if (isOwner && id.isNotEmpty) ...[
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(LucideIcons.trash2, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                        onPressed: () => _deleteComment(
+                          commentId: id,
+                          isReply: isReply,
+                          parentId: parentId,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
                   ],
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 10),
+          if (id.isNotEmpty)
+            SizedBox(
+              width: 34,
+              child: Column(
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      liked ? Icons.favorite : LucideIcons.heart,
+                      size: isReply ? 14 : 16,
+                      color: liked ? Colors.red : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    onPressed: () => _toggleCommentLike(
+                      commentId: id,
+                      isReply: isReply,
+                      parentId: parentId,
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                  if (likeCount > 0)
+                    Text(
+                      '$likeCount',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 10,
+                        color: liked ? Colors.red : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -2757,7 +2944,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
                       itemCount: (showAdContext ? 1 : 0) + (_comments.isEmpty ? 1 : _comments.length),
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      separatorBuilder: (_, __) => Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.35)),
                       itemBuilder: (context, index) {
                         if (showAdContext && index == 0) {
                           return _buildAdContextCard();
@@ -2808,7 +2995,11 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                                         children: [
                                           for (final r in replies) ...[
                                             _commentTile(c: r, isReply: true, parentId: id),
-                                            if (r != replies.last) const SizedBox(height: 8),
+                                            if (r != replies.last)
+                                              Divider(
+                                                height: 1,
+                                                color: theme.dividerColor.withValues(alpha: 0.25),
+                                              ),
                                           ],
                                         ],
                                       ),
@@ -2860,23 +3051,25 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                     maxLines: 4,
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _submit(),
-                    decoration: const InputDecoration(
-                      hintText: 'Add a comment...',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      hintText: _replyingTo != null ? 'Reply to @$_replyingTo...' : 'Add a comment...',
+                      border: InputBorder.none,
                       isDense: true,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _posting ? null : _submit,
+                TextButton(
+                  onPressed: (_posting || _controller.text.trim().isEmpty) ? null : _submit,
                   child: _posting
                       ? const SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Send'),
+                      : const Text(
+                          'Post',
+                          style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF3B82F6)),
+                        ),
                 ),
               ],
             ),

@@ -122,26 +122,28 @@ class _PostCardState extends State<PostCard> {
                       ),
                     ),
                   ),
-                IgnorePointer(
-                  child: Center(
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 180),
-                      opacity: _showDoubleTapLike ? 1 : 0,
-                      child: AnimatedScale(
-                        duration: const Duration(milliseconds: 260),
-                        scale: _showDoubleTapLike ? 1 : 0.6,
-                        curve: Curves.easeOutBack,
-                        child: const Icon(
-                          Icons.favorite,
-                          size: 90,
-                          color: Colors.white,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black54,
-                              blurRadius: 14,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Center(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 180),
+                        opacity: _showDoubleTapLike ? 1 : 0,
+                        child: AnimatedScale(
+                          duration: const Duration(milliseconds: 260),
+                          scale: _showDoubleTapLike ? 1 : 0.6,
+                          curve: Curves.easeOutBack,
+                          child: const Icon(
+                            Icons.favorite,
+                            size: 90,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black54,
+                                blurRadius: 14,
+                                offset: Offset(0, 3),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

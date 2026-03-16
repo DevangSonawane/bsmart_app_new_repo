@@ -200,60 +200,63 @@ class _CommentsSheetState extends State<CommentsSheet> {
     return const [];
   }
 
-  Widget _buildPostIntro(Map<String, dynamic> post) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final user = post['user_id'] is Map
-        ? Map<String, dynamic>.from(post['user_id'] as Map)
-        : post['user'] is Map
-            ? Map<String, dynamic>.from(post['user'] as Map)
-            : post['users'] is Map
-                ? Map<String, dynamic>.from(post['users'] as Map)
-                : <String, dynamic>{};
-    final vendor = post['vendor_id'] is Map
-        ? Map<String, dynamic>.from(post['vendor_id'] as Map)
-        : <String, dynamic>{};
-    final username = (user['username'] ?? vendor['business_name'] ?? post['username'] ?? 'user').toString();
-    final avatar = (user['avatar_url'] ?? vendor['logo_url'] ?? post['avatar_url'])?.toString();
-    final created = (post['created_at'] ?? post['createdAt'] ?? '').toString();
-    final caption = (post['caption'] ?? '').toString();
+  Map<String, dynamic> _commentUserMap(Map<String, dynamic> c) {
+    Map<String, dynamic>? pick(dynamic value) {
+      if (value is Map) {
+        final m = Map<String, dynamic>.from(value);
+        final nested = m['user'];
+        if (nested is Map) return Map<String, dynamic>.from(nested);
+        return m;
+      }
+      return null;
+    }
 
-    final border = isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08);
-    final surface = isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
+    return pick(c['user']) ??
+        pick(c['user_id']) ??
+        pick(c['userId']) ??
+        pick(c['users']) ??
+        pick(c['author']) ??
+        pick(c['posted_by']) ??
+        pick(c['commented_by']) ??
+        <String, dynamic>{};
+  }
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _avatar(avatar, username.isNotEmpty ? username[0].toUpperCase() : 'U', size: 18, ring: avatar != null && avatar.isNotEmpty),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(username, style: const TextStyle(fontWeight: FontWeight.w700)),
-                    Text(_relative(created), style: theme.textTheme.bodySmall),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (caption.trim().isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(caption, style: theme.textTheme.bodyMedium),
-          ],
-        ],
-      ),
-    );
+  String _commentUsername(Map<String, dynamic> c) {
+    final u = _commentUserMap(c);
+    final username = (u['username'] ??
+            u['full_name'] ??
+            u['name'] ??
+            u['business_name'] ??
+            u['company_name'])
+        ?.toString()
+        .trim();
+    if (username != null && username.isNotEmpty) return username;
+    final fallback = (c['username'] ??
+            c['user_name'] ??
+            c['userName'] ??
+            c['author_name'] ??
+            c['authorName'])
+        ?.toString()
+        .trim();
+    return (fallback != null && fallback.isNotEmpty) ? fallback : 'user';
+  }
+
+  String? _commentAvatar(Map<String, dynamic> c) {
+    final u = _commentUserMap(c);
+    final url = (u['avatar_url'] ??
+            u['avatarUrl'] ??
+            u['avatar'] ??
+            u['profile_image'] ??
+            u['profileImage'] ??
+            c['avatar_url'])
+        ?.toString()
+        .trim();
+    return (url != null && url.isNotEmpty) ? url : null;
+  }
+
+  bool _commentVerified(Map<String, dynamic> c) {
+    final u = _commentUserMap(c);
+    return u['is_verified'] == true || u['verified'] == true;
   }
 
   Widget _buildAdInfo(Map<String, dynamic> post) {
@@ -707,44 +710,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
     });
   }
 
-  Future<void> _deleteReply(String parentId, int replyIndex) async {
-    final list = _replies[parentId];
-    if (list == null || replyIndex < 0 || replyIndex >= list.length) return;
-    final reply = list[replyIndex];
-    final id = (reply['_id'] as String?) ?? (reply['id'] as String?) ?? '';
-    if (id.isEmpty) return;
-    final ok = await _svc.deleteComment(id);
-    if (!ok || !mounted) return;
-
-    setState(() {
-      list.removeAt(replyIndex);
-      final parentIndex = _comments.indexWhere((c) {
-        final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
-        return cid == parentId;
-      });
-      if (parentIndex >= 0) {
-        final parent = Map<String, dynamic>.from(_comments[parentIndex]);
-        final current = (parent['replies_count'] as int?) ??
-            (parent['reply_count'] as int?) ??
-            (parent['replyCount'] as int?) ??
-            (parent['repliesCount'] as int?) ??
-            0;
-        final next = current > 0 ? current - 1 : 0;
-        parent['replies_count'] = next;
-        parent['reply_count'] = next;
-        _comments[parentIndex] = parent;
-      }
-      _svc.setRepliesCache(parentId, list);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDesktop = MediaQuery.of(context).size.width >= 768;
     final showAdInfo = !_loadingPost && _isAdPost(_post);
-    final showPostIntro = !_loadingPost && _post != null;
-    final introCount = showPostIntro ? 1 : 0;
+    const introCount = 0;
     final adCount = showAdInfo ? 1 : 0;
     return SafeArea(
       child: Padding(
@@ -795,7 +766,6 @@ class _CommentsSheetState extends State<CommentsSheet> {
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: introCount + adCount + (_comments.isEmpty ? 1 : _comments.length),
                       itemBuilder: (context, i) {
-                        if (showPostIntro && i == 0) return _buildPostIntro(_post!);
                         if (showAdInfo && i == introCount) return _buildAdInfo(_post!);
                         if (_comments.isEmpty) {
                           return Center(
@@ -811,13 +781,13 @@ class _CommentsSheetState extends State<CommentsSheet> {
                         }
                         final idx = i - introCount - adCount;
                         final c = _comments[idx];
-                            final u = c['user'] as Map<String, dynamic>? ?? {};
-                            final un = u['username'] as String? ?? 'user';
-                            final av = u['avatar_url'] as String?;
+                            final un = _commentUsername(c);
+                            final av = _commentAvatar(c);
                             final content = c['content'] as String? ?? c['text'] as String? ?? '';
                             final created = c['created_at'] as String? ?? c['createdAt'] as String? ?? '';
                             final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
-                            final isVerified = (u['is_verified'] as bool?) ?? false;
+                            final isVerified = _commentVerified(c);
+                            final u = _commentUserMap(c);
                             final userIdValue = (u['id'] ?? u['_id'] ?? u['user_id'])?.toString();
                             return Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -851,58 +821,61 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                                 child: Column(
                                                   crossAxisAlignment: CrossAxisAlignment.start,
                                                   children: [
+                                                    RichText(
+                                                      text: TextSpan(
+                                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                                          color: isPending
+                                                              ? theme.colorScheme.onSurfaceVariant
+                                                              : theme.textTheme.bodyMedium?.color,
+                                                          height: 1.15,
+                                                        ),
+                                                        children: [
+                                                          TextSpan(
+                                                            text: un,
+                                                            style: const TextStyle(fontWeight: FontWeight.w700),
+                                                          ),
+                                                          if (isVerified)
+                                                            const WidgetSpan(
+                                                              alignment: PlaceholderAlignment.middle,
+                                                              child: Padding(
+                                                                padding: EdgeInsets.only(left: 4, right: 4),
+                                                                child: Icon(Icons.check_circle, size: 13, color: Colors.blueAccent),
+                                                              ),
+                                                            )
+                                                          else
+                                                            const TextSpan(text: '  '),
+                                                          TextSpan(text: content.isEmpty ? '-' : content),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 6),
                                                     Row(
                                                       children: [
-                                                        GestureDetector(
-                                                          onTap: userIdValue != null && userIdValue.isNotEmpty
-                                                              ? () => Navigator.of(context).pushNamed('/profile/$userIdValue')
-                                                              : null,
-                                                          child: Text(un, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                                        ),
-                                                        if (isVerified)
-                                                          const Padding(
-                                                            padding: EdgeInsets.only(left: 4),
-                                                            child: Icon(Icons.check_circle, size: 14, color: Colors.blueAccent),
-                                                          ),
-                                                        const SizedBox(width: 8),
                                                         Text(_relative(created), style: theme.textTheme.bodySmall),
+                                                        if (likesCount > 0) ...[
+                                                          const SizedBox(width: 10),
+                                                          Text(
+                                                            '$likesCount ${likesCount == 1 ? 'like' : 'likes'}',
+                                                            style: theme.textTheme.bodySmall,
+                                                          ),
+                                                        ],
+                                                        const SizedBox(width: 10),
+                                                        TextButton(
+                                                          onPressed: cid.isEmpty ? null : () => _startReply(cid, un),
+                                                          style: TextButton.styleFrom(
+                                                            padding: EdgeInsets.zero,
+                                                            minimumSize: Size.zero,
+                                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                          ),
+                                                          child: Text(
+                                                            'Reply',
+                                                            style: theme.textTheme.bodySmall?.copyWith(
+                                                              fontWeight: FontWeight.w700,
+                                                            ),
+                                                          ),
+                                                        ),
                                                       ],
                                                     ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  content,
-                                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                                    color: isPending ? theme.colorScheme.onSurfaceVariant : theme.textTheme.bodyMedium?.color,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Row(
-                                                  children: [
-                                                    Text(_relative(created), style: theme.textTheme.bodySmall),
-                                                    if (likesCount > 0) ...[
-                                                      const SizedBox(width: 10),
-                                                      Text(
-                                                        '$likesCount ${likesCount == 1 ? 'like' : 'likes'}',
-                                                        style: theme.textTheme.bodySmall,
-                                                      ),
-                                                    ],
-                                                    const SizedBox(width: 10),
-                                                    TextButton(
-                                                      onPressed: () => _startReply(cid, un),
-                                                      style: TextButton.styleFrom(
-                                                        padding: EdgeInsets.zero,
-                                                        minimumSize: Size.zero,
-                                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                                      ),
-                                                      child: Text(
-                                                        'Reply',
-                                                        style: theme.textTheme.bodySmall?.copyWith(
-                                                          fontWeight: FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
                                               ],
                                             ),
                                           ),
@@ -927,17 +900,6 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                                   Text(
                                                     '$likesCount',
                                                     style: theme.textTheme.bodySmall,
-                                                  ),
-                                                if (isMine)
-                                                  IconButton(
-                                                    icon: Icon(
-                                                      LucideIcons.trash2,
-                                                      size: 14,
-                                                      color: theme.colorScheme.onSurfaceVariant,
-                                                    ),
-                                                    onPressed: () => _delete(c, idx),
-                                                    padding: EdgeInsets.zero,
-                                                    constraints: const BoxConstraints(),
                                                   ),
                                               ],
                                             ),
@@ -995,22 +957,18 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: _replies[cid]!
                                                 .map((r) {
-                                                  final ru = r['user'] as Map<String, dynamic>?;
-                                                  final rn = ru?['username'] as String? ?? 'user';
-                                                  final rav = ru?['avatar_url'] as String?;
+                                                  final rn = _commentUsername(r);
+                                                  final rav = _commentAvatar(r);
                                                   final rcontent = r['content'] as String? ?? r['text'] as String? ?? '';
                                                   final rcreated = r['created_at'] as String? ?? r['createdAt'] as String? ?? '';
+                                                  final rIsVerified = _commentVerified(r);
+                                                  final rUser = _commentUserMap(r);
                                                   final rLiked = _liked.contains(
                                                     (r['_id'] as String?) ?? (r['id'] as String?) ?? '',
                                                   );
                                                   final rLikesCount = (r['likes_count'] as int?) ?? 0;
                                                   final rUserIdValue =
-                                                      (ru?['id'] ?? ru?['_id'] ?? ru?['user_id'])?.toString();
-                                                  final myId = snap.data;
-                                                  final rIsMine = myId != null &&
-                                                      ((ru?['id'] as String?) == myId ||
-                                                          (ru?['_id'] as String?) == myId ||
-                                                          (ru?['user_id'] as String?) == myId);
+                                                      (rUser['id'] ?? rUser['_id'] ?? rUser['user_id'])?.toString();
                                                   return Padding(
                                                     padding: const EdgeInsets.symmetric(vertical: 6),
                                                     child: Row(
@@ -1034,16 +992,37 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                                                     : null,
                                                                 child: RichText(
                                                                   text: TextSpan(
-                                                                    style: theme.textTheme.bodyMedium,
+                                                                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.15),
                                                                     children: [
-                                                                      TextSpan(text: '$rn ', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                                                      TextSpan(text: rcontent),
+                                                                      TextSpan(text: rn, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                                                      if (rIsVerified)
+                                                                        const WidgetSpan(
+                                                                          alignment: PlaceholderAlignment.middle,
+                                                                          child: Padding(
+                                                                            padding: EdgeInsets.only(left: 4, right: 4),
+                                                                            child: Icon(Icons.check_circle, size: 12, color: Colors.blueAccent),
+                                                                          ),
+                                                                        )
+                                                                      else
+                                                                        const TextSpan(text: '  '),
+                                                                      TextSpan(text: rcontent.isEmpty ? '-' : rcontent),
                                                                     ],
                                                                   ),
                                                                 ),
                                                               ),
                                                               const SizedBox(height: 2),
-                                                              Text(_relative(rcreated), style: theme.textTheme.bodySmall),
+                                                              Row(
+                                                                children: [
+                                                                  Text(_relative(rcreated), style: theme.textTheme.bodySmall),
+                                                                  if (rLikesCount > 0) ...[
+                                                                    const SizedBox(width: 10),
+                                                                    Text(
+                                                                      '$rLikesCount ${rLikesCount == 1 ? 'like' : 'likes'}',
+                                                                      style: theme.textTheme.bodySmall,
+                                                                    ),
+                                                                  ],
+                                                                ],
+                                                              ),
                                                             ],
                                                           ),
                                                         ),
@@ -1066,20 +1045,6 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                                                 Text(
                                                                   '$rLikesCount',
                                                                   style: theme.textTheme.bodySmall,
-                                                                ),
-                                                              if (rIsMine)
-                                                                IconButton(
-                                                                  onPressed: () => _deleteReply(
-                                                                    cid,
-                                                                    _replies[cid]!.indexOf(r),
-                                                                  ),
-                                                                  icon: Icon(
-                                                                    LucideIcons.trash2,
-                                                                    size: 12,
-                                                                    color: theme.colorScheme.onSurfaceVariant,
-                                                                  ),
-                                                                  padding: EdgeInsets.zero,
-                                                                  constraints: const BoxConstraints(),
                                                                 ),
                                                             ],
                                                           ),
