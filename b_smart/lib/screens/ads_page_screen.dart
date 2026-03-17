@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../api/api_client.dart';
 import '../api/ads_api.dart';
@@ -34,6 +33,21 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   String _selectedCategoryId = 'All';
   String _searchQuery = '';
   List<Ad> _ads = [];
+  bool _categoriesExpanded = false;
+
+  List<AdCategory> _ensureAllFirst(List<AdCategory> categories) {
+    final allIndex = categories.indexWhere((c) {
+      final id = c.id.trim().toLowerCase();
+      final name = c.name.trim().toLowerCase();
+      return id == 'all' || name == 'all' || (id.startsWith('all') && id.length <= 4) || (name.startsWith('all') && name.length <= 4);
+    });
+    if (allIndex <= 0) return categories;
+
+    final reordered = List<AdCategory>.from(categories);
+    final allCategory = reordered.removeAt(allIndex);
+    reordered.insert(0, allCategory);
+    return reordered;
+  }
 
   // Pagination state
   int _page = 1;
@@ -73,13 +87,14 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
 
     try {
       final categories = await _adsService.fetchCategories();
+      final orderedCategories = _ensureAllFirst(categories);
       final hasSelectedCategory =
-          categories.any((c) => c.id == _selectedCategoryId);
+          orderedCategories.any((c) => c.id == _selectedCategoryId);
       final selectedCategory =
           hasSelectedCategory ? _selectedCategoryId : 'All';
       if (!mounted) return;
       setState(() {
-        _categories = categories;
+        _categories = orderedCategories;
         _selectedCategoryId = selectedCategory;
         _focusedIndex = 0;
       });
@@ -477,6 +492,44 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   }
 
   Widget _buildTopBar({required bool isDesktop}) {
+    final backIconColor = isDesktop ? Colors.white70 : Colors.white;
+    final backIconSize = isDesktop ? 22.0 : 28.0;
+    final searchIconColor = isDesktop ? Colors.white70 : Colors.white;
+    final searchIconSize = isDesktop ? 20.0 : 24.0;
+
+    Widget toggleButton() {
+      return IconButton(
+        onPressed: () => setState(() => _categoriesExpanded = !_categoriesExpanded),
+        icon: AnimatedRotation(
+          turns: _categoriesExpanded ? 0.5 : 0.0,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeInOutCubic,
+          child: Icon(LucideIcons.chevronLeft, color: backIconColor, size: backIconSize),
+        ),
+      );
+    }
+
+    Widget searchButton() {
+      return IconButton(
+        icon: Icon(LucideIcons.search, color: searchIconColor, size: searchIconSize),
+        onPressed: _openSearchDialog,
+      );
+    }
+
+    Widget inlineCategories() {
+      if (_categories.isEmpty) return const SizedBox.shrink();
+      return SizedBox(
+        height: 44,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          children: _categories
+              .map((c) => _buildCategoryChip(c.id, c.name, isDesktop))
+              .toList(),
+        ),
+      );
+    }
+
     return Container(
       padding: EdgeInsets.symmetric(
         vertical: isDesktop ? 6 : 8,
@@ -488,46 +541,36 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              IconButton(
-                icon: Icon(
-                  LucideIcons.chevronLeft,
-                  color: isDesktop ? Colors.white70 : Colors.white,
-                  size: isDesktop ? 22 : 28,
-                ),
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: Icon(
-                  LucideIcons.search,
-                  color: isDesktop ? Colors.white70 : Colors.white,
-                  size: isDesktop ? 20 : 24,
-                ),
-                onPressed: _openSearchDialog,
-              ),
-            ],
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              final slide = Tween<Offset>(begin: const Offset(0.18, 0), end: Offset.zero).animate(animation);
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(position: slide, child: child),
+              );
+            },
+            child: _categoriesExpanded
+                ? Row(
+                    key: const ValueKey('expanded'),
+                    children: [
+                      toggleButton(),
+                      Expanded(child: inlineCategories()),
+                      searchButton(),
+                    ],
+                  )
+                : Row(
+                    key: const ValueKey('collapsed'),
+                    children: [
+                      const Spacer(),
+                      toggleButton(),
+                      searchButton(),
+                    ],
+                  ),
           ),
-          if (_categories.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.only(top: isDesktop ? 6 : 2),
-              child: _buildBottomCategoryBar(isDesktop: isDesktop),
-            ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBottomCategoryBar({required bool isDesktop}) {
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        children: _categories
-            .map((c) => _buildCategoryChip(c.id, c.name, isDesktop))
-            .toList(),
       ),
     );
   }
@@ -669,9 +712,6 @@ class _AdVideoItemState extends State<AdVideoItem>
   Timer? _likeRewardTimer;
   _LikeRewardPopupData? _likeRewardPopup;
 
-  // Animation for music disc
-  late AnimationController _discController;
-
   Future<void> _safeSetVolume(double volume) async {
     final controller = _controller;
     if (controller == null) return;
@@ -702,13 +742,8 @@ class _AdVideoItemState extends State<AdVideoItem>
     _isLiked = widget.ad.isLikedByMe;
     _isSaved = widget.ad.isSavedByMe;
     _likesCount = widget.ad.likesCount;
-    _discController = AnimationController(
-      duration: const Duration(seconds: 5),
-      vsync: this,
-    );
     _loadMediaHeaders();
     unawaited(_loadFollowState());
-    if (widget.isActive) _discController.repeat();
     _initializeVideo();
     _startOrStopProgress();
   }
@@ -737,12 +772,10 @@ class _AdVideoItemState extends State<AdVideoItem>
         _userPaused = false;
         unawaited(_safeSetVolume(_isMuted ? 0 : 1));
         unawaited(_safePlay());
-        _discController.repeat();
       } else {
         unawaited(_safeSetVolume(0));
         _userPaused = true;
         unawaited(_safePause());
-        _discController.stop();
       }
       _startOrStopProgress();
     }
@@ -754,7 +787,6 @@ class _AdVideoItemState extends State<AdVideoItem>
     _controller?.dispose();
     _imageProgressTimer?.cancel();
     _likeRewardTimer?.cancel();
-    _discController.dispose();
     super.dispose();
   }
 
@@ -920,12 +952,10 @@ class _AdVideoItemState extends State<AdVideoItem>
       if (_controller!.value.isPlaying) {
         _userPaused = true;
         unawaited(_safePause());
-        _discController.stop();
       } else {
         _userPaused = false;
         unawaited(_safeSetVolume(_isMuted ? 0 : 1));
         unawaited(_safePlay());
-        _discController.repeat();
       }
     });
   }
@@ -1205,16 +1235,19 @@ class _AdVideoItemState extends State<AdVideoItem>
 
         // 2. Progress Bar (Top)
         Positioned(
-          top: 0,
           left: 0,
           right: 0,
-          child: Container(
-            height: 2.5,
-            color: Colors.white.withValues(alpha: 0.22),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: _progress,
-              child: Container(color: Colors.white),
+          bottom: 0,
+          child: SafeArea(
+            top: false,
+            child: Container(
+              height: 2.5,
+              color: Colors.white.withValues(alpha: 0.22),
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: _progress,
+                child: Container(color: Colors.white),
+              ),
             ),
           ),
         ),
@@ -1255,6 +1288,12 @@ class _AdVideoItemState extends State<AdVideoItem>
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildGlassAction(
+                icon: LucideIcons.eye,
+                label: _formatCount(widget.ad.currentViews),
+                onTap: () {},
+              ),
+              const SizedBox(height: 16),
+              _buildGlassAction(
                 icon: _isLiked ? Icons.favorite : LucideIcons.heart,
                 label: _formatCount(_likesCount),
                 iconColor: _isLiked ? Colors.red : Colors.white,
@@ -1281,45 +1320,22 @@ class _AdVideoItemState extends State<AdVideoItem>
                 iconColor: Colors.white,
                 onTap: _toggleSaveAd,
               ),
-              const SizedBox(height: 16),
-              _buildGlassAction(
-                icon: Icons.more_horiz,
-                label: '',
-                onTap: () {},
-              ),
-              const SizedBox(height: 24),
-              // Spinning Disc
-              _buildMusicDisc(),
+              if (_isVideoAd) ...[
+                const SizedBox(height: 16),
+                _buildGlassAction(
+                  icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                  label: _isMuted ? 'Unmute' : 'Mute',
+                  onTap: () {
+                    setState(() {
+                      _isMuted = !_isMuted;
+                      unawaited(_safeSetVolume(_isMuted ? 0 : 1));
+                    });
+                  },
+                ),
+              ],
             ],
           ),
         ),
-
-        // 4. Mute Button (Floating) - video ads only
-        if (_isVideoAd)
-          Positioned(
-            right: 60,
-            bottom: 140,
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _isMuted = !_isMuted;
-                  unawaited(_safeSetVolume(_isMuted ? 0 : 1));
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                  color: Colors.white,
-                  size: 16,
-                ),
-              ),
-            ),
-          ),
 
         // 5. Bottom Info Overlay
         Positioned(
@@ -1332,6 +1348,7 @@ class _AdVideoItemState extends State<AdVideoItem>
             children: [
               // User/Company Info
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
                     decoration: BoxDecoration(
@@ -1362,175 +1379,166 @@ class _AdVideoItemState extends State<AdVideoItem>
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Row(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Flexible(
-                          child: Text(
-                            widget.ad.vendorBusinessName ??
-                                widget.ad.userName ??
-                                widget.ad.companyName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                widget.ad.vendorBusinessName ??
+                                    widget.ad.userName ??
+                                    widget.ad.companyName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        if (widget.ad.totalBudgetCoins > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withValues(alpha: 0.2),
-                              border: Border.all(
-                                  color: Colors.amber.withValues(alpha: 0.4)),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(LucideIcons.coins,
-                                    color: Colors.amber, size: 10),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _formatCount(widget.ad.totalBudgetCoins),
+                            const SizedBox(width: 8),
+                            if (widget.ad.totalBudgetCoins > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.2),
+                                  border: Border.all(
+                                      color:
+                                          Colors.amber.withValues(alpha: 0.4)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(LucideIcons.coins,
+                                        color: Colors.amber, size: 10),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _formatCount(widget.ad.totalBudgetCoins),
+                                      style: const TextStyle(
+                                        color: Colors.amberAccent,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _isFollowing
+                                    ? Colors.green.withValues(alpha: 0.15)
+                                    : Colors.white.withValues(alpha: 0.1),
+                                border: Border.all(
+                                    color: _isFollowing
+                                        ? Colors.green.withValues(alpha: 0.45)
+                                        : Colors.white.withValues(alpha: 0.4)),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: GestureDetector(
+                                onTap:
+                                    _isFollowLoading ? null : _toggleFollow,
+                                child: Text(
+                                  _isFollowLoading
+                                      ? '...'
+                                      : (_isFollowing
+                                          ? 'Following'
+                                          : 'Follow'),
                                   style: const TextStyle(
-                                    color: Colors.amberAccent,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if ((widget.ad.category ?? '').isNotEmpty ||
+                            widget.ad.targetCategories.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.ad.targetCategories.isNotEmpty
+                                ? widget.ad.targetCategories.join(' • ')
+                                : (widget.ad.category ?? ''),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Builder(builder: (context) {
+                          final caption =
+                              (widget.ad.caption ?? widget.ad.description)
+                                      .trim()
+                                      .isEmpty
+                                  ? 'Sponsored'
+                                  : (widget.ad.caption ?? widget.ad.description);
+                          final words = caption.trim().split(RegExp(r'\s+'));
+                          final isLong = words.length > 5;
+                          final preview =
+                              isLong ? words.take(5).join(' ') : caption;
+                          return RichText(
+                            text: TextSpan(
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  height: 1.4),
+                              children: [
+                                TextSpan(
+                                    text: _captionExpanded || !isLong
+                                        ? caption
+                                        : preview),
+                                if (!_captionExpanded && isLong)
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: GestureDetector(
+                                      onTap: () => setState(
+                                          () => _captionExpanded = true),
+                                      child: const Padding(
+                                        padding: EdgeInsets.only(left: 3),
+                                        child: Text(
+                                          '... more',
+                                          style: TextStyle(
+                                            color: Color(0xCCFFFFFF),
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                if (_captionExpanded && isLong)
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: GestureDetector(
+                                      onTap: () => setState(
+                                          () => _captionExpanded = false),
+                                      child: const Padding(
+                                        padding: EdgeInsets.only(left: 4),
+                                        child: Text(
+                                          'less',
+                                          style: TextStyle(
+                                            color: Color(0xCCFFFFFF),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
-                          ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _isFollowing
-                                ? Colors.green.withValues(alpha: 0.15)
-                                : Colors.white.withValues(alpha: 0.1),
-                            border: Border.all(
-                                color: _isFollowing
-                                    ? Colors.green.withValues(alpha: 0.45)
-                                    : Colors.white.withValues(alpha: 0.4)),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: GestureDetector(
-                            onTap: _isFollowLoading ? null : _toggleFollow,
-                            child: Text(
-                              _isFollowLoading
-                                  ? '...'
-                                  : (_isFollowing ? 'Following' : 'Follow'),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
+                          );
+                        }),
                       ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              // Description
-              Builder(builder: (context) {
-                final caption =
-                    (widget.ad.caption ?? widget.ad.description).trim().isEmpty
-                        ? 'Sponsored'
-                        : (widget.ad.caption ?? widget.ad.description);
-                final words = caption.trim().split(RegExp(r'\s+'));
-                final isLong = words.length > 5;
-                final preview = isLong ? words.take(5).join(' ') : caption;
-                return RichText(
-                  text: TextSpan(
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 14, height: 1.4),
-                    children: [
-                      TextSpan(
-                          text:
-                              _captionExpanded || !isLong ? caption : preview),
-                      if (!_captionExpanded && isLong)
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: GestureDetector(
-                            onTap: () =>
-                                setState(() => _captionExpanded = true),
-                            child: const Padding(
-                              padding: EdgeInsets.only(left: 3),
-                              child: Text(
-                                '... more',
-                                style: TextStyle(
-                                  color: Color(0xCCFFFFFF),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (_captionExpanded && isLong)
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: GestureDetector(
-                            onTap: () =>
-                                setState(() => _captionExpanded = false),
-                            child: const Padding(
-                              padding: EdgeInsets.only(left: 4),
-                              child: Text(
-                                'less',
-                                style: TextStyle(
-                                  color: Color(0xCCFFFFFF),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 4),
-
-              // Category
-              if ((widget.ad.category ?? '').isNotEmpty ||
-                  widget.ad.targetCategories.isNotEmpty)
-                Text(
-                  widget.ad.category ?? widget.ad.targetCategories.first,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 12,
-                  ),
-                ),
-
-              const SizedBox(height: 8),
-
-              // Music/Audio
-              Row(
-                children: [
-                  const Icon(LucideIcons.music2,
-                      color: Colors.white70, size: 12),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: SizedBox(
-                      height: 20,
-                      child: MarqueeWidget(
-                        text:
-                            '${widget.ad.targetLocations.isEmpty ? 'Global' : widget.ad.targetLocations.join(', ')}'
-                            ' · '
-                            '${widget.ad.targetLanguages.isEmpty ? 'All Languages' : widget.ad.targetLanguages.join(', ')}',
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12),
-                      ),
                     ),
                   ),
                 ],
@@ -1600,7 +1608,7 @@ class _AdVideoItemState extends State<AdVideoItem>
             ),
           ),
           if (label.isNotEmpty) ...[
-            const SizedBox(height: 4),
+              const SizedBox(height: 0),
             Text(
               label,
               style: const TextStyle(
@@ -1617,35 +1625,6 @@ class _AdVideoItemState extends State<AdVideoItem>
             ),
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _buildMusicDisc() {
-    return AnimatedBuilder(
-      animation: _discController,
-      builder: (context, child) {
-        return Transform.rotate(
-          angle: _discController.value * 2 * math.pi,
-          child: child,
-        );
-      },
-      child: Container(
-        width: 36,
-        height: 36,
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: Colors.black87,
-          shape: BoxShape.circle,
-          border:
-              Border.all(color: Colors.white.withValues(alpha: 0.2), width: 8),
-        ),
-        child: CircleAvatar(
-          backgroundImage: widget.ad.companyLogo != null
-              ? NetworkImage(widget.ad.companyLogo!)
-              : null,
-          backgroundColor: Colors.grey[800],
-        ),
       ),
     );
   }

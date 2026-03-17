@@ -10,6 +10,20 @@ class AdsService {
 
   final AdsApi _adsApi = AdsApi();
 
+  List<AdCategory> _ensureAllFirst(List<AdCategory> categories) {
+    final allIndex = categories.indexWhere((c) {
+      final id = c.id.trim().toLowerCase();
+      final name = c.name.trim().toLowerCase();
+      return id == 'all' || name == 'all' || (id.startsWith('all') && id.length <= 4) || (name.startsWith('all') && name.length <= 4);
+    });
+    if (allIndex <= 0) return categories;
+
+    final reordered = List<AdCategory>.from(categories);
+    final allCategory = reordered.removeAt(allIndex);
+    reordered.insert(0, allCategory);
+    return reordered;
+  }
+
   static const List<String> fallbackCategories = [
     'All',
     'Accessories',
@@ -49,9 +63,9 @@ class AdsService {
 
         final hasAll = apiCategories.any((c) => c.id.toLowerCase() == 'all');
         if (!hasAll) {
-          return [AdCategory(id: 'All', name: 'All'), ...apiCategories];
+          return _ensureAllFirst([AdCategory(id: 'All', name: 'All'), ...apiCategories]);
         }
-        return apiCategories;
+        return _ensureAllFirst(apiCategories);
       }
     } catch (_) {
       // Graceful fallback to local categories if categories endpoint fails.
@@ -61,9 +75,10 @@ class AdsService {
   }
 
   List<AdCategory> getFallbackCategories() {
-    return fallbackCategories
+    final categories = fallbackCategories
         .map((name) => AdCategory(id: name, name: name))
         .toList();
+    return _ensureAllFirst(categories);
   }
 
   String _prettyCategoryName(String raw) {

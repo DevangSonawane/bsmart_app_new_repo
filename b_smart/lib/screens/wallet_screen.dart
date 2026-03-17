@@ -594,6 +594,8 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
             )
           else
             ListView.separated(
+              padding: EdgeInsets.zero,
+              primary: false,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: filtered.length,
