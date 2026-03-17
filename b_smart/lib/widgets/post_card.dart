@@ -46,6 +46,7 @@ class _PostCardState extends State<PostCard> {
   bool _showDoubleTapLike = false;
   Timer? _doubleTapLikeTimer;
   bool _isMuted = VideoPool.instance.isMuted;
+  bool _showPeopleTags = false;
 
   bool get _isVideo =>
       widget.post.mediaType == PostMediaType.video ||
@@ -72,6 +73,33 @@ class _PostCardState extends State<PostCard> {
     unawaited(VideoPool.instance.setMuted(next));
   }
 
+  void _togglePeopleTags() {
+    if ((widget.post.peopleTags?.isNotEmpty ?? false) == false) return;
+    setState(() => _showPeopleTags = !_showPeopleTags);
+  }
+
+  String _tagUsername(Map<String, dynamic> t) {
+    final direct = (t['username'] ?? t['user_name'] ?? t['userName'])?.toString();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final user = t['user'];
+    if (user is Map) {
+      final u = Map<String, dynamic>.from(user);
+      final name = (u['username'] ?? u['user_name'] ?? u['userName'])?.toString();
+      if (name != null && name.isNotEmpty) return name;
+    }
+    return '';
+  }
+
+  Offset? _tagOffset(Map<String, dynamic> t, Size size) {
+    if (size.width <= 0 || size.height <= 0) return null;
+    final xAny = t['x'] ?? t['pos_x'] ?? t['position_x'];
+    final yAny = t['y'] ?? t['pos_y'] ?? t['position_y'];
+    if (xAny is! num || yAny is! num) return null;
+    final x = xAny.toDouble().clamp(0.0, 1.0);
+    final y = yAny.toDouble().clamp(0.0, 1.0);
+    return Offset(x * size.width, y * size.height);
+  }
+
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
@@ -93,15 +121,88 @@ class _PostCardState extends State<PostCard> {
                   isVideo: _isVideo,
                   isActive: widget.isActive && widget.isTabActive,
                 ),
+                if (_showPeopleTags && (post.peopleTags?.isNotEmpty ?? false))
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: false,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final size = constraints.biggest;
+                          final tags = post.peopleTags ?? const [];
+                          return Stack(
+                            children: [
+                              for (final raw in tags)
+                                () {
+                                  final t = Map<String, dynamic>.from(raw);
+                                  final name = _tagUsername(t);
+                                  final pos = _tagOffset(t, size);
+                                  if (name.isEmpty || pos == null) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Positioned(
+                                    left: pos.dx - 8,
+                                    top: pos.dy - 34,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.65),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      child: Text(
+                                        name,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }(),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 Positioned.fill(
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
                       onDoubleTap: _handleDoubleTap,
-                      onTap: _isVideo ? null : widget.onComment,
+                      onTap: _isVideo
+                          ? null
+                          : () {
+                              if (_showPeopleTags) {
+                                setState(() => _showPeopleTags = false);
+                                return;
+                              }
+                              widget.onComment?.call();
+                            },
+                      onLongPress: _isVideo ? null : _togglePeopleTags,
                     ),
                   ),
                 ),
+                if (post.peopleTags?.isNotEmpty ?? false)
+                  Positioned(
+                    bottom: 10,
+                    left: 10,
+                    child: GestureDetector(
+                      onTap: _togglePeopleTags,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.person_outline,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ),
                 if (_isVideo)
                   Positioned(
                     bottom: 10,
