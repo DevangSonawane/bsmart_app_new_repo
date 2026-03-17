@@ -1,9 +1,14 @@
 import 'dart:io';
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
-import '../models/media_model.dart';
+import 'dart:math' as math;
+import 'package:extended_image/extended_image.dart';
+import '../models/media_model.dart' as app_models;
 import '../services/create_service.dart';
-import 'create_post_details_screen.dart';
+import 'create_post_screen.dart';
 import 'create_reel_details_screen.dart';
 import 'edit_video_screen.dart';
 
@@ -39,14 +44,32 @@ class _PreviewTextOverlay {
   }
 }
 
+class _ImageToolSpec {
+  final String key;
+  final String label;
+  final IconData icon;
+  final int min;
+  final int max;
+
+  const _ImageToolSpec({
+    required this.key,
+    required this.label,
+    required this.icon,
+    this.min = -100,
+    this.max = 100,
+  });
+}
+
 class CreateEditPreviewScreen extends StatefulWidget {
-  final MediaItem media;
+  final app_models.MediaItem media;
   final String? selectedFilter;
+  final bool isPostFlow;
 
   const CreateEditPreviewScreen({
     super.key,
     required this.media,
     this.selectedFilter,
+    this.isPostFlow = false,
   });
 
   @override
@@ -55,7 +78,7 @@ class CreateEditPreviewScreen extends StatefulWidget {
 
 class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   final CreateService _createService = CreateService();
-  late MediaItem _currentMedia;
+  late app_models.MediaItem _currentMedia;
   String? _selectedFilter;
   String? _selectedFilterName;
   String? _selectedMusic;
@@ -71,6 +94,39 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   Offset _textLastFocalPoint = Offset.zero;
   double _textTransformBaseScale = 1.0;
   double _textTransformBaseRotation = 0.0;
+  double? _imageAspectRatio;
+  Size? _imagePixelSize;
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageStreamListener;
+  final GlobalKey<ExtendedImageGestureState> _postGestureKey = GlobalKey<ExtendedImageGestureState>();
+  Size? _postViewportSize;
+  Map<String, int> _imageAdjustments = <String, int>{
+    'brightness': 0,
+    'contrast': 0,
+    'saturate': 0,
+    'lux': 0,
+    'sepia': 0,
+    'opacity': 0,
+    'vignette': 0,
+  };
+
+  double _clampInstagramPostAspect(double aspect) {
+    if (aspect.isNaN || aspect.isInfinite || aspect <= 0) return 1.0;
+    const minLandscape = 1.91;
+    const maxPortrait = 4 / 5; // 0.8
+    return aspect.clamp(maxPortrait, minLandscape);
+  }
+
+  double _postFrameAspect() {
+    if (widget.media.type == app_models.MediaType.video) {
+      final controller = _videoController;
+      final a = (controller != null && controller.value.isInitialized)
+          ? controller.value.aspectRatio
+          : 1.0;
+      return _clampInstagramPostAspect(a);
+    }
+    return _clampInstagramPostAspect(_imageAspectRatio ?? 1.0);
+  }
 
   List<double> _buildFilterMatrixBase({double brightness = 1, double contrast = 1, double saturation = 1}) {
     final b = brightness;
@@ -148,6 +204,79 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     );
   }
 
+  List<double> _buildAdjustmentMatrix({
+    required double brightness,
+    required double contrast,
+    required double saturation,
+  }) {
+    final b = brightness;
+    final c = contrast;
+    final s = saturation;
+    final invSat = 1 - s;
+    const lr = 0.2126, lg = 0.7152, lb = 0.0722;
+    final scale = c * b;
+    return [
+      (invSat * lr + s) * scale, invSat * lg * scale, invSat * lb * scale, 0, 0,
+      invSat * lr * scale, (invSat * lg + s) * scale, invSat * lb * scale, 0, 0,
+      invSat * lr * scale, invSat * lg * scale, (invSat * lb + s) * scale, 0, 0,
+      0, 0, 0, 1, 0,
+    ];
+  }
+
+  Widget _applyImageAdjustments(Widget child) {
+    final adj = _imageAdjustments;
+    final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
+    final luxBC = 1.0 + (lux * 0.35);
+    final luxS = 1.0 + (lux * 0.2);
+    final b = ((adj['brightness'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final c = ((adj['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
+    final fade = 1.0 - (adj['opacity'] ?? 0) / 100.0;
+    final tempRaw = (adj['sepia'] ?? 0).abs().clamp(0, 100);
+    final sepiaAmount = (tempRaw / 100.0) * 0.35;
+    final vignette = ((adj['vignette'] ?? 0).clamp(0, 100) / 100.0) * 0.65;
+
+    Widget out = child;
+    if (sepiaAmount > 0) {
+      out = ColorFiltered(
+        colorFilter: ColorFilter.matrix(_buildSepiaMatrix(amount: sepiaAmount, brightness: 1.0, contrast: 1.0, saturation: 1.0)),
+        child: out,
+      );
+    }
+    out = ColorFiltered(
+      colorFilter: ColorFilter.matrix(_buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s)),
+      child: out,
+    );
+    out = Opacity(
+      opacity: fade.clamp(0.0, 1.0),
+      child: out,
+    );
+    if (vignette > 0) {
+      out = Stack(
+        fit: StackFit.expand,
+        children: [
+          out,
+          IgnorePointer(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.center,
+                  radius: 0.85,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: vignette),
+                  ],
+                  stops: const [0.55, 1.0],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return out;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -160,7 +289,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         _selectedFilterName = match.first.name;
       }
     }
-    if (_currentMedia.type == MediaType.video && _currentMedia.filePath != null) {
+    if (_currentMedia.type == app_models.MediaType.video && _currentMedia.filePath != null) {
       final controller = VideoPlayerController.file(File(_currentMedia.filePath!));
       _videoController = controller;
       _videoInit = controller.initialize().then((_) {
@@ -170,6 +299,20 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         controller.play();
         setState(() => _isPlaying = true);
       });
+    } else if (_currentMedia.type == app_models.MediaType.image && _currentMedia.filePath != null) {
+      final provider = FileImage(File(_currentMedia.filePath!));
+      final stream = provider.resolve(const ImageConfiguration());
+      _imageStream = stream;
+      _imageStreamListener = ImageStreamListener((info, _) {
+        final w = info.image.width.toDouble();
+        final h = info.image.height.toDouble();
+        if (!mounted || h == 0) return;
+        setState(() {
+          _imageAspectRatio = w / h;
+          _imagePixelSize = Size(w, h);
+        });
+      });
+      stream.addListener(_imageStreamListener!);
     }
   }
 
@@ -177,6 +320,11 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   void dispose() {
     _videoController?.removeListener(_handlePreviewVideoTick);
     _videoController?.dispose();
+    final stream = _imageStream;
+    final listener = _imageStreamListener;
+    if (stream != null && listener != null) {
+      stream.removeListener(listener);
+    }
     super.dispose();
   }
 
@@ -226,7 +374,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         _videoController?.removeListener(_handlePreviewVideoTick);
         await _videoController?.dispose();
         _videoController = null;
-        final newMedia = MediaItem(
+        final newMedia = app_models.MediaItem(
           id: _currentMedia.id,
           type: _currentMedia.type,
           filePath: result.outputPath,
@@ -261,27 +409,757 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     }
   }
 
+  Future<void> _openFilterPicker() async {
+    if (_currentMedia.filePath == null) return;
+    final filters = _createService.getFilters();
+    final initialFilterId = _selectedFilter ?? 'none';
+    final initialFilterName = _selectedFilterName;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          top: false,
+          child: StatefulBuilder(
+            builder: (context, setSheetState) {
+              return SizedBox(
+                height: MediaQuery.of(context).size.height * 0.32,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 6),
+                    Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: filters.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, i) {
+                          final f = filters[i];
+                          final isActive = (_selectedFilter ?? 'none') == f.id;
+                          final file = File(_currentMedia.filePath!);
+                          final base = Image.file(file, fit: BoxFit.cover);
+                          final preview = (f.id == 'none')
+                              ? base
+                              : ColorFiltered(
+                                  colorFilter: ColorFilter.matrix(_reelFilterMatrixFor(f.id)),
+                                  child: base,
+                                );
+                          final displayName = f.id == 'none' ? 'Normal' : f.name;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedFilter = f.id;
+                                _selectedFilterName = displayName;
+                              });
+                              setSheetState(() {});
+                            },
+                            child: SizedBox(
+                              width: 88,
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      displayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isActive ? Colors.white : Colors.white70,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      width: 64,
+                                      height: 64,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isActive ? Colors.white : Colors.white24,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: preview,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+                        child: Row(
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedFilter = initialFilterId;
+                                  _selectedFilterName = initialFilterName;
+                                });
+                                Navigator.of(context).pop();
+                              },
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            const Spacer(),
+                            const Text(
+                              'Filter',
+                              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
+                            ),
+                            const Spacer(),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text(
+                                'Done',
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  void _openImageAdjustmentsEditor() {
+    const tools = <_ImageToolSpec>[
+      _ImageToolSpec(key: 'lux', label: 'Lux', icon: Icons.auto_fix_high, min: 0, max: 100),
+      _ImageToolSpec(key: 'brightness', label: 'Brightness', icon: Icons.wb_sunny_outlined, min: -100, max: 100),
+      _ImageToolSpec(key: 'contrast', label: 'Contrast', icon: Icons.contrast, min: -100, max: 100),
+      _ImageToolSpec(key: 'saturate', label: 'Saturation', icon: Icons.palette_outlined, min: -100, max: 100),
+      _ImageToolSpec(key: 'sepia', label: 'Temperature', icon: Icons.thermostat_outlined, min: -100, max: 100),
+      _ImageToolSpec(key: 'opacity', label: 'Fade', icon: Icons.blur_on_outlined, min: 0, max: 100),
+      _ImageToolSpec(key: 'vignette', label: 'Vignette', icon: Icons.vignette_outlined, min: 0, max: 100),
+    ];
+    final initial = Map<String, int>.from(_imageAdjustments);
+    String? selectedKey;
+    final scrollController = ScrollController();
+    bool didCenterScroll = false;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          top: false,
+          child: StatefulBuilder(
+            builder: (context, setSheetState) {
+              Widget sliderForTool(_ImageToolSpec tool) {
+                final current = _imageAdjustments[tool.key] ?? 0;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: SizedBox()),
+                        Text(current.toString(), style: const TextStyle(color: Colors.white70)),
+                      ],
+                    ),
+                    Slider(
+                      value: current.toDouble(),
+                      min: tool.min.toDouble(),
+                      max: tool.max.toDouble(),
+                      onChanged: (v) {
+                        final next = v.round();
+                        setState(() {
+                          _imageAdjustments = {
+                            ..._imageAdjustments,
+                            tool.key: next,
+                          };
+                        });
+                        setSheetState(() {});
+                      },
+                      activeColor: const Color(0xFF0095F6),
+                      inactiveColor: Colors.white24,
+                    ),
+                  ],
+                );
+              }
+
+              final selectedTool = selectedKey == null
+                  ? null
+                  : tools.firstWhere((t) => t.key == selectedKey, orElse: () => tools[0]);
+
+              final sheetHeightFactor = selectedTool == null ? 0.36 : 0.28;
+              if (!didCenterScroll && selectedTool == null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!scrollController.hasClients) return;
+                  final viewportW = MediaQuery.of(context).size.width;
+                  const tileW = 88.0;
+                  const sepW = 12.0;
+                  final contentW = tools.isEmpty ? 0.0 : (tools.length * tileW) + ((tools.length - 1) * sepW) + (16 * 2);
+                  final target = math.max(0.0, (contentW - viewportW) / 2.0);
+                  final maxExtent = scrollController.position.maxScrollExtent;
+                  scrollController.jumpTo(target.clamp(0.0, maxExtent));
+                });
+                didCenterScroll = true;
+              }
+              return SizedBox(
+                height: MediaQuery.of(context).size.height * sheetHeightFactor,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 6),
+                    Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        child: selectedTool == null
+                            ? SizedBox(
+                                key: const ValueKey('toolPicker'),
+                                child: ListView.separated(
+                                  controller: scrollController,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: tools.length,
+                                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                                  itemBuilder: (context, i) {
+                                    final t = tools[i];
+                                    return GestureDetector(
+                                      onTap: () {
+                                        setSheetState(() {
+                                          selectedKey = t.key;
+                                        });
+                                      },
+                                      child: SizedBox(
+                                        width: 88,
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                t.label,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Container(
+                                                width: 64,
+                                                height: 64,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: Colors.white.withValues(alpha: 0.06),
+                                                  border: Border.all(
+                                                    color: Colors.white24,
+                                                    width: 1,
+                                                  ),
+                                                ),
+                                                child: Icon(
+                                                  t.icon,
+                                                  color: Colors.white70,
+                                                  size: 26,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              )
+                            : Padding(
+                                key: const ValueKey('toolSlider'),
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            onPressed: () {
+                                              setSheetState(() {
+                                                selectedKey = null;
+                                              });
+                                            },
+                                            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white70, size: 18),
+                                          ),
+                                          Expanded(
+                                            child: Center(
+                                              child: Text(
+                                                selectedTool.label,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 48),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      sliderForTool(selectedTool),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+                        child: Row(
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                setState(() => _imageAdjustments = initial);
+                                Navigator.of(context).pop();
+                              },
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            const Spacer(),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text(
+                                'Done',
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPostZoomableImagePreview(BoxConstraints viewport) {
+    if (widget.media.filePath == null) {
+      return const Icon(Icons.image, size: 100, color: Colors.white54);
+    }
+    _postViewportSize = viewport.biggest;
+    final imageAspect = _imageAspectRatio ?? 1.0;
+    final viewportAspect = (viewport.maxHeight <= 0) ? 1.0 : (viewport.maxWidth / viewport.maxHeight);
+    final ratio = math.max(imageAspect / viewportAspect, viewportAspect / imageAspect).clamp(1.0, 5.0);
+    final initialScale = ratio;
+    final media = _applyImageAdjustments(_applySelectedFilter(
+      ExtendedImage.file(
+        key: ValueKey(
+          'postZoom-${_imageAspectRatio?.toStringAsFixed(4) ?? 'na'}',
+        ),
+        extendedImageGestureKey: _postGestureKey,
+        File(widget.media.filePath!),
+        width: viewport.maxWidth,
+        height: viewport.maxHeight,
+        fit: BoxFit.contain,
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
+        mode: ExtendedImageMode.gesture,
+        initGestureConfigHandler: (state) {
+          return GestureConfig(
+            minScale: initialScale,
+            maxScale: math.max(4.0, initialScale * 2.0),
+            initialScale: initialScale,
+            speed: 1.0,
+            inertialSpeed: 100.0,
+            cacheGesture: true,
+            inPageView: false,
+          );
+        },
+        onDoubleTap: (ExtendedImageGestureState s) {
+          final begin = s.gestureDetails?.totalScale ?? 1.0;
+          final end = begin < (initialScale * 1.5) ? math.max(initialScale * 2.0, 2.0) : initialScale;
+          s.handleDoubleTap(scale: end);
+        },
+      ),
+    ));
+    return SizedBox(
+      width: viewport.maxWidth,
+      height: viewport.maxHeight,
+      child: media,
+    );
+  }
+
+  Rect? _computeVisibleCropRect({
+    required Size viewport,
+    required Size imagePx,
+    required double totalScale,
+    required Offset totalOffset,
+  }) {
+    if (viewport.width <= 0 || viewport.height <= 0 || imagePx.width <= 0 || imagePx.height <= 0) {
+      return null;
+    }
+    final baseScale = math.min(viewport.width / imagePx.width, viewport.height / imagePx.height);
+    if (baseScale <= 0) return null;
+
+    final scale = (baseScale * totalScale).clamp(0.0001, 100000.0);
+    final drawnW = imagePx.width * scale;
+    final drawnH = imagePx.height * scale;
+    final imgLeft = (viewport.width - drawnW) / 2.0 + totalOffset.dx;
+    final imgTop = (viewport.height - drawnH) / 2.0 + totalOffset.dy;
+
+    final left = (0 - imgLeft) / scale;
+    final top = (0 - imgTop) / scale;
+    final right = (viewport.width - imgLeft) / scale;
+    final bottom = (viewport.height - imgTop) / scale;
+
+    final clampedLeft = left.clamp(0.0, imagePx.width);
+    final clampedTop = top.clamp(0.0, imagePx.height);
+    final clampedRight = right.clamp(0.0, imagePx.width);
+    final clampedBottom = bottom.clamp(0.0, imagePx.height);
+
+    final w = (clampedRight - clampedLeft);
+    final h = (clampedBottom - clampedTop);
+    if (w <= 1 || h <= 1) return null;
+    return Rect.fromLTRB(clampedLeft, clampedTop, clampedRight, clampedBottom);
+  }
+
+  Rect? _computeVisibleCropRectFromGestureDetails({
+    required Size viewport,
+    required Size imagePx,
+    required dynamic details,
+  }) {
+    if (viewport.isEmpty || imagePx.isEmpty) return null;
+    if (details == null) return null;
+
+    Rect? destinationRect;
+    Rect? layoutRect;
+    try {
+      final v = details.destinationRect;
+      if (v is Rect) destinationRect = v;
+    } catch (_) {}
+    destinationRect ??= (() {
+      try {
+        final v = details.rawDestinationRect;
+        if (v is Rect) return v;
+      } catch (_) {}
+      return null;
+    })();
+    try {
+      final v = details.layoutRect;
+      if (v is Rect) layoutRect = v;
+    } catch (_) {}
+    layoutRect ??= Offset.zero & viewport;
+
+    final dest = destinationRect;
+    if (dest == null || dest.width <= 0 || dest.height <= 0) return null;
+
+    final vis = layoutRect.intersect(dest);
+    if (vis.isEmpty) return null;
+
+    final scaleX = dest.width / imagePx.width;
+    final scaleY = dest.height / imagePx.height;
+    if (scaleX <= 0 || scaleY <= 0) return null;
+
+    final left = (vis.left - dest.left) / scaleX;
+    final top = (vis.top - dest.top) / scaleY;
+    final right = (vis.right - dest.left) / scaleX;
+    final bottom = (vis.bottom - dest.top) / scaleY;
+
+    final clampedLeft = left.clamp(0.0, imagePx.width);
+    final clampedTop = top.clamp(0.0, imagePx.height);
+    final clampedRight = right.clamp(0.0, imagePx.width);
+    final clampedBottom = bottom.clamp(0.0, imagePx.height);
+
+    final w = (clampedRight - clampedLeft);
+    final h = (clampedBottom - clampedTop);
+    if (w <= 1 || h <= 1) return null;
+    return Rect.fromLTRB(clampedLeft, clampedTop, clampedRight, clampedBottom);
+  }
+
+  Future<String?> _writeCroppedImageFile({
+    required String sourcePath,
+    required Rect cropRect,
+  }) async {
+    final srcFile = File(sourcePath);
+    if (!await srcFile.exists()) return null;
+    final bytes = await srcFile.readAsBytes();
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromList(bytes, (img) => completer.complete(img));
+    final image = await completer.future;
+
+    final srcRect = ui.Rect.fromLTWH(
+      cropRect.left,
+      cropRect.top,
+      cropRect.width,
+      cropRect.height,
+    );
+    final outW = cropRect.width.round().clamp(1, image.width);
+    final outH = cropRect.height.round().clamp(1, image.height);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder, ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..filterQuality = FilterQuality.high;
+    final dstRect = ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble());
+    canvas.drawImageRect(image, srcRect, dstRect, paint);
+    final picture = recorder.endRecording();
+    final outImage = await picture.toImage(outW, outH);
+    final byteData = await outImage.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) return null;
+    final pngBytes = Uint8List.view(byteData.buffer);
+
+    final filename = 'bsmart_crop_${DateTime.now().millisecondsSinceEpoch}_${pngBytes.lengthInBytes}.png';
+    final outPath = '${Directory.systemTemp.path}/$filename';
+    final outFile = File(outPath);
+    await outFile.writeAsBytes(pngBytes, flush: true);
+    return outPath;
+  }
+
+  List<double> _combineColorMatrices(List<double> a, List<double> b) {
+    final out = List<double>.filled(20, 0);
+    for (int r = 0; r < 4; r++) {
+      final r0 = r * 5;
+      for (int c = 0; c < 4; c++) {
+        out[r0 + c] = a[r0 + 0] * b[0 + c] + a[r0 + 1] * b[5 + c] + a[r0 + 2] * b[10 + c] + a[r0 + 3] * b[15 + c];
+      }
+      out[r0 + 4] = a[r0 + 0] * b[4] + a[r0 + 1] * b[9] + a[r0 + 2] * b[14] + a[r0 + 3] * b[19] + a[r0 + 4];
+    }
+    out[15] = 0;
+    out[16] = 0;
+    out[17] = 0;
+    out[18] = 1;
+    out[19] = 0;
+    return out;
+  }
+
+  Future<String?> _writeProcessedImageFile({
+    required String sourcePath,
+    required String? filterId,
+    required Map<String, int> adjustments,
+  }) async {
+    final srcFile = File(sourcePath);
+    if (!await srcFile.exists()) return null;
+    final bytes = await srcFile.readAsBytes();
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromList(bytes, (img) => completer.complete(img));
+    final image = await completer.future;
+
+    final lux = ((adjustments['lux'] ?? 0).clamp(0, 100) / 100.0);
+    final luxBC = 1.0 + (lux * 0.35);
+    final luxS = 1.0 + (lux * 0.2);
+    final b = ((adjustments['brightness'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final c = ((adjustments['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final s = ((adjustments['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
+    final fade = 1.0 - (adjustments['opacity'] ?? 0) / 100.0;
+    final tempRaw = (adjustments['sepia'] ?? 0).abs().clamp(0, 100);
+    final sepiaAmount = (tempRaw / 100.0) * 0.35;
+    final vignette = ((adjustments['vignette'] ?? 0).clamp(0, 100) / 100.0) * 0.65;
+
+    final preset = (filterId == null || filterId == 'none')
+        ? _buildAdjustmentMatrix(brightness: 1.0, contrast: 1.0, saturation: 1.0)
+        : _reelFilterMatrixFor(filterId);
+    final sepiaMatrix = (sepiaAmount <= 0)
+        ? _buildAdjustmentMatrix(brightness: 1.0, contrast: 1.0, saturation: 1.0)
+        : _buildSepiaMatrix(amount: sepiaAmount, brightness: 1.0, contrast: 1.0, saturation: 1.0);
+    final adjust = _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
+    final combined = _combineColorMatrices(adjust, _combineColorMatrices(sepiaMatrix, preset));
+
+    final outW = image.width;
+    final outH = image.height;
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder, ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..filterQuality = FilterQuality.high
+      ..color = Colors.white.withValues(alpha: fade.clamp(0.0, 1.0))
+      ..colorFilter = ui.ColorFilter.matrix(combined);
+    final srcRect = ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble());
+    canvas.drawImageRect(image, srcRect, srcRect, paint);
+
+    if (vignette > 0) {
+      final shader = ui.Gradient.radial(
+        Offset(outW / 2.0, outH / 2.0),
+        math.min(outW, outH) * 0.85,
+        [
+          const Color(0x00000000),
+          Colors.black.withValues(alpha: vignette),
+        ],
+        const [0.55, 1.0],
+      );
+      canvas.drawRect(
+        srcRect,
+        Paint()..shader = shader,
+      );
+    }
+
+    final picture = recorder.endRecording();
+    final outImage = await picture.toImage(outW, outH);
+    final byteData = await outImage.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) return null;
+    final pngBytes = Uint8List.view(byteData.buffer);
+
+    final filename = 'bsmart_post_${DateTime.now().millisecondsSinceEpoch}_${pngBytes.lengthInBytes}.png';
+    final outPath = '${Directory.systemTemp.path}/$filename';
+    final outFile = File(outPath);
+    await outFile.writeAsBytes(pngBytes, flush: true);
+    return outPath;
+  }
+
+  Future<Size?> _readImagePixelSizeFromFile(String path) async {
+    final file = File(path);
+    if (!await file.exists()) return null;
+    final bytes = await file.readAsBytes();
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromList(bytes, (img) => completer.complete(img));
+    final img = await completer.future;
+    return Size(img.width.toDouble(), img.height.toDouble());
+  }
+
   // ── Proceed to post details, passing trim values along
   Future<void> _proceedToPostDetails() async {
-    final isVideo = _currentMedia.type == MediaType.video;
+    final fallbackViewport =
+        _postViewportSize ?? Size(MediaQuery.of(context).size.width, MediaQuery.of(context).size.width);
+    final isVideo = _currentMedia.type == app_models.MediaType.video;
     if (_videoController?.value.isInitialized == true) {
       await _videoController?.pause();
       if (mounted) {
         setState(() => _isPlaying = false);
       }
     }
+
+    app_models.MediaItem nextMedia = _currentMedia;
+    double nextAspect = 1.0;
+    final filePath = _currentMedia.filePath;
+    if (!isVideo && filePath != null) {
+      final viewport = _postViewportSize ?? fallbackViewport;
+      final imagePx = _imagePixelSize ?? await _readImagePixelSizeFromFile(filePath);
+      if (imagePx == null) {
+      } else {
+      final dynamic details = _postGestureKey.currentState?.gestureDetails;
+      Rect? cropRect;
+      if (details != null) {
+        cropRect = _computeVisibleCropRectFromGestureDetails(
+          viewport: viewport,
+          imagePx: imagePx,
+          details: details,
+        );
+      }
+      if (cropRect == null) {
+        double totalScale = 1.0;
+        if (details != null) {
+          try {
+            final v = details.totalScale;
+            if (v is num) totalScale = v.toDouble();
+          } catch (_) {}
+        }
+        Offset totalOffset = Offset.zero;
+        if (details != null) {
+          try {
+            final v = details.userOffset;
+            if (v is Offset) totalOffset = v;
+          } catch (_) {}
+          if (totalOffset == Offset.zero) {
+            try {
+              final v = details.offset;
+              if (v is Offset) totalOffset = v;
+            } catch (_) {}
+          }
+        }
+        cropRect = _computeVisibleCropRect(
+          viewport: viewport,
+          imagePx: imagePx,
+          totalScale: totalScale,
+          totalOffset: totalOffset,
+        );
+      }
+      if (cropRect != null) {
+        nextAspect = _clampInstagramPostAspect(cropRect.width / cropRect.height);
+        final croppedPath = await _writeCroppedImageFile(
+          sourcePath: filePath,
+          cropRect: cropRect,
+        );
+        if (croppedPath != null && croppedPath.isNotEmpty) {
+          nextMedia = app_models.MediaItem(
+            id: _currentMedia.id,
+            type: _currentMedia.type,
+            filePath: croppedPath,
+            thumbnailPath: _currentMedia.thumbnailPath,
+            duration: _currentMedia.duration,
+            createdAt: _currentMedia.createdAt,
+          );
+        }
+      }
+      }
+    }
+
+    if (!isVideo && nextMedia.filePath != null) {
+      final hasFilter = (_selectedFilter ?? 'none') != 'none';
+      final hasAdjustments = _imageAdjustments.values.any((v) => v != 0);
+      if (hasFilter || hasAdjustments) {
+        final processedPath = await _writeProcessedImageFile(
+          sourcePath: nextMedia.filePath!,
+          filterId: _selectedFilter,
+          adjustments: _imageAdjustments,
+        );
+        if (processedPath != null && processedPath.isNotEmpty) {
+          nextMedia = app_models.MediaItem(
+            id: nextMedia.id,
+            type: nextMedia.type,
+            filePath: processedPath,
+            thumbnailPath: nextMedia.thumbnailPath,
+            duration: nextMedia.duration,
+            createdAt: nextMedia.createdAt,
+          );
+          nextAspect = 0.0;
+        }
+      }
+    }
+
+    if (!mounted) return;
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => isVideo
-            ? CreateReelDetailsScreen(
-                media: _currentMedia,
-                selectedFilter: _selectedFilter,
-                selectedMusic: _selectedMusic,
-                musicVolume: _musicVolume,
-                trimStart: _trimStart,
-                trimEnd: _trimEnd,
+        builder: (_) => widget.isPostFlow
+            ? CreatePostScreen(
+                initialMedia: nextMedia,
+                initialAspect: nextAspect,
+                initialFilterName: null,
+                initialAdjustments: null,
               )
-            : CreatePostDetailsScreen(
+            : CreateReelDetailsScreen(
                 media: _currentMedia,
                 selectedFilter: _selectedFilter,
                 selectedMusic: _selectedMusic,
@@ -441,17 +1319,143 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isPostFlow) {
+      final screenWidth = MediaQuery.of(context).size.width;
+      final frameAspect = _postFrameAspect();
+      return Scaffold(
+        backgroundColor: const Color(0xFF07121E),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    const Spacer(),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Center(
+                        child: SizedBox(
+                          width: screenWidth,
+                          child: AspectRatio(
+                            aspectRatio: frameAspect,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(24),
+                              child: Container(
+                                color: Colors.black,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    if (widget.media.type == app_models.MediaType.video)
+                                      _buildVideoPreview()
+                                    else
+                                      LayoutBuilder(
+                                        builder: (context, viewport) {
+                                          return _buildPostZoomableImagePreview(viewport);
+                                        },
+                                      ),
+                                    if (_selectedFilterName != null &&
+                                        _selectedFilter != null &&
+                                        _selectedFilter != 'none')
+                                      Positioned(
+                                        top: 16,
+                                        right: 16,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black54,
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                          child: Text(
+                                            'Filter: $_selectedFilterName',
+                                            style: const TextStyle(
+                                                color: Colors.white, fontSize: 12),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildPostBottomPill(
+                      icon: Icons.tune,
+                      label: 'Edit',
+                      onTap: widget.media.type == app_models.MediaType.video
+                          ? _openVideoEditor
+                          : _openImageAdjustmentsEditor,
+                    ),
+                    const SizedBox(width: 10),
+                    _buildPostBottomPill(
+                      icon: Icons.filter_alt_outlined,
+                      label: 'Filter',
+                      onTap: _openFilterPicker,
+                      isActive: (_selectedFilter ?? 'none') != 'none',
+                    ),
+                  ],
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Row(
+                    children: [
+                      const Spacer(),
+                      ElevatedButton(
+                        onPressed: _proceedToPostDetails,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0095F6),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 26, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26)),
+                        ),
+                        child: const Text('Next →'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF07121E),
       body: SafeArea(
         child: Stack(
           children: [
             Column(
               children: [
                 Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    color: Colors.black,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(24),
                       child: GestureDetector(
@@ -461,7 +1465,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            if (widget.media.type == MediaType.video)
+                            if (widget.media.type == app_models.MediaType.video)
                               _buildVideoPreview()
                             else
                               _buildImagePreview(),
@@ -568,36 +1572,56 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      OutlinedButton(
-                        onPressed: widget.media.type == MediaType.video
-                            ? _openVideoEditor
-                            : null,
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.white24),
-                          foregroundColor: Colors.white,
-                          backgroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 10),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24)),
-                        ),
-                        child: Row(
+                      if (widget.isPostFlow)
+                        Row(
                           children: [
-                            const Text('Edit video'),
-                            if (_trimStart != null) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF0095F6),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ],
+                            _buildPostBottomPill(
+                              icon: Icons.tune,
+                              label: 'Edit',
+                              onTap: widget.media.type == app_models.MediaType.video
+                                  ? _openVideoEditor
+                                  : _openImageAdjustmentsEditor,
+                            ),
+                            const SizedBox(width: 10),
+                            _buildPostBottomPill(
+                              icon: Icons.filter_alt_outlined,
+                              label: 'Filter',
+                              onTap: _openFilterPicker,
+                              isActive: (_selectedFilter ?? 'none') != 'none',
+                            ),
                           ],
+                        )
+                      else
+                        OutlinedButton(
+                          onPressed: widget.media.type == app_models.MediaType.video
+                              ? _openVideoEditor
+                              : null,
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.white24),
+                            foregroundColor: Colors.white,
+                            backgroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 10),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Text('Edit video'),
+                              if (_trimStart != null) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF0095F6),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
-                      ),
                       ElevatedButton(
                         onPressed: _proceedToPostDetails,
                         style: ElevatedButton.styleFrom(
@@ -619,48 +1643,50 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               left: 0,
               right: 0,
               bottom: 72 + 16,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_showMusicControls)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _buildMusicPanel(),
-                    ),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+              child: widget.isPostFlow
+                  ? const SizedBox.shrink()
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        _buildEditOption(
-                          icon: Icons.text_fields,
-                          label: 'Text',
-                          onTap: _onTapText,
-                        ),
-                        const SizedBox(width: 8),
-                        if (widget.media.type == MediaType.video)
-                          _buildEditOption(
-                            icon: Icons.content_cut,
-                            label: 'Trim',
-                            onTap: _openVideoEditor,
-                            isActive: _trimStart != null,
+                        if (_showMusicControls)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _buildMusicPanel(),
                           ),
-                        const SizedBox(width: 8),
-                        _buildEditOption(
-                          icon: Icons.music_note,
-                          label: 'Music',
-                          onTap: () {
-                            setState(() {
-                              _showMusicControls = !_showMusicControls;
-                            });
-                          },
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildEditOption(
+                                icon: Icons.text_fields,
+                                label: 'Text',
+                                onTap: _onTapText,
+                              ),
+                              const SizedBox(width: 8),
+                              if (widget.media.type == app_models.MediaType.video)
+                                _buildEditOption(
+                                  icon: Icons.content_cut,
+                                  label: 'Trim',
+                                  onTap: _openVideoEditor,
+                                  isActive: _trimStart != null,
+                                ),
+                              const SizedBox(width: 8),
+                              _buildEditOption(
+                                icon: Icons.music_note,
+                                label: 'Music',
+                                onTap: () {
+                                  setState(() {
+                                    _showMusicControls = !_showMusicControls;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
             ),
             Positioned(
               top: 16,
@@ -707,7 +1733,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               _isPlaying = !_isPlaying;
             });
           },
-          child: _applySelectedFilter(
+          child: _applyImageAdjustments(_applySelectedFilter(
             Stack(
               alignment: Alignment.center,
               children: [
@@ -730,7 +1756,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                   ),
               ],
             ),
-          ),
+          )),
         );
       },
     );
@@ -738,10 +1764,20 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   Widget _buildImagePreview() {
     if (widget.media.filePath != null) {
-      return _applySelectedFilter(
+      final image = _applyImageAdjustments(_applySelectedFilter(
         Image.file(
           File(widget.media.filePath!),
           fit: BoxFit.cover,
+        ),
+      ));
+      final aspect = _imageAspectRatio;
+      if (aspect == null || aspect.isNaN || aspect.isInfinite || aspect <= 0) {
+        return image;
+      }
+      return Center(
+        child: AspectRatio(
+          aspectRatio: aspect,
+          child: image,
         ),
       );
     }
@@ -801,6 +1837,44 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   String _formatDuration(Duration d) {
     final s = d.inSeconds;
     return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildPostBottomPill({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isActive = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: isActive ? Border.all(color: const Color(0xFF0095F6)) : null,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isActive ? const Color(0xFF0095F6) : Colors.white,
+              size: 18,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive ? const Color(0xFF0095F6) : Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildEditOption({

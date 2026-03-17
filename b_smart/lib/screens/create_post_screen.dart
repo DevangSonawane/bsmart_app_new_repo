@@ -11,14 +11,16 @@ import '../utils/current_user.dart';
 import '../config/api_config.dart';
 import '../api/upload_api.dart';
 import '../api/posts_api.dart';
-import '../api/users_api.dart';
 import '../models/media_model.dart';
+import 'tag_people_screen.dart';
 
 /// Single media item in the create-post flow (select → crop → edit → share).
 class _CreatePostMediaItem {
   String sourcePath;
   String? croppedPath; // after crop step (images only)
   bool isVideo;
+  bool alreadyCropped;
+  bool alreadyProcessed;
   double aspect;
   String filter;
   Map<String, int> adjustments;
@@ -27,11 +29,13 @@ class _CreatePostMediaItem {
     required this.sourcePath,
     this.croppedPath, // ignore: unused_element_parameter
     required this.isVideo,
+    this.alreadyCropped = false,
+    this.alreadyProcessed = false,
     this.aspect = 1.0, // ignore: unused_element_parameter
     this.filter = 'Original', // ignore: unused_element_parameter
     Map<String, int>? adjustments,
   }) : adjustments = adjustments ?? {
-    'brightness': 0, 'contrast': 0, 'saturate': 0,
+    'brightness': 0, 'contrast': 0, 'saturate': 0, 'lux': 0,
     'sepia': 0, 'opacity': 0, 'vignette': 0,
   };
 
@@ -142,7 +146,10 @@ const _popularEmojis = ['😂', '😮', '😍', '😢', '👏', '🔥', '🎉', 
 
 class CreatePostScreen extends StatefulWidget {
   final MediaItem? initialMedia;
-  const CreatePostScreen({super.key, this.initialMedia});
+  final double? initialAspect;
+  final String? initialFilterName;
+  final Map<String, int>? initialAdjustments;
+  const CreatePostScreen({super.key, this.initialMedia, this.initialAspect, this.initialFilterName, this.initialAdjustments});
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -164,10 +171,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _advancedOpen = false;
   bool _showEmojiPicker = false;
   final List<_PostTag> _tags = [];
-  bool _showTagSearch = false;
-  double _tagX = 0, _tagY = 0;
-  List<Map<String, dynamic>> _tagSearchResults = [];
-  bool _isSearchingUsers = false;
   bool _isSubmitting = false;
   Map<String, dynamic>? _currentUserProfile;
 
@@ -187,13 +190,25 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _loadCurrentUserProfile();
     final m = widget.initialMedia;
     if (m != null && m.filePath != null) {
+      final baseName = m.filePath!.split('/').last;
+      final alreadyCropped = baseName.startsWith('bsmart_crop_') || baseName.startsWith('bsmart_post_');
+      final alreadyProcessed = baseName.startsWith('bsmart_post_');
       final item = _CreatePostMediaItem(
         sourcePath: m.filePath!,
         isVideo: m.type == MediaType.video,
+        alreadyCropped: alreadyCropped,
+        alreadyProcessed: alreadyProcessed,
+        aspect: widget.initialAspect ?? 1.0,
+        adjustments: widget.initialAdjustments,
       );
+      if (widget.initialFilterName != null && widget.initialFilterName!.isNotEmpty) {
+        // Only apply if our filter list recognizes the name, otherwise keep Original
+        final name = widget.initialFilterName!;
+        item.filter = _filterNames.contains(name) ? name : 'Original';
+      }
       _media = [item];
       _currentIndex = 0;
-      _step = 'crop';
+      _step = 'share';
     }
   }
 
@@ -223,7 +238,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           if (_step == 'select') {
             _media = newItems;
             _currentIndex = 0;
-            _step = 'crop';
+            _step = 'share';
           } else {
             _media.addAll(newItems);
             _currentIndex = _media.length - 1;
@@ -249,7 +264,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           if (_step == 'select') {
             _media = [item];
             _currentIndex = 0;
-            _step = 'crop';
+            _step = 'share';
           } else {
             _media.add(item);
             _currentIndex = _media.length - 1;
@@ -275,7 +290,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           if (_step == 'select') {
             _media = [item];
             _currentIndex = 0;
-            _step = 'crop';
+            _step = 'share';
           } else {
             _media.add(item);
             _currentIndex = _media.length - 1;
@@ -329,28 +344,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   void _back() {
-    if (_step == 'share') {
-      setState(() => _step = 'edit');
-    } else if (_step == 'edit') {
-      setState(() => _step = 'crop');
-    } else if (_step == 'crop') {
-      setState(() {
-        _step = 'select';
-        _media = [];
-        _currentIndex = 0;
-      });
-    } else {
-      Navigator.of(context).pop();
-    }
+    Navigator.of(context).maybePop();
   }
 
   void _next() {
     try {
-      if (_step == 'crop') {
-        _cropCurrent();
-      } else if (_step == 'edit') {
-        if (mounted) setState(() => _step = 'share');
-      } else if (_step == 'share') {
+      if (_step == 'share') {
         _submit();
       }
     } catch (e) {
@@ -364,7 +363,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   void _setAspect(double a) {
     final item = _currentMedia;
-    if (item != null) setState(() => item.aspect = a);
+    if (item == null) return;
+    const minLandscape = 1.91;
+    const maxPortrait = 4 / 5; // 0.8
+    final next = (a <= 0) ? a : a.clamp(maxPortrait, minLandscape);
+    setState(() => item.aspect = next);
   }
 
   void _applyFilter(String name) {
@@ -403,80 +406,68 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return parts.join(' ');
   }
 
+  String _aspectRatioLabel(double? aspect) {
+    final a = aspect ?? 0.0;
+    if (a <= 0) return 'original';
+    if ((a - 1).abs() < 0.001) return '1:1';
+    if ((a - (4 / 5)).abs() < 0.001) return '4:5';
+    if ((a - (16 / 9)).abs() < 0.001) return '16:9';
+    if ((a - (9 / 16)).abs() < 0.001) return '9:16';
+    return 'custom';
+  }
+
   void _updateAdjustment(String key, int value) {
     final item = _currentMedia;
     if (item != null) setState(() => item.adjustments[key] = value);
   }
 
   String? _draggingTagId;
+  bool _showPreviewOverlay = false;
 
   void _onImageTapForTag(TapDownDetails details, Size size) {
     if (_draggingTagId != null) return;
     setState(() {
-      _tagX = (details.localPosition.dx / size.width).clamp(0.0, 1.0) * 100;
-      _tagY = (details.localPosition.dy / size.height).clamp(0.0, 1.0) * 100;
-      _showTagSearch = true;
-      _searchTagUsers('');
+      _showPreviewOverlay = true;
     });
   }
 
-  Timer? _searchDebounce;
-  String _lastSearchQuery = '';
-
-  Future<void> _searchTagUsers(String query) async {
-    if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
-    
-    // Clear results if query is empty
-    if (query.isEmpty) {
-      if (mounted) {
-        setState(() {
-        _tagSearchResults = [];
-        _isSearchingUsers = false;
-        _lastSearchQuery = '';
-      });
-      }
-      return;
-    }
-
-    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
-      if (!mounted) return;
-      setState(() {
-        _isSearchingUsers = true;
-        _lastSearchQuery = query;
-      });
-      try {
-        final list = await UsersApi().search(query);
-        if (mounted) {
-          setState(() {
-          _tagSearchResults = list;
-          _isSearchingUsers = false;
-        });
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-          _tagSearchResults = [];
-          _isSearchingUsers = false;
-        });
-        }
-      }
-    });
-  }
-
-  void _addTag(Map<String, dynamic> user) {
+  Future<void> _openTagPeople() async {
+    final item = _currentMedia;
+    if (item == null) return;
+    final initial = _tags.map((t) => {
+          'id': t.id,
+          'x': t.x,
+          'y': t.y,
+          'user': t.user,
+        }).toList();
+    final result = await Navigator.of(context).push<List<Map<String, dynamic>>>(
+      MaterialPageRoute(
+        builder: (_) => TagPeopleScreen(
+          mediaPath: item.displayPath,
+          isVideo: item.isVideo,
+          filterName: item.filter,
+          adjustments: item.adjustments,
+          alreadyProcessed: item.alreadyProcessed,
+          initialTags: initial,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (result == null) return;
     setState(() {
-      _tags.add(_PostTag(
-        id: '${DateTime.now().millisecondsSinceEpoch}_${user['id']}',
-        x: _tagX,
-        y: _tagY,
-        user: user,
-      ));
-      _showTagSearch = false;
+      _tags
+        ..clear()
+        ..addAll(
+          result.map(
+            (m) => _PostTag(
+              id: (m['id'] ?? '').toString(),
+              x: (m['x'] as num?)?.toDouble() ?? 0.5,
+              y: (m['y'] as num?)?.toDouble() ?? 0.5,
+              user: Map<String, dynamic>.from(m['user'] as Map),
+            ),
+          ),
+        );
     });
-  }
-
-  void _removeTag(String id) {
-    setState(() => _tags.removeWhere((t) => t.id == id));
   }
 
   Future<void> _submit() async {
@@ -498,21 +489,26 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         Uint8List toUpload;
         String ext;
         if (isImage) {
-          final processed = await _processImageBytes(Uint8List.fromList(bytes), item);
-          var jpg = await FlutterImageCompress.compressWithList(
-            processed,
-            quality: 85,
-            format: CompressFormat.jpeg,
-          );
-          if (jpg.length > 4 * 1024 * 1024) {
-            jpg = await FlutterImageCompress.compressWithList(
-              jpg,
-              quality: 70,
+          if (item.alreadyProcessed) {
+            toUpload = Uint8List.fromList(bytes);
+            ext = path.split('.').last;
+          } else {
+            final processed = await _processImageBytes(Uint8List.fromList(bytes), item);
+            var jpg = await FlutterImageCompress.compressWithList(
+              processed,
+              quality: 85,
               format: CompressFormat.jpeg,
             );
+            if (jpg.length > 4 * 1024 * 1024) {
+              jpg = await FlutterImageCompress.compressWithList(
+                jpg,
+                quality: 70,
+                format: CompressFormat.jpeg,
+              );
+            }
+            toUpload = Uint8List.fromList(jpg);
+            ext = 'jpg';
           }
-          toUpload = Uint8List.fromList(jpg);
-          ext = 'jpg';
         } else {
           toUpload = Uint8List.fromList(bytes);
           ext = path.split('.').last;
@@ -551,18 +547,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         }
         final adj = item.adjustments;
         final css = _cssFrom(item.filter, adj);
+        final aspectLabel = _aspectRatioLabel(item.aspect);
         processedMedia.add({
           'fileName': serverFileName,
           'fileUrl': fileUrl,
           'type': item.isVideo ? 'video' : 'image',
           'crop': {
-            'mode': item.aspect == 0.0 ? 'original' : 'custom',
-            'zoom': 1.0,
+            'mode': 'original',
+            'zoom': 1,
             'x': 0,
             'y': 0,
-            'aspect_ratio': item.aspect == 0.0 ? null : item.aspect,
+            'aspect_ratio': aspectLabel,
           },
-          'aspect_ratio': item.aspect == 0.0 ? null : item.aspect,
+          'aspect_ratio': aspectLabel,
           'filter': {
             'name': item.filter,
             'css': css,
@@ -626,37 +623,28 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   @override
   Widget build(BuildContext context) {
     final isSelect = _step == 'select';
+    final bg = isSelect ? Colors.white : Colors.black;
     return Scaffold(
-      backgroundColor: isSelect ? Colors.white : const Color(0xFFF0F0F0),
+      backgroundColor: bg,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
+        backgroundColor: bg,
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: Colors.black87),
+          icon: Icon(LucideIcons.arrowLeft, color: isSelect ? Colors.black87 : Colors.white),
           onPressed: _back,
         ),
         title: Text(
-          isSelect ? 'Create new post' : _step == 'crop' ? 'Crop' : _step == 'edit' ? 'Edit' : 'Create new post',
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.black87),
+          isSelect ? 'Create new post' : 'New post',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+            color: isSelect ? Colors.black87 : Colors.white,
+          ),
         ),
         centerTitle: true,
-        actions: [
-          if (!isSelect)
-            TextButton(
-              onPressed: (_step == 'share' && _isSubmitting) ? null : _next,
-              child: Text(
-                _step == 'share' ? (_isSubmitting ? 'Sharing...' : 'Share') : 'Next',
-                style: TextStyle(
-                  color: (_step == 'share' && _isSubmitting) ? Colors.grey : const Color(0xFF0095F6),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-        ],
       ),
       body: SafeArea(
-        child: isSelect ? _buildSelect() : _step == 'crop' ? _buildCrop() : _step == 'edit' ? _buildEdit() : _buildShare(),
+        child: isSelect ? _buildSelect() : _buildShare(),
       ),
     );
   }
@@ -727,71 +715,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Widget _buildCrop() {
-    final item = _currentMedia;
-    if (item == null) return const SizedBox();
-    return Stack(
-      children: [
-        Center(
-          child: item.isVideo
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(LucideIcons.video, size: 80, color: Colors.grey[600]),
-                    const SizedBox(height: 8),
-                    Text('Video (no crop)', style: TextStyle(color: Colors.grey[600])),
-                  ],
-                )
-              : item.aspect == 0.0
-                  ? Image.file(File(item.sourcePath), fit: BoxFit.contain)
-                  : AspectRatio(
-                      aspectRatio: item.aspect,
-                      child: Image.file(File(item.sourcePath), fit: BoxFit.cover),
-                    ),
-        ),
-        // Aspect ratio buttons
-        Positioned(
-          left: 16,
-          bottom: 24,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _aspectButton('Original', 0.0, () => _setAspect(0)),
-              _aspectButton('1:1', 1.0, () => _setAspect(1)),
-              _aspectButton('4:5', 4/5, () => _setAspect(4/5)),
-              _aspectButton('16:9', 16/9, () => _setAspect(16/9)),
-            ],
-          ),
-        ),
-        if (_media.length > 1) ...[
-          if (_currentIndex > 0)
-            Positioned(
-              left: 16,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: IconButton(
-                  icon: const Icon(LucideIcons.chevronLeft, color: Colors.white, size: 32),
-                  style: IconButton.styleFrom(backgroundColor: Colors.black54),
-                  onPressed: () => setState(() => _currentIndex--),
-                ),
-              ),
-            ),
-          if (_currentIndex < _media.length - 1)
-            Positioned(
-              right: 16,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: IconButton(
-                  icon: const Icon(LucideIcons.chevronRight, color: Colors.white, size: 32),
-                  style: IconButton.styleFrom(backgroundColor: Colors.black54),
-                  onPressed: () => setState(() => _currentIndex++),
-                ),
-              ),
-            ),
-        ],
-      ],
-    );
+    return const SizedBox();
   }
 
   Widget _aspectButton(String label, double current, VoidCallback onTap) {
@@ -817,225 +741,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   static const double _sharePanelMinWidth = 340;
 
   Widget _buildEdit() {
-    final item = _currentMedia;
-    if (item == null) return const SizedBox();
-    final file = File(item.displayPath);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final useColumn = constraints.maxWidth < 600;
-        final imageSection = Stack(
-          alignment: Alignment.center,
-          children: [
-            item.isVideo
-                ? Icon(LucideIcons.video, size: 100, color: Colors.grey[600])
-                : _applyFilterToImage(file, item),
-            if (_media.length > 1) ...[
-              if (_currentIndex > 0)
-                Positioned(
-                  left: 8,
-                  child: IconButton(
-                    icon: const Icon(LucideIcons.chevronLeft, color: Colors.black87),
-                    style: IconButton.styleFrom(backgroundColor: Colors.white70),
-                    onPressed: () => setState(() => _currentIndex--),
-                  ),
-                ),
-              if (_currentIndex < _media.length - 1)
-                Positioned(
-                  right: 8,
-                  child: IconButton(
-                    icon: const Icon(LucideIcons.chevronRight, color: Colors.black87),
-                    style: IconButton.styleFrom(backgroundColor: Colors.white70),
-                    onPressed: () => setState(() => _currentIndex++),
-                  ),
-                ),
-            ],
-          ],
-        );
-        final toolsSection = Container(
-          width: useColumn ? null : _editPanelMinWidth,
-          constraints: useColumn ? null : const BoxConstraints(minWidth: _editPanelMinWidth),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(
-              left: useColumn ? BorderSide.none : BorderSide(color: Theme.of(context).dividerColor),
-              top: useColumn ? BorderSide(color: Theme.of(context).dividerColor) : BorderSide.none,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => setState(() => _editTab = 'filters'),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
-                              color: _editTab == 'filters' ? Colors.black : Colors.transparent,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                        child: Text(
-                          'Filters',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            color: _editTab == 'filters' ? Colors.black : Colors.grey,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => setState(() => _editTab = 'adjustments'),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
-                              color: _editTab == 'adjustments' ? Colors.black : Colors.transparent,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                        child: Text(
-                          'Adjustments',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            color: _editTab == 'adjustments' ? Colors.black : Colors.grey,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: _editTab == 'filters'
-                      ? Row(
-                          children: [
-                            Expanded(
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: _filterNames.map((name) {
-                                    final selected = item.filter == name;
-                                    return Padding(
-                                      padding: const EdgeInsets.only(right: 16),
-                                      child: InkWell(
-                                        onTap: () => _applyFilter(name),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Container(
-                                              width: 72,
-                                              height: 72,
-                                              decoration: BoxDecoration(
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(
-                                                  color: selected ? const Color(0xFF0095F6) : Colors.grey.shade300,
-                                                  width: 2,
-                                                ),
-                                              ),
-                                              clipBehavior: Clip.antiAlias,
-                                              child: item.isVideo
-                                                  ? const Icon(LucideIcons.video, size: 32)
-                                                  : _filterThumbnail(file, name, selected),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              name,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                                                color: selected ? const Color(0xFF0095F6) : Colors.grey,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: _adjustments.map((adj) {
-                            final key = adj.$1;
-                            final label = adj.$2;
-                            final min = adj.$3;
-                            final max = adj.$4;
-                            final value = item.adjustments[key] ?? 0;
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                                      Text('$value', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                                    ],
-                                  ),
-                                  Slider(
-                                    value: value.toDouble(),
-                                    min: min.toDouble(),
-                                    max: max.toDouble(),
-                                    onChanged: (v) => _updateAdjustment(key, v.round()),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                ),
-              ),
-            ],
-          ),
-        );
-        if (useColumn) {
-          return Column(
-            children: [
-              Expanded(flex: 2, child: imageSection),
-              SizedBox(
-                height: 280,
-                child: toolsSection,
-              ),
-            ],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(flex: 2, child: imageSection),
-            toolsSection,
-          ],
-        );
-      },
-    );
+    return const SizedBox();
   }
 
   /// Applies named filter preset + adjustments (matches React getFilterStyle).
   Widget _applyFilterToImage(File file, _CreatePostMediaItem item) {
+    if (item.alreadyProcessed) {
+      return Image.file(file, fit: BoxFit.cover);
+    }
     final adj = item.adjustments;
-    final b = (adj['brightness'] ?? 0) / 100.0 + 1.0;
-    final c = (adj['contrast'] ?? 0) / 100.0 + 1.0;
-    final s = (adj['saturate'] ?? 0) / 100.0 + 1.0;
+    final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
+    final luxBC = 1.0 + (lux * 0.35);
+    final luxS = 1.0 + (lux * 0.2);
+    final b = ((adj['brightness'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final c = ((adj['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
     final opacity = 1.0 - (adj['opacity'] ?? 0) / 100.0;
     final presetMatrix = _filterMatrixFor(item.filter);
     final adjustmentMatrix = _buildFilterMatrix(brightness: b, contrast: c, saturation: s);
@@ -1045,12 +765,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         colorFilter: ColorFilter.matrix(presetMatrix),
         child: ColorFiltered(
           colorFilter: ColorFilter.matrix(adjustmentMatrix),
-          child: item.aspect == 0.0
-              ? Image.file(file, fit: BoxFit.contain)
-              : AspectRatio(
-                  aspectRatio: item.aspect,
-                  child: Image.file(file, fit: BoxFit.cover),
-                ),
+          child: item.alreadyCropped
+              ? Image.file(file, fit: BoxFit.cover)
+              : item.aspect == 0.0
+                  ? Image.file(file, fit: BoxFit.contain)
+                  : AspectRatio(
+                      aspectRatio: item.aspect,
+                      child: Image.file(file, fit: BoxFit.cover),
+                    ),
         ),
       ),
     );
@@ -1088,7 +810,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final srcW = srcImage.width.toDouble();
     final srcH = srcImage.height.toDouble();
     Rect srcRect;
-    if (item.aspect == 0.0 || item.aspect <= 0) {
+    if (item.alreadyCropped || item.aspect == 0.0 || item.aspect <= 0) {
       srcRect = Rect.fromLTWH(0, 0, srcW, srcH);
     } else {
       final target = item.aspect;
@@ -1108,9 +830,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder, ui.Rect.fromLTWH(0, 0, dstW.toDouble(), dstH.toDouble()));
     final adj = item.adjustments;
-    final b = (adj['brightness'] ?? 0) / 100.0 + 1.0;
-    final c = (adj['contrast'] ?? 0) / 100.0 + 1.0;
-    final s = (adj['saturate'] ?? 0) / 100.0 + 1.0;
+    final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
+    final luxBC = 1.0 + (lux * 0.35);
+    final luxS = 1.0 + (lux * 0.2);
+    final b = ((adj['brightness'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final c = ((adj['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
     final opacity = 1.0 - (adj['opacity'] ?? 0) / 100.0;
     final preset = _filterMatrixFor(item.filter);
     final adjust = _buildFilterMatrix(brightness: b, contrast: c, saturation: s);
@@ -1151,438 +876,201 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _buildShare() {
     final item = _currentMedia;
     if (item == null) return const SizedBox();
-    
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final useColumn = constraints.maxWidth < 600;
+    final aspect = item.aspect == 0.0 ? 1.0 : item.aspect;
 
-        final imageSection = LayoutBuilder(
-          builder: (context, imageConstraints) {
-            final w = imageConstraints.maxWidth;
-            final h = imageConstraints.maxHeight;
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                GestureDetector(
-                  onTapDown: (details) => _onImageTapForTag(details, Size(w, h)),
-                  child: Container(
-                    width: w,
-                    height: h,
-                    color: Colors.black,
-                    child: Center(
-                      child: item.isVideo
-                          ? Icon(LucideIcons.video, size: 100, color: Colors.grey[600])
-                          : _applyFilterToImage(File(item.displayPath), item),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 16,
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                      child: const Text('Tap photo to tag people', style: TextStyle(color: Colors.white, fontSize: 12)),
-                    ),
-                  ),
-                ),
-                ..._tags.map((t) {
-                  final x = (t.x / 100) * w;
-                  final y = (t.y / 100) * h;
-                  return Positioned(
-                    left: x,
-                    top: y,
-                    child: GestureDetector(
-                      onPanStart: (_) => setState(() => _draggingTagId = t.id),
-                      onPanEnd: (_) => setState(() => _draggingTagId = null),
-                      onPanUpdate: (details) {
-                        setState(() {
-                          t.x += (details.delta.dx / w) * 100;
-                          t.y += (details.delta.dy / h) * 100;
-                          t.x = t.x.clamp(0.0, 100.0);
-                          t.y = t.y.clamp(0.0, 100.0);
-                        });
-                      },
-                      child: Transform.translate(
-                        offset: const Offset(-20, -15),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.8),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white.withOpacity(0.2)),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2)),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircleAvatar(
-                                radius: 8,
-                                backgroundColor: Colors.grey[800],
-                                backgroundImage: t.user['avatar_url'] != null && (t.user['avatar_url'] as String).isNotEmpty
-                                    ? NetworkImage(t.user['avatar_url'] as String)
-                                    : null,
-                                child: t.user['avatar_url'] == null || (t.user['avatar_url'] as String).isEmpty
-                                    ? Text(((t.user['username'] as String?) ?? 'U')[0].toUpperCase(),
-                                        style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold))
-                                    : null,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                (t.user['username'] as String?) ?? '',
-                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(width: 4),
-                              GestureDetector(
-                                onTap: () => _removeTag(t.id),
-                                child: Container(
-                                  padding: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(LucideIcons.x, size: 10, color: Colors.white),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-                if (_showTagSearch) _buildTagSearchOverlay(),
-                if (_media.length > 1) ...[
-                  if (_currentIndex > 0)
-                    Positioned(
-                      left: 8,
-                      child: IconButton(
-                        icon: const Icon(LucideIcons.chevronLeft, color: Colors.black87),
-                        style: IconButton.styleFrom(backgroundColor: Colors.white70),
-                        onPressed: () => setState(() => _currentIndex--),
-                      ),
-                    ),
-                  if (_currentIndex < _media.length - 1)
-                    Positioned(
-                      right: 8,
-                      child: IconButton(
-                        icon: const Icon(LucideIcons.chevronRight, color: Colors.black87),
-                        style: IconButton.styleFrom(backgroundColor: Colors.white70),
-                        onPressed: () => setState(() => _currentIndex++),
-                      ),
-                    ),
-                ],
-              ],
-            );
-          }
-        );
-
-        final sharePanel = Container(
-          color: Theme.of(context).colorScheme.surface,
-          child: ListView(
-            padding: EdgeInsets.zero,
+    Widget optionRow({
+      required IconData icon,
+      required String label,
+      VoidCallback? onTap,
+    }) {
+      return InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Row(
             children: [
-              // User row (React: user avatar + username)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Colors.grey[300],
-                      backgroundImage: _currentUserProfile?['avatar_url'] != null &&
-                              (_currentUserProfile!['avatar_url'] as String).isNotEmpty
-                          ? NetworkImage(_currentUserProfile!['avatar_url'] as String)
-                          : null,
-                      child: _currentUserProfile?['avatar_url'] == null ||
-                              (_currentUserProfile!['avatar_url'] as String).isEmpty
-                          ? Text(
-                              ((_currentUserProfile?['username'] as String?) ?? 'U').toUpperCase().substring(0, 1),
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      (_currentUserProfile?['username'] as String?) ?? 'User',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                    ),
-                  ],
+              Icon(icon, color: Colors.white, size: 20),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
                 ),
               ),
-              // Caption section
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: _captionCtl,
-                      maxLines: 6,
-                      maxLength: 2200,
-                      decoration: const InputDecoration(
-                        hintText: 'Write a caption...',
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.zero,
-                        counterText: '',
-                      ),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        IconButton(
-                          icon: Icon(LucideIcons.smile, color: Colors.grey[600], size: 22),
-                          onPressed: () => setState(() => _showEmojiPicker = !_showEmojiPicker),
-                        ),
-                        ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: _captionCtl,
-                          builder: (_, value, __) => Text(
-                            '${value.text.length}/2,200',
-                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_showEmojiPicker)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey[300]!),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Most popular',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey[600]),
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: _popularEmojis.map((e) => InkWell(
-                                onTap: () {
-                                  _captionCtl.text = _captionCtl.text + e;
-                                  setState(() {});
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.all(6),
-                                  child: Text(e, style: const TextStyle(fontSize: 22)),
-                                ),
-                              )).toList(),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              // Add Tag row (React parity)
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                leading: Icon(LucideIcons.userPlus, size: 22, color: Colors.grey[700]),
-                title: const Text('Add Tag', style: TextStyle(fontSize: 14)),
-              ),
-              // Advanced Settings accordion (React: Hide likes, Turn off commenting + description)
-              InkWell(
-                onTap: () => setState(() => _advancedOpen = !_advancedOpen),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Advanced Settings', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                      Icon(_advancedOpen ? LucideIcons.chevronUp : LucideIcons.chevronDown, color: Colors.grey[600], size: 20),
-                    ],
-                  ),
-                ),
-              ),
-              if (_advancedOpen) ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Hide like and view counts on this post',
-                                  style: TextStyle(fontSize: 14),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Only you will see the total number of likes and views. You can change this later in the ... menu.',
-                                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Switch(value: _hideLikes, onChanged: (v) => setState(() => _hideLikes = v)),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Turn off commenting', style: TextStyle(fontSize: 14)),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'You can change this later in the ... menu at the top of your post.',
-                                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Switch(value: _turnOffCommenting, onChanged: (v) => setState(() => _turnOffCommenting = v)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 24),
-            ],
-          ),
-        );
-
-        final borderedPanel = Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(
-              left: useColumn ? BorderSide.none : BorderSide(color: Theme.of(context).dividerColor),
-              top: useColumn ? BorderSide(color: Theme.of(context).dividerColor) : BorderSide.none,
-            ),
-          ),
-          child: sharePanel,
-        );
-
-        if (useColumn) {
-          return Column(
-            children: [
-              Expanded(flex: 2, child: imageSection),
-              if (!_showTagSearch)
-                SizedBox(
-                  height: 320,
-                  child: borderedPanel,
-                ),
-            ],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(flex: 2, child: imageSection),
-            SizedBox(
-              width: _sharePanelMinWidth,
-              child: borderedPanel,
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildTagSearchOverlay() {
-    return Positioned(
-      left: 24,
-      right: 24,
-      top: 24,
-      child: Material(
-        elevation: 8,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.4, // Reduced slightly to ensure it fits well
-          ),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Tag People', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                  IconButton(
-                    icon: const Icon(LucideIcons.x, size: 20),
-                    onPressed: () {
-                      setState(() {
-                        _showTagSearch = false;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              TextField(
-                decoration: const InputDecoration(
-                  hintText: 'Search user',
-                  prefixIcon: Icon(LucideIcons.search, size: 20),
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-                onChanged: (v) => _searchTagUsers(v),
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                fit: FlexFit.loose,
-                child: _isSearchingUsers
-                    ? const Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                      )
-                    : _tagSearchResults.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Center(
-                              child: Text(
-                                _lastSearchQuery.isEmpty 
-                                  ? 'Type a name to search...' 
-                                  : 'No users found',
-                                style: const TextStyle(fontSize: 12, color: Colors.grey),
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            shrinkWrap: true,
-                            itemCount: _tagSearchResults.length,
-                            itemBuilder: (_, i) {
-                              final u = _tagSearchResults[i];
-                              return ListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                leading: CircleAvatar(
-                                  radius: 16,
-                                  backgroundImage: u['avatar_url'] != null && (u['avatar_url'] as String).isNotEmpty
-                                      ? NetworkImage(u['avatar_url'] as String)
-                                      : null,
-                                  child: u['avatar_url'] == null || (u['avatar_url'] as String).isEmpty
-                                      ? const Icon(LucideIcons.user, size: 16)
-                                      : null,
-                                ),
-                                title: Text((u['username'] as String?) ?? '', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                                subtitle: Text((u['full_name'] as String?) ?? '', style: const TextStyle(fontSize: 12)),
-                                onTap: () => _addTag(u),
-                              );
-                            },
-                          ),
-              ),
+              Icon(LucideIcons.chevronRight, color: Colors.white.withValues(alpha: 0.6), size: 18),
             ],
           ),
         ),
+      );
+    }
+
+    Widget pillButton({
+      required IconData icon,
+      required String label,
+      VoidCallback? onTap,
+    }) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(label, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Audio suggestion chips removed per request
+
+    return Stack(
+      children: [
+        Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 96),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _showPreviewOverlay = true),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Container(
+                            color: Colors.black,
+                            child: SizedBox(
+                              width: 160,
+                              child: AspectRatio(
+                                aspectRatio: aspect,
+                                child: item.isVideo
+                                    ? Icon(LucideIcons.video, size: 64, color: Colors.white.withValues(alpha: 0.8))
+                                    : _applyFilterToImage(File(item.displayPath), item),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    TextField(
+                      controller: _captionCtl,
+                      maxLines: 4,
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                      decoration: InputDecoration(
+                        hintText: 'Add a caption...',
+                        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 16),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        pillButton(icon: LucideIcons.listOrdered, label: 'Poll'),
+                        const SizedBox(width: 12),
+                        pillButton(icon: LucideIcons.search, label: 'Prompt'),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+                    optionRow(icon: LucideIcons.music2, label: 'Add audio'),
+                    const SizedBox(height: 8),
+                    optionRow(icon: LucideIcons.userPlus, label: 'Tag people', onTap: _openTagPeople),
+                    optionRow(icon: LucideIcons.mapPin, label: 'Add location'),
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _isSubmitting ? null : _next,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3D5AFE),
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: Colors.white.withValues(alpha: 0.12),
+                      disabledForegroundColor: Colors.white.withValues(alpha: 0.6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text(
+                      _isSubmitting ? 'Sharing...' : 'Share',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_showPreviewOverlay) _buildPreviewOverlay(),
+        
+      ],
+    );
+  }
+
+  Widget _buildPreviewOverlay() {
+    final item = _currentMedia;
+    if (item == null) return const SizedBox.shrink();
+    final aspect = (item.aspect == 0.0) ? 1.0 : item.aspect;
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          GestureDetector(
+            onTap: () => setState(() => _showPreviewOverlay = false),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(color: Colors.black.withOpacity(0.25)),
+            ),
+          ),
+          Center(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.96, end: 1.0),
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              builder: (context, scale, child) {
+                return Transform.scale(scale: scale, child: child);
+              },
+              child: Material(
+                elevation: 16,
+                borderRadius: BorderRadius.circular(16),
+                clipBehavior: Clip.antiAlias,
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width * 0.9,
+                  child: AspectRatio(
+                    aspectRatio: aspect,
+                    child: item.isVideo
+                        ? Icon(LucideIcons.video, size: 100, color: Colors.grey[600])
+                        : _applyFilterToImage(File(item.displayPath), item),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 24,
+            right: 24,
+            child: IconButton(
+              icon: const Icon(LucideIcons.x, color: Colors.white, size: 24),
+              onPressed: () => setState(() => _showPreviewOverlay = false),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -76,6 +76,9 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
 
   PageRoute<dynamic>? _subscribedRoute;
   bool _isRouteActive = true;
+  bool _pendingHomeRefreshAfterRoute = false;
+  Timer? _autoRefreshDebounce;
+  DateTime? _lastAutoRefreshAt;
 
   bool? _parseBoolLike(dynamic value) {
     if (value is bool) return value;
@@ -230,17 +233,38 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
   void didPopNext() {
     if (_isRouteActive) return;
     _isRouteActive = true;
+    if (_pendingHomeRefreshAfterRoute && _currentIndex == 0) {
+      _pendingHomeRefreshAfterRoute = false;
+      _scheduleHomeRefresh();
+    }
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _activeFeedDebounce?.cancel();
+    _autoRefreshDebounce?.cancel();
     if (_subscribedRoute != null) {
       appRouteObserver.unsubscribe(this);
       _subscribedRoute = null;
     }
     super.dispose();
+  }
+
+  void _scheduleHomeRefresh() {
+    _autoRefreshDebounce?.cancel();
+    _autoRefreshDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      if (_currentIndex != 0) return;
+      final last = _lastAutoRefreshAt;
+      final now = DateTime.now();
+      if (last != null && now.difference(last) < const Duration(seconds: 1)) {
+        return;
+      }
+      _lastAutoRefreshAt = now;
+      final store = StoreProvider.of<AppState>(context);
+      unawaited(_loadData(store));
+    });
   }
 
   Future<void> _loadData(Store<AppState> store) async {
@@ -1035,6 +1059,7 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
 
   void _onNavTap(int idx) {
     if (idx == 2) {
+      _pendingHomeRefreshAfterRoute = true;
       if (_isVendor) {
         _openVendorAdComposer('post');
       } else {
@@ -1054,12 +1079,6 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
       return;
     }
 
-    // If switching back to Home, refresh data
-    if (idx == 0 && _currentIndex != 0) {
-      final store = StoreProvider.of<AppState>(context);
-      _loadData(store);
-    }
-
     if (idx != _currentIndex) {
       // Pause any in-feed video audio while switching away from Home.
       if (_currentIndex == 0) {
@@ -1068,6 +1087,9 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
       setState(() {
         _currentIndex = idx;
       });
+    }
+    if (idx == 0) {
+      _scheduleHomeRefresh();
     }
   }
 
@@ -1532,6 +1554,7 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
               if (_isVendor) {
                 _openVendorAdComposer('post');
               } else {
+                _pendingHomeRefreshAfterRoute = true;
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => const CreateUploadScreen(
@@ -1543,6 +1566,7 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
             },
             onUploadReel: () {
               if (_isVendor) return;
+              _pendingHomeRefreshAfterRoute = true;
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (context) => const CreateUploadScreen(

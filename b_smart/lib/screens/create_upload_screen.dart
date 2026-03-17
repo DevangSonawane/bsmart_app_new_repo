@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:photo_manager/photo_manager.dart';
 import '../models/media_model.dart';
 import '../services/create_service.dart';
-import 'create_post_screen.dart';
 import 'create_edit_preview_screen.dart';
 import 'story_camera_screen.dart';
 import 'advertiser_create_ad_screen.dart';
@@ -41,6 +40,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   late UploadMode _mode;
   _GallerySource _source = _GallerySource.recents;
   bool _showSourceMenu = false;
+  final GlobalKey _sourceBarKey = GlobalKey();
+  Offset _sourceMenuPosition = const Offset(16, 328);
 
   static const Duration _modeAnimDuration = Duration(milliseconds: 90);
 
@@ -302,8 +303,9 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     } else {
       final created = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
-          builder: (context) => CreatePostScreen(
-            initialMedia: media,
+          builder: (context) => CreateEditPreviewScreen(
+            media: media,
+            isPostFlow: true,
           ),
         ),
       );
@@ -375,96 +377,114 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         children: [
           Column(
             children: [
-              if (!isReelMode)
-                AspectRatio(
-                  aspectRatio: 1.0,
-                  child: Container(
-                    width: double.infinity,
-                    color: Colors.black,
-                    child: _currentAsset == null
-                        ? Center(
-                            child: Icon(Icons.image, size: 64, color: Colors.grey[700]),
-                          )
-                        : FutureBuilder<Uint8List?>(
-                            future: () {
-                              final asset = _currentAsset!;
-                              final w = asset.width;
-                              final h = asset.height;
-                              const maxSide = 1000;
-                              int thumbW;
-                              int thumbH;
-                              if (w >= h && w > 0 && h > 0) {
-                                thumbW = maxSide;
-                                thumbH = (maxSide * h / w).round();
-                              } else if (h > 0 && w > 0) {
-                                thumbH = maxSide;
-                                thumbW = (maxSide * w / h).round();
-                              } else {
-                                thumbW = maxSide;
-                                thumbH = maxSide;
-                              }
-                              return asset.thumbnailDataWithSize(ThumbnailSize(thumbW, thumbH));
-                            }(),
-                            builder: (context, snap) {
-                              if (snap.connectionState != ConnectionState.done || snap.data == null) {
-                                return const Center(child: CircularProgressIndicator(color: Colors.white));
-                              }
-                              return Image.memory(
-                                snap.data!,
-                                fit: BoxFit.contain,
-                              );
-                            },
+              Expanded(
+                child: CustomScrollView(
+                  slivers: [
+                    if (!isReelMode)
+                      SliverToBoxAdapter(
+                        child: AspectRatio(
+                          aspectRatio: 1.0,
+                          child: Container(
+                            width: double.infinity,
+                            color: Colors.black,
+                            child: _currentAsset == null
+                                ? Center(
+                                    child: Icon(Icons.image, size: 64, color: Colors.grey[700]),
+                                  )
+                                : FutureBuilder<Uint8List?>(
+                                    future: () {
+                                      final asset = _currentAsset!;
+                                      final w = asset.width;
+                                      final h = asset.height;
+                                      const maxSide = 1000;
+                                      int thumbW;
+                                      int thumbH;
+                                      if (w >= h && w > 0 && h > 0) {
+                                        thumbW = maxSide;
+                                        thumbH = (maxSide * h / w).round();
+                                      } else if (h > 0 && w > 0) {
+                                        thumbH = maxSide;
+                                        thumbW = (maxSide * w / h).round();
+                                      } else {
+                                        thumbW = maxSide;
+                                        thumbH = maxSide;
+                                      }
+                                      return asset.thumbnailDataWithSize(ThumbnailSize(thumbW, thumbH));
+                                    }(),
+                                    builder: (context, snap) {
+                                      if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                        return const Center(child: CircularProgressIndicator(color: Colors.white));
+                                      }
+                                      return Image.memory(
+                                        snap.data!,
+                                        fit: BoxFit.contain,
+                                      );
+                                    },
+                                  ),
                           ),
-                  ),
-                ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _showSourceMenu = !_showSourceMenu;
-                        });
-                      },
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _sourceLabel,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _FixedSliverHeaderDelegate(
+                        height: 56,
+                        child: Container(
+                          color: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  final box = _sourceBarKey.currentContext?.findRenderObject();
+                                  if (box is RenderBox) {
+                                    final pos = box.localToGlobal(Offset.zero);
+                                    _sourceMenuPosition = Offset(pos.dx, pos.dy + box.size.height);
+                                  }
+                                  setState(() {
+                                    _showSourceMenu = !_showSourceMenu;
+                                  });
+                                },
+                                child: Row(
+                                  key: _sourceBarKey,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _sourceLabel,
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                                  ],
+                                ),
+                              ),
+                              const Spacer(),
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _multiSelect = !_multiSelect;
+                                  });
+                                },
+                                style: TextButton.styleFrom(
+                                  backgroundColor: _multiSelect ? Colors.white : Colors.white10,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                ),
+                                child: Text(
+                                  _multiSelect ? 'Deselect' : 'Select',
+                                  style: TextStyle(
+                                    color: _multiSelect ? Colors.black : Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-                        ],
-                      ),
-                    ),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _multiSelect = !_multiSelect;
-                        });
-                      },
-                      style: TextButton.styleFrom(
-                        backgroundColor: _multiSelect ? Colors.white : Colors.white10,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      ),
-                      child: Text(
-                        _multiSelect ? 'Deselect' : 'Select',
-                        style: TextStyle(
-                          color: _multiSelect ? Colors.black : Colors.white,
-                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: _galleryPermissionDenied
-                    ? SingleChildScrollView(
+                    if (_galleryPermissionDenied)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
                         child: Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
@@ -515,29 +535,34 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                           ),
                         ),
                       )
-                    : _assets.isEmpty
-                        ? const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.image_search, size: 64, color: Colors.white30),
-                                SizedBox(height: 12),
-                                Text(
-                                  'No photos or videos',
-                                  style: TextStyle(color: Colors.white60),
-                                ),
-                              ],
-                            ),
-                          )
-                        : GridView.builder(
-                            padding: const EdgeInsets.all(1),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 4,
-                              crossAxisSpacing: 1,
-                              mainAxisSpacing: 1,
-                            ),
-                            itemCount: _assets.length,
-                            itemBuilder: (context, index) {
+                    else if (_assets.isEmpty)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.image_search, size: 64, color: Colors.white30),
+                              SizedBox(height: 12),
+                              Text(
+                                'No photos or videos',
+                                style: TextStyle(color: Colors.white60),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.all(1),
+                        sliver: SliverGrid(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            crossAxisSpacing: 1,
+                            mainAxisSpacing: 1,
+                          ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
                               final asset = _assets[index];
                               final isSelected = _selectedIds.contains(asset.id);
                               return GestureDetector(
@@ -607,7 +632,12 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                                 ),
                               );
                             },
+                            childCount: _assets.length,
                           ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
               if (!isReelMode || !_hasSelection)
                 Padding(
@@ -792,8 +822,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
             ),
           if (_showSourceMenu)
             Positioned(
-              left: 16,
-              top: 328,
+              left: _sourceMenuPosition.dx,
+              top: _sourceMenuPosition.dy,
               child: Container(
                 width: 220,
                 decoration: BoxDecoration(
@@ -877,5 +907,31 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         ),
       ),
     );
+  }
+}
+
+class _FixedSliverHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final double height;
+  final Widget child;
+
+  _FixedSliverHeaderDelegate({
+    required this.height,
+    required this.child,
+  });
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(covariant _FixedSliverHeaderDelegate oldDelegate) {
+    return height != oldDelegate.height || child != oldDelegate.child;
   }
 }
