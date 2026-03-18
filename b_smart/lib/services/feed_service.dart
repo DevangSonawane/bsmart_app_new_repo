@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../api/api.dart';
 import '../models/ad_model.dart';
 import '../models/feed_page_model.dart';
@@ -434,7 +436,7 @@ class FeedService {
                   }
                 }
                 final normalized = UrlHelper.normalizeUrl(url);
-                return _bust(normalized);
+                return normalized;
               })
               .where((u) => u.isNotEmpty)
               .cast<String>()
@@ -447,7 +449,7 @@ class FeedService {
                     item['url'] ??
                     item['file_path'])
                 ?.toString();
-            final normalized = _bust(UrlHelper.normalizeUrl(single));
+            final normalized = UrlHelper.normalizeUrl(single);
             if (normalized.isNotEmpty) {
               mediaUrls = [normalized];
             }
@@ -456,7 +458,7 @@ class FeedService {
             final single =
                 (item['imageUrl'] ?? item['image'] ?? item['url'])?.toString();
             if (single != null && single.isNotEmpty) {
-              mediaUrls.add(_bust(UrlHelper.normalizeUrl(single)));
+              mediaUrls.add(UrlHelper.normalizeUrl(single));
             }
           }
 
@@ -511,49 +513,180 @@ class FeedService {
 
           String? thumbnailUrl;
           double? aspectRatio;
+          double? _parseAspectRatio(dynamic raw) {
+            if (raw == null) return null;
+            if (raw is num) {
+              final v = raw.toDouble();
+              return v > 0 ? v : null;
+            }
+            if (raw is String) {
+              final s = raw.trim();
+              if (s.isEmpty) return null;
+              if (s.contains(':') || s.contains('/')) {
+                final parts = s.split(RegExp(r'[:/]'));
+                if (parts.length >= 2) {
+                  final a = double.tryParse(parts[0].trim());
+                  final b = double.tryParse(parts[1].trim());
+                  if (a != null && b != null && a > 0 && b > 0) {
+                    return a / b;
+                  }
+                }
+              }
+              final v = double.tryParse(s);
+              return (v != null && v > 0) ? v : null;
+            }
+            return null;
+          }
           if (media.isNotEmpty) {
-            final first = media.first;
-            if (first is Map) {
+            for (final mm in media) {
+              if (mm is! Map) continue;
+              final map = Map<String, dynamic>.from(mm);
               // Handle thumbnail being String, Map, or List
-              dynamic rawThumb =
-                  first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
-
+              dynamic rawThumb = map['thumbnail'] ??
+                  map['thumbnailUrl'] ??
+                  map['thumbnail_url'] ??
+                  map['thumb'];
               if (rawThumb is String) {
                 thumbnailUrl = rawThumb;
               } else if (rawThumb is Map) {
-                thumbnailUrl =
-                    (rawThumb['url'] ?? rawThumb['fileUrl'] ?? rawThumb['path'])
-                        ?.toString();
+                thumbnailUrl = (rawThumb['url'] ??
+                        rawThumb['fileUrl'] ??
+                        rawThumb['file_url'] ??
+                        rawThumb['path'])
+                    ?.toString();
+                if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
+                    rawThumb['file'] is Map) {
+                  final f = rawThumb['file'] as Map;
+                  thumbnailUrl =
+                      (f['url'] ?? f['fileUrl'] ?? f['file_url'] ?? f['path'])
+                          ?.toString();
+                }
+                if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
+                    rawThumb['fileName'] != null) {
+                  thumbnailUrl = '/uploads/${rawThumb['fileName']}';
+                }
               } else if (rawThumb is List && rawThumb.isNotEmpty) {
                 final t = rawThumb.first;
                 if (t is Map) {
-                  thumbnailUrl =
-                      (t['url'] ?? t['fileUrl'] ?? t['path'])?.toString();
+                  thumbnailUrl = (t['url'] ??
+                          t['fileUrl'] ??
+                          t['file_url'] ??
+                          t['path'])
+                      ?.toString();
+                  if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
+                      t['file'] is Map) {
+                    final f = t['file'] as Map;
+                    thumbnailUrl =
+                        (f['url'] ?? f['fileUrl'] ?? f['file_url'] ?? f['path'])
+                            ?.toString();
+                  }
+                  if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
+                      t['fileName'] != null) {
+                    thumbnailUrl = '/uploads/${t['fileName']}';
+                  }
                 } else if (t is String) {
                   thumbnailUrl = t;
                 }
               }
-
+              if (thumbnailUrl == null || thumbnailUrl.isEmpty) {
+                final thumbsAny = map['thumbnails'];
+                if (thumbsAny is List && thumbsAny.isNotEmpty) {
+                  final t = thumbsAny.first;
+                  if (t is Map) {
+                    thumbnailUrl = (t['url'] ??
+                            t['fileUrl'] ??
+                            t['file_url'] ??
+                            t['path'])
+                        ?.toString();
+                    if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
+                        t['fileName'] != null) {
+                      thumbnailUrl = '/uploads/${t['fileName']}';
+                    }
+                  } else if (t is String) {
+                    thumbnailUrl = t;
+                  }
+                }
+              }
+              if ((thumbnailUrl == null || thumbnailUrl.isEmpty)) {
+                final poster = map['poster'] ?? map['image'] ?? map['imageUrl'];
+                if (poster != null) {
+                  thumbnailUrl = poster.toString();
+                }
+              }
               if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
                 thumbnailUrl = UrlHelper.normalizeUrl(thumbnailUrl);
+                if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+                  break;
+                }
               }
+            }
 
-              // Parse stored aspect ratio from upload
+            // Parse stored aspect ratio from first media if available
+            final first = media.first;
+            if (first is Map) {
               final rawAr = first['aspect_ratio'] ??
                   first['aspectRatio'] ??
                   (first['crop'] is Map
                       ? (first['crop'] as Map)['aspect_ratio']
+                      : null) ??
+                  (first['crop_settings'] is Map
+                      ? (first['crop_settings'] as Map)['aspect_ratio']
+                      : null) ??
+                  (first['crop_settings'] is Map
+                      ? (first['crop_settings'] as Map)['aspectRatio']
                       : null);
-              if (rawAr != null) {
-                if (rawAr is double) {
-                  aspectRatio = rawAr > 0 ? rawAr : null;
-                } else if (rawAr is int) {
-                  aspectRatio = rawAr > 0 ? rawAr.toDouble() : null;
-                } else if (rawAr is String) {
-                  aspectRatio = double.tryParse(rawAr);
-                  if (aspectRatio != null && aspectRatio <= 0)
-                    aspectRatio = null;
+              aspectRatio = _parseAspectRatio(rawAr);
+            }
+          }
+
+          // Fallback: post-level thumbnail fields
+          if (thumbnailUrl == null || thumbnailUrl.isEmpty) {
+            final raw = item['thumbnail'] ??
+                item['thumbnail_url'] ??
+                item['thumb'] ??
+                item['poster'];
+            if (raw != null) {
+              thumbnailUrl = UrlHelper.normalizeUrl(raw.toString());
+            }
+          }
+
+          // Fallback: use first image media as thumbnail (if any)
+          if (thumbnailUrl == null || thumbnailUrl.isEmpty) {
+            for (final mm in media) {
+              if (mm is Map) {
+                final t = (mm['type'] as String?)?.toLowerCase();
+                if (t == 'image') {
+                  final cand = (mm['fileUrl'] ??
+                          mm['file_url'] ??
+                          mm['url'] ??
+                          mm['file_path'] ??
+                          (mm['file'] is Map
+                              ? ((mm['file'] as Map)['url'] ??
+                                  (mm['file'] as Map)['fileUrl'])
+                              : null) ??
+                          (mm['file'] is String ? mm['file'] : null))
+                      ?.toString();
+                  if (cand != null && cand.isNotEmpty) {
+                    thumbnailUrl = UrlHelper.normalizeUrl(cand);
+                    break;
+                  }
                 }
+              }
+            }
+          }
+
+          // Fallback: if any mediaUrls are images, use the first as thumbnail.
+          if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
+              mediaUrls.isNotEmpty) {
+            for (final url in mediaUrls) {
+              final u = url.toLowerCase();
+              if (u.endsWith('.jpg') ||
+                  u.endsWith('.jpeg') ||
+                  u.endsWith('.png') ||
+                  u.endsWith('.webp') ||
+                  u.endsWith('.gif')) {
+                thumbnailUrl = url;
+                break;
               }
             }
           }
@@ -581,9 +714,11 @@ class FeedService {
                   (item['full_name'] as String?) ??
                   vendorName;
 
-          // Also apply buster to thumbnail if any
-          final bustedThumb =
-              thumbnailUrl != null ? _bust(thumbnailUrl) : null;
+          // Never cache-bust thumbnails — it breaks CachedNetworkImage disk cache
+          // and causes the grey placeholder to show on every render.
+          final bustedThumb = thumbnailUrl != null && thumbnailUrl.isNotEmpty
+              ? thumbnailUrl
+              : null;
 
           final post = FeedPost(
             id: postId,

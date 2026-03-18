@@ -33,6 +33,9 @@ import '../utils/current_user.dart';
 import '../api/auth_api.dart';
 import '../api/api_exceptions.dart';
 import '../api/api_client.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../utils/url_helper.dart';
+import '../widgets/dynamic_media_widget.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -213,6 +216,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     }
     _feedScrollController.addListener(_onFeedScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(primeMediaAuthHeaders());
       final store = StoreProvider.of<AppState>(context);
       // Force a clean, fresh feed on app open to avoid stale or partial data.
       store.dispatch(SetFeedPosts(const []));
@@ -433,6 +437,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   Future<void> _loadInitialFeed({bool forceNetwork = false}) async {
+    await primeMediaAuthHeaders(); // ensure auth headers ready before any image loads
     final store = StoreProvider.of<AppState>(context);
     final isFirstLoad = store.state.feedState.posts.isEmpty || forceNetwork;
 
@@ -502,6 +507,14 @@ class _HomeDashboardState extends State<HomeDashboard>
       return;
     }
 
+    if (items.isNotEmpty) {
+      await _precacheFeedMedia(items);
+      if (!mounted) {
+        if (isFirstLoad) store.dispatch(SetFeedLoading(false));
+        return;
+      }
+    }
+
     store.dispatch(SetFeedPosts(items));
 
     setState(() {
@@ -540,6 +553,73 @@ class _HomeDashboardState extends State<HomeDashboard>
       _checkIfListNeedsMorePosts();
       // Ensure we have a full initial batch without requiring a scroll.
       unawaited(_prefetchUntil(minPosts: _pageSize, maxPages: 3));
+    }
+  }
+
+  Future<void> _precacheFeedMedia(List<FeedPost> posts) async {
+    final token = await ApiClient().getToken();
+    final authHeaders = <String, String>{};
+    if (token != null && token.isNotEmpty) {
+      authHeaders['Authorization'] = 'Bearer $token';
+    }
+    final context = this.context;
+    final futures = <Future<void>>[];
+    final limit = posts.length < 6 ? posts.length : 6;
+    // Ensure the first reel/video thumbnail is cached before rendering feed.
+    FeedPost? firstVideoPost;
+    for (var i = 0; i < limit; i++) {
+      final post = posts[i];
+      if (post.mediaType == PostMediaType.video ||
+          post.mediaType == PostMediaType.reel) {
+        firstVideoPost = post;
+        break;
+      }
+    }
+    if (firstVideoPost != null &&
+        (firstVideoPost.thumbnailUrl ?? '').isNotEmpty) {
+      final url = firstVideoPost.thumbnailUrl!;
+      final Map<String, String> headers =
+          UrlHelper.shouldAttachAuthHeader(url)
+              ? authHeaders
+              : const <String, String>{};
+      try {
+        await precacheImage(
+          CachedNetworkImageProvider(url, headers: headers),
+          context,
+        ).timeout(const Duration(seconds: 2));
+      } catch (_) {
+        // Best-effort only.
+      }
+    }
+    for (var i = 0; i < limit; i++) {
+      final post = posts[i];
+      String? url;
+      if (post.mediaType == PostMediaType.video ||
+          post.mediaType == PostMediaType.reel) {
+        url = post.thumbnailUrl;
+        if ((url == null || url.isEmpty) && post.mediaUrls.isNotEmpty) {
+          // Backend should provide thumbnailUrl for reels/videos.
+        }
+      } else if (post.mediaUrls.isNotEmpty) {
+        url = post.mediaUrls.first;
+      }
+      if (url == null || url.isEmpty) continue;
+      final Map<String, String> headers =
+          UrlHelper.shouldAttachAuthHeader(url)
+              ? authHeaders
+              : const <String, String>{};
+      futures.add(
+        precacheImage(
+          CachedNetworkImageProvider(url, headers: headers),
+          context,
+        ),
+      );
+    }
+    try {
+      await Future.wait(futures)
+          .timeout(const Duration(milliseconds: 1500));
+    } catch (_) {
+      // Best-effort prefetch only.
     }
   }
 
@@ -1366,6 +1446,14 @@ class _HomeDashboardState extends State<HomeDashboard>
     final switchingToHome = idx == 0 && !wasOnHome; // ← only true when actually switching
 
     if (idx != _currentIndex) {
+      if (idx == 4 && !_reelsPrefetched) {
+        _reelsPrefetched = true;
+        unawaited(() async {
+          try {
+            await _reelsService.fetchReels(limit: 20, offset: 0);
+          } catch (_) {}
+        }());
+      }
       // Pause any in-feed video audio while switching away from Home.
       if (wasOnHome) {
         unawaited(VideoPool.instance.disposeActive());
@@ -1527,7 +1615,7 @@ class _HomeDashboardState extends State<HomeDashboard>
       extendBody: _currentIndex != 4,
       backgroundColor: isFullScreen
           ? (isDark ? const Color(0xFF121212) : Colors.black)
-          : null,
+          : theme.scaffoldBackgroundColor,
       appBar: isFullScreen
           ? null
           : AppBar(
@@ -1697,17 +1785,26 @@ class _HomeDashboardState extends State<HomeDashboard>
                   ),
               ],
             ),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
+      body: ColoredBox(
+        color: isFullScreen
+            ? (isDark ? const Color(0xFF121212) : Colors.black)
+            : theme.scaffoldBackgroundColor,
+        child: ScrollConfiguration(
+          behavior: const _NoGlowScrollBehavior(),
+          child: IndexedStack(
+            index: _currentIndex,
+            children: [
           // Home tab
           RefreshIndicator(
             onRefresh: _onRefresh,
-            child: isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                        color: DesignTokens.instaPink))
-                : CustomScrollView(
+            child: Stack(
+              children: [
+                Visibility(
+                  visible: !isLoading,
+                  maintainState: true,
+                  maintainAnimation: true,
+                  maintainSize: true,
+                  child: CustomScrollView(
                     controller: _feedScrollController,
                     cacheExtent: 180,
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -1797,10 +1894,6 @@ class _HomeDashboardState extends State<HomeDashboard>
                               final p = posts[index];
                               final isOwnPost = _currentUserId != null &&
                                   p.userId == _currentUserId;
-                              // Debug: log posts length and current index being built
-                              try {
-                                print('HomeDashboard: building post index=$index totalPosts=${posts.length} id=${p.id}');
-                              } catch (_) {}
                               Widget itemWidget;
                               try {
                                 itemWidget = VisibilityDetector(
@@ -1835,9 +1928,6 @@ class _HomeDashboardState extends State<HomeDashboard>
                                   ),
                                 );
                               } catch (e, st) {
-                                try {
-                                  print('HomeDashboard: error building post index=$index id=${p.id} error=$e');
-                                } catch (_) {}
                                 itemWidget = Padding(
                                   padding: const EdgeInsets.all(16.0),
                                   child: Column(
@@ -1859,6 +1949,17 @@ class _HomeDashboardState extends State<HomeDashboard>
                       const SliverToBoxAdapter(child: SizedBox(height: 16)),
                     ],
                   ),
+                ),
+                if (isLoading)
+                  const ColoredBox(
+                    color: Colors.transparent,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                          color: DesignTokens.instaPink),
+                    ),
+                  ),
+              ],
+            ),
           ),
           // Ads tab
           AdsPageScreen(isTabActive: _currentIndex == 1 && _isRouteActive),
@@ -1867,8 +1968,13 @@ class _HomeDashboardState extends State<HomeDashboard>
           // Promote tab
           const PromoteScreen(),
           // Reels tab
-          ReelsScreen(isActive: _currentIndex == 4 && _isRouteActive),
-        ],
+          Container(
+            color: Colors.black,
+            child: ReelsScreen(isActive: _currentIndex == 4 && _isRouteActive),
+          ),
+          ],
+          ),
+        ),
       ),
       bottomNavigationBar: isDesktop
           ? null
@@ -1934,6 +2040,16 @@ class _HomeDashboardState extends State<HomeDashboard>
       );
     }
     return content;
+  }
+}
+
+class _NoGlowScrollBehavior extends MaterialScrollBehavior {
+  const _NoGlowScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+      BuildContext context, Widget child, ScrollableDetails details) {
+    return child;
   }
 }
 

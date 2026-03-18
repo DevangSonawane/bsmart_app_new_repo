@@ -85,8 +85,10 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         _galleryPermissionDenied = false;
       });
     }
+    final RequestType requestType =
+        _mode == UploadMode.reel ? RequestType.video : RequestType.common;
     final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
-      type: RequestType.common,
+      type: requestType,
       filterOption: FilterOptionGroup(
         orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
       ),
@@ -104,13 +106,17 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       return;
     }
     final AssetPathEntity recent = paths.first;
-    final List<AssetEntity> recentAssets = await recent.getAssetListPaged(page: 0, size: 120);
+    final int recentSize = _mode == UploadMode.reel ? 1000 : 120;
+    final int albumSize = _mode == UploadMode.reel ? 300 : 60;
+    final int albumCap = _mode == UploadMode.reel ? 1000 : 120;
+    final List<AssetEntity> recentAssets =
+        await recent.getAssetListPaged(page: 0, size: recentSize);
     final List<AssetEntity> allAlbumAssets = [];
     for (final path in paths) {
-      final list = await path.getAssetListPaged(page: 0, size: 60);
+      final list = await path.getAssetListPaged(page: 0, size: albumSize);
       allAlbumAssets.addAll(list);
-      if (allAlbumAssets.length >= 120) {
-        allAlbumAssets.removeRange(120, allAlbumAssets.length);
+      if (allAlbumAssets.length >= albumCap) {
+        allAlbumAssets.removeRange(albumCap, allAlbumAssets.length);
         break;
       }
     }
@@ -189,7 +195,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       setState(() {
         _mode = mode;
       });
-      _applySource(_source);
+      _loadGalleryMedia();
       return;
     }
 

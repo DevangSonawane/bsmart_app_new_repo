@@ -120,6 +120,7 @@ class _PostCardState extends State<PostCard> {
                   thumbnailUrl: post.thumbnailUrl,
                   isVideo: _isVideo,
                   isActive: widget.isActive && widget.isTabActive,
+                  initialAspectRatio: post.aspectRatio,
                 ),
                 if (_showPeopleTags && (post.peopleTags?.isNotEmpty ?? false))
                   Positioned.fill(

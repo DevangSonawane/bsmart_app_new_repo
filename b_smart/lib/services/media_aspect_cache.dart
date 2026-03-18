@@ -9,15 +9,23 @@ class MediaAspectCache {
   static final MediaAspectCache instance = MediaAspectCache._();
 
   final Map<String, double> _cache = {};
+  Map<String, String> _authHeaders = const {};
 
   double? get(String url) => _cache[url];
+
+  void setAuthHeaders(Map<String, String> headers) {
+    _authHeaders = headers;
+  }
 
   /// Resolve image aspect ratio once using ImageStreamListener.
   Future<double> resolveImageRatio(String url) async {
     if (_cache.containsKey(url)) return _cache[url]!;
 
     final completer = Completer<double>();
-    final ImageStream stream = NetworkImage(url).resolve(const ImageConfiguration());
+    final ImageStream stream = NetworkImage(
+      url,
+      headers: _authHeaders,
+    ).resolve(const ImageConfiguration());
     late final ImageStreamListener listener;
     listener = ImageStreamListener((ImageInfo info, bool _) {
       final ui.Image img = info.image;
@@ -27,7 +35,7 @@ class MediaAspectCache {
       stream.removeListener(listener);
     }, onError: (error, stack) {
       stream.removeListener(listener);
-      completer.complete(1.0); // safe fallback
+      completer.complete(4 / 5);
     });
     stream.addListener(listener);
     return completer.future;

@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
+import '../api/api_client.dart';
 import '../services/media_aspect_cache.dart';
 import '../services/video_pool.dart';
+import '../utils/url_helper.dart';
 
 /// Displays network image or video with a cached, one-time-resolved aspect ratio.
 /// Plays only when [isActive] is true (parent-controlled center item).
@@ -15,6 +17,7 @@ class DynamicMediaWidget extends StatefulWidget {
   final String? thumbnailUrl;
   final bool isVideo;
   final bool isActive;
+  final double? initialAspectRatio;
 
   const DynamicMediaWidget({
     super.key,
@@ -23,6 +26,7 @@ class DynamicMediaWidget extends StatefulWidget {
     this.thumbnailUrl,
     required this.isVideo,
     required this.isActive,
+    this.initialAspectRatio,
   });
 
   @override
@@ -30,6 +34,27 @@ class DynamicMediaWidget extends StatefulWidget {
 }
 
 class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
+  static Map<String, String> _cachedAuthHeaders = const {};
+  static bool _authHeadersLoaded = false;
+
+  static Future<void> ensureAuthHeaders() async {
+    if (_authHeadersLoaded) return;
+    _authHeadersLoaded = true;
+    try {
+      final token = await ApiClient().getToken();
+      if (token != null && token.isNotEmpty) {
+        _cachedAuthHeaders = {'Authorization': 'Bearer $token'};
+        // Pass auth headers to aspect ratio resolver so it can fetch image dimensions
+        MediaAspectCache.instance.setAuthHeaders(_cachedAuthHeaders);
+      } else {
+        // Token not available yet — reset so next call retries
+        _authHeadersLoaded = false;
+      }
+    } catch (_) {
+      _authHeadersLoaded = false;
+    }
+  }
+
   double? _ratio;
   VideoPlayerController? _videoCtl;
   bool _loadingVideo = false;
@@ -38,18 +63,30 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   @override
   void initState() {
     super.initState();
+    _ratio = MediaAspectCache.instance.get(widget.url) ??
+        (widget.thumbnailUrl != null
+            ? MediaAspectCache.instance.get(widget.thumbnailUrl!)
+            : null);
+    _ratio ??= widget.initialAspectRatio;
     _primeRatio();
+    if (_cachedAuthHeaders.isEmpty) {
+      ensureAuthHeaders().then((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   @override
   void didUpdateWidget(covariant DynamicMediaWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.url != widget.url ||
-        oldWidget.thumbnailUrl != widget.thumbnailUrl) {
+        oldWidget.thumbnailUrl != widget.thumbnailUrl ||
+        oldWidget.initialAspectRatio != widget.initialAspectRatio) {
       _ratio = MediaAspectCache.instance.get(widget.url) ??
           (widget.thumbnailUrl != null
               ? MediaAspectCache.instance.get(widget.thumbnailUrl!)
               : null);
+      _ratio ??= widget.initialAspectRatio;
       _primeRatio();
       _disposeVideo();
     }
@@ -146,11 +183,14 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final aspect = _ratio ?? 1.0;
+    final aspect = _ratio ?? (widget.isVideo ? 4 / 5 : 4 / 5);
     return RepaintBoundary(
-      child: AspectRatio(
-        aspectRatio: aspect,
-        child: widget.isVideo ? _buildVideo() : _buildImage(),
+      child: ColoredBox(
+        color: const Color(0xFF1A1A1A),
+        child: AspectRatio(
+          aspectRatio: aspect,
+          child: widget.isVideo ? _buildVideo() : _buildImage(),
+        ),
       ),
     );
   }
@@ -159,15 +199,18 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     return CachedNetworkImage(
       imageUrl: widget.url,
       cacheKey: widget.url,
-      httpHeaders: const {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-      },
+      httpHeaders: UrlHelper.shouldAttachAuthHeader(widget.url)
+          ? _cachedAuthHeaders
+          : const {},
       fit: BoxFit.cover,
       filterQuality: FilterQuality.low,
-      placeholder: (_, __) => const ColoredBox(color: Colors.black12),
-      errorWidget: (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      placeholderFadeInDuration: Duration.zero,
+      useOldImageOnUrlChange: true,
+      placeholder: (_, __) => const ColoredBox(color: Color(0xFF1A1A1A)),
+      errorWidget: (_, __, ___) =>
+          const ColoredBox(color: Color(0xFF1A1A1A)),
     );
   }
 
@@ -175,27 +218,33 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     if (widget.isActive && _videoCtl == null && !_videoFailed) {
       _ensureVideo();
     }
-    if (_videoFailed) return _buildVideoPlaceholder();
-    if (!widget.isActive) {
-      return _buildVideoPlaceholder();
-    }
-    if (_videoCtl == null || !_videoCtl!.value.isInitialized) {
-      return _buildVideoPlaceholder();
+    final thumb = _buildVideoPlaceholder();
+    final canPlay =
+        widget.isActive && _videoCtl != null && _videoCtl!.value.isInitialized;
+    if (!canPlay) {
+      return thumb;
     }
     try {
-      return FittedBox(
-        fit: BoxFit.cover,
-        child: SizedBox(
-          width: _videoCtl!.value.size.width,
-          height: _videoCtl!.value.size.height,
-          child: VideoPlayer(_videoCtl!),
-        ),
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          thumb,
+          FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _videoCtl!.value.size.width,
+              height: _videoCtl!.value.size.height,
+              child: VideoPlayer(_videoCtl!),
+            ),
+          ),
+        ],
       );
     } catch (e) {
       try {
-        print('DynamicMediaWidget: error while building VideoPlayer for id=${widget.id} error=$e');
+        print(
+            'DynamicMediaWidget: error while building VideoPlayer for id=${widget.id} error=$e');
       } catch (_) {}
-      return _buildVideoPlaceholder();
+      return thumb;
     }
   }
 
@@ -205,18 +254,25 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
       return CachedNetworkImage(
         imageUrl: thumb.trim(),
         cacheKey: thumb.trim(),
-        httpHeaders: const {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-        },
+        httpHeaders: UrlHelper.shouldAttachAuthHeader(thumb.trim())
+            ? _cachedAuthHeaders
+            : const {},
         fit: BoxFit.cover,
         filterQuality: FilterQuality.low,
-        placeholder: (_, __) => const ColoredBox(color: Colors.black12),
+        fadeInDuration: Duration.zero,
+        fadeOutDuration: Duration.zero,
+        placeholderFadeInDuration: Duration.zero,
+        useOldImageOnUrlChange: true,
+        placeholder: (_, __) => const ColoredBox(color: Color(0xFF1A1A1A)),
         errorWidget: (_, __, ___) =>
-            const Center(child: Icon(Icons.broken_image)),
+            const ColoredBox(color: Color(0xFF1A1A1A)),
       );
     }
-    return const ColoredBox(color: Colors.black12);
+    return const ColoredBox(color: Color(0xFF1A1A1A));
   }
+}
+
+/// Call once at app startup to pre-cache auth headers for media loading.
+Future<void> primeMediaAuthHeaders() async {
+  await _DynamicMediaWidgetState.ensureAuthHeaders();
 }

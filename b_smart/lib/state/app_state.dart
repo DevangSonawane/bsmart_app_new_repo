@@ -27,7 +27,7 @@ class AppState {
       profileState: ProfileState.initial(),
       reelsState: ReelsState.initial(),
       adsState: AdsState.initial(),
-      feedState: FeedState.initial(),
+      feedState: const FeedState.initialLoading(),
     );
   }
 
