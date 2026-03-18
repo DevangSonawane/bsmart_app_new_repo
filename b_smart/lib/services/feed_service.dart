@@ -237,6 +237,8 @@ class FeedService {
     int limit = 50,
     int offset = 0,
     String? currentUserId,
+    bool useBackendDefault = false,
+    String? cacheBuster,
   }) async {
     Set<String> locallySaved = <String>{};
     Set<String> followedUsers = <String>{};
@@ -247,8 +249,27 @@ class FeedService {
     }
     try {
       final page = (offset ~/ limit) + 1;
-      final data = await _postsApi.getFeed(page: page, limit: limit);
+      // Debug: log pagination parameters
+      try {
+        // Avoid throwing in debug logging
+        print('FeedService.fetchFeedFromBackend -> page=$page limit=$limit offset=$offset currentUserId=${currentUserId ?? "(null)"}');
+      } catch (_) {}
+
+      final data = useBackendDefault
+          ? await _postsApi.getFeedDefault(cacheBuster: cacheBuster)
+          : await _postsApi.getFeed(page: page, limit: limit, cacheBuster: cacheBuster);
       List<Map<String, dynamic>> items = [];
+      // Debug: log raw data shape briefly
+      try {
+        if (data is List) {
+          print('PostsApi.getFeed returned List with length=${data.length}');
+        } else if (data is Map) {
+          final count = (data['posts'] is List) ? (data['posts'] as List).length : -1;
+          print('PostsApi.getFeed returned Map; posts length=$count');
+        } else {
+          print('PostsApi.getFeed returned unexpected type: ${data.runtimeType}');
+        }
+      } catch (_) {}
       if (data is List) {
         items = (data).cast<Map<String, dynamic>>();
       } else if (data is Map) {
@@ -360,6 +381,24 @@ class FeedService {
                   ? <dynamic>[rawMedia]
                   : <dynamic>[];
 
+          // Compute a deterministic cache-buster seed so refreshed posts show newest image
+          final updatedSeed = (item['updatedAt'] as String?) ??
+              (item['updated_at'] as String?) ??
+              (item['createdAt'] as String?) ??
+              (item['created_at'] as String?) ??
+              DateTime.now().toIso8601String();
+          String _bust(String url) {
+            if (url.isEmpty) return url;
+            try {
+              final uri = Uri.parse(url);
+              final qp = Map<String, String>.from(uri.queryParameters);
+              qp['_v'] = updatedSeed;
+              return uri.replace(queryParameters: qp).toString();
+            } catch (_) {
+              return '$url${url.contains('?') ? '&' : '?'}_v=$updatedSeed';
+            }
+          }
+
           List<String> mediaUrls = media
               .map((m) {
                 String? url;
@@ -386,7 +425,8 @@ class FeedService {
                     url = '/uploads/$fn';
                   }
                 }
-                return UrlHelper.normalizeUrl(url);
+                final normalized = UrlHelper.normalizeUrl(url);
+                return _bust(normalized);
               })
               .where((u) => u.isNotEmpty)
               .cast<String>()
@@ -399,7 +439,7 @@ class FeedService {
                     item['url'] ??
                     item['file_path'])
                 ?.toString();
-            final normalized = UrlHelper.normalizeUrl(single);
+            final normalized = _bust(UrlHelper.normalizeUrl(single));
             if (normalized.isNotEmpty) {
               mediaUrls = [normalized];
             }
@@ -408,7 +448,7 @@ class FeedService {
             final single =
                 (item['imageUrl'] ?? item['image'] ?? item['url'])?.toString();
             if (single != null && single.isNotEmpty) {
-              mediaUrls.add(single);
+              mediaUrls.add(_bust(UrlHelper.normalizeUrl(single)));
             }
           }
 
@@ -533,6 +573,10 @@ class FeedService {
                   (item['full_name'] as String?) ??
                   vendorName;
 
+          // Also apply buster to thumbnail if any
+          final bustedThumb =
+              thumbnailUrl != null ? _bust(thumbnailUrl) : null;
+
           final post = FeedPost(
             id: postId,
             userId: authorId,
@@ -545,7 +589,7 @@ class FeedService {
             isVerified: user['is_verified'] as bool? ?? false,
             mediaType: mediaType,
             mediaUrls: mediaUrls,
-            thumbnailUrl: thumbnailUrl,
+            thumbnailUrl: bustedThumb,
             aspectRatio: aspectRatio,
             caption: item['caption'] as String?,
             hashtags: ((item['tags'] as List<dynamic>?) ?? [])
@@ -630,6 +674,12 @@ class FeedService {
           // Skip any malformed items so a single bad post doesn't break the feed.
           continue;
         }
+      }
+
+      mapped.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      if (offset > 0) {
+        return mapped;
       }
 
       List<FeedPost> sponsored = const <FeedPost>[];

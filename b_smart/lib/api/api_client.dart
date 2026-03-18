@@ -84,21 +84,34 @@ class ApiClient {
     return Uri.parse(fullPath).replace(queryParameters: queryParams);
   }
 
-  Future<Map<String, String>> _headers({bool json = true}) async {
+  Future<Map<String, String>> _headers({
+    bool json = true,
+    Map<String, String>? extraHeaders,
+  }) async {
     final headers = <String, String>{};
     if (json) headers['Content-Type'] = 'application/json';
     final token = await getToken();
     if (token != null) headers['Authorization'] = 'Bearer $token';
+    if (extraHeaders != null && extraHeaders.isNotEmpty) {
+      headers.addAll(extraHeaders);
+    }
     return headers;
   }
 
   // ── Public HTTP methods ────────────────────────────────────────────────────
 
   /// `GET <baseUrl>/<path>?queryParams`
-  Future<dynamic> get(String path, {Map<String, String>? queryParams}) async {
+  Future<dynamic> get(
+    String path, {
+    Map<String, String>? queryParams,
+    Map<String, String>? extraHeaders,
+  }) async {
     try {
       final response = await _http
-          .get(_uri(path, queryParams), headers: await _headers())
+          .get(
+            _uri(path, queryParams),
+            headers: await _headers(extraHeaders: extraHeaders),
+          )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
     } on SocketException {
@@ -107,10 +120,18 @@ class ApiClient {
   }
 
   /// `POST <baseUrl>/<path>` with JSON body.
-  Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
+  Future<dynamic> post(
+    String path, {
+    Map<String, dynamic>? body,
+    Map<String, String>? extraHeaders,
+  }) async {
     try {
       final response = await _http
-          .post(_uri(path), headers: await _headers(), body: body != null ? jsonEncode(body) : null)
+          .post(
+            _uri(path),
+            headers: await _headers(extraHeaders: extraHeaders),
+            body: body != null ? jsonEncode(body) : null,
+          )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
     } on SocketException {
@@ -119,10 +140,18 @@ class ApiClient {
   }
 
   /// `PUT <baseUrl>/<path>` with JSON body.
-  Future<dynamic> put(String path, {Map<String, dynamic>? body}) async {
+  Future<dynamic> put(
+    String path, {
+    Map<String, dynamic>? body,
+    Map<String, String>? extraHeaders,
+  }) async {
     try {
       final response = await _http
-          .put(_uri(path), headers: await _headers(), body: body != null ? jsonEncode(body) : null)
+          .put(
+            _uri(path),
+            headers: await _headers(extraHeaders: extraHeaders),
+            body: body != null ? jsonEncode(body) : null,
+          )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
     } on SocketException {
@@ -131,10 +160,18 @@ class ApiClient {
   }
 
   /// `PATCH <baseUrl>/<path>` with JSON body.
-  Future<dynamic> patch(String path, {Map<String, dynamic>? body}) async {
+  Future<dynamic> patch(
+    String path, {
+    Map<String, dynamic>? body,
+    Map<String, String>? extraHeaders,
+  }) async {
     try {
       final response = await _http
-          .patch(_uri(path), headers: await _headers(), body: body != null ? jsonEncode(body) : null)
+          .patch(
+            _uri(path),
+            headers: await _headers(extraHeaders: extraHeaders),
+            body: body != null ? jsonEncode(body) : null,
+          )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
     } on SocketException {
@@ -143,10 +180,10 @@ class ApiClient {
   }
 
   /// `DELETE <baseUrl>/<path>`
-  Future<dynamic> delete(String path) async {
+  Future<dynamic> delete(String path, {Map<String, String>? extraHeaders}) async {
     try {
       final response = await _http
-          .delete(_uri(path), headers: await _headers())
+          .delete(_uri(path), headers: await _headers(extraHeaders: extraHeaders))
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
     } on SocketException {

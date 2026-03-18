@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/media_aspect_cache.dart';
@@ -31,6 +33,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   double? _ratio;
   VideoPlayerController? _videoCtl;
   bool _loadingVideo = false;
+  bool _videoFailed = false;
 
   @override
   void initState() {
@@ -83,16 +86,49 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   }
 
   Future<void> _ensureVideo() async {
-    if (_loadingVideo || _videoCtl != null) return;
+    if (_loadingVideo || _videoCtl != null || _videoFailed) return;
+    
+    final url = widget.url.trim();
+    if (url.isEmpty) {
+      if (mounted) setState(() => _videoFailed = true);
+      return;
+    }
+    
     _loadingVideo = true;
-    final ctl = await VideoPool.instance.attach(widget.id, widget.url);
-    if (!mounted) return;
-    setState(() {
-      _videoCtl = ctl;
-      _ratio = ctl.value.isInitialized ? ctl.value.aspectRatio : (_ratio ?? 9 / 16);
-    });
-    await ctl.play();
-    _loadingVideo = false;
+    try {
+      final ctl = await VideoPool.instance.attach(widget.id, url);
+      if (!mounted) {
+        _loadingVideo = false;
+        return;
+      }
+      if (!ctl.value.isInitialized) {
+        await ctl.initialize().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => throw TimeoutException('Video init timed out'),
+        );
+      }
+      if (!mounted) {
+        _loadingVideo = false;
+        return;
+      }
+      setState(() {
+        _videoCtl = ctl;
+        _ratio = ctl.value.isInitialized ? ctl.value.aspectRatio : (_ratio ?? 9 / 16);
+        _videoFailed = false;
+      });
+      await ctl.play();
+    } on PlatformException catch (e) {
+      debugPrint('DynamicMediaWidget: PlatformException for ${widget.id}: ${e.message}');
+      if (mounted) setState(() => _videoFailed = true);
+    } on TimeoutException catch (e) {
+      debugPrint('DynamicMediaWidget: Timeout for ${widget.id}: $e');
+      if (mounted) setState(() => _videoFailed = true);
+    } catch (e) {
+      debugPrint('DynamicMediaWidget: Unknown error for ${widget.id}: $e');
+      if (mounted) setState(() => _videoFailed = true);
+    } finally {
+      _loadingVideo = false;
+    }
   }
 
   Future<void> _disposeVideo() async {
@@ -122,6 +158,12 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   Widget _buildImage() {
     return CachedNetworkImage(
       imageUrl: widget.url,
+      cacheKey: widget.url,
+      httpHeaders: const {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
       fit: BoxFit.cover,
       filterQuality: FilterQuality.low,
       placeholder: (_, __) => const ColoredBox(color: Colors.black12),
@@ -130,23 +172,31 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   }
 
   Widget _buildVideo() {
-    if (widget.isActive && _videoCtl == null) {
+    if (widget.isActive && _videoCtl == null && !_videoFailed) {
       _ensureVideo();
     }
+    if (_videoFailed) return _buildVideoPlaceholder();
     if (!widget.isActive) {
       return _buildVideoPlaceholder();
     }
     if (_videoCtl == null || !_videoCtl!.value.isInitialized) {
       return _buildVideoPlaceholder();
     }
-    return FittedBox(
-      fit: BoxFit.cover,
-      child: SizedBox(
-        width: _videoCtl!.value.size.width,
-        height: _videoCtl!.value.size.height,
-        child: VideoPlayer(_videoCtl!),
-      ),
-    );
+    try {
+      return FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: _videoCtl!.value.size.width,
+          height: _videoCtl!.value.size.height,
+          child: VideoPlayer(_videoCtl!),
+        ),
+      );
+    } catch (e) {
+      try {
+        print('DynamicMediaWidget: error while building VideoPlayer for id=${widget.id} error=$e');
+      } catch (_) {}
+      return _buildVideoPlaceholder();
+    }
   }
 
   Widget _buildVideoPlaceholder() {
@@ -154,6 +204,12 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     if (thumb != null && thumb.trim().isNotEmpty) {
       return CachedNetworkImage(
         imageUrl: thumb.trim(),
+        cacheKey: thumb.trim(),
+        httpHeaders: const {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
         fit: BoxFit.cover,
         filterQuality: FilterQuality.low,
         placeholder: (_, __) => const ColoredBox(color: Colors.black12),

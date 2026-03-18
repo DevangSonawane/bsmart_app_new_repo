@@ -17,6 +17,11 @@ class PostsApi {
   PostsApi._internal();
 
   final ApiClient _client = ApiClient();
+  static const Map<String, String> _noCacheHeaders = {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  };
   String get _basePath {
     final base = ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
     final endsWithApi = base.endsWith('/api');
@@ -53,11 +58,27 @@ class PostsApi {
   }
 
   /// Get the paginated feed.
-  Future<dynamic> getFeed({int page = 1, int limit = 20}) async {
-    final res = await _client.get('$_basePath/posts/feed', queryParams: {
+  Future<dynamic> getFeed({int page = 1, int limit = 20, String? cacheBuster}) async {
+    final query = {
       'page': page.toString(),
       'limit': limit.toString(),
-    });
+    };
+    if (cacheBuster != null) {
+      query['_'] = cacheBuster;
+    }
+    final res = await _client.get('$_basePath/posts/feed', queryParams: query, extraHeaders: _noCacheHeaders);
+    return res;
+  }
+
+  /// Get the feed using backend defaults (React parity).
+  ///
+  /// React web calls `GET /posts/feed` without pagination params.
+  Future<dynamic> getFeedDefault({String? cacheBuster}) async {
+    final res = await _client.get(
+      '$_basePath/posts/feed',
+      queryParams: cacheBuster == null ? null : {'_': cacheBuster},
+      extraHeaders: _noCacheHeaders,
+    );
     return res;
   }
 

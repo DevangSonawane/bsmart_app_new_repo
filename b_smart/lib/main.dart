@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'dart:ui';
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/auth/login/login_screen.dart';
@@ -9,6 +12,7 @@ import 'theme/theme_notifier.dart';
 import 'theme/theme_scope.dart';
 import 'state/store.dart';
 import 'state/app_state.dart';
+import 'state/feed_actions.dart';
 import 'config/api_config.dart';
 import 'api/api.dart';
 import 'package:flutter_redux/flutter_redux.dart';
@@ -21,6 +25,53 @@ import 'widgets/profile_setup_gate.dart';
 void main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    // Forward Flutter framework errors to the current zone handler so they
+    // don't bring down the app during debug/testing of plugin failures.
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      Zone.current.handleUncaughtError(details.exception, details.stack ?? StackTrace.current);
+    };
+    // Catch asynchronous engine/platform errors that don't go through FlutterError
+    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+      debugPrint('PlatformDispatcher.onError: $error');
+      debugPrint(stack.toString());
+      return true; // handled
+    };
+    // Render a friendly error widget instead of a hard crash
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: Colors.white,
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, color: DesignTokens.instaPink, size: 48),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Something went wrong',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      details.exceptionAsString(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    };
 
     try {
       await dotenv.load(fileName: ".env");
@@ -35,6 +86,17 @@ void main() async {
         apiBaseUrl = dotenv.env['API_BASE_URL'];
       } catch (_) {}
       ApiConfig.init(baseUrl: apiBaseUrl);
+    }
+
+    // In development, proactively clear the image cache so hot-reload does not
+    // show stale media from disk cache while URLs stay the same on the server.
+    const clearCache = bool.fromEnvironment('CLEAR_CACHE', defaultValue: false);
+    if (clearCache) {
+      try {
+        await DefaultCacheManager().emptyCache();
+      } catch (e) {
+        debugPrint('Cache clear failed: $e');
+      }
     }
 
     await SystemChrome.setPreferredOrientations([
@@ -61,6 +123,11 @@ void main() async {
       ),
     ));
   }, (error, stack) {
+    if (error.toString().contains('VideoError') || error.toString().contains('ExoPlaybackException')) {
+      // Ignore asynchronous native ExoPlayer source errors getting thrown out-of-band.
+      // DynamicMediaWidget handles these gracefully on the Dart side.
+      return;
+    }
     debugPrint('Uncaught error in main: $error');
     debugPrint(stack.toString());
   });
@@ -105,6 +172,11 @@ class _BSmartAppState extends State<BSmartApp> {
       }
     }
     if (mounted) {
+      // ✅ Clear stale feed from previous session before rendering home
+      if (authed) {
+        final store = StoreProvider.of<AppState>(context);
+        store.dispatch(SetFeedPosts(const []));
+      }
       setState(() {
         _isAuthenticated = authed;
         _isInitialized = true;

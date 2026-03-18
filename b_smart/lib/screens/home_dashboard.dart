@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
@@ -66,6 +67,13 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
   bool _reelsPrefetched = false;
   String? _activeFeedPostId;
   Timer? _activeFeedDebounce;
+
+  final ScrollController _feedScrollController = ScrollController();
+  final int _pageSize = 25;
+  int _visibleCount = 0;
+  int _pageCursor = 2; // next server page to try after initial default feed
+  bool _pagingInFlight = false;
+  bool _noMorePages = false;
 
   /// Current user profile from `users` table (same source as React web app) for header avatar.
   Map<String, dynamic>? _currentUserProfile;
@@ -201,9 +209,11 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
     if (widget.initialIndex != null) {
       _currentIndex = widget.initialIndex!;
     }
+    _feedScrollController.addListener(_onFeedScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final store = StoreProvider.of<AppState>(context);
       _loadData(store);
+      _loadInitialFeed();
       _fetchCurrentLocation();
     });
   }
@@ -244,6 +254,8 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
   void dispose() {
     _activeFeedDebounce?.cancel();
     _autoRefreshDebounce?.cancel();
+    _feedScrollController.removeListener(_onFeedScroll);
+    _feedScrollController.dispose();
     if (_subscribedRoute != null) {
       appRouteObserver.unsubscribe(this);
       _subscribedRoute = null;
@@ -258,137 +270,304 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
       if (_currentIndex != 0) return;
       final last = _lastAutoRefreshAt;
       final now = DateTime.now();
-      if (last != null && now.difference(last) < const Duration(seconds: 1)) {
+      // 30 second cooldown — prevents feed reset on every back navigation
+      if (last != null && now.difference(last) < const Duration(seconds: 30)) {
         return;
       }
       _lastAutoRefreshAt = now;
       final store = StoreProvider.of<AppState>(context);
-      unawaited(_loadData(store));
+      unawaited(Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]));
     });
   }
 
   Future<void> _loadData(Store<AppState> store) async {
-    // Only set loading if it's the initial load or a full refresh, not for pagination
-    if (store.state.feedState.posts.isEmpty) {
-      store.dispatch(SetFeedLoading(true));
-    }
-
-    // Use REST API-backed CurrentUser helper for the authenticated user ID.
-    final currentUserId = await CurrentUser.id;
-    Map<String, dynamic>? meRaw;
-    try {
-      meRaw = await AuthApi().me();
-    } catch (_) {}
-    final meProfile = _normalizeProfile(meRaw);
-    final currentProfileRaw = currentUserId != null
-        ? await _supabase.getUserById(currentUserId)
-        : null;
-    final currentProfile = _normalizeProfile(currentProfileRaw);
-    final mergedProfile = <String, dynamic>{
-      ...?currentProfile,
-      ...?meProfile,
-    };
-    final effectiveUserId = currentUserId ??
-        (mergedProfile['id']?.toString()) ??
-        (mergedProfile['_id']?.toString());
-    // Same as React Home.jsx: fetch all posts, order by created_at desc
-    List<FeedPost> fetched = const <FeedPost>[];
-    try {
-      fetched = await _feedService.fetchFeedFromBackend(
-        currentUserId: currentUserId,
-      );
-    } catch (_) {}
+    // Wrap the whole load sequence so we always clear loading and apply whatever data we could fetch.
     int bal = 0;
-    try {
-      bal = await _walletService.getCoinBalance();
-    } catch (_) {}
-    if (!_reelsPrefetched) {
-      _reelsPrefetched = true;
-      unawaited(() async {
-        try {
-          await _reelsService.fetchReels(limit: 20, offset: 0);
-        } catch (_) {}
-      }());
-    }
-    // Stories feed from backend
     List<StoryGroup> groups = const <StoryGroup>[];
-    try {
-      groups = await _feedService.fetchStoriesFeed();
-    } catch (_) {}
-    final allGroups = List<StoryGroup>.from(groups);
-    final myGroups = effectiveUserId != null
-        ? allGroups.where((g) => g.userId == effectiveUserId).toList()
-        : <StoryGroup>[];
-    final otherGroups = effectiveUserId != null
-        ? allGroups.where((g) => g.userId != effectiveUserId).toList()
-        : allGroups;
+    Map<String, dynamic>? meRaw;
+    Map<String, dynamic>? currentProfileRaw;
+    String? currentUserId;
+    Map<String, dynamic> mergedProfile = {};
 
-    final baseStatuses = _computeStoryStatuses(otherGroups);
-    final previousStatuses =
-        Map<String, Map<String, bool>>.from(_storyStatuses);
-    final mergedStatuses = <String, Map<String, bool>>{};
-    for (final g in otherGroups) {
-      final uid = g.userId;
-      final current = baseStatuses[uid] ?? {};
-      final prev = previousStatuses[uid];
-      if (prev != null && prev['allViewed'] == true) {
-        mergedStatuses[uid] = {
-          ...current,
-          'hasUnseen': false,
-          'allViewed': true,
-        };
-      } else {
-        mergedStatuses[uid] = current;
+    try {
+      // Use REST API-backed CurrentUser helper for the authenticated user ID.
+      currentUserId = await CurrentUser.id;
+      try {
+        meRaw = await AuthApi().me();
+      } catch (_) {
+        meRaw = null;
       }
+      final meProfile = _normalizeProfile(meRaw);
+      try {
+        currentProfileRaw = currentUserId != null
+            ? await _supabase.getUserById(currentUserId)
+            : null;
+      } catch (_) {
+        currentProfileRaw = null;
+      }
+      final currentProfile = _normalizeProfile(currentProfileRaw);
+      mergedProfile = <String, dynamic>{
+        ...?currentProfile,
+        ...?meProfile,
+      };
+      final effectiveUserId = currentUserId ??
+          (mergedProfile['id']?.toString()) ??
+          (mergedProfile['_id']?.toString());
+
+      try {
+        bal = await _walletService.getCoinBalance();
+      } catch (_) {
+        bal = 0;
+      }
+
+      if (!_reelsPrefetched) {
+        _reelsPrefetched = true;
+        unawaited(() async {
+          try {
+            await _reelsService.fetchReels(limit: 20, offset: 0);
+          } catch (_) {}
+        }());
+      }
+
+      // Stories feed from backend
+      try {
+        groups = await _feedService.fetchStoriesFeed();
+      } catch (_) {
+        groups = const <StoryGroup>[];
+      }
+
+      final allGroups = List<StoryGroup>.from(groups);
+      final myGroups = effectiveUserId != null
+          ? allGroups.where((g) => g.userId == effectiveUserId).toList()
+          : <StoryGroup>[];
+      final otherGroups = effectiveUserId != null
+          ? allGroups.where((g) => g.userId != effectiveUserId).toList()
+          : allGroups;
+
+      final baseStatuses = _computeStoryStatuses(otherGroups);
+      final previousStatuses =
+          Map<String, Map<String, bool>>.from(_storyStatuses);
+      final mergedStatuses = <String, Map<String, bool>>{};
+      for (final g in otherGroups) {
+        final uid = g.userId;
+        final current = baseStatuses[uid] ?? {};
+        final prev = previousStatuses[uid];
+        if (prev != null && prev['allViewed'] == true) {
+          mergedStatuses[uid] = {
+            ...current,
+            'hasUnseen': false,
+            'allViewed': true,
+          };
+        } else {
+          mergedStatuses[uid] = current;
+        }
+      }
+
+      otherGroups.sort((a, b) {
+        final sa = mergedStatuses[a.userId] ?? const {};
+        final sb = mergedStatuses[b.userId] ?? const {};
+        final aHasUnseen = sa['hasUnseen'] == true;
+        final bHasUnseen = sb['hasUnseen'] == true;
+        if (aHasUnseen != bHasUnseen) {
+          return aHasUnseen ? -1 : 1;
+        }
+        final ad = a.stories.isNotEmpty
+            ? a.stories.first.createdAt
+            : DateTime.fromMillisecondsSinceEpoch(0);
+        final bd = b.stories.isNotEmpty
+            ? b.stories.first.createdAt
+            : DateTime.fromMillisecondsSinceEpoch(0);
+        return bd.compareTo(ad);
+      });
+
+      final users = otherGroups.map((g) {
+        return {
+          'id': g.userId,
+          'username': g.userName,
+          'avatar_url': g.userAvatar,
+        };
+      }).toList();
+      final my = effectiveUserId != null
+          ? myGroups.expand((g) => g.stories).toList()
+          : _buildMyStories(mergedProfile.isEmpty ? null : mergedProfile);
+
+      // Apply to store and local state
+      if (mounted) {
+        setState(() {
+          _currentUserProfile = mergedProfile.isEmpty ? null : mergedProfile;
+          _currentUserId = effectiveUserId;
+          _storyUsers = users;
+          _storyGroups = otherGroups;
+          _storyStatuses = mergedStatuses;
+          _myStories = my;
+          _myStoryId = myGroups.isNotEmpty ? myGroups.first.storyId : null;
+          _yourStoryHasActive = _myStories.isNotEmpty;
+          _balance = bal;
+        });
+        // Preload profile into Redux so ProfileScreen opens instantly
+        if (effectiveUserId != null && mergedProfile.isNotEmpty) {
+          store.dispatch(SetProfile(mergedProfile));
+        }
+      }
+    } finally {
+    }
+  }
+
+  Future<void> _loadInitialFeed({bool forceNetwork = false}) async {
+    final store = StoreProvider.of<AppState>(context);
+    final isFirstLoad = store.state.feedState.posts.isEmpty;
+
+    // Only show full-screen spinner on genuine first load
+    if (isFirstLoad) store.dispatch(SetFeedLoading(true));
+
+    final currentUserId = await CurrentUser.id;
+    List<FeedPost> items = const <FeedPost>[];
+    try {
+      items = await _feedService.fetchFeedFromBackend(
+        currentUserId: currentUserId,
+        useBackendDefault: false,
+        limit: _pageSize,
+        cacheBuster: DateTime.now().millisecondsSinceEpoch.toString(),
+      );
+    } catch (_) {
+      items = const <FeedPost>[];
+    }
+    if (!mounted) {
+      if (isFirstLoad) store.dispatch(SetFeedLoading(false));
+      return;
     }
 
-    otherGroups.sort((a, b) {
-      final sa = mergedStatuses[a.userId] ?? const {};
-      final sb = mergedStatuses[b.userId] ?? const {};
-      final aHasUnseen = sa['hasUnseen'] == true;
-      final bHasUnseen = sb['hasUnseen'] == true;
-      if (aHasUnseen != bHasUnseen) {
-        return aHasUnseen ? -1 : 1;
+    store.dispatch(SetFeedPosts(items));
+
+    setState(() {
+      if (isFirstLoad || forceNetwork) {
+        // First load only: start from top, reset everything
+        _activeFeedPostId = items.isNotEmpty ? items.first.id : null;
+        // Show ALL items from backend on first load, not just _pageSize
+        _visibleCount = items.length;
+      } else {
+        // Background refresh: preserve current scroll depth
+        // Just expand _visibleCount if new items arrived beyond current depth
+        _visibleCount = math.max(
+          _visibleCount,
+          items.length,
+        );
+        // Do NOT reset _activeFeedPostId — user is mid-scroll
       }
-      final ad = a.stories.isNotEmpty
-          ? a.stories.first.createdAt
-          : DateTime.fromMillisecondsSinceEpoch(0);
-      final bd = b.stories.isNotEmpty
-          ? b.stories.first.createdAt
-          : DateTime.fromMillisecondsSinceEpoch(0);
-      return bd.compareTo(ad);
+      _pageCursor = 2;
+      _pagingInFlight = false;
+      _noMorePages = items.isEmpty;
     });
 
-    final users = otherGroups.map((g) {
-      return {
-        'id': g.userId,
-        'username': g.userName,
-        'avatar_url': g.userAvatar,
-      };
-    }).toList();
-    final my = effectiveUserId != null
-        ? myGroups.expand((g) => g.stories).toList()
-        : _buildMyStories(mergedProfile.isEmpty ? null : mergedProfile);
-    if (mounted) {
-      store.dispatch(SetFeedPosts(fetched));
-      setState(() {
-        _currentUserProfile = mergedProfile.isEmpty ? null : mergedProfile;
-        _currentUserId = effectiveUserId;
-        _storyUsers = users;
-        _storyGroups = otherGroups;
-        _storyStatuses = mergedStatuses;
-        _myStories = my;
-        _myStoryId = myGroups.isNotEmpty ? myGroups.first.storyId : null;
-        _yourStoryHasActive = _myStories.isNotEmpty;
-        _balance = bal;
-        _activeFeedPostId = fetched.isNotEmpty ? fetched.first.id : null;
-      });
-      // Preload profile into Redux so ProfileScreen opens instantly
-      if (effectiveUserId != null && mergedProfile.isNotEmpty) {
-        store.dispatch(SetProfile(mergedProfile));
-      }
-      store.dispatch(SetFeedLoading(false));
+    if (isFirstLoad) store.dispatch(SetFeedLoading(false));
+
+    // If list is too short to scroll, proactively load next page
+    if (items.isNotEmpty) {
+      _checkIfListNeedsMorePosts();
     }
+  }
+
+  void _checkIfListNeedsMorePosts() {
+    _waitForScrollAndFetch(attempts: 20);
+  }
+
+  void _waitForScrollAndFetch({required int attempts}) {
+    if (attempts <= 0) {
+      // Last resort: just fetch regardless
+      if (mounted && !_pagingInFlight && !_noMorePages) {
+        _fetchNextPage();
+      }
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // ScrollController not attached yet — try next frame
+      if (!_feedScrollController.hasClients) {
+        _waitForScrollAndFetch(attempts: attempts - 1);
+        return;
+      }
+      final position = _feedScrollController.position;
+      // If content doesn't fill the screen, load more immediately
+      if (position.maxScrollExtent < 400) {
+        _fetchNextPage();
+      }
+    });
+  }
+
+  void _onFeedScroll() {
+    if (!_feedScrollController.hasClients) return;
+    final store = StoreProvider.of<AppState>(context);
+    final total = store.state.feedState.posts.length;
+    final position = _feedScrollController.position;
+
+    // Trigger if within 400px of bottom OR if list is short enough
+    // that maxScrollExtent itself is under 400px
+    final nearBottom = position.pixels >= position.maxScrollExtent - 400;
+    final listIsShort = position.maxScrollExtent < 400 &&
+        position.pixels >= position.maxScrollExtent - 50;
+
+    if (nearBottom || listIsShort) {
+      setState(() {
+        _visibleCount = math.min(total, _visibleCount + _pageSize);
+      });
+      _maybeFetchNextPage(total);
+    }
+  }
+
+  void _maybeFetchNextPage(int totalCount) {
+    if (_pagingInFlight || _noMorePages) return;
+    // If we are within one chunk of the end, try to fetch the next page
+    final remaining = totalCount - _visibleCount;
+    if (remaining > _pageSize ~/ 2) return;
+    _fetchNextPage();
+  }
+
+  Future<void> _fetchNextPage() async {
+    if (_pagingInFlight || _noMorePages) return;
+    _pagingInFlight = true;
+    final store = StoreProvider.of<AppState>(context);
+    final currentUserId = await CurrentUser.id;
+    final existingIds = store.state.feedState.posts.map((p) => p.id).toSet();
+    List<FeedPost> pageItems = const <FeedPost>[];
+    try {
+      // Use classic pagination for deeper pages
+      pageItems = await _feedService.fetchFeedFromBackend(
+        limit: _pageSize,
+        offset: (_pageCursor - 1) * _pageSize,
+        currentUserId: currentUserId,
+        useBackendDefault: false,
+        cacheBuster: DateTime.now().millisecondsSinceEpoch.toString(),
+      );
+    } catch (_) {
+      pageItems = const <FeedPost>[];
+    }
+    if (!mounted) {
+      _pagingInFlight = false;
+      return;
+    }
+    final newOnes = pageItems.where((p) => !existingIds.contains(p.id)).toList();
+    if (newOnes.isEmpty) {
+      _noMorePages = true;
+      _pagingInFlight = false;
+      return;
+    }
+    store.dispatch(AppendFeedPosts(newOnes));
+    setState(() {
+      _pageCursor += 1;
+      final totalNow = store.state.feedState.posts.length;
+      _visibleCount = math.min(totalNow, _visibleCount + _pageSize);
+    });
+    _pagingInFlight = false;
+
+    // If screen still not filled after appending, keep fetching
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_feedScrollController.hasClients &&
+          _feedScrollController.position.maxScrollExtent < 400 &&
+          !_noMorePages) {
+        _fetchNextPage();
+      }
+    });
   }
 
   void _onFeedItemVisibilityChanged(String postId, double visibleFraction) {
@@ -1030,18 +1209,30 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
         'allViewed': true,
       };
     });
-    await _onRefresh();
+    await _onSilentRefresh();
   }
 
+  // Pull-to-refresh: user explicitly wants fresh content from top
   Future<void> _onRefresh() async {
     final store = StoreProvider.of<AppState>(context);
-    await _loadData(store);
+    if (_feedScrollController.hasClients) {
+      _feedScrollController.jumpTo(0);
+    }
+    // Clear Redux posts so isFirstLoad = true in _loadInitialFeed
+    store.dispatch(SetFeedPosts(const []));
+    await Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]);
+  }
+
+  // Silent background refresh after story/route pop — preserve scroll
+  Future<void> _onSilentRefresh() async {
+    final store = StoreProvider.of<AppState>(context);
+    await Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]);
   }
 
   Future<void> _openStoryCamera() async {
     await Navigator.of(context).pushNamed('/story-camera');
     if (!mounted) return;
-    await _onRefresh();
+    await _onSilentRefresh();
   }
 
   void _openVendorAdComposer(String contentType) {
@@ -1079,17 +1270,33 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
       return;
     }
 
+    final wasOnHome = _currentIndex == 0;
+    final switchingToHome = idx == 0 && !wasOnHome; // ← only true when actually switching
+
     if (idx != _currentIndex) {
       // Pause any in-feed video audio while switching away from Home.
-      if (_currentIndex == 0) {
+      if (wasOnHome) {
         unawaited(VideoPool.instance.disposeActive());
       }
       setState(() {
         _currentIndex = idx;
       });
     }
-    if (idx == 0) {
+
+    // Only schedule refresh when genuinely navigating TO home from another tab
+    // NOT when tapping home while already on home (that would be Instagram's
+    // scroll-to-top behavior which we handle separately)
+    if (switchingToHome) {
       _scheduleHomeRefresh();
+    } else if (idx == 0 && wasOnHome) {
+      // Already on home — scroll to top like Instagram does
+      if (_feedScrollController.hasClients) {
+        _feedScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     }
   }
 
@@ -1203,7 +1410,15 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
   Widget build(BuildContext context) {
     final store = StoreProvider.of<AppState>(context);
     final feedState = store.state.feedState;
-    final posts = feedState.posts;
+    final totalCount = feedState.posts.length;
+    final effectiveVisible = totalCount == 0
+        ? 0
+        : math.min(
+            totalCount,
+            (_visibleCount <= 0) ? _pageSize : _visibleCount,
+          );
+    final posts = feedState.posts.take(effectiveVisible).toList(growable: false);
+    final hasMoreToShow = effectiveVisible < totalCount;
     final isLoading = feedState.isLoading;
     final isDesktop = MediaQuery.sizeOf(context).width >= 768;
     final isFullScreen = _currentIndex == 1 ||
@@ -1401,6 +1616,7 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
                     child: CircularProgressIndicator(
                         color: DesignTokens.instaPink))
                 : CustomScrollView(
+                    controller: _feedScrollController,
                     cacheExtent: 180,
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
@@ -1489,41 +1705,65 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
                               final p = posts[index];
                               final isOwnPost = _currentUserId != null &&
                                   p.userId == _currentUserId;
-                              return VisibilityDetector(
-                                key: ValueKey('feed-vis-${p.id}'),
-                                onVisibilityChanged: (info) {
-                                  _onFeedItemVisibilityChanged(
-                                    p.id,
-                                    info.visibleFraction,
-                                  );
-                                },
-                                child: RepaintBoundary(
-                                  child: PostCard(
-                                    key: ValueKey(
-                                        'card-${p.id}'), // Prevent unnecessary rebuilds
-                                    post: p,
-                                    isTabActive:
-                                        _currentIndex == 0 && _isRouteActive,
-                                    isActive: _activeFeedPostId == p.id,
-                                    onUserTap: p.userId.isNotEmpty
-                                        ? () => Navigator.of(context)
-                                            .pushNamed('/profile/${p.userId}')
-                                        : null,
-                                    onLike: () => _onLikePost(p),
-                                    onDoubleTapLike: () =>
-                                        _onDoubleTapLikePost(p),
-                                    onComment: () => _onCommentPost(p),
-                                    onShare: () => _onSharePost(p),
-                                    onSave: () => _onSavePost(p),
-                                    onFollow: isOwnPost ? null : () => _onFollowPost(p),
-                                    onMore: () => _onMorePost(context, p),
+                              // Debug: log posts length and current index being built
+                              try {
+                                print('HomeDashboard: building post index=$index totalPosts=${posts.length} id=${p.id}');
+                              } catch (_) {}
+                              Widget itemWidget;
+                              try {
+                                itemWidget = VisibilityDetector(
+                                  key: ValueKey('feed-vis-${p.id}'),
+                                  onVisibilityChanged: (info) {
+                                    _onFeedItemVisibilityChanged(
+                                      p.id,
+                                      info.visibleFraction,
+                                    );
+                                  },
+                                  child: RepaintBoundary(
+                                    child: PostCard(
+                                      key: ValueKey(
+                                          'card-${p.id}'), // Prevent unnecessary rebuilds
+                                      post: p,
+                                      isTabActive:
+                                          _currentIndex == 0 && _isRouteActive,
+                                      isActive: _activeFeedPostId == p.id,
+                                      onUserTap: p.userId.isNotEmpty
+                                          ? () => Navigator.of(context)
+                                              .pushNamed('/profile/${p.userId}')
+                                          : null,
+                                      onLike: () => _onLikePost(p),
+                                      onDoubleTapLike: () =>
+                                          _onDoubleTapLikePost(p),
+                                      onComment: () => _onCommentPost(p),
+                                      onShare: () => _onSharePost(p),
+                                      onSave: () => _onSavePost(p),
+                                      onFollow: isOwnPost ? null : () => _onFollowPost(p),
+                                      onMore: () => _onMorePost(context, p),
+                                    ),
                                   ),
-                                ),
-                              );
+                                );
+                              } catch (e, st) {
+                                try {
+                                  print('HomeDashboard: error building post index=$index id=${p.id} error=$e');
+                                } catch (_) {}
+                                itemWidget = Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    children: [
+                                      const Icon(Icons.broken_image, size: 40),
+                                      const SizedBox(height: 8),
+                                      Text('Failed to load post', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                                    ],
+                                  ),
+                                );
+                              }
+                              return itemWidget;
                             },
                             childCount: posts.length,
                           ),
                         ),
+                      if (hasMoreToShow)
+                        const SliverToBoxAdapter(child: SizedBox(height: 28)),
                       const SliverToBoxAdapter(child: SizedBox(height: 16)),
                     ],
                   ),

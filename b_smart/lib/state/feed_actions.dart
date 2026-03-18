@@ -10,6 +10,16 @@ class SetFeedPosts {
   SetFeedPosts(this.posts);
 }
 
+class AppendFeedPosts {
+  final List<FeedPost> posts;
+  AppendFeedPosts(this.posts);
+}
+
+class PrependFeedPost {
+  final FeedPost post;
+  PrependFeedPost(this.post);
+}
+
 class UpdatePostLiked {
   final String postId;
   final bool liked;

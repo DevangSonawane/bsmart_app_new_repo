@@ -13,7 +13,33 @@ final feedReducer = combineReducers<FeedState>([
   TypedReducer<FeedState, UpdateUserFollowed>(_updateUserFollowed).call,
   TypedReducer<FeedState, UpdatePostCommentsCount>(_updatePostCommentsCount).call,
   TypedReducer<FeedState, RemovePost>(_removePost).call,
+  TypedReducer<FeedState, AppendFeedPosts>(_appendPosts).call,
+  TypedReducer<FeedState, PrependFeedPost>(_prependPost).call,
 ]);
+
+
+
+FeedState _appendPosts(FeedState state, AppendFeedPosts action) {
+  if (action.posts.isEmpty) return state;
+  final existingIds = state.posts.map((p) => p.id).toSet();
+  final next = List<FeedPost>.from(state.posts);
+  for (final p in action.posts) {
+    if (!existingIds.contains(p.id)) {
+      next.add(p);
+      existingIds.add(p.id);
+    }
+  }
+  return state.copyWith(posts: next, isLoading: false);
+}
+
+FeedState _prependPost(FeedState state, PrependFeedPost action) {
+  final p = action.post;
+  if (p.id.isEmpty) return state;
+  final existingIds = state.posts.map((e) => e.id).toSet();
+  if (existingIds.contains(p.id)) return state;
+  final next = [p, ...state.posts];
+  return state.copyWith(posts: next);
+}
 
 FeedState _setLoading(FeedState state, SetFeedLoading action) {
   return state.copyWith(isLoading: action.isLoading);
