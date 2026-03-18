@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'dart:async';
+import 'package:flutter_redux/flutter_redux.dart';
 import '../models/feed_post_model.dart';
 import '../models/story_model.dart';
+import '../controllers/feed_controller.dart';
+import '../controllers/feed_paging_state.dart';
+import '../repositories/feed_repository.dart';
 import '../services/feed_service.dart';
 import '../services/wallet_service.dart';
 import '../services/supabase_service.dart';
 import '../services/user_account_service.dart';
 import '../models/user_account_model.dart';
-import '../utils/current_user.dart';
 import '../theme/instagram_theme.dart';
 import '../widgets/clay_container.dart';
 import '../state/app_state.dart';
@@ -32,26 +33,27 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
   final WalletService _walletService = WalletService();
   final SupabaseService _supabase = SupabaseService();
   
+  late final FeedController _feedController;
   final ScrollController _scrollController = ScrollController();
   bool _isHeaderVisible = true;
   double _lastScrollOffset = 0;
-  
-  List<FeedPost> _feedPosts = [];
-  List<StoryGroup> _stories = [];
-  bool _isLoading = true;
-  bool _isLoadingMore = false;
 
   @override
   void initState() {
     super.initState();
+    _feedController = FeedController(
+      repository: FeedRepository(),
+      pageSize: 10,
+    );
     _scrollController.addListener(_onScroll);
-    _loadFeed();
+    _feedController.loadInitial();
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _feedController.dispose();
     super.dispose();
   }
 
@@ -64,168 +66,276 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
     }
     _lastScrollOffset = currentOffset;
     if (currentOffset >= _scrollController.position.maxScrollExtent - 200) {
-      _loadMorePosts();
+      _feedController.loadMore();
     }
-  }
-
-  Future<void> _loadFeed() async {
-    setState(() => _isLoading = true);
-    final uid = await CurrentUser.id;
-    final posts = await _feedService.fetchFeedFromBackend(
-      limit: 20,
-      offset: 0,
-      currentUserId: uid,
-    );
-    final stories = await _feedService.fetchStoriesFeed();
-    setState(() {
-      _feedPosts = posts;
-      _stories = stories;
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _loadMorePosts() async {
-    if (_isLoadingMore) return;
-    setState(() => _isLoadingMore = true);
-    final uid = await CurrentUser.id;
-    final morePosts = await _feedService.fetchFeedFromBackend(
-      limit: 20,
-      offset: _feedPosts.length,
-      currentUserId: uid,
-    );
-    setState(() {
-      _feedPosts.addAll(morePosts);
-      _isLoadingMore = false;
-    });
   }
 
   Future<void> _handleLike(FeedPost post) async {
     final desired = !post.isLiked;
-    setState(() {
-      final index = _feedPosts.indexWhere((p) => p.id == post.id);
-      if (index != -1) {
-        final prev = _feedPosts[index];
-        _feedPosts[index] = prev.copyWith(
-          isLiked: desired,
-          likes: desired ? prev.likes + 1 : prev.likes - 1,
-        );
-      }
-    });
+    _feedController.updatePost(
+      post.copyWith(
+        isLiked: desired,
+        likes: desired ? post.likes + 1 : post.likes - 1,
+      ),
+    );
     final liked = await _supabase.setPostLike(post.id, like: desired);
     if (!mounted) return;
-    setState(() {
-      final index = _feedPosts.indexWhere((p) => p.id == post.id);
-      if (index != -1) {
-        final prev = _feedPosts[index];
-        _feedPosts[index] = prev.copyWith(
-          isLiked: liked,
-          likes: liked ? prev.likes : prev.likes, // likes already adjusted optimistically; keep if server agrees
-        );
-      }
-    });
+    _feedController.replacePostById(
+      post.id,
+      (prev) => prev.copyWith(isLiked: liked),
+    );
   }
 
   Future<void> _handleSave(FeedPost post) async {
     final desired = !post.isSaved;
     final store = StoreProvider.of<AppState>(context, listen: false);
     store.dispatch(UpdatePostSaved(post.id, desired));
-    setState(() {
-      final index = _feedPosts.indexWhere((p) => p.id == post.id);
-      if (index != -1) {
-        final prev = _feedPosts[index];
-        _feedPosts[index] = prev.copyWith(isSaved: desired);
-      }
-    });
+    _feedController.updatePost(post.copyWith(isSaved: desired));
     final saved = await _supabase.setPostSaved(post.id, save: desired);
     if (!mounted) return;
     try {
       final data = await _supabase.getPostById(post.id);
       final serverSaved = (data?['is_saved_by_me'] as bool?) ?? saved;
       store.dispatch(UpdatePostSaved(post.id, serverSaved));
-      setState(() {
-        final index = _feedPosts.indexWhere((p) => p.id == post.id);
-        if (index != -1) {
-          final prev = _feedPosts[index];
-          _feedPosts[index] = prev.copyWith(isSaved: serverSaved);
-        }
-      });
+      _feedController.replacePostById(
+        post.id,
+        (prev) => prev.copyWith(isSaved: serverSaved),
+      );
     } catch (_) {
       store.dispatch(UpdatePostSaved(post.id, saved));
-      setState(() {
-        final index = _feedPosts.indexWhere((p) => p.id == post.id);
-        if (index != -1) {
-          final prev = _feedPosts[index];
-          _feedPosts[index] = prev.copyWith(isSaved: saved);
-        }
-      });
+      _feedController.replacePostById(
+        post.id,
+        (prev) => prev.copyWith(isSaved: saved),
+      );
     }
   }
 
   void _handleFollow(FeedPost post) {
-    setState(() {
-      final index = _feedPosts.indexWhere((p) => p.id == post.id);
-      if (index != -1) {
-        _feedPosts[index] = _feedService.toggleFollow(post);
-      }
-    });
+    _feedController.replacePostById(
+      post.id,
+      (prev) => prev.copyWith(isFollowed: !prev.isFollowed),
+    );
   }
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(InstagramTheme.primaryPink),
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _loadFeed,
-              color: InstagramTheme.primaryPink,
-              child: CustomScrollView(
-                controller: _scrollController,
-                slivers: [
-                  SliverAppBar(
-                    floating: false,
-                    pinned: true,
-                    snap: false,
-                    backgroundColor: InstagramTheme.backgroundWhite,
-                    elevation: 0,
-                    toolbarHeight: 56,
-                    leading: _buildProfileIcon(),
-                    title: _buildSearchBar(),
-                    actions: _buildHeaderActions(),
-                    bottom: PreferredSize(
-                      preferredSize: const Size.fromHeight(72),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: _buildLocationSelector(),
-                      ),
-                    ),
-                  ),
-                  SliverToBoxAdapter(child: _buildStoriesSection()),
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        if (index < _feedPosts.length) {
-                          return _buildPostCard(_feedPosts[index]);
-                        } else if (_isLoadingMore) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                valueColor: AlwaysStoppedAnimation<Color>(InstagramTheme.primaryPink),
-                              ),
-                            ),
-                          );
-                        }
-                        return null;
-                      },
-                      childCount: _feedPosts.length + (_isLoadingMore ? 1 : 0),
-                    ),
-                  ),
-                ],
+    return AnimatedBuilder(
+      animation: _feedController,
+      builder: (context, _) {
+        final state = _feedController.state;
+        return Scaffold(
+          body: _buildBody(state),
+        );
+      },
+    );
+  }
+
+  Widget _buildBody(FeedPagingState state) {
+    if (state.isInitialLoading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(InstagramTheme.primaryPink),
+        ),
+      );
+    }
+
+    if (state.isOffline && state.posts.isEmpty) {
+      return _buildOfflineState();
+    }
+
+    if (state.errorMessage != null && state.posts.isEmpty) {
+      return _buildErrorState(state.errorMessage!);
+    }
+
+    if (state.posts.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    return RefreshIndicator(
+      onRefresh: _feedController.refresh,
+      color: InstagramTheme.primaryPink,
+      child: CustomScrollView(
+        controller: _scrollController,
+        slivers: [
+          SliverAppBar(
+            floating: false,
+            pinned: true,
+            snap: false,
+            backgroundColor: InstagramTheme.backgroundWhite,
+            elevation: 0,
+            toolbarHeight: 56,
+            leading: _buildProfileIcon(),
+            title: _buildSearchBar(),
+            actions: _buildHeaderActions(),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(72),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: _buildLocationSelector(),
               ),
             ),
+          ),
+          SliverToBoxAdapter(child: _buildStoriesSection(state.stories)),
+          if (state.isOffline)
+            SliverToBoxAdapter(
+              child: _buildInlineStatus(
+                'You are offline.',
+                'Retry',
+                _feedController.refresh,
+              ),
+            ),
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                if (index < state.posts.length) {
+                  return _buildPostCard(state.posts[index]);
+                }
+                return null;
+              },
+              childCount: state.posts.length,
+            ),
+          ),
+          SliverToBoxAdapter(child: _buildBottomStatus(state)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return _buildCenteredStatus(
+      title: 'No posts yet',
+      message: 'Follow people or refresh to see new posts.',
+      actionLabel: 'Refresh',
+      onAction: _feedController.refresh,
+    );
+  }
+
+  Widget _buildErrorState(String message) {
+    return _buildCenteredStatus(
+      title: 'Something went wrong',
+      message: message,
+      actionLabel: 'Retry',
+      onAction: _feedController.loadInitial,
+    );
+  }
+
+  Widget _buildOfflineState() {
+    return _buildCenteredStatus(
+      title: 'You are offline',
+      message: 'Check your connection and try again.',
+      actionLabel: 'Retry',
+      onAction: _feedController.loadInitial,
+    );
+  }
+
+  Widget _buildBottomStatus(FeedPagingState state) {
+    if (state.isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(InstagramTheme.primaryPink),
+          ),
+        ),
+      );
+    }
+
+    if (state.errorMessage != null && state.posts.isNotEmpty) {
+      return _buildInlineStatus(
+        'Couldn\'t load more posts.',
+        'Retry',
+        _feedController.loadMore,
+      );
+    }
+
+    if (!state.hasMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: Text(
+            'You are all caught up',
+            style: TextStyle(color: InstagramTheme.textGrey),
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox(height: 8);
+  }
+
+  Widget _buildCenteredStatus({
+    required String title,
+    required String message,
+    required String actionLabel,
+    required VoidCallback onAction,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: InstagramTheme.textGrey,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: onAction,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: InstagramTheme.primaryPink,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(actionLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineStatus(String message, String actionLabel, VoidCallback onAction) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: ClayContainer(
+        borderRadius: 16,
+        color: InstagramTheme.surfaceWhite,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  message,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: InstagramTheme.textBlack,
+                      ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              TextButton(
+                onPressed: onAction,
+                child: Text(
+                  actionLabel,
+                  style: const TextStyle(color: InstagramTheme.primaryPink),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -405,28 +515,28 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
     ];
   }
 
-  Widget _buildStoriesSection() {
-    if (_stories.isEmpty) return const SizedBox.shrink();
+  Widget _buildStoriesSection(List<StoryGroup> stories) {
+    if (stories.isEmpty) return const SizedBox.shrink();
     return Container(
       height: 110,
       margin: const EdgeInsets.symmetric(vertical: 12),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _stories.length,
-        itemBuilder: (context, index) => _buildStoryItem(_stories[index]),
+        itemCount: stories.length,
+        itemBuilder: (context, index) => _buildStoryItem(stories, stories[index]),
       ),
     );
   }
 
-  Widget _buildStoryItem(StoryGroup storyGroup) {
+  Widget _buildStoryItem(List<StoryGroup> stories, StoryGroup storyGroup) {
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => StoryViewerScreen(
-              storyGroups: _stories,
-              initialIndex: _stories.indexOf(storyGroup),
+              storyGroups: stories,
+              initialIndex: stories.indexOf(storyGroup),
             ),
           ),
         );

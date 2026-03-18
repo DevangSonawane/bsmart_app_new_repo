@@ -111,10 +111,10 @@ class FeedPost {
       default: type = PostMediaType.image;
     }
 
-    String? thumbUrl = UrlHelper.normalizeUrl(json['thumbnailUrl'] ?? json['thumbnail']);
+    String thumbUrl = UrlHelper.normalizeUrl(json['thumbnailUrl'] ?? json['thumbnail']);
     
     // Fallback: Check if first media item is a map and has a thumbnail
-    if (thumbUrl == null && json['mediaUrls'] != null && (json['mediaUrls'] as List).isNotEmpty) {
+    if (thumbUrl.isEmpty && json['mediaUrls'] != null && (json['mediaUrls'] as List).isNotEmpty) {
       final first = (json['mediaUrls'] as List).first;
       if (first is Map) {
         final t = first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
@@ -122,7 +122,7 @@ class FeedPost {
           thumbUrl = UrlHelper.normalizeUrl(t);
         } else if (t is List && t.isNotEmpty && t.first is Map) {
            // Handle structured thumbnail object from reel payload
-           thumbUrl = UrlHelper.normalizeUrl((t.first as Map)['url'] ?? (t.first as Map)['fileUrl']);
+          thumbUrl = UrlHelper.normalizeUrl((t.first as Map)['url'] ?? (t.first as Map)['fileUrl']);
         }
       }
     }

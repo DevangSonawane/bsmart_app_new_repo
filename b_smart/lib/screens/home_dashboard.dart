@@ -48,7 +48,8 @@ class HomeDashboard extends StatefulWidget {
   State<HomeDashboard> createState() => _HomeDashboardState();
 }
 
-class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
+class _HomeDashboardState extends State<HomeDashboard>
+    with RouteAware, WidgetsBindingObserver {
   final FeedService _feedService = FeedService();
   final SupabaseService _supabase = SupabaseService();
   final WalletService _walletService = WalletService();
@@ -206,14 +207,18 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.initialIndex != null) {
       _currentIndex = widget.initialIndex!;
     }
     _feedScrollController.addListener(_onFeedScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final store = StoreProvider.of<AppState>(context);
+      // Force a clean, fresh feed on app open to avoid stale or partial data.
+      store.dispatch(SetFeedPosts(const []));
+      store.dispatch(SetFeedLoading(true));
       _loadData(store);
-      _loadInitialFeed();
+      _loadInitialFeed(forceNetwork: true);
       _fetchCurrentLocation();
     });
   }
@@ -256,11 +261,25 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
     _autoRefreshDebounce?.cancel();
     _feedScrollController.removeListener(_onFeedScroll);
     _feedScrollController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     if (_subscribedRoute != null) {
       appRouteObserver.unsubscribe(this);
       _subscribedRoute = null;
     }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (!mounted) return;
+    if (_currentIndex != 0) return;
+    // When app resumes, jump to top and refresh to show latest posts.
+    if (_feedScrollController.hasClients) {
+      _feedScrollController.jumpTo(0);
+    }
+    final store = StoreProvider.of<AppState>(context);
+    unawaited(Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]));
   }
 
   void _scheduleHomeRefresh() {
@@ -415,10 +434,15 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
 
   Future<void> _loadInitialFeed({bool forceNetwork = false}) async {
     final store = StoreProvider.of<AppState>(context);
-    final isFirstLoad = store.state.feedState.posts.isEmpty;
+    final isFirstLoad = store.state.feedState.posts.isEmpty || forceNetwork;
 
     // Only show full-screen spinner on genuine first load
-    if (isFirstLoad) store.dispatch(SetFeedLoading(true));
+    if (isFirstLoad) {
+      store.dispatch(SetFeedLoading(true));
+      if (forceNetwork) {
+        store.dispatch(SetFeedPosts(const []));
+      }
+    }
 
     final currentUserId = await CurrentUser.id;
     List<FeedPost> items = const <FeedPost>[];
@@ -431,6 +455,47 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
       );
     } catch (_) {
       items = const <FeedPost>[];
+    }
+    // If backend returns too few posts, eagerly fetch next pages to fill the screen.
+    var nextPageCursor = 2;
+    var prefetchNoMore = false;
+    if (items.isNotEmpty && items.length < _pageSize) {
+      final seen = items.map((p) => p.id).toSet();
+      var keepGoing = true;
+      while (keepGoing && items.length < _pageSize) {
+        List<FeedPost> pageItems = const <FeedPost>[];
+        try {
+          pageItems = await _feedService.fetchFeedFromBackend(
+            limit: _pageSize,
+            offset: (nextPageCursor - 1) * _pageSize,
+            currentUserId: currentUserId,
+            useBackendDefault: false,
+            cacheBuster: DateTime.now().millisecondsSinceEpoch.toString(),
+          );
+        } catch (_) {
+          pageItems = const <FeedPost>[];
+        }
+        if (pageItems.isEmpty) {
+          keepGoing = false;
+          prefetchNoMore = true;
+          break;
+        }
+        final newOnes = pageItems.where((p) => !seen.contains(p.id)).toList();
+        if (newOnes.isEmpty) {
+          keepGoing = false;
+          prefetchNoMore = true;
+          break;
+        }
+        for (final p in newOnes) {
+          seen.add(p.id);
+        }
+        items = [...items, ...newOnes];
+        nextPageCursor += 1;
+        // Safety: avoid unbounded prefetching on bad pagination.
+        if (nextPageCursor > 4) {
+          keepGoing = false;
+        }
+      }
     }
     if (!mounted) {
       if (isFirstLoad) store.dispatch(SetFeedLoading(false));
@@ -454,16 +519,43 @@ class _HomeDashboardState extends State<HomeDashboard> with RouteAware {
         );
         // Do NOT reset _activeFeedPostId — user is mid-scroll
       }
-      _pageCursor = 2;
+      _pageCursor = nextPageCursor;
       _pagingInFlight = false;
-      _noMorePages = items.isEmpty;
+      _noMorePages = items.isEmpty || prefetchNoMore;
     });
+
+    if (isFirstLoad || forceNetwork) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_feedScrollController.hasClients) {
+          _feedScrollController.jumpTo(0);
+        }
+      });
+    }
 
     if (isFirstLoad) store.dispatch(SetFeedLoading(false));
 
     // If list is too short to scroll, proactively load next page
     if (items.isNotEmpty) {
       _checkIfListNeedsMorePosts();
+      // Ensure we have a full initial batch without requiring a scroll.
+      unawaited(_prefetchUntil(minPosts: _pageSize, maxPages: 3));
+    }
+  }
+
+  Future<void> _prefetchUntil({
+    required int minPosts,
+    int maxPages = 3,
+  }) async {
+    if (!mounted || _pagingInFlight || _noMorePages) return;
+    final store = StoreProvider.of<AppState>(context);
+    var remainingPages = maxPages;
+    while (mounted &&
+        remainingPages > 0 &&
+        !_noMorePages &&
+        store.state.feedState.posts.length < minPosts) {
+      await _fetchNextPage();
+      remainingPages -= 1;
     }
   }
 

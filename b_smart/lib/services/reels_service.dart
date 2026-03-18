@@ -37,8 +37,6 @@ class ReelsService {
       _cache
         ..clear()
         ..addAll(synced);
-      globalStore
-          .dispatch(SetFeedPosts(synced.map((r) => r.toFeedPost()).toList()));
     } else {
       _cache.addAll(synced);
     }

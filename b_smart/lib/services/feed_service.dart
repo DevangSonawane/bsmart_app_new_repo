@@ -1,5 +1,6 @@
 import '../api/api.dart';
 import '../models/ad_model.dart';
+import '../models/feed_page_model.dart';
 import '../models/feed_post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
@@ -11,6 +12,10 @@ class FeedService {
   factory FeedService() => _instance;
 
   FeedService._internal();
+
+  // Client-side rate limiting for feed requests (max 5 per minute).
+  static final _RateLimiter _feedRateLimiter =
+      _RateLimiter(maxRequests: 5, window: const Duration(minutes: 1));
 
   final PostsApi _postsApi = PostsApi();
   final AdsApi _adsApi = AdsApi();
@@ -239,6 +244,7 @@ class FeedService {
     String? currentUserId,
     bool useBackendDefault = false,
     String? cacheBuster,
+    bool swallowErrors = true,
   }) async {
     Set<String> locallySaved = <String>{};
     Set<String> followedUsers = <String>{};
@@ -256,8 +262,10 @@ class FeedService {
       } catch (_) {}
 
       final data = useBackendDefault
-          ? await _postsApi.getFeedDefault(cacheBuster: cacheBuster)
-          : await _postsApi.getFeed(page: page, limit: limit, cacheBuster: cacheBuster);
+          ? await _rateLimited(() => _postsApi.getFeedDefault(cacheBuster: cacheBuster))
+          : await _rateLimited(
+              () => _postsApi.getFeed(page: page, limit: limit, cacheBuster: cacheBuster),
+            );
       List<Map<String, dynamic>> items = [];
       // Debug: log raw data shape briefly
       try {
@@ -691,10 +699,49 @@ class FeedService {
       }
 
       return _injectSingleSponsoredPost(mapped, sponsored);
-    } catch (_) {
+    } catch (e) {
+      if (!swallowErrors) rethrow;
       // On any top-level error, fall back to empty list so UI can recover.
       return [];
     }
+  }
+
+  Future<T> _rateLimited<T>(Future<T> Function() task) async {
+    await _feedRateLimiter.acquire();
+    return task();
+  }
+
+  /// Fetch a single paginated feed page with metadata.
+  ///
+  /// This uses the backend page/limit params and infers `hasMore`
+  /// when the response does not include pagination metadata.
+  Future<FeedPage> fetchFeedPage({
+    int page = 1,
+    int limit = 10,
+    String? currentUserId,
+    bool useBackendDefault = false,
+    String? cacheBuster,
+  }) async {
+    final safePage = page < 1 ? 1 : page;
+    final offset = (safePage - 1) * limit;
+    final posts = await fetchFeedFromBackend(
+      limit: limit,
+      offset: offset,
+      currentUserId: currentUserId,
+      useBackendDefault: useBackendDefault,
+      cacheBuster: cacheBuster,
+      swallowErrors: false,
+    );
+
+    final hasMore = posts.length >= limit;
+    return FeedPage(
+      posts: posts,
+      page: safePage,
+      limit: limit,
+      hasMore: hasMore,
+      nextCursor: null,
+      total: null,
+    );
   }
 
   List<FeedPost> _mapAdsToFeedPosts(List<Map<String, dynamic>> rawAds) {
@@ -1004,5 +1051,34 @@ class FeedService {
   // Follow/Unfollow user
   FeedPost toggleFollow(FeedPost post) {
     return post.copyWith(isFollowed: !post.isFollowed);
+  }
+}
+
+class _RateLimiter {
+  final int maxRequests;
+  final Duration window;
+  final List<DateTime> _hits = <DateTime>[];
+  Future<void> _serial = Future<void>.value();
+
+  _RateLimiter({required this.maxRequests, required this.window});
+
+  Future<void> acquire() {
+    _serial = _serial.then((_) async {
+      final now = DateTime.now();
+      _hits.removeWhere((t) => now.difference(t) > window);
+      if (_hits.length < maxRequests) {
+        _hits.add(now);
+        return;
+      }
+      final earliest = _hits.first;
+      final waitFor = window - now.difference(earliest);
+      if (waitFor.inMilliseconds > 0) {
+        await Future<void>.delayed(waitFor);
+      }
+      final afterWait = DateTime.now();
+      _hits.removeWhere((t) => afterWait.difference(t) > window);
+      _hits.add(afterWait);
+    });
+    return _serial;
   }
 }
