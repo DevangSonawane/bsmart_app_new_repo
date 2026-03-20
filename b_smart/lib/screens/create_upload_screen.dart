@@ -370,6 +370,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   @override
   Widget build(BuildContext context) {
     final isReelMode = _mode == UploadMode.reel;
+    final safeBottom = MediaQuery.of(context).viewPadding.bottom;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -695,73 +696,77 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
             Positioned(
               left: 0,
               right: 0,
-              bottom: 16,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white10,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      GestureDetector(
-                        onTap: () => _onModeTap(UploadMode.post),
-                        child: AnimatedDefaultTextStyle(
-                          duration: _modeAnimDuration,
-                          style: TextStyle(
-                            color: _mode == UploadMode.post ? Colors.white : Colors.white54,
-                            fontWeight: _mode == UploadMode.post ? FontWeight.bold : FontWeight.w500,
-                            letterSpacing: 1.2,
-                          ),
-                          child: const Text('POST'),
-                        ),
-                      ),
-                      if (!widget.isAdFlow) ...[
-                        const SizedBox(width: 16),
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.only(bottom: 16),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         GestureDetector(
-                          onTap: () => _onModeTap(UploadMode.story),
+                          onTap: () => _onModeTap(UploadMode.post),
                           child: AnimatedDefaultTextStyle(
                             duration: _modeAnimDuration,
                             style: TextStyle(
-                              color: _mode == UploadMode.story ? Colors.white : Colors.white54,
-                              fontWeight: _mode == UploadMode.story ? FontWeight.bold : FontWeight.w500,
+                              color: _mode == UploadMode.post ? Colors.white : Colors.white54,
+                              fontWeight: _mode == UploadMode.post ? FontWeight.bold : FontWeight.w500,
                               letterSpacing: 1.2,
                             ),
-                            child: const Text('STORY'),
+                            child: const Text('POST'),
                           ),
                         ),
-                      ],
-                      const SizedBox(width: 16),
-                      GestureDetector(
-                        onTap: () => _onModeTap(UploadMode.reel),
-                        child: AnimatedDefaultTextStyle(
-                          duration: _modeAnimDuration,
-                          style: TextStyle(
-                            color: _mode == UploadMode.reel ? Colors.white : Colors.white54,
-                            fontWeight: _mode == UploadMode.reel ? FontWeight.bold : FontWeight.w500,
-                            letterSpacing: 1.2,
+                        if (!widget.isAdFlow) ...[
+                          const SizedBox(width: 16),
+                          GestureDetector(
+                            onTap: () => _onModeTap(UploadMode.story),
+                            child: AnimatedDefaultTextStyle(
+                              duration: _modeAnimDuration,
+                              style: TextStyle(
+                                color: _mode == UploadMode.story ? Colors.white : Colors.white54,
+                                fontWeight: _mode == UploadMode.story ? FontWeight.bold : FontWeight.w500,
+                                letterSpacing: 1.2,
+                              ),
+                              child: const Text('STORY'),
+                            ),
                           ),
-                          child: const Text('REEL'),
-                        ),
-                      ),
-                      if (!widget.isAdFlow) ...[
+                        ],
                         const SizedBox(width: 16),
                         GestureDetector(
-                          onTap: () => _onModeTap(UploadMode.live),
+                          onTap: () => _onModeTap(UploadMode.reel),
                           child: AnimatedDefaultTextStyle(
                             duration: _modeAnimDuration,
                             style: TextStyle(
-                              color: _mode == UploadMode.live ? Colors.white : Colors.white54,
-                              fontWeight: _mode == UploadMode.live ? FontWeight.bold : FontWeight.w500,
+                              color: _mode == UploadMode.reel ? Colors.white : Colors.white54,
+                              fontWeight: _mode == UploadMode.reel ? FontWeight.bold : FontWeight.w500,
                               letterSpacing: 1.2,
                             ),
-                            child: const Text('LIVE'),
+                            child: const Text('REEL'),
                           ),
                         ),
+                        if (!widget.isAdFlow) ...[
+                          const SizedBox(width: 16),
+                          GestureDetector(
+                            onTap: () => _onModeTap(UploadMode.live),
+                            child: AnimatedDefaultTextStyle(
+                              duration: _modeAnimDuration,
+                              style: TextStyle(
+                                color: _mode == UploadMode.live ? Colors.white : Colors.white54,
+                                fontWeight: _mode == UploadMode.live ? FontWeight.bold : FontWeight.w500,
+                                letterSpacing: 1.2,
+                              ),
+                              child: const Text('LIVE'),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -771,64 +776,68 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
               left: 0,
               right: 0,
               bottom: 0,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(12, 8, 16, 16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0),
-                      Colors.black.withValues(alpha: 0.8),
-                    ],
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 16, 16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0),
+                        Colors.black.withValues(alpha: 0.8),
+                      ],
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 72,
-                      height: 72,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Builder(
-                          builder: (context) {
-                            final asset = _firstSelectedAsset();
-                            if (asset == null) {
-                              return Container(color: Colors.black);
-                            }
-                            return FutureBuilder<Uint8List?>(
-                              future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
-                              builder: (context, snap) {
-                                if (snap.connectionState != ConnectionState.done || snap.data == null) {
-                                  return Container(
-                                    color: Colors.grey[850],
-                                    child: const Center(
-                                      child: Icon(Icons.image, color: Colors.white38),
-                                    ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 72,
+                        height: 72,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Builder(
+                            builder: (context) {
+                              final asset = _firstSelectedAsset();
+                              if (asset == null) {
+                                return Container(color: Colors.black);
+                              }
+                              return FutureBuilder<Uint8List?>(
+                                future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
+                                builder: (context, snap) {
+                                  if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                    return Container(
+                                      color: Colors.grey[850],
+                                      child: const Center(
+                                        child: Icon(Icons.image, color: Colors.white38),
+                                      ),
+                                    );
+                                  }
+                                  return Image.memory(
+                                    snap.data!,
+                                    fit: BoxFit.cover,
                                   );
-                                }
-                                return Image.memory(
-                                  snap.data!,
-                                  fit: BoxFit.cover,
-                                );
-                              },
-                            );
-                          },
+                                },
+                              );
+                            },
+                          ),
                         ),
                       ),
-                    ),
-                    const Spacer(),
-                    ElevatedButton(
-                      onPressed: _handleNext,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0095F6),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      const Spacer(),
+                      ElevatedButton(
+                        onPressed: _handleNext,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0095F6),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        ),
+                        child: const Text('Next →'),
                       ),
-                      child: const Text('Next →'),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

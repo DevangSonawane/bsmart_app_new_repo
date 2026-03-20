@@ -14,6 +14,7 @@ class PostCard extends StatefulWidget {
   final FeedPost post;
   final bool isTabActive;
   final bool isActive; // supplied by parent center detection
+  final bool isOwnPost;
   final VoidCallback? onLike;
   final VoidCallback? onComment;
   final VoidCallback? onShare;
@@ -28,6 +29,7 @@ class PostCard extends StatefulWidget {
     required this.post,
     this.isTabActive = true,
     this.isActive = true,
+    this.isOwnPost = false,
     this.onLike,
     this.onComment,
     this.onShare,
@@ -438,10 +440,11 @@ class _PostCardState extends State<PostCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '${post.likes} likes',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-          ),
+          if (!post.hideLikesCount || widget.isOwnPost)
+            Text(
+              '${post.likes} likes',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
           if (post.isAd && post.adTitle != null && post.adTitle!.trim().isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
@@ -468,7 +471,7 @@ class _PostCardState extends State<PostCard> {
               ],
             ),
           ],
-          if (post.comments > 1) ...[
+          if (!post.commentsDisabled && post.comments > 1) ...[
             const SizedBox(height: 4),
             GestureDetector(
               onTap: widget.onComment,
@@ -481,7 +484,9 @@ class _PostCardState extends State<PostCard> {
               ),
             ),
           ],
-          if (post.latestCommentText != null && post.latestCommentText!.trim().isNotEmpty) ...[
+          if (!post.commentsDisabled &&
+              post.latestCommentText != null &&
+              post.latestCommentText!.trim().isNotEmpty) ...[
             const SizedBox(height: 4),
             RichText(
               text: TextSpan(

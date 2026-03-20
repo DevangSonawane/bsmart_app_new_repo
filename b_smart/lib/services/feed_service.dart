@@ -759,6 +759,13 @@ class FeedService {
                 .toList(),
             isShared: false,
             isAd: isAdItem,
+            commentsDisabled: item['turn_off_commenting'] ??
+                item['comments_disabled'] ??
+                item['commentsDisabled'] ??
+                false,
+            hideLikesCount: item['hide_likes_count'] ??
+                item['hideLikesCount'] ??
+                false,
             adTitle: isAdItem
                 ? (item['title'] as String?) ??
                     (item['ad_title'] as String?) ??

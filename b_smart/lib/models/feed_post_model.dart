@@ -41,6 +41,7 @@ class FeedPost {
   final String? latestCommentText;
   final List<Map<String, dynamic>>? rawLikes;
   final List<Map<String, dynamic>>? peopleTags;
+  final bool hideLikesCount;
 
   FeedPost({
     required this.id,
@@ -76,6 +77,7 @@ class FeedPost {
     this.latestCommentText,
     this.rawLikes,
     this.peopleTags,
+    this.hideLikesCount = false,
   });
 
   factory FeedPost.fromJson(Map<String, dynamic> json) {
@@ -166,6 +168,10 @@ class FeedPost {
       latestCommentText: json['latestCommentText'],
       rawLikes: (json['likes_data'] as List?)?.map((e) => e as Map<String, dynamic>).toList(),
       peopleTags: (json['people_tags'] as List?)?.map((e) => e as Map<String, dynamic>).toList(),
+      hideLikesCount: json['hide_likes_count'] ??
+          json['hideLikesCount'] ??
+          json['hide_likes'] ??
+          false,
     );
   }
 
@@ -202,6 +208,7 @@ class FeedPost {
     String? latestCommentText,
     List<Map<String, dynamic>>? rawLikes,
     List<Map<String, dynamic>>? peopleTags,
+    bool? hideLikesCount,
   }) {
     return FeedPost(
       id: id ?? this.id,
@@ -236,6 +243,7 @@ class FeedPost {
       latestCommentText: latestCommentText ?? this.latestCommentText,
       rawLikes: rawLikes ?? this.rawLikes,
       peopleTags: peopleTags ?? this.peopleTags,
+      hideLikesCount: hideLikesCount ?? this.hideLikesCount,
     );
   }
 }

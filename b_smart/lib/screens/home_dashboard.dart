@@ -1905,13 +1905,14 @@ class _HomeDashboardState extends State<HomeDashboard>
                                     );
                                   },
                                   child: RepaintBoundary(
-                                    child: PostCard(
+                                      child: PostCard(
                                       key: ValueKey(
                                           'card-${p.id}'), // Prevent unnecessary rebuilds
                                       post: p,
                                       isTabActive:
                                           _currentIndex == 0 && _isRouteActive,
                                       isActive: _activeFeedPostId == p.id,
+                                      isOwnPost: isOwnPost,
                                       onUserTap: p.userId.isNotEmpty
                                           ? () => Navigator.of(context)
                                               .pushNamed('/profile/${p.userId}')

@@ -618,7 +618,7 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
             _buildPostHeader(post),
             _buildMediaSection(post),
             _buildActionBar(post),
-            if (post.likes > 0)
+            if (!post.hideLikesCount && post.likes > 0)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
@@ -740,10 +740,11 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
             ),
             onPressed: () => _handleLike(post),
           ),
-          IconButton(
-            icon: const Icon(Icons.comment_outlined, color: InstagramTheme.textBlack, size: 28),
-            onPressed: () {},
-          ),
+          if (!post.commentsDisabled)
+            IconButton(
+              icon: const Icon(Icons.comment_outlined, color: InstagramTheme.textBlack, size: 28),
+              onPressed: () {},
+            ),
           IconButton(
             icon: const Icon(Icons.send_outlined, color: InstagramTheme.textBlack, size: 28),
             onPressed: () {},
