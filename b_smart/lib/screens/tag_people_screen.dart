@@ -247,11 +247,16 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
   }
 
   Widget _buildMediaPreview() {
+    final theme = Theme.of(context);
     if (widget.isVideo) {
       return Container(
-        color: Colors.black,
-        child: const Center(
-          child: Icon(LucideIcons.video, color: Colors.white70, size: 56),
+        color: theme.colorScheme.surface,
+        child: Center(
+          child: Icon(
+            LucideIcons.video,
+            color: theme.colorScheme.onSurfaceVariant,
+            size: 56,
+          ),
         ),
       );
     }
@@ -284,21 +289,38 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final fg = theme.colorScheme.onSurface;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final appBarBg =
+        theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
+    final appBarFg =
+        theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
     return Scaffold(
-      backgroundColor: const Color(0xFF07121E),
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF07121E),
+        backgroundColor: appBarBg,
         elevation: 0,
         centerTitle: true,
-        title: const Text('Tag people', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        title: Text(
+          'Tag people',
+          style: TextStyle(color: appBarFg, fontWeight: FontWeight.w700),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white70),
+          icon: Icon(Icons.close, color: appBarFg.withValues(alpha: 0.7)),
           onPressed: () => Navigator.of(context).pop(widget.initialTags),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(_tags),
-            child: const Text('Done', style: TextStyle(color: Color(0xFF0095F6), fontWeight: FontWeight.w700)),
+            child: Text(
+              'Done',
+              style: TextStyle(
+                color: const Color(0xFF4F6EF7),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
         ],
       ),
@@ -377,12 +399,18 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                                                 Container(
                                                   padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.black.withValues(alpha: 0.65),
+                                                    color: Colors.black.withValues(
+                                                      alpha: isDark ? 0.65 : 0.5,
+                                                    ),
                                                     borderRadius: BorderRadius.circular(14),
                                                   ),
                                                   child: Text(
                                                     ((t['user'] as Map<String, dynamic>)['username'] as String?) ?? '',
-                                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12),
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontWeight: FontWeight.w600,
+                                                      fontSize: 12,
+                                                    ),
                                                   ),
                                                 ),
                                                 if (_selectedTagId == (t['id'] ?? '').toString())
@@ -400,7 +428,9 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                                                         width: 18,
                                                         height: 18,
                                                         decoration: BoxDecoration(
-                                                          color: Colors.black.withValues(alpha: 0.75),
+                                                          color: Colors.black.withValues(
+                                                            alpha: isDark ? 0.75 : 0.6,
+                                                          ),
                                                           shape: BoxShape.circle,
                                                           border: Border.all(color: Colors.white24, width: 1),
                                                         ),
@@ -426,7 +456,10 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                   },
                 ),
                 const SizedBox(height: 6),
-                const Text('Tap the photo to tag people.', style: TextStyle(color: Colors.white60, fontSize: 13)),
+                Text(
+                  'Tap the photo to tag people.',
+                  style: TextStyle(color: muted, fontSize: 13),
+                ),
                 const SizedBox(height: 10),
                 Expanded(
                   child: Padding(
@@ -438,7 +471,7 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                             itemCount: _tags.length,
                             separatorBuilder: (_, __) => Container(
                               height: 1,
-                              color: Colors.white.withValues(alpha: 0.06),
+                              color: theme.dividerColor.withValues(alpha: 0.3),
                             ),
                             itemBuilder: (context, i) {
                               final t = _tags[i];
@@ -455,11 +488,11 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                                   backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
                                   child: avatar.isEmpty ? const Icon(LucideIcons.user, size: 16) : null,
                                 ),
-                                title: Text(username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
-                                subtitle: Text(fullName, style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                title: Text(username, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 14)),
+                                subtitle: Text(fullName, style: TextStyle(color: muted, fontSize: 12)),
                                 trailing: IconButton(
                                   onPressed: () => _removeTag(id),
-                                  icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+                                  icon: Icon(Icons.close, color: muted, size: 18),
                                 ),
                                 onTap: () => setState(() => _selectedTagId = id),
                               );
@@ -478,7 +511,10 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                   },
                   child: BackdropFilter(
                     filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(color: Colors.black.withValues(alpha: 0.25)),
+                    child: Container(
+                      color: (isDark ? Colors.black : Colors.black)
+                          .withValues(alpha: isDark ? 0.25 : 0.12),
+                    ),
                   ),
                 ),
               ),
@@ -492,9 +528,9 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                 top: false,
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF1C1C1E),
-                    borderRadius: BorderRadius.only(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(18),
                       topRight: Radius.circular(18),
                     ),
@@ -506,7 +542,7 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                         width: 44,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white24,
+                          color: theme.dividerColor.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
@@ -514,13 +550,14 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                       TextField(
                         controller: _searchCtl,
                         focusNode: _searchFocus,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: fg),
                         decoration: InputDecoration(
                           hintText: 'Search user',
-                          hintStyle: const TextStyle(color: Colors.white54),
-                          prefixIcon: const Icon(LucideIcons.search, size: 18, color: Colors.white54),
+                          hintStyle: TextStyle(color: muted),
+                          prefixIcon: Icon(LucideIcons.search, size: 18, color: muted),
                           filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.06),
+                          fillColor: theme.colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.6),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         ),
@@ -535,7 +572,7 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                                 ? Center(
                                     child: Text(
                                       _lastQuery.isEmpty ? 'Type a name to search...' : 'No users found',
-                                      style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                      style: TextStyle(color: muted, fontSize: 12),
                                     ),
                                   )
                                 : ListView.builder(
@@ -553,8 +590,8 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                                           backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
                                           child: avatar.isEmpty ? const Icon(LucideIcons.user, size: 16) : null,
                                         ),
-                                        title: Text(username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
-                                        subtitle: Text(fullName, style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                        title: Text(username, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 14)),
+                                        subtitle: Text(fullName, style: TextStyle(color: muted, fontSize: 12)),
                                         onTap: () => _addTag(u),
                                       );
                                     },

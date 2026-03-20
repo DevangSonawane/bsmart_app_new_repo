@@ -119,6 +119,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   Duration? _trimEnd;
   final List<_PreviewTextOverlay> _textOverlays = [];
   int? _activeTextIndex;
+  int _zCounter = 0;
+  final Map<String, int> _layerZOrder = {};
   Offset _textLastFocalPoint = Offset.zero;
   Offset _textLastLocalFocalPoint = Offset.zero;
   double _textTransformBaseScale = 1.0;
@@ -525,6 +527,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                               setState(() {
                                 _selectedFilter = f.id;
                                 _selectedFilterName = displayName;
+                                _cachedTextEditorBackground = null;
                               });
                               setSheetState(() {});
                             },
@@ -577,6 +580,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                 setState(() {
                                   _selectedFilter = initialFilterId;
                                   _selectedFilterName = initialFilterName;
+                                  _cachedTextEditorBackground = null;
                                 });
                                 Navigator.of(context).pop();
                               },
@@ -657,6 +661,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                             ..._imageAdjustments,
                             tool.key: next,
                           };
+                          _cachedTextEditorBackground = null;
                         });
                         setSheetState(() {});
                       },
@@ -675,13 +680,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               if (!didCenterScroll && selectedTool == null) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (!scrollController.hasClients) return;
-                  final viewportW = MediaQuery.of(context).size.width;
-                  const tileW = 88.0;
-                  const sepW = 12.0;
-                  final contentW = tools.isEmpty ? 0.0 : (tools.length * tileW) + ((tools.length - 1) * sepW) + (16 * 2);
-                  final target = math.max(0.0, (contentW - viewportW) / 2.0);
-                  final maxExtent = scrollController.position.maxScrollExtent;
-                  scrollController.jumpTo(target.clamp(0.0, maxExtent));
+                  scrollController.jumpTo(0.0);
                 });
                 didCenterScroll = true;
               }
@@ -810,7 +809,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                           children: [
                             TextButton(
                               onPressed: () {
-                                setState(() => _imageAdjustments = initial);
+                                setState(() {
+                                  _imageAdjustments = initial;
+                                  _cachedTextEditorBackground = null;
+                                });
                                 Navigator.of(context).pop();
                               },
                               child: const Text(
@@ -1272,7 +1274,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   void _handleTextScaleStart(ScaleStartDetails details) {
     if (_textOverlays.isEmpty) return;
     final activeIndex = _activeTextIndex ?? (_textOverlays.length - 1);
-    _activeTextIndex = activeIndex;
+    _bringTextToFront(activeIndex);
     _textLastFocalPoint = details.focalPoint;
     _textLastLocalFocalPoint = _toPreviewLocal(details.focalPoint);
     final overlay = _textOverlays[activeIndex];
@@ -1347,6 +1349,23 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         if (index >= 0 && index < _textOverlays.length) {
           _textOverlays.removeAt(index);
         }
+        _layerZOrder.remove('text_$index');
+        final newZOrder = <String, int>{};
+        _layerZOrder.forEach((key, value) {
+          if (key.startsWith('sticker_')) {
+            newZOrder[key] = value;
+          } else {
+            final i = int.tryParse(key.replaceFirst('text_', ''));
+            if (i != null && i > index) {
+              newZOrder['text_${i - 1}'] = value;
+            } else if (i != null && i < index) {
+              newZOrder[key] = value;
+            }
+          }
+        });
+        _layerZOrder
+          ..clear()
+          ..addAll(newZOrder);
         _deletingTextIndexes.remove(index);
         _activeTextIndex = null;
         _isTextDeleteMode = false;
@@ -1358,7 +1377,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   void _handleStickerScaleStart(ScaleStartDetails details) {
     if (_stickerOverlays.isEmpty) return;
     final activeIndex = _activeStickerIndex ?? (_stickerOverlays.length - 1);
-    _activeStickerIndex = activeIndex;
+    _bringStickerToFront(activeIndex);
     _stickerLastFocalPoint = details.focalPoint;
     _stickerLastLocalFocalPoint = _toPreviewLocal(details.focalPoint);
     _stickerLastGlobalFocalPoint = details.focalPoint;
@@ -1486,8 +1505,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final existing = index != null && index >= 0 && index < _textOverlays.length
         ? _textOverlays[index]
         : null;
-    final background =
-        _cachedTextEditorBackground ?? await _buildTextEditorBackground();
+    if (widget.isPostFlow) {
+      _cachedTextEditorBackground = null;
+    }
+    final background = await _buildTextEditorBackground();
     if (!mounted) return;
     final normalizedInitialPosition = existing != null
         ? _normalizePreviewPosition(existing.position)
@@ -1654,6 +1675,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       setState(() {
         _stickerOverlays.removeWhere((s) => s.id == id);
         _deletingStickerIds.remove(id);
+        _layerZOrder.remove('sticker_$id');
         if (_activeStickerIndex != null &&
             _activeStickerIndex! >= _stickerOverlays.length) {
           _activeStickerIndex = null;
@@ -1676,6 +1698,41 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         topLeft.dy + size.height - 60,
       );
     });
+  }
+
+  void _bringTextToFront(int index) {
+    _zCounter++;
+    _layerZOrder['text_$index'] = _zCounter;
+    _activeTextIndex = index;
+  }
+
+  void _bringStickerToFront(int index) {
+    if (index < 0 || index >= _stickerOverlays.length) return;
+    _zCounter++;
+    _layerZOrder['sticker_${_stickerOverlays[index].id}'] = _zCounter;
+    _activeStickerIndex = index;
+  }
+
+  List<Map<String, dynamic>> _buildSortedLayers() {
+    final layers = <Map<String, dynamic>>[];
+    for (int i = 0; i < _textOverlays.length; i++) {
+      layers.add({
+        'type': 'text',
+        'index': i,
+        'zOrder': _layerZOrder['text_$i'] ?? i,
+      });
+    }
+    for (int i = 0; i < _stickerOverlays.length; i++) {
+      layers.add({
+        'type': 'sticker',
+        'index': i,
+        'zOrder': _layerZOrder['sticker_${_stickerOverlays[i].id}'] ??
+            (_textOverlays.length + i),
+      });
+    }
+    layers.sort((a, b) =>
+        (a['zOrder'] as int).compareTo(b['zOrder'] as int));
+    return layers;
   }
 
   Offset _effectiveTrashCenter(BuildContext context) {
@@ -1969,159 +2026,115 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                               ),
                                             ),
                                           if (!_hideTextOverlaysForCapture)
-                                            ..._textOverlays.asMap().entries.map((entry) {
-                                            final index = entry.key;
-                                            final overlay = entry.value;
-                                            final isActive = _activeTextIndex == null
-                                                ? index == _textOverlays.length - 1
-                                                : index == _activeTextIndex;
-                                            return Positioned(
-                                              left: overlay.position.dx,
-                                              top: overlay.position.dy,
-                                              child: GestureDetector(
-                                                onTapDown: (_) =>
-                                                    _startTextHold(index),
-                                                onTapUp: (_) => _cancelTextHold(),
-                                                onTapCancel: _cancelTextHold,
-                                                onTap: () {
-                                                  if (_suppressTextTap) {
-                                                    _suppressTextTap = false;
-                                                    return;
-                                                  }
-                                                  setState(() {
-                                                    _activeTextIndex = index;
-                                                  });
-                                                  _openPreviewTextEditor(
-                                                      index: index);
-                                                },
-                                                onScaleStart: (d) {
-                                                  setState(() =>
-                                                      _activeTextIndex = index);
-                                                  _cancelTextHold();
-                                                  _handleTextScaleStart(d);
-                                                },
-                                                onScaleUpdate: _handleTextScaleUpdate,
-                                                onScaleEnd: (_) =>
-                                                    _handleTextScaleEnd(),
-                                                child: AnimatedOpacity(
-                                                  duration: const Duration(
-                                                      milliseconds: 180),
-                                                  opacity: _deletingTextIndexes
-                                                          .contains(index)
-                                                      ? 0.0
-                                                      : 1.0,
-                                                  child: AnimatedScale(
-                                                    duration: const Duration(
-                                                        milliseconds: 180),
-                                                    scale: _deletingTextIndexes
-                                                            .contains(index)
-                                                        ? 0.0
-                                                        : 1.0,
-                                                    child: Transform.rotate(
-                                                      angle: overlay.rotation,
-                                                      child: Transform.scale(
-                                                        scale: overlay.scale *
-                                                            (_textDeleteScale[
-                                                                    index] ??
-                                                                1.0),
-                                                        child: _buildOverlayVisual(
-                                                            overlay, isActive),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          }),
-                                          ..._stickerOverlays
-                                              .asMap()
-                                              .entries
-                                              .map((entry) {
-                                            final i = entry.key;
-                                            final s = entry.value;
-                                            final isActive =
-                                                _activeStickerIndex == i;
-                                            return Positioned(
-                                              left: s.position.dx,
-                                              top: s.position.dy,
-                                              child: GestureDetector(
-                                                onTapDown: (_) =>
-                                                    _startStickerHold(i),
-                                                onTapUp: (_) {
-                                                  _cancelStickerHold();
-                                                },
-                                                onTapCancel: () {
-                                                  _cancelStickerHold();
-                                                },
-                                                onTap: () {
-                                                  if (_suppressStickerTap) {
-                                                    _suppressStickerTap = false;
-                                                    return;
-                                                  }
-                                                  setState(() {
-                                                    if (_activeStickerIndex ==
-                                                        i) {
-                                                      _stickerOverlays[i] =
-                                                          s.copyWith(
-                                                        shape:
-                                                            _nextShape(s.shape),
-                                                      );
-                                                    } else {
-                                                      _activeStickerIndex = i;
-                                                    }
-                                                  });
-                                                },
-                                                onScaleStart: (d) {
-                                                  setState(() =>
-                                                      _activeStickerIndex = i);
-                                                  _cancelStickerHold();
-                                                  _handleStickerScaleStart(d);
-                                                },
-                                                onScaleUpdate: (d) =>
-                                                    _handleStickerScaleUpdate(
-                                                        d, context),
-                                                onScaleEnd: (_) =>
-                                                    _handleStickerScaleEnd(
-                                                        context),
-                                                child: AnimatedOpacity(
-                                                  duration: const Duration(
-                                                      milliseconds: 180),
-                                                  opacity:
-                                                      _deletingStickerIds
-                                                              .contains(s.id)
-                                                          ? 0.0
-                                                          : 1.0,
-                                                  child: AnimatedScale(
-                                                    duration: const Duration(
-                                                        milliseconds: 180),
-                                                    scale: _deletingStickerIds
-                                                            .contains(s.id)
-                                                        ? 0.0
-                                                        : 1.0,
-                                                    child: Transform(
-                                                      alignment:
-                                                          Alignment.center,
-                                                      transform: Matrix4
-                                                          .identity()
-                                                        ..rotateZ(s.rotation)
-                                                        ..scale(
-                                                          s.scale *
-                                                              (_stickerDeleteScale[
-                                                                      s.id] ??
-                                                                  1.0),
+                                            ..._buildSortedLayers().map((layer) {
+                                              if (layer['type'] == 'text') {
+                                                final index = layer['index'] as int;
+                                                if (index >= _textOverlays.length) {
+                                                  return const SizedBox.shrink();
+                                                }
+                                                final overlay = _textOverlays[index];
+                                                final isActive = _activeTextIndex == index;
+                                                return Positioned(
+                                                  key: ValueKey('text_$index'),
+                                                  left: overlay.position.dx,
+                                                  top: overlay.position.dy,
+                                                  child: GestureDetector(
+                                                    onTapDown: (_) => _startTextHold(index),
+                                                    onTapUp: (_) => _cancelTextHold(),
+                                                    onTapCancel: _cancelTextHold,
+                                                    onTap: () {
+                                                      if (_suppressTextTap) {
+                                                        _suppressTextTap = false;
+                                                        return;
+                                                      }
+                                                      setState(() => _bringTextToFront(index));
+                                                      _openPreviewTextEditor(index: index);
+                                                    },
+                                                    onScaleStart: (d) {
+                                                      setState(() => _bringTextToFront(index));
+                                                      _cancelTextHold();
+                                                      _handleTextScaleStart(d);
+                                                    },
+                                                    onScaleUpdate: _handleTextScaleUpdate,
+                                                    onScaleEnd: (_) => _handleTextScaleEnd(),
+                                                    child: AnimatedOpacity(
+                                                      duration: const Duration(milliseconds: 180),
+                                                      opacity: _deletingTextIndexes.contains(index) ? 0.0 : 1.0,
+                                                      child: AnimatedScale(
+                                                        duration: const Duration(milliseconds: 180),
+                                                        scale: _deletingTextIndexes.contains(index) ? 0.0 : 1.0,
+                                                        child: Transform.rotate(
+                                                          angle: overlay.rotation,
+                                                          child: Transform.scale(
+                                                            scale: overlay.scale * (_textDeleteScale[index] ?? 1.0),
+                                                            child: _buildOverlayVisual(overlay, isActive),
+                                                          ),
                                                         ),
-                                                      child:
-                                                          OverlayStickerWidget(
-                                                        sticker: s,
-                                                        isActive: isActive,
-                                                        onDelete: () {},
                                                       ),
                                                     ),
                                                   ),
-                                                ),
-                                              ),
-                                            );
-                                          }),
+                                                );
+                                              } else {
+                                                final i = layer['index'] as int;
+                                                if (i >= _stickerOverlays.length) {
+                                                  return const SizedBox.shrink();
+                                                }
+                                                final s = _stickerOverlays[i];
+                                                final isActive = _activeStickerIndex == i;
+                                                return Positioned(
+                                                  key: ValueKey('sticker_${s.id}'),
+                                                  left: s.position.dx,
+                                                  top: s.position.dy,
+                                                  child: GestureDetector(
+                                                    onTapDown: (_) => _startStickerHold(i),
+                                                    onTapUp: (_) => _cancelStickerHold(),
+                                                    onTapCancel: () => _cancelStickerHold(),
+                                                    onTap: () {
+                                                      if (_suppressStickerTap) {
+                                                        _suppressStickerTap = false;
+                                                        return;
+                                                      }
+                                                      setState(() {
+                                                        if (_activeStickerIndex == i) {
+                                                          _stickerOverlays[i] = s.copyWith(
+                                                            shape: _nextShape(s.shape),
+                                                          );
+                                                        }
+                                                        _bringStickerToFront(i);
+                                                      });
+                                                    },
+                                                    onScaleStart: (d) {
+                                                      setState(() => _bringStickerToFront(i));
+                                                      _cancelStickerHold();
+                                                      _handleStickerScaleStart(d);
+                                                    },
+                                                    onScaleUpdate: (d) => _handleStickerScaleUpdate(d, context),
+                                                    onScaleEnd: (_) => _handleStickerScaleEnd(context),
+                                                    child: AnimatedOpacity(
+                                                      duration: const Duration(milliseconds: 180),
+                                                      opacity: _deletingStickerIds.contains(s.id) ? 0.0 : 1.0,
+                                                      child: AnimatedScale(
+                                                        duration: const Duration(milliseconds: 180),
+                                                        scale: _deletingStickerIds.contains(s.id) ? 0.0 : 1.0,
+                                                        child: Transform(
+                                                          alignment: Alignment.center,
+                                                          transform: Matrix4.identity()
+                                                            ..rotateZ(s.rotation)
+                                                            ..scale(
+                                                              s.scale * (_stickerDeleteScale[s.id] ?? 1.0),
+                                                            ),
+                                                          child: OverlayStickerWidget(
+                                                            sticker: s,
+                                                            isActive: isActive,
+                                                            onDelete: () {},
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            }),
                                           if (_isStickerDeleteMode ||
                                               _isTextDeleteMode)
                                             Positioned.fill(
@@ -2240,7 +2253,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                   const SizedBox(width: 10),
                                   _buildPostBottomPill(
                                     icon: Icons.filter_alt_outlined,
-                                    label: 'Filter Edit',
+                                    label: 'Filter',
                                     onTap: _openFilterPicker,
                                     isActive: (_selectedFilter ?? 'none') != 'none',
                                   ),
@@ -2385,135 +2398,115 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                   ),
                                 ),
                             if (!_hideTextOverlaysForCapture)
-                              ..._textOverlays.asMap().entries.map((entry) {
-                              final index = entry.key;
-                              final overlay = entry.value;
-                              final isActive = _activeTextIndex == null
-                                  ? index == _textOverlays.length - 1
-                                  : index == _activeTextIndex;
-                              return Positioned(
-                                left: overlay.position.dx,
-                                top: overlay.position.dy,
-                                child: GestureDetector(
-                                  onTapDown: (_) => _startTextHold(index),
-                                  onTapUp: (_) => _cancelTextHold(),
-                                  onTapCancel: _cancelTextHold,
-                                  onTap: () {
-                                    if (_suppressTextTap) {
-                                      _suppressTextTap = false;
-                                      return;
-                                    }
-                                    setState(() {
-                                      _activeTextIndex = index;
-                                    });
-                                    _openPreviewTextEditor(index: index);
-                                  },
-                                  onScaleStart: (d) {
-                                    setState(() => _activeTextIndex = index);
-                                    _cancelTextHold();
-                                    _handleTextScaleStart(d);
-                                  },
-                                  onScaleUpdate: _handleTextScaleUpdate,
-                                  onScaleEnd: (_) => _handleTextScaleEnd(),
-                                  child: AnimatedOpacity(
-                                    duration:
-                                        const Duration(milliseconds: 180),
-                                    opacity:
-                                        _deletingTextIndexes.contains(index)
-                                            ? 0.0
-                                            : 1.0,
-                                    child: AnimatedScale(
-                                      duration:
-                                          const Duration(milliseconds: 180),
-                                      scale: _deletingTextIndexes.contains(index)
-                                          ? 0.0
-                                          : 1.0,
-                                      child: Transform.rotate(
-                                        angle: overlay.rotation,
-                                        child: Transform.scale(
-                                          scale: overlay.scale *
-                                              (_textDeleteScale[index] ?? 1.0),
-                                          child: _buildOverlayVisual(
-                                              overlay, isActive),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                              }),
-                            ..._stickerOverlays.asMap().entries.map((entry) {
-                              final i = entry.key;
-                              final s = entry.value;
-                              final isActive = _activeStickerIndex == i;
-                              return Positioned(
-                                left: s.position.dx,
-                                top: s.position.dy,
-                                child: GestureDetector(
-                                  onTapDown: (_) => _startStickerHold(i),
-                                  onTapUp: (_) {
-                                    _cancelStickerHold();
-                                  },
-                                  onTapCancel: () {
-                                    _cancelStickerHold();
-                                  },
-                                  onTap: () {
-                                    if (_suppressStickerTap) {
-                                      _suppressStickerTap = false;
-                                      return;
-                                    }
-                                    setState(() {
-                                      if (_activeStickerIndex == i) {
-                                        _stickerOverlays[i] = s.copyWith(
-                                          shape: _nextShape(s.shape),
-                                        );
-                                      } else {
-                                        _activeStickerIndex = i;
-                                      }
-                                    });
-                                  },
-                                  onScaleStart: (d) {
-                                    setState(() => _activeStickerIndex = i);
-                                    _cancelStickerHold();
-                                    _handleStickerScaleStart(d);
-                                  },
-                                  onScaleUpdate: (d) =>
-                                      _handleStickerScaleUpdate(d, context),
-                                  onScaleEnd: (_) =>
-                                      _handleStickerScaleEnd(context),
-                                  child: AnimatedOpacity(
-                                    duration:
-                                        const Duration(milliseconds: 180),
-                                    opacity:
-                                        _deletingStickerIds.contains(s.id)
-                                            ? 0.0
-                                            : 1.0,
-                                    child: AnimatedScale(
-                                      duration:
-                                          const Duration(milliseconds: 180),
-                                      scale: _deletingStickerIds.contains(s.id)
-                                          ? 0.0
-                                          : 1.0,
-                                      child: Transform(
-                                        alignment: Alignment.center,
-                                        transform: Matrix4.identity()
-                                          ..rotateZ(s.rotation)
-                                          ..scale(
-                                            s.scale *
-                                                (_stickerDeleteScale[s.id] ??
-                                                    1.0),
+                              ..._buildSortedLayers().map((layer) {
+                                if (layer['type'] == 'text') {
+                                  final index = layer['index'] as int;
+                                  if (index >= _textOverlays.length) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final overlay = _textOverlays[index];
+                                  final isActive = _activeTextIndex == index;
+                                  return Positioned(
+                                    key: ValueKey('text_$index'),
+                                    left: overlay.position.dx,
+                                    top: overlay.position.dy,
+                                    child: GestureDetector(
+                                      onTapDown: (_) => _startTextHold(index),
+                                      onTapUp: (_) => _cancelTextHold(),
+                                      onTapCancel: _cancelTextHold,
+                                      onTap: () {
+                                        if (_suppressTextTap) {
+                                          _suppressTextTap = false;
+                                          return;
+                                        }
+                                        setState(() => _bringTextToFront(index));
+                                        _openPreviewTextEditor(index: index);
+                                      },
+                                      onScaleStart: (d) {
+                                        setState(() => _bringTextToFront(index));
+                                        _cancelTextHold();
+                                        _handleTextScaleStart(d);
+                                      },
+                                      onScaleUpdate: _handleTextScaleUpdate,
+                                      onScaleEnd: (_) => _handleTextScaleEnd(),
+                                      child: AnimatedOpacity(
+                                        duration: const Duration(milliseconds: 180),
+                                        opacity: _deletingTextIndexes.contains(index) ? 0.0 : 1.0,
+                                        child: AnimatedScale(
+                                          duration: const Duration(milliseconds: 180),
+                                          scale: _deletingTextIndexes.contains(index) ? 0.0 : 1.0,
+                                          child: Transform.rotate(
+                                            angle: overlay.rotation,
+                                            child: Transform.scale(
+                                              scale: overlay.scale * (_textDeleteScale[index] ?? 1.0),
+                                              child: _buildOverlayVisual(overlay, isActive),
+                                            ),
                                           ),
-                                        child: OverlayStickerWidget(
-                                          sticker: s,
-                                          isActive: isActive,
-                                          onDelete: () {},
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                              );
-                            }),
+                                  );
+                                } else {
+                                  final i = layer['index'] as int;
+                                  if (i >= _stickerOverlays.length) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final s = _stickerOverlays[i];
+                                  final isActive = _activeStickerIndex == i;
+                                  return Positioned(
+                                    key: ValueKey('sticker_${s.id}'),
+                                    left: s.position.dx,
+                                    top: s.position.dy,
+                                    child: GestureDetector(
+                                      onTapDown: (_) => _startStickerHold(i),
+                                      onTapUp: (_) => _cancelStickerHold(),
+                                      onTapCancel: () => _cancelStickerHold(),
+                                      onTap: () {
+                                        if (_suppressStickerTap) {
+                                          _suppressStickerTap = false;
+                                          return;
+                                        }
+                                        setState(() {
+                                          if (_activeStickerIndex == i) {
+                                            _stickerOverlays[i] = s.copyWith(
+                                              shape: _nextShape(s.shape),
+                                            );
+                                          }
+                                          _bringStickerToFront(i);
+                                        });
+                                      },
+                                      onScaleStart: (d) {
+                                        setState(() => _bringStickerToFront(i));
+                                        _cancelStickerHold();
+                                        _handleStickerScaleStart(d);
+                                      },
+                                      onScaleUpdate: (d) => _handleStickerScaleUpdate(d, context),
+                                      onScaleEnd: (_) => _handleStickerScaleEnd(context),
+                                      child: AnimatedOpacity(
+                                        duration: const Duration(milliseconds: 180),
+                                        opacity: _deletingStickerIds.contains(s.id) ? 0.0 : 1.0,
+                                        child: AnimatedScale(
+                                          duration: const Duration(milliseconds: 180),
+                                          scale: _deletingStickerIds.contains(s.id) ? 0.0 : 1.0,
+                                          child: Transform(
+                                            alignment: Alignment.center,
+                                            transform: Matrix4.identity()
+                                              ..rotateZ(s.rotation)
+                                              ..scale(
+                                                s.scale * (_stickerDeleteScale[s.id] ?? 1.0),
+                                              ),
+                                            child: OverlayStickerWidget(
+                                              sticker: s,
+                                              isActive: isActive,
+                                              onDelete: () {},
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }),
                                       if (_isStickerDeleteMode ||
                                           _isTextDeleteMode)
                                         Positioned.fill(

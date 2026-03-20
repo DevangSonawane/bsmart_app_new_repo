@@ -403,6 +403,7 @@ class SupabaseService {
             .toList(),
         hideLikesCount: postData['hide_likes_count'] as bool?,
         turnOffCommenting: postData['turn_off_commenting'] as bool?,
+        hideShareCount: postData['hide_share_count'] as bool?,
         peopleTags: (postData['people_tags'] as List<dynamic>?)
             ?.map((e) => (e as Map).cast<String, dynamic>())
             .toList(),
@@ -423,6 +424,7 @@ class SupabaseService {
           media: media,
           caption: postData['caption'] as String?,
           location: postData['location'] as String?,
+          hideShareCount: postData['hide_share_count'] as bool?,
           type: postData['type'] as String? ?? 'post',
         );
         return true;

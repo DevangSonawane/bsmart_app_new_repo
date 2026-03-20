@@ -35,6 +35,7 @@ class FeedPost {
   final String? adTitle;
   final String? adCompanyId;
   final String? adCompanyName;
+  final bool commentsDisabled;
   final String? location; // Added location field
   final String? latestCommentUser;
   final String? latestCommentText;
@@ -69,6 +70,7 @@ class FeedPost {
     this.adTitle,
     this.adCompanyId,
     this.adCompanyName,
+    this.commentsDisabled = false,
     this.location, // Added
     this.latestCommentUser,
     this.latestCommentText,
@@ -155,6 +157,10 @@ class FeedPost {
       adTitle: json['adTitle'],
       adCompanyId: json['adCompanyId'],
       adCompanyName: json['adCompanyName'],
+      commentsDisabled: json['turn_off_commenting'] ??
+          json['commentsDisabled'] ??
+          json['comments_disabled'] ??
+          false,
       location: json['location'], // Map location
       latestCommentUser: json['latestCommentUser'],
       latestCommentText: json['latestCommentText'],
@@ -191,6 +197,7 @@ class FeedPost {
     String? adTitle,
     String? adCompanyId,
     String? adCompanyName,
+    bool? commentsDisabled,
     String? latestCommentUser,
     String? latestCommentText,
     List<Map<String, dynamic>>? rawLikes,
@@ -224,6 +231,7 @@ class FeedPost {
       adTitle: adTitle ?? this.adTitle,
       adCompanyId: adCompanyId ?? this.adCompanyId,
       adCompanyName: adCompanyName ?? this.adCompanyName,
+      commentsDisabled: commentsDisabled ?? this.commentsDisabled,
       latestCommentUser: latestCommentUser ?? this.latestCommentUser,
       latestCommentText: latestCommentText ?? this.latestCommentText,
       rawLikes: rawLikes ?? this.rawLikes,

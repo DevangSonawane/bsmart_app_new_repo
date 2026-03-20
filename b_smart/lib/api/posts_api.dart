@@ -39,6 +39,7 @@ class PostsApi {
     List<String>? tags,
     bool? hideLikesCount,
     bool? turnOffCommenting,
+    bool? hideShareCount,
     List<Map<String, dynamic>>? peopleTags,
     String type = 'post', // post | reel | promote | advertise
   }) async {
@@ -51,6 +52,7 @@ class PostsApi {
     if (tags != null && tags.isNotEmpty) body['tags'] = tags;
     if (hideLikesCount != null) body['hide_likes_count'] = hideLikesCount;
     if (turnOffCommenting != null) body['turn_off_commenting'] = turnOffCommenting;
+    if (hideShareCount != null) body['hide_share_count'] = hideShareCount;
     if (peopleTags != null && peopleTags.isNotEmpty) body['people_tags'] = peopleTags;
 
     final res = await _client.post('$_basePath/posts', body: body);

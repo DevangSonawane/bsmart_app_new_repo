@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import 'package:photo_manager/photo_manager.dart';
-import '../models/media_model.dart';
 import '../services/create_service.dart';
 import 'create_edit_preview_screen.dart';
 import 'story_camera_screen.dart';
+import '../models/media_model.dart';
 import 'advertiser_create_ad_screen.dart';
 
 enum _GallerySource {
@@ -203,14 +203,31 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       if (_mode != UploadMode.post) {
         setState(() {
           _mode = UploadMode.post;
+          _selectedIds.clear();
+          _currentAsset = null;
         });
+        _loadGalleryMedia();
+      }
+      return;
+    }
+
+    if (mode == UploadMode.reel) {
+      if (_mode != UploadMode.reel) {
+        setState(() {
+          _mode = UploadMode.reel;
+          _selectedIds.clear();
+          _currentAsset = null;
+        });
+        _loadGalleryMedia();
       }
       return;
     }
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => const StoryCameraScreen(),
+        builder: (context) => StoryCameraScreen(
+          initialMode: mode,
+        ),
       ),
     );
   }
@@ -576,7 +593,10 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => const StoryCameraScreen(),
+                                        builder: (context) => const StoryCameraScreen(
+                                          initialMode: UploadMode.post,
+                                          lockMode: true,
+                                        ),
                                       ),
                                     );
                                   },

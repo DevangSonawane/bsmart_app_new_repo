@@ -381,11 +381,12 @@ class _PostCardState extends State<PostCard> {
             ),
             onPressed: widget.onLike,
           ),
-          IconButton(
-            iconSize: 22,
-            icon: const Icon(LucideIcons.messageCircle),
-            onPressed: widget.onComment,
-          ),
+          if (!post.commentsDisabled)
+            IconButton(
+              iconSize: 22,
+              icon: const Icon(LucideIcons.messageCircle),
+              onPressed: widget.onComment,
+            ),
           IconButton(
             iconSize: 22,
             icon: const Icon(LucideIcons.send),

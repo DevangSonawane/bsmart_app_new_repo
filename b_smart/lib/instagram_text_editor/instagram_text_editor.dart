@@ -741,7 +741,7 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                   ),
                 ),
                 Positioned(
-                  left: 8,
+                  left: 20,
                   top: 120,
                   child: SizedBox(
                     height: 180,

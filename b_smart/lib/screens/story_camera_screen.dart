@@ -13,11 +13,19 @@ import 'package:photo_manager/photo_manager.dart';
 import '../models/media_model.dart';
 import 'create_post_screen.dart';
 import 'create_upload_screen.dart';
+import 'create_edit_preview_screen.dart';
 import '../api/api.dart';
 import '../services/supabase_service.dart';
 
 class StoryCameraScreen extends StatefulWidget {
-  const StoryCameraScreen({super.key});
+  final UploadMode initialMode;
+  final bool lockMode;
+
+  const StoryCameraScreen({
+    super.key,
+    this.initialMode = UploadMode.story,
+    this.lockMode = false,
+  });
 
   @override
   State<StoryCameraScreen> createState() => _StoryCameraScreenState();
@@ -411,6 +419,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   double _storyBrushSize = 8.0;
   Color _storyCurrentColor = Colors.white;
   String _storyCurrentFilter = 'Original';
+  bool _recordAsReel = false;
   Offset _storyLastFocalPoint = Offset.zero;
   double _storyTransformBaseScale = 1.0;
   double _storyTransformBaseRotation = 0.0;
@@ -418,6 +427,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   @override
   void initState() {
     super.initState();
+    _mode = widget.initialMode;
     WidgetsBinding.instance.addObserver(this);
     _initCamera();
     _loadRecentMedia();
@@ -623,6 +633,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (_controller!.value.isRecordingVideo) return;
     try {
+      if (_mode == UploadMode.post) {
+        _recordAsReel = true;
+      }
       await _controller!.startVideoRecording();
       setState(() {
         _recording = true;
@@ -646,7 +659,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       setState(() {
         _recording = false;
       });
-      await _navigateToEditor(File(xfile.path), MediaType.video);
+      final asReel = _recordAsReel || _mode == UploadMode.reel;
+      _recordAsReel = false;
+      await _navigateToEditor(File(xfile.path), MediaType.video, asReel: asReel);
     } catch (e) {
       debugPrint('Error stopping video recording: $e');
       setState(() {
@@ -662,10 +677,11 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     await _navigateToEditor(file, type);
   }
 
-  Future<void> _navigateToEditor(File file, MediaType type) async {
+  Future<void> _navigateToEditor(File file, MediaType type,
+      {bool asReel = false}) async {
     if (!mounted) return;
     
-    if (_mode == UploadMode.story && type == MediaType.image) {
+    if (_mode == UploadMode.story && type == MediaType.image && !asReel) {
       debugPrint('Loading image for story editor: ${file.path}');
       
       try {
@@ -701,15 +717,30 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       return;
     }
     
+    final media = MediaItem(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      type: type,
+      filePath: file.path,
+      createdAt: DateTime.now(),
+    );
+
+    if (asReel) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => CreateEditPreviewScreen(
+            media: media,
+            selectedFilter: _storyCurrentFilter,
+            isPostFlow: false,
+          ),
+        ),
+      );
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => CreatePostScreen(
-          initialMedia: MediaItem(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            type: type,
-            filePath: file.path,
-            createdAt: DateTime.now(),
-          ),
+          initialMedia: media,
         ),
       ),
     );
@@ -829,6 +860,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   }
 
   Widget _buildModeTabs() {
+    final allowSwitch = !widget.lockMode;
     return Center(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -840,17 +872,21 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
           mainAxisSize: MainAxisSize.min,
           children: [
             GestureDetector(
-              onTap: () async {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const CreateUploadScreen(),
-                  ),
-                );
-              },
+              onTap: allowSwitch
+                  ? () async {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const CreateUploadScreen(),
+                        ),
+                      );
+                    }
+                  : null,
               child: AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 180),
                 style: TextStyle(
-                  color: _mode == UploadMode.post ? Colors.white : Colors.white54,
+                  color: _mode == UploadMode.post
+                      ? Colors.white
+                      : (allowSwitch ? Colors.white54 : Colors.white38),
                   fontWeight: _mode == UploadMode.post ? FontWeight.bold : FontWeight.w500,
                   letterSpacing: 1.2,
                 ),
@@ -859,15 +895,27 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
             ),
             const SizedBox(width: 16),
             GestureDetector(
-              onTap: () {
-                setState(() {
-                  _mode = UploadMode.story;
-                });
-              },
+              onTap: allowSwitch
+                  ? () {
+                      setState(() {
+                        _mode = UploadMode.story;
+                      });
+                    }
+                  : () {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (context) => const StoryCameraScreen(
+                            initialMode: UploadMode.story,
+                          ),
+                        ),
+                      );
+                    },
               child: AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 180),
                 style: TextStyle(
-                  color: _mode == UploadMode.story ? Colors.white : Colors.white54,
+                  color: _mode == UploadMode.story
+                      ? Colors.white
+                      : (allowSwitch ? Colors.white54 : Colors.white54),
                   fontWeight: _mode == UploadMode.story ? FontWeight.bold : FontWeight.w500,
                   letterSpacing: 1.2,
                 ),
@@ -876,22 +924,26 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
             ),
             const SizedBox(width: 16),
             GestureDetector(
-              onTap: () {
-                setState(() {
-                  _mode = UploadMode.reel;
-                });
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const CreateUploadScreen(
-                      initialMode: UploadMode.reel,
-                    ),
-                  ),
-                );
-              },
+              onTap: allowSwitch
+                  ? () {
+                      setState(() {
+                        _mode = UploadMode.reel;
+                      });
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const CreateUploadScreen(
+                            initialMode: UploadMode.reel,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
               child: AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 180),
                 style: TextStyle(
-                  color: _mode == UploadMode.reel ? Colors.white : Colors.white54,
+                  color: _mode == UploadMode.reel
+                      ? Colors.white
+                      : (allowSwitch ? Colors.white54 : Colors.white38),
                   fontWeight: _mode == UploadMode.reel ? FontWeight.bold : FontWeight.w500,
                   letterSpacing: 1.2,
                 ),
@@ -900,15 +952,19 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
             ),
             const SizedBox(width: 16),
             GestureDetector(
-              onTap: () {
-                setState(() {
-                  _mode = UploadMode.live;
-                });
-              },
+              onTap: allowSwitch
+                  ? () {
+                      setState(() {
+                        _mode = UploadMode.live;
+                      });
+                    }
+                  : null,
               child: AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 180),
                 style: TextStyle(
-                  color: _mode == UploadMode.live ? Colors.white : Colors.white54,
+                  color: _mode == UploadMode.live
+                      ? Colors.white
+                      : (allowSwitch ? Colors.white54 : Colors.white38),
                   fontWeight: _mode == UploadMode.live ? FontWeight.bold : FontWeight.w500,
                   letterSpacing: 1.2,
                 ),

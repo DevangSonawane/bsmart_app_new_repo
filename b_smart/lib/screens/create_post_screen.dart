@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
 import '../config/api_config.dart';
 import '../api/upload_api.dart';
@@ -41,6 +40,170 @@ class _CreatePostMediaItem {
 
   String get displayPath => (isVideo ? sourcePath : (croppedPath ?? sourcePath));
 }
+
+class _MoreOptionsScreen extends StatefulWidget {
+  final bool turnOffCommenting;
+  final bool hideLikes;
+  final bool hideShares;
+  final void Function(bool turnOffCommenting, bool hideLikes, bool hideShares)
+      onChanged;
+
+  const _MoreOptionsScreen({
+    required this.turnOffCommenting,
+    required this.hideLikes,
+    required this.hideShares,
+    required this.onChanged,
+  });
+
+  @override
+  State<_MoreOptionsScreen> createState() => _MoreOptionsScreenState();
+}
+
+class _MoreOptionsScreenState extends State<_MoreOptionsScreen> {
+  late bool _turnOffCommenting;
+  late bool _hideLikes;
+  late bool _hideShares;
+
+  @override
+  void initState() {
+    super.initState();
+    _turnOffCommenting = widget.turnOffCommenting;
+    _hideLikes = widget.hideLikes;
+    _hideShares = widget.hideShares;
+  }
+
+  void _update(void Function() fn) {
+    setState(fn);
+    widget.onChanged(_turnOffCommenting, _hideLikes, _hideShares);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final appBarBg =
+        theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
+    final appBarFg =
+        theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: appBarBg,
+        elevation: 0,
+        iconTheme: IconThemeData(color: appBarFg),
+        title: Text(
+          'More options',
+          style: TextStyle(color: appBarFg, fontSize: 18),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'How others can interact with your post',
+                style: TextStyle(
+                  color: muted,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildMoreOptionToggle(
+                context,
+                icon: Icons.comments_disabled_outlined,
+                title: 'Turn off commenting',
+                value: _turnOffCommenting,
+                onChanged: (v) => _update(() => _turnOffCommenting = v),
+              ),
+              const SizedBox(height: 12),
+              _buildMoreOptionToggle(
+                context,
+                icon: Icons.favorite_border,
+                title: 'Hide like count on this post',
+                subtitle:
+                    'Only you will see the total number of likes and views on this post.',
+                value: _hideLikes,
+                onChanged: (v) => _update(() => _hideLikes = v),
+              ),
+              const SizedBox(height: 12),
+              _buildMoreOptionToggle(
+                context,
+                icon: Icons.ios_share,
+                title: 'Hide share count on this post',
+                subtitle:
+                    'Only you will see the number of likes and shares on this post.',
+                value: _hideShares,
+                onChanged: (v) => _update(() => _hideShares = v),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+  Widget _buildMoreOptionToggle(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onSurface;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final primary = _shareBlue;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Icon(icon, color: fg, size: 22),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: muted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Switch(
+          value: value,
+          onChanged: onChanged,
+          activeThumbColor: Colors.black,
+          activeTrackColor: Colors.black.withValues(alpha: 0.25),
+          inactiveThumbColor: fg.withValues(alpha: 0.7),
+          inactiveTrackColor: fg.withValues(alpha: 0.12),
+        ),
+      ],
+    );
+  }
 
 /// Tag on the post (x, y as percentage; user map from Supabase).
 class _PostTag {
@@ -132,18 +295,6 @@ List<double> _buildSepiaMatrix({double amount = 0.2, double brightness = 1.0, do
   ];
 }
 
-// Adjustments matching React (property name, label, min, max)
-const _adjustments = [
-  ('brightness', 'Brightness', -100, 100),
-  ('contrast', 'Contrast', -100, 100),
-  ('saturate', 'Saturation', -100, 100),
-  ('sepia', 'Temperature', -100, 100),
-  ('opacity', 'Fade', 0, 100),
-  ('vignette', 'Vignette', 0, 100),
-];
-
-const _popularEmojis = ['😂', '😮', '😍', '😢', '👏', '🔥', '🎉', '💯', '❤️', '🤣', '🥰', '😘', '😭', '😊'];
-
 class CreatePostScreen extends StatefulWidget {
   final MediaItem? initialMedia;
   final double? initialAspect;
@@ -155,9 +306,10 @@ class CreatePostScreen extends StatefulWidget {
   State<CreatePostScreen> createState() => _CreatePostScreenState();
 }
 
+const _shareBlue = Color(0xFF4F6EF7);
+
 class _CreatePostScreenState extends State<CreatePostScreen> {
   final ImagePicker _picker = ImagePicker();
-  final SupabaseService _svc = SupabaseService();
   final TextEditingController _captionCtl = TextEditingController();
 
   String _step = 'select'; // select | crop | edit | share
@@ -168,26 +320,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final String _location = '';
   bool _hideLikes = false;
   bool _turnOffCommenting = false;
-  bool _advancedOpen = false;
-  bool _showEmojiPicker = false;
+  bool _hideShares = false;
   final List<_PostTag> _tags = [];
   bool _isSubmitting = false;
-  Map<String, dynamic>? _currentUserProfile;
-
-  // Edit step tab
-  String _editTab = 'filters';
-
-  Future<void> _loadCurrentUserProfile() async {
-    final uid = await CurrentUser.id;
-    if (uid == null) return;
-    final profile = await _svc.getUserById(uid);
-    if (mounted) setState(() => _currentUserProfile = profile);
-  }
 
   @override
   void initState() {
     super.initState();
-    _loadCurrentUserProfile();
     final m = widget.initialMedia;
     if (m != null && m.filePath != null) {
       final baseName = m.filePath!.split('/').last;
@@ -306,43 +445,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
-  Future<void> _cropCurrent() async {
-    final item = _currentMedia;
-    if (item == null) return;
-    // Advance to next item or edit step. Native ImageCropper is skipped to avoid
-    // app crashes on some platforms (path/activity issues); use source image as-is.
-    if (item.isVideo) {
-      if (mounted) {
-        setState(() {
-          _advanceFromCrop((nextIndex, nextStep) {
-            _currentIndex = nextIndex;
-            if (nextStep != null) _step = nextStep;
-          });
-        });
-      }
-      return;
-    }
-    // For images: use source path as display/upload path (no native crop) so flow never crashes
-    if (mounted) {
-      setState(() {
-        _media[_currentIndex].croppedPath = item.sourcePath;
-        _advanceFromCrop((nextIndex, nextStep) {
-          _currentIndex = nextIndex;
-          if (nextStep != null) _step = nextStep;
-        });
-      });
-    }
-  }
-
-  /// Returns (nextIndex, nextStep). If nextStep is non-null, transition to that step with index 0.
-  void _advanceFromCrop(void Function(int index, String? step) apply) {
-    if (_currentIndex < _media.length - 1) {
-      apply(_currentIndex + 1, null);
-    } else {
-      apply(0, 'edit');
-    }
-  }
-
   void _back() {
     Navigator.of(context).maybePop();
   }
@@ -359,20 +461,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         );
       }
     }
-  }
-
-  void _setAspect(double a) {
-    final item = _currentMedia;
-    if (item == null) return;
-    const minLandscape = 1.91;
-    const maxPortrait = 4 / 5; // 0.8
-    final next = (a <= 0) ? a : a.clamp(maxPortrait, minLandscape);
-    setState(() => item.aspect = next);
-  }
-
-  void _applyFilter(String name) {
-    final item = _currentMedia;
-    if (item != null) setState(() => item.filter = name);
   }
 
   String _cssFrom(String name, Map<String, int> adj) {
@@ -416,20 +504,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return 'custom';
   }
 
-  void _updateAdjustment(String key, int value) {
-    final item = _currentMedia;
-    if (item != null) setState(() => item.adjustments[key] = value);
-  }
-
-  String? _draggingTagId;
   bool _showPreviewOverlay = false;
-
-  void _onImageTapForTag(TapDownDetails details, Size size) {
-    if (_draggingTagId != null) return;
-    setState(() {
-      _showPreviewOverlay = true;
-    });
-  }
 
   Future<void> _openTagPeople() async {
     final item = _currentMedia;
@@ -473,6 +548,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Future<void> _submit() async {
     if (_isSubmitting || _media.isEmpty) return;
     final userId = await CurrentUser.id;
+    if (!mounted) return;
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please log in to share.')));
       return;
@@ -585,16 +661,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
       final hashtagMatches = RegExp(r'#[a-zA-Z0-9_]+').allMatches(_captionCtl.text.trim()).map((m) => m.group(0)!).toList();
 
-      final postData = {
-        'caption': _captionCtl.text.trim(),
-        'location': _location.isEmpty ? null : _location,
-        'media': processedMedia,
-        'tags': hashtagMatches,
-        'people_tags': peopleTags,
-        'hide_likes_count': _hideLikes,
-        'turn_off_commenting': _turnOffCommenting,
-        'type': 'post',
-      };
       final created = await PostsApi().createPost(
         media: processedMedia.cast<Map<String, dynamic>>(),
         caption: _captionCtl.text.trim(),
@@ -602,6 +668,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         tags: hashtagMatches,
         hideLikesCount: _hideLikes,
         turnOffCommenting: _turnOffCommenting,
+        hideShareCount: _hideShares,
         peopleTags: peopleTags.cast<Map<String, dynamic>>(),
         type: 'post',
       );
@@ -622,15 +689,20 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onSurface;
+    final appBarBg =
+        theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
+    final appBarFg =
+        theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
     final isSelect = _step == 'select';
-    final bg = isSelect ? Colors.white : Colors.black;
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: bg,
+        backgroundColor: appBarBg,
         leading: IconButton(
-          icon: Icon(LucideIcons.arrowLeft, color: isSelect ? Colors.black87 : Colors.white),
+          icon: Icon(LucideIcons.arrowLeft, color: appBarFg),
           onPressed: _back,
         ),
         title: Text(
@@ -638,7 +710,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           style: TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 16,
-            color: isSelect ? Colors.black87 : Colors.white,
+            color: fg,
           ),
         ),
         centerTitle: true,
@@ -650,6 +722,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Widget _buildSelect() {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    const primary = Color(0xFF0095F6);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -659,15 +734,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(LucideIcons.image, size: 56, color: Colors.grey[700]),
+                Icon(LucideIcons.image, size: 56, color: muted),
                 const SizedBox(width: 8),
-                Icon(LucideIcons.video, size: 56, color: Colors.grey[700]),
+                Icon(LucideIcons.video, size: 56, color: muted),
               ],
             ),
             const SizedBox(height: 16),
             Text(
               'Drag photos and videos here',
-              style: TextStyle(fontSize: 20, color: Colors.grey[800], fontWeight: FontWeight.w300),
+              style: TextStyle(fontSize: 20, color: muted, fontWeight: FontWeight.w300),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -677,8 +752,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 ElevatedButton(
                   onPressed: _takePhoto,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0095F6),
-                    foregroundColor: Colors.white,
+                    backgroundColor: primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -688,8 +763,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 ElevatedButton(
                   onPressed: _recordVideo,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0095F6),
-                    foregroundColor: Colors.white,
+                    backgroundColor: primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -701,8 +776,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             ElevatedButton(
               onPressed: _pickMedia,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0095F6),
-                foregroundColor: Colors.white,
+                backgroundColor: primary,
+                foregroundColor: theme.colorScheme.onPrimary,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
@@ -712,36 +787,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildCrop() {
-    return const SizedBox();
-  }
-
-  Widget _aspectButton(String label, double current, VoidCallback onTap) {
-    final isSelected = (_currentMedia?.aspect ?? -1) == current;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: isSelected ? Colors.white : Colors.black54,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Text(label, style: TextStyle(color: isSelected ? Colors.black : Colors.white, fontWeight: FontWeight.w500)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  static const double _editPanelMinWidth = 300;
-  static const double _sharePanelMinWidth = 340;
-
-  Widget _buildEdit() {
-    return const SizedBox();
   }
 
   /// Applies named filter preset + adjustments (matches React getFilterStyle).
@@ -794,14 +839,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     ];
   }
 
-  /// Thumbnail with a single filter preset (for Filters tab).
-  Widget _filterThumbnail(File file, String filterName, bool isSelected) {
-    final matrix = _filterMatrixFor(filterName);
-    return ColorFiltered(
-      colorFilter: ColorFilter.matrix(matrix),
-      child: Image.file(file, fit: BoxFit.cover),
-    );
-  }
 
   Future<Uint8List> _processImageBytes(Uint8List srcBytes, _CreatePostMediaItem item) async {
     final completer = Completer<ui.Image>();
@@ -873,7 +910,46 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return out;
   }
 
+  Future<void> _openMoreOptions() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 420),
+        reverseTransitionDuration: const Duration(milliseconds: 340),
+        pageBuilder: (_, __, ___) => _MoreOptionsScreen(
+          turnOffCommenting: _turnOffCommenting,
+          hideLikes: _hideLikes,
+          hideShares: _hideShares,
+          onChanged: (nextTurnOff, nextHideLikes, nextHideShares) {
+            setState(() {
+              _turnOffCommenting = nextTurnOff;
+              _hideLikes = nextHideLikes;
+              _hideShares = nextHideShares;
+            });
+          },
+        ),
+        transitionsBuilder: (_, animation, __, child) {
+          return FadeTransition(
+            opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+              CurvedAnimation(
+                parent: animation,
+                curve: const Interval(0.05, 1.0, curve: Curves.easeOut),
+                reverseCurve:
+                    const Interval(0.0, 0.95, curve: Curves.easeIn),
+              ),
+            ),
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildShare() {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onSurface;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final divider = theme.dividerColor;
     final item = _currentMedia;
     if (item == null) return const SizedBox();
     final aspect = item.aspect == 0.0 ? 1.0 : item.aspect;
@@ -889,15 +965,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           padding: const EdgeInsets.symmetric(vertical: 14),
           child: Row(
             children: [
-              Icon(icon, color: Colors.white, size: 20),
+              Icon(icon, color: fg, size: 20),
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                  style: TextStyle(color: fg, fontSize: 16, fontWeight: FontWeight.w500),
                 ),
               ),
-              Icon(LucideIcons.chevronRight, color: Colors.white.withValues(alpha: 0.6), size: 18),
+              Icon(LucideIcons.chevronRight, color: muted, size: 18),
             ],
           ),
         ),
@@ -915,15 +991,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
+            color: theme.brightness == Brightness.dark
+                ? theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.6)
+                : Colors.grey.shade200,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: Colors.white, size: 18),
+              Icon(icon, color: fg, size: 18),
               const SizedBox(width: 8),
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+              Text(label, style: TextStyle(color: fg, fontSize: 14, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -948,13 +1027,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(18),
                           child: Container(
-                            color: Colors.black,
+                            color: theme.colorScheme.surface,
                             child: SizedBox(
                               width: 160,
                               child: AspectRatio(
                                 aspectRatio: aspect,
                                 child: item.isVideo
-                                    ? Icon(LucideIcons.video, size: 64, color: Colors.white.withValues(alpha: 0.8))
+                                    ? Icon(LucideIcons.video, size: 64, color: muted)
                                     : _applyFilterToImage(File(item.displayPath), item),
                               ),
                             ),
@@ -966,10 +1045,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     TextField(
                       controller: _captionCtl,
                       maxLines: 4,
-                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                      style: TextStyle(color: fg, fontSize: 16),
                       decoration: InputDecoration(
                         hintText: 'Add a caption...',
-                        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 16),
+                        hintStyle: TextStyle(color: muted, fontSize: 16),
                         border: InputBorder.none,
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
@@ -988,6 +1067,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     const SizedBox(height: 8),
                     optionRow(icon: LucideIcons.userPlus, label: 'Tag people', onTap: _openTagPeople),
                     optionRow(icon: LucideIcons.mapPin, label: 'Add location'),
+                    const SizedBox(height: 8),
+                    Divider(
+                      color: theme.brightness == Brightness.dark
+                          ? divider.withValues(alpha: 0.35)
+                          : Colors.grey.shade300,
+                      height: 1,
+                    ),
+                    optionRow(
+                      icon: LucideIcons.ellipsis,
+                      label: 'More options',
+                      onTap: _openMoreOptions,
+                    ),
                   ],
                 ),
               ),
@@ -1002,10 +1093,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   child: ElevatedButton(
                     onPressed: _isSubmitting ? null : _next,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF3D5AFE),
+                      backgroundColor: _shareBlue,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.white.withValues(alpha: 0.12),
-                      disabledForegroundColor: Colors.white.withValues(alpha: 0.6),
+                      disabledBackgroundColor:
+                          _shareBlue.withValues(alpha: 0.6),
+                      disabledForegroundColor: Colors.white70,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                     child: Text(
@@ -1035,7 +1127,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             onTap: () => setState(() => _showPreviewOverlay = false),
             child: BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(color: Colors.black.withOpacity(0.25)),
+              child: Container(color: Colors.black.withValues(alpha: 0.25)),
             ),
           ),
           Center(
