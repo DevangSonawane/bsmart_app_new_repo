@@ -265,6 +265,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     } else {
       asset = _currentAsset ?? _assets.first;
     }
+    if (asset == null) return;
     final file = await asset.originFile;
     if (file == null) return;
     final media = MediaItem(
@@ -569,7 +570,30 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                           ),
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
-                              final asset = _assets[index];
+                              if (index == 0) {
+                                return GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const StoryCameraScreen(),
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    color: const Color(0xFF262626),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.camera_alt,
+                                        color: Colors.white,
+                                        size: 28,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              final asset = _assets[index - 1];
                               final isSelected = _selectedIds.contains(asset.id);
                               return GestureDetector(
                                 onTap: () => _onAssetTap(asset),
@@ -638,112 +662,86 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                                 ),
                               );
                             },
-                            childCount: _assets.length,
+                            childCount: _assets.length + 1,
                           ),
                         ),
                       ),
                   ],
                 ),
               ),
-              if (!isReelMode || !_hasSelection)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16, top: 8),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          GestureDetector(
-                            onTap: () => _onModeTap(UploadMode.post),
-                            child: AnimatedDefaultTextStyle(
-                              duration: _modeAnimDuration,
-                              style: TextStyle(
-                                color: _mode == UploadMode.post ? Colors.white : Colors.white54,
-                                fontWeight: _mode == UploadMode.post ? FontWeight.bold : FontWeight.w500,
-                                letterSpacing: 1.2,
-                              ),
-                              child: const Text('POST'),
-                            ),
-                          ),
-                          if (!widget.isAdFlow) ...[
-                            const SizedBox(width: 16),
-                            GestureDetector(
-                              onTap: () => _onModeTap(UploadMode.story),
-                              child: AnimatedDefaultTextStyle(
-                                duration: _modeAnimDuration,
-                                style: TextStyle(
-                                  color: _mode == UploadMode.story ? Colors.white : Colors.white54,
-                                  fontWeight: _mode == UploadMode.story ? FontWeight.bold : FontWeight.w500,
-                                  letterSpacing: 1.2,
-                                ),
-                                child: const Text('STORY'),
-                              ),
-                            ),
-                          ],
-                          const SizedBox(width: 16),
-                          GestureDetector(
-                            onTap: () => _onModeTap(UploadMode.reel),
-                            child: AnimatedDefaultTextStyle(
-                              duration: _modeAnimDuration,
-                              style: TextStyle(
-                                color: _mode == UploadMode.reel ? Colors.white : Colors.white54,
-                                fontWeight: _mode == UploadMode.reel ? FontWeight.bold : FontWeight.w500,
-                                letterSpacing: 1.2,
-                              ),
-                              child: const Text('REEL'),
-                            ),
-                          ),
-                          if (!widget.isAdFlow) ...[
-                            const SizedBox(width: 16),
-                            GestureDetector(
-                              onTap: () => _onModeTap(UploadMode.live),
-                              child: AnimatedDefaultTextStyle(
-                                duration: _modeAnimDuration,
-                                style: TextStyle(
-                                  color: _mode == UploadMode.live ? Colors.white : Colors.white54,
-                                  fontWeight: _mode == UploadMode.live ? FontWeight.bold : FontWeight.w500,
-                                  letterSpacing: 1.2,
-                                ),
-                                child: const Text('LIVE'),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
-          if (!isReelMode)
+          if (!isReelMode || !_hasSelection)
             Positioned(
-              left: 16,
-              bottom: 96,
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const StoryCameraScreen(),
-                    ),
-                  );
-                },
+              left: 0,
+              right: 0,
+              bottom: 16,
+              child: Center(
                 child: Container(
-                  width: 48,
-                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF262626),
-                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.white10,
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Icon(
-                    Icons.camera_alt,
-                    color: Colors.white,
-                    size: 24,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      GestureDetector(
+                        onTap: () => _onModeTap(UploadMode.post),
+                        child: AnimatedDefaultTextStyle(
+                          duration: _modeAnimDuration,
+                          style: TextStyle(
+                            color: _mode == UploadMode.post ? Colors.white : Colors.white54,
+                            fontWeight: _mode == UploadMode.post ? FontWeight.bold : FontWeight.w500,
+                            letterSpacing: 1.2,
+                          ),
+                          child: const Text('POST'),
+                        ),
+                      ),
+                      if (!widget.isAdFlow) ...[
+                        const SizedBox(width: 16),
+                        GestureDetector(
+                          onTap: () => _onModeTap(UploadMode.story),
+                          child: AnimatedDefaultTextStyle(
+                            duration: _modeAnimDuration,
+                            style: TextStyle(
+                              color: _mode == UploadMode.story ? Colors.white : Colors.white54,
+                              fontWeight: _mode == UploadMode.story ? FontWeight.bold : FontWeight.w500,
+                              letterSpacing: 1.2,
+                            ),
+                            child: const Text('STORY'),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 16),
+                      GestureDetector(
+                        onTap: () => _onModeTap(UploadMode.reel),
+                        child: AnimatedDefaultTextStyle(
+                          duration: _modeAnimDuration,
+                          style: TextStyle(
+                            color: _mode == UploadMode.reel ? Colors.white : Colors.white54,
+                            fontWeight: _mode == UploadMode.reel ? FontWeight.bold : FontWeight.w500,
+                            letterSpacing: 1.2,
+                          ),
+                          child: const Text('REEL'),
+                        ),
+                      ),
+                      if (!widget.isAdFlow) ...[
+                        const SizedBox(width: 16),
+                        GestureDetector(
+                          onTap: () => _onModeTap(UploadMode.live),
+                          child: AnimatedDefaultTextStyle(
+                            duration: _modeAnimDuration,
+                            style: TextStyle(
+                              color: _mode == UploadMode.live ? Colors.white : Colors.white54,
+                              fontWeight: _mode == UploadMode.live ? FontWeight.bold : FontWeight.w500,
+                              letterSpacing: 1.2,
+                            ),
+                            child: const Text('LIVE'),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),

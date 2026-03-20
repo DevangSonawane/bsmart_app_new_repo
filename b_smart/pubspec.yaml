@@ -40,6 +40,7 @@ dependencies:
   firebase_messaging: ^14.7.10
   image_picker: ^1.1.2
   image_cropper: ^11.0.0
+  image: ^4.1.7
   meta: ^1.11.0
   path: ^1.9.0
   shared_preferences: ^2.2.3
@@ -64,6 +65,7 @@ dependencies:
 
   flutter_colorpicker: ^1.1.0
   google_fonts: ^6.1.0
+  vector_math: ^2.1.4
 
   # ✅ Stable FFmpeg (LAST PUBLIC WORKING VERSION)
   ffmpeg_kit_flutter_new: ^4.1.0

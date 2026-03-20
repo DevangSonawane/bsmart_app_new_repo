@@ -3,7 +3,10 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:image_picker/image_picker.dart';
 import 'dart:math' as math;
 import 'package:extended_image/extended_image.dart';
 import '../models/media_model.dart' as app_models;
@@ -11,35 +14,60 @@ import '../services/create_service.dart';
 import 'create_post_screen.dart';
 import 'create_reel_details_screen.dart';
 import 'edit_video_screen.dart';
+import '../instagram_text_editor/instagram_text_editor.dart';
+import '../instagram_text_editor/instagram_text_result.dart';
+import '../instagram_overlay/overlay_shape.dart';
+import '../instagram_overlay/overlay_sticker.dart';
+import '../instagram_overlay/overlay_sticker_widget.dart';
 
 class _PreviewTextOverlay {
   final String text;
-  final Color color;
+  final TextStyle style;
+  final TextAlign alignment;
+  final Color textColor;
+  final BackgroundStyle backgroundStyle;
   final Offset position;
   final double scale;
   final double rotation;
+  final String fontName;
+  final double fontSize;
 
   const _PreviewTextOverlay({
     required this.text,
-    required this.color,
+    required this.style,
+    required this.alignment,
+    required this.textColor,
+    required this.backgroundStyle,
     required this.position,
     this.scale = 1.0,
     this.rotation = 0.0,
+    this.fontName = 'Modern',
+    this.fontSize = 32.0,
   });
 
   _PreviewTextOverlay copyWith({
     String? text,
-    Color? color,
+    TextStyle? style,
+    TextAlign? alignment,
+    Color? textColor,
+    BackgroundStyle? backgroundStyle,
     Offset? position,
     double? scale,
     double? rotation,
+    String? fontName,
+    double? fontSize,
   }) {
     return _PreviewTextOverlay(
       text: text ?? this.text,
-      color: color ?? this.color,
+      style: style ?? this.style,
+      alignment: alignment ?? this.alignment,
+      textColor: textColor ?? this.textColor,
+      backgroundStyle: backgroundStyle ?? this.backgroundStyle,
       position: position ?? this.position,
       scale: scale ?? this.scale,
       rotation: rotation ?? this.rotation,
+      fontName: fontName ?? this.fontName,
+      fontSize: fontSize ?? this.fontSize,
     );
   }
 }
@@ -92,13 +120,36 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   final List<_PreviewTextOverlay> _textOverlays = [];
   int? _activeTextIndex;
   Offset _textLastFocalPoint = Offset.zero;
+  Offset _textLastLocalFocalPoint = Offset.zero;
   double _textTransformBaseScale = 1.0;
   double _textTransformBaseRotation = 0.0;
+  final List<OverlaySticker> _stickerOverlays = [];
+  int? _activeStickerIndex;
+  Offset _stickerLastFocalPoint = Offset.zero;
+  Offset _stickerLastLocalFocalPoint = Offset.zero;
+  double _stickerBaseScale = 1.0;
+  double _stickerBaseRotation = 0.0;
+  bool _isStickerDeleteMode = false;
+  Offset _stickerLastGlobalFocalPoint = Offset.zero;
+  final Map<String, double> _stickerDeleteScale = {};
+  final Set<String> _deletingStickerIds = {};
+  Timer? _stickerHoldTimer;
+  bool _suppressStickerTap = false;
+  bool _isTextDeleteMode = false;
+  final Map<int, double> _textDeleteScale = {};
+  final Set<int> _deletingTextIndexes = {};
+  Timer? _textHoldTimer;
+  bool _suppressTextTap = false;
+  bool _hideTextOverlaysForCapture = false;
+  bool _captureWithoutRadius = false;
+  ImageProvider? _cachedTextEditorBackground;
+  Offset? _cachedTrashCenter;
   double? _imageAspectRatio;
   Size? _imagePixelSize;
   ImageStream? _imageStream;
   ImageStreamListener? _imageStreamListener;
   final GlobalKey<ExtendedImageGestureState> _postGestureKey = GlobalKey<ExtendedImageGestureState>();
+  final GlobalKey _previewRepaintKey = GlobalKey();
   Size? _postViewportSize;
   Map<String, int> _imageAdjustments = <String, int>{
     'brightness': 0,
@@ -282,6 +333,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     super.initState();
     _currentMedia = widget.media;
     _selectedFilter = widget.selectedFilter;
+    _primeTextEditorBackground();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateCachedTrashCenter();
+    });
     if (_selectedFilter != null) {
       final filters = _createService.getFilters();
       final match = filters.where((f) => f.id == _selectedFilter).toList();
@@ -317,7 +372,17 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateCachedTrashCenter();
+    });
+  }
+
+  @override
   void dispose() {
+    _stickerHoldTimer?.cancel();
+    _textHoldTimer?.cancel();
     _videoController?.removeListener(_handlePreviewVideoTick);
     _videoController?.dispose();
     final stream = _imageStream;
@@ -1054,6 +1119,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final fallbackViewport =
         _postViewportSize ?? Size(MediaQuery.of(context).size.width, MediaQuery.of(context).size.width);
     final isVideo = _currentMedia.type == app_models.MediaType.video;
+    final hasOverlays = _textOverlays.isNotEmpty || _stickerOverlays.isNotEmpty;
     if (_videoController?.value.isInitialized == true) {
       await _videoController?.pause();
       if (mounted) {
@@ -1063,8 +1129,27 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
     app_models.MediaItem nextMedia = _currentMedia;
     double nextAspect = 1.0;
+    bool usedComposite = false;
     final filePath = _currentMedia.filePath;
-    if (!isVideo && filePath != null) {
+    if (widget.isPostFlow && !isVideo && hasOverlays) {
+      final compositePath = await _exportPreviewCompositeToFile();
+      if (compositePath != null && compositePath.isNotEmpty) {
+        nextMedia = app_models.MediaItem(
+          id: _currentMedia.id,
+          type: _currentMedia.type,
+          filePath: compositePath,
+          thumbnailPath: _currentMedia.thumbnailPath,
+          duration: _currentMedia.duration,
+          createdAt: _currentMedia.createdAt,
+        );
+        final size = await _readImagePixelSizeFromFile(compositePath);
+        if (size != null) {
+          nextAspect = _clampInstagramPostAspect(size.width / size.height);
+        }
+        usedComposite = true;
+      }
+    }
+    if (!usedComposite && !isVideo && filePath != null) {
       final viewport = _postViewportSize ?? fallbackViewport;
       final imagePx = _imagePixelSize ?? await _readImagePixelSizeFromFile(filePath);
       if (imagePx == null) {
@@ -1126,7 +1211,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       }
     }
 
-    if (!isVideo && nextMedia.filePath != null) {
+    if (!usedComposite && !isVideo && nextMedia.filePath != null) {
       final hasFilter = (_selectedFilter ?? 'none') != 'none';
       final hasAdjustments = _imageAdjustments.values.any((v) => v != 0);
       if (hasFilter || hasAdjustments) {
@@ -1189,6 +1274,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final activeIndex = _activeTextIndex ?? (_textOverlays.length - 1);
     _activeTextIndex = activeIndex;
     _textLastFocalPoint = details.focalPoint;
+    _textLastLocalFocalPoint = _toPreviewLocal(details.focalPoint);
     final overlay = _textOverlays[activeIndex];
     _textTransformBaseScale = overlay.scale;
     _textTransformBaseRotation = overlay.rotation;
@@ -1198,7 +1284,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (_textOverlays.isEmpty) return;
     final activeIndex = _activeTextIndex ?? (_textOverlays.length - 1);
     final overlay = _textOverlays[activeIndex];
-    final delta = details.focalPoint - _textLastFocalPoint;
+    final local = _toPreviewLocal(details.focalPoint);
+    final delta = local - _textLastLocalFocalPoint;
+    _textLastLocalFocalPoint = local;
     _textLastFocalPoint = details.focalPoint;
 
     double newScale = overlay.scale;
@@ -1209,112 +1297,588 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       newRotation = _textTransformBaseRotation + details.rotation;
     }
 
+    final nextPosition =
+        _clampTextPosition(overlay, overlay.position + delta, newScale);
     setState(() {
       _textOverlays[activeIndex] = overlay.copyWith(
+        position: nextPosition,
+        scale: newScale,
+        rotation: newRotation,
+      );
+      _updateTextDeleteScale(activeIndex, overlay);
+    });
+  }
+
+  void _updateTextDeleteScale(int index, _PreviewTextOverlay overlay) {
+    if (!_isTextDeleteMode) return;
+    final center = _trashCenterLocal();
+    final distance = (center - _textLastLocalFocalPoint).distance;
+    const threshold = 120.0;
+    final t = (distance / threshold).clamp(0.0, 1.0);
+    final scale = 0.2 + (0.8 * t);
+    _textDeleteScale[index] = scale;
+  }
+
+  void _handleTextScaleEnd() {
+    _cancelTextHold();
+    if (!_isTextDeleteMode) return;
+    final index = _activeTextIndex;
+    if (index == null || index < 0 || index >= _textOverlays.length) {
+      _exitTextDeleteMode();
+      return;
+    }
+    final center = _trashCenterLocal();
+    final distance = (center - _textLastLocalFocalPoint).distance;
+    if (distance <= 44) {
+      _deleteTextByIndex(index);
+    } else {
+      _exitTextDeleteMode();
+    }
+  }
+
+  void _deleteTextByIndex(int index) {
+    if (_deletingTextIndexes.contains(index)) return;
+    setState(() {
+      _deletingTextIndexes.add(index);
+    });
+    Future.delayed(const Duration(milliseconds: 180), () {
+      if (!mounted) return;
+      setState(() {
+        if (index >= 0 && index < _textOverlays.length) {
+          _textOverlays.removeAt(index);
+        }
+        _deletingTextIndexes.remove(index);
+        _activeTextIndex = null;
+        _isTextDeleteMode = false;
+        _textDeleteScale.clear();
+      });
+    });
+  }
+
+  void _handleStickerScaleStart(ScaleStartDetails details) {
+    if (_stickerOverlays.isEmpty) return;
+    final activeIndex = _activeStickerIndex ?? (_stickerOverlays.length - 1);
+    _activeStickerIndex = activeIndex;
+    _stickerLastFocalPoint = details.focalPoint;
+    _stickerLastLocalFocalPoint = _toPreviewLocal(details.focalPoint);
+    _stickerLastGlobalFocalPoint = details.focalPoint;
+    final overlay = _stickerOverlays[activeIndex];
+    _stickerBaseScale = overlay.scale;
+    _stickerBaseRotation = overlay.rotation;
+  }
+
+  void _handleStickerScaleUpdate(
+    ScaleUpdateDetails details,
+    BuildContext context,
+  ) {
+    if (_stickerOverlays.isEmpty) return;
+    final activeIndex = _activeStickerIndex ?? (_stickerOverlays.length - 1);
+    final overlay = _stickerOverlays[activeIndex];
+    final local = _toPreviewLocal(details.focalPoint);
+    final delta = local - _stickerLastLocalFocalPoint;
+    _stickerLastLocalFocalPoint = local;
+    _stickerLastFocalPoint = details.focalPoint;
+    _stickerLastGlobalFocalPoint = details.focalPoint;
+
+    double newScale = overlay.scale;
+    double newRotation = overlay.rotation;
+
+    if (details.pointerCount > 1) {
+      newScale = (_stickerBaseScale * details.scale).clamp(0.2, 8.0);
+      newRotation = _stickerBaseRotation + details.rotation;
+    }
+
+    setState(() {
+      _stickerOverlays[activeIndex] = overlay.copyWith(
         position: overlay.position + delta,
         scale: newScale,
         rotation: newRotation,
       );
+      _updateDeleteScale(context, overlay);
     });
+  }
+
+  Future<ImageProvider> _buildTextEditorBackground() async {
+    if (mounted) {
+      setState(() => _hideTextOverlaysForCapture = true);
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    final boundary = _previewRepaintKey.currentContext?.findRenderObject();
+    try {
+      if (boundary is RenderRepaintBoundary) {
+        final pixelRatio =
+            math.min(2.0, View.of(context).devicePixelRatio);
+        final image = await boundary.toImage(pixelRatio: pixelRatio);
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (data != null) {
+          final img = MemoryImage(data.buffer.asUint8List());
+          _cachedTextEditorBackground = img;
+          return img;
+        }
+      }
+    } catch (_) {
+      // Fallback to file-based background if snapshot fails.
+    } finally {
+      if (mounted) {
+        setState(() => _hideTextOverlaysForCapture = false);
+      }
+    }
+    final fallback = await _baseTextEditorBackgroundFromMedia();
+    _cachedTextEditorBackground ??= fallback;
+    return _cachedTextEditorBackground!;
+  }
+
+  Future<void> _primeTextEditorBackground() async {
+    if (_cachedTextEditorBackground != null) return;
+    _cachedTextEditorBackground = await _baseTextEditorBackgroundFromMedia();
+  }
+
+  Future<ImageProvider> _baseTextEditorBackgroundFromMedia() async {
+    final path = _currentMedia.filePath;
+    if (path == null || path.isEmpty) {
+      return const AssetImage('assets/images/dashboard_sample.png');
+    }
+    if (_currentMedia.type == app_models.MediaType.video) {
+      final bytes = await VideoThumbnail.thumbnailData(
+        video: path,
+        imageFormat: ImageFormat.JPEG,
+        quality: 70,
+      );
+      if (bytes != null) {
+        return MemoryImage(bytes);
+      }
+      return const AssetImage('assets/images/dashboard_sample.png');
+    }
+    return FileImage(File(path));
+  }
+
+  Future<String?> _exportPreviewCompositeToFile() async {
+    if (mounted) {
+      setState(() => _captureWithoutRadius = true);
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    final boundary = _previewRepaintKey.currentContext?.findRenderObject();
+    try {
+      if (boundary is RenderRepaintBoundary) {
+        final pixelRatio = math.min(3.0, View.of(context).devicePixelRatio);
+        final image = await boundary.toImage(pixelRatio: pixelRatio);
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (data == null) return null;
+        final bytes = data.buffer.asUint8List();
+        final filename =
+            'bsmart_composite_${DateTime.now().millisecondsSinceEpoch}_${bytes.lengthInBytes}.png';
+        final outPath = '${Directory.systemTemp.path}/$filename';
+        final outFile = File(outPath);
+        await outFile.writeAsBytes(bytes, flush: true);
+        return outPath;
+      }
+    } catch (_) {
+      return null;
+    } finally {
+      if (mounted) {
+        setState(() => _captureWithoutRadius = false);
+      }
+    }
+    return null;
   }
 
   Future<void> _openPreviewTextEditor({int? index}) async {
     final existing = index != null && index >= 0 && index < _textOverlays.length
         ? _textOverlays[index]
         : null;
-    final controller = TextEditingController(text: existing?.text ?? '');
-    final media = MediaQuery.of(context);
-    final result = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Container(
-          color: Colors.black.withAlpha(230),
-          padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
-          child: SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        icon: const Icon(Icons.close, color: Colors.white),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () {
-                          final text = controller.text.trim();
-                          if (text.isEmpty) {
-                            Navigator.pop(ctx);
-                          } else {
-                            Navigator.pop(ctx, text);
-                          }
-                        },
-                        child: const Text(
-                          'Done',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Center(
-                    child: TextField(
-                      controller: controller,
-                      autofocus: true,
-                      maxLines: null,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Tap to type',
-                        hintStyle:
-                            TextStyle(color: Colors.white54, fontSize: 28),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    final background =
+        _cachedTextEditorBackground ?? await _buildTextEditorBackground();
+    if (!mounted) return;
+    final normalizedInitialPosition = existing != null
+        ? _normalizePreviewPosition(existing.position)
+        : null;
+    final result = await InstagramTextEditor.open(
+      context,
+      backgroundImage: background,
+      initialText: existing?.text,
+      initialColor: existing?.textColor ?? Colors.white,
+      initialAlignment: existing?.alignment ?? TextAlign.center,
+      initialBackgroundStyle:
+          existing?.backgroundStyle ?? BackgroundStyle.none,
+      initialScale: existing?.scale ?? 1.0,
+      initialRotation: existing?.rotation ?? 0.0,
+      initialPosition: normalizedInitialPosition,
+      initialFont: existing?.fontName ?? 'Modern',
+      initialFontSize: existing?.fontSize ?? 32.0,
     );
 
-    if (!mounted) return;
-    if (result != null && result.isNotEmpty) {
-      setState(() {
-        if (index != null &&
-            index >= 0 &&
-            index < _textOverlays.length) {
-          _textOverlays[index] =
-              _textOverlays[index].copyWith(text: result);
-          _activeTextIndex = index;
-        } else {
-          _textOverlays.add(
-            _PreviewTextOverlay(
-              text: result,
-              color: Colors.white,
-              position: const Offset(120, 200),
-            ),
-          );
-          _activeTextIndex = _textOverlays.length - 1;
-        }
-      });
-    }
+    if (result == null || !mounted) return;
+    if (result.text.trim().isEmpty) return;
+    final resolvedPosition = _denormalizePreviewPosition(result.position);
+    final overlay = _PreviewTextOverlay(
+      text: result.text,
+      style: result.style,
+      alignment: result.alignment,
+      textColor: result.textColor,
+      backgroundStyle: result.backgroundStyle,
+      position: resolvedPosition,
+      scale: result.scale,
+      rotation: result.rotation,
+      fontName: result.fontName,
+      fontSize: result.fontSize,
+    );
+    final clamped = overlay.copyWith(
+      position: _clampTextPosition(overlay, overlay.position, overlay.scale),
+    );
+
+    setState(() {
+      final targetIndex = index ?? _activeTextIndex;
+      if (targetIndex != null &&
+          targetIndex >= 0 &&
+          targetIndex < _textOverlays.length) {
+        _textOverlays[targetIndex] = clamped;
+        _activeTextIndex = targetIndex;
+      } else {
+        _textOverlays.add(clamped);
+        _activeTextIndex = _textOverlays.length - 1;
+      }
+    });
   }
 
   void _onTapText() {
     _openPreviewTextEditor();
+  }
+
+  Future<void> _openOverlayPicker() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null || !mounted) return;
+    final file = File(picked.path);
+    final center = _overlayCenterForPreview();
+    setState(() {
+      _stickerOverlays.add(
+        OverlaySticker(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          imageFile: file,
+          shape: OverlayShape.none,
+          position: center,
+        ),
+      );
+      _activeStickerIndex = _stickerOverlays.length - 1;
+    });
+  }
+
+  Offset _overlayCenterForPreview() {
+    final render = _previewRepaintKey.currentContext?.findRenderObject();
+    if (render is RenderBox) {
+      final size = render.size;
+      return Offset(
+        (size.width - 120) / 2,
+        (size.height - 120) / 2,
+      );
+    }
+    return const Offset(120, 200);
+  }
+
+  OverlayShape _nextShape(OverlayShape shape) {
+    final values = OverlayShape.values;
+    final next = (values.indexOf(shape) + 1) % values.length;
+    return values[next];
+  }
+
+  void _exitStickerDeleteMode() {
+    if (_isStickerDeleteMode) {
+      setState(() {
+        _isStickerDeleteMode = false;
+        _stickerDeleteScale.clear();
+        _suppressStickerTap = false;
+      });
+    }
+  }
+
+  void _exitTextDeleteMode() {
+    if (_isTextDeleteMode) {
+      setState(() {
+        _isTextDeleteMode = false;
+        _textDeleteScale.clear();
+        _suppressTextTap = false;
+      });
+    }
+  }
+
+  void _startStickerHold(int index) {
+    _stickerHoldTimer?.cancel();
+    _stickerHoldTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() {
+        _activeStickerIndex = index;
+        _isStickerDeleteMode = true;
+        _suppressStickerTap = true;
+      });
+    });
+  }
+
+  void _cancelStickerHold() {
+    _stickerHoldTimer?.cancel();
+    _stickerHoldTimer = null;
+  }
+
+  void _startTextHold(int index) {
+    _textHoldTimer?.cancel();
+    _textHoldTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() {
+        _activeTextIndex = index;
+        _isTextDeleteMode = true;
+        _suppressTextTap = true;
+      });
+    });
+  }
+
+  void _cancelTextHold() {
+    _textHoldTimer?.cancel();
+    _textHoldTimer = null;
+  }
+
+  void _deleteActiveSticker() {
+    final index = _activeStickerIndex;
+    if (index == null || index < 0 || index >= _stickerOverlays.length) {
+      _exitStickerDeleteMode();
+      return;
+    }
+    _deleteStickerById(_stickerOverlays[index].id);
+  }
+
+  void _deleteStickerById(String id) {
+    if (_deletingStickerIds.contains(id)) return;
+    setState(() {
+      _deletingStickerIds.add(id);
+    });
+    Future.delayed(const Duration(milliseconds: 180), () {
+      if (!mounted) return;
+      setState(() {
+        _stickerOverlays.removeWhere((s) => s.id == id);
+        _deletingStickerIds.remove(id);
+        if (_activeStickerIndex != null &&
+            _activeStickerIndex! >= _stickerOverlays.length) {
+          _activeStickerIndex = null;
+        }
+        _isStickerDeleteMode = false;
+        _stickerDeleteScale.clear();
+      });
+    });
+  }
+
+  void _updateCachedTrashCenter() {
+    final renderBox =
+        _previewRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !mounted) return;
+    final size = renderBox.size;
+    final topLeft = renderBox.localToGlobal(Offset.zero);
+    setState(() {
+      _cachedTrashCenter = Offset(
+        topLeft.dx + size.width / 2,
+        topLeft.dy + size.height - 60,
+      );
+    });
+  }
+
+  Offset _effectiveTrashCenter(BuildContext context) {
+    final fallback = Offset(
+      MediaQuery.of(context).size.width / 2,
+      MediaQuery.of(context).size.height - 100,
+    );
+    return _cachedTrashCenter ?? fallback;
+  }
+
+  Offset _toPreviewLocal(Offset global) {
+    final renderBox =
+        _previewRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return global;
+    return renderBox.globalToLocal(global);
+  }
+
+  Size? _previewSize() {
+    final renderBox =
+        _previewRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    return renderBox?.size;
+  }
+
+  Offset _normalizePreviewPosition(Offset position) {
+    final size = _previewSize();
+    if (size == null || size.width == 0 || size.height == 0) {
+      return position;
+    }
+    final dx = (position.dx / size.width).clamp(0.0, 1.0);
+    final dy = (position.dy / size.height).clamp(0.0, 1.0);
+    return Offset(dx, dy);
+  }
+
+  Offset _denormalizePreviewPosition(Offset normalized) {
+    final size = _previewSize();
+    if (size == null || size.width == 0 || size.height == 0) {
+      return normalized;
+    }
+    return Offset(
+      normalized.dx * size.width,
+      normalized.dy * size.height,
+    );
+  }
+
+  Size _measureTextSize(_PreviewTextOverlay overlay, double maxWidth) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: overlay.text,
+        style: overlay.style.copyWith(color: overlay.textColor),
+      ),
+      textAlign: overlay.alignment,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    return textPainter.size;
+  }
+
+  Offset _clampTextPosition(
+    _PreviewTextOverlay overlay,
+    Offset position,
+    double scale,
+  ) {
+    final renderBox =
+        _previewRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return position;
+    final bounds = renderBox.size;
+    final textSize = _measureTextSize(overlay, bounds.width);
+    final scaled = Size(textSize.width * scale, textSize.height * scale);
+    final maxX = (bounds.width - scaled.width).clamp(0.0, bounds.width);
+    final maxY = (bounds.height - scaled.height).clamp(0.0, bounds.height);
+    final clampedX = position.dx.clamp(0.0, maxX);
+    final clampedY = position.dy.clamp(0.0, maxY);
+    return Offset(clampedX, clampedY);
+  }
+
+  Offset _trashCenterLocal() {
+    final renderBox =
+        _previewRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return const Offset(0, 0);
+    final size = renderBox.size;
+    return Offset(size.width / 2, size.height - 24 - 28);
+  }
+
+  void _updateDeleteScale(BuildContext context, OverlaySticker sticker) {
+    if (!_isStickerDeleteMode) return;
+    final center = _trashCenterLocal();
+    final distance = (center - _stickerLastLocalFocalPoint).distance;
+    const threshold = 120.0;
+    final t = (distance / threshold).clamp(0.0, 1.0);
+    final scale = 0.2 + (0.8 * t);
+    _stickerDeleteScale[sticker.id] = scale;
+  }
+
+  void _handleStickerScaleEnd(BuildContext context) {
+    _cancelStickerHold();
+    if (!_isStickerDeleteMode) return;
+    final index = _activeStickerIndex;
+    if (index == null || index < 0 || index >= _stickerOverlays.length) {
+      _exitStickerDeleteMode();
+      return;
+    }
+    final center = _trashCenterLocal();
+    final distance = (center - _stickerLastLocalFocalPoint).distance;
+    if (distance <= 44) {
+      _deleteStickerById(_stickerOverlays[index].id);
+    } else {
+      _exitStickerDeleteMode();
+    }
+  }
+
+  Widget _buildOverlayVisual(_PreviewTextOverlay overlay, bool isActive) {
+    final text = overlay.text;
+    final baseStyle = overlay.style
+        .copyWith(color: overlay.textColor, fontSize: overlay.fontSize);
+    Widget content = _buildOverlayStyledText(overlay);
+
+    if (overlay.backgroundStyle == BackgroundStyle.perChar) {
+      final spans = text.split('').map((ch) {
+        return TextSpan(
+          text: ch,
+          style: baseStyle.copyWith(
+            backgroundColor: overlay.textColor.withValues(alpha: 0.2),
+          ),
+        );
+      }).toList();
+      content = Text.rich(
+        TextSpan(children: spans),
+        textAlign: overlay.alignment,
+      );
+    } else if (overlay.backgroundStyle == BackgroundStyle.solid ||
+        overlay.backgroundStyle == BackgroundStyle.transparent) {
+      final bgColor = overlay.backgroundStyle == BackgroundStyle.solid
+          ? overlay.textColor.withValues(alpha: 0.9)
+          : overlay.textColor.withValues(alpha: 0.35);
+      final fgColor = overlay.backgroundStyle == BackgroundStyle.solid
+          ? Colors.black
+          : overlay.textColor;
+      content = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: DefaultTextStyle.merge(
+          style: baseStyle.copyWith(color: fgColor),
+          child: content,
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: content,
+    );
+  }
+
+  Widget _buildOverlayStyledText(_PreviewTextOverlay overlay) {
+    final text = overlay.text;
+    final baseStyle = overlay.style
+        .copyWith(color: overlay.textColor, fontSize: overlay.fontSize);
+
+    if (overlay.fontName == 'Contour') {
+      return Text(
+        text,
+        textAlign: overlay.alignment,
+        style: baseStyle.copyWith(
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = overlay.textColor,
+        ),
+      );
+    }
+
+    if (overlay.fontName == 'Neon') {
+      return Stack(
+        children: [
+          Text(
+            text,
+            textAlign: overlay.alignment,
+            style: baseStyle.copyWith(
+              foreground: Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 4
+                ..color = overlay.textColor.withValues(alpha: 0.8),
+            ),
+          ),
+          Text(
+            text,
+            textAlign: overlay.alignment,
+            style: baseStyle.copyWith(
+              shadows: [
+                Shadow(color: overlay.textColor, blurRadius: 14),
+                Shadow(
+                    color: overlay.textColor.withValues(alpha: 0.8),
+                    blurRadius: 24),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Text(text, textAlign: overlay.alignment, style: baseStyle);
   }
 
   @override
@@ -1325,121 +1889,409 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       return Scaffold(
         backgroundColor: const Color(0xFF07121E),
         body: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.of(context).pop(),
+              Column(
+                children: [
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 160),
+                    opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                    child: IgnorePointer(
+                      ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white),
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    const Spacer(),
-                    SizedBox(
-                      width: double.infinity,
-                      child: Center(
-                        child: SizedBox(
-                          width: screenWidth,
-                          child: AspectRatio(
-                            aspectRatio: frameAspect,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(24),
-                              child: Container(
-                                color: Colors.black,
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    if (widget.media.type == app_models.MediaType.video)
-                                      _buildVideoPreview()
-                                    else
-                                      LayoutBuilder(
-                                        builder: (context, viewport) {
-                                          return _buildPostZoomableImagePreview(viewport);
-                                        },
-                                      ),
-                                    if (_selectedFilterName != null &&
-                                        _selectedFilter != null &&
-                                        _selectedFilter != 'none')
-                                      Positioned(
-                                        top: 16,
-                                        right: 16,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black54,
-                                            borderRadius: BorderRadius.circular(20),
+                  ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Spacer(),
+                        SizedBox(
+                          width: double.infinity,
+                          child: Center(
+                            child: SizedBox(
+                              width: screenWidth,
+                              child: AspectRatio(
+                                aspectRatio: frameAspect,
+                                child: RepaintBoundary(
+                                  key: _previewRepaintKey,
+                                  child: ClipRRect(
+                                    borderRadius: _captureWithoutRadius
+                                        ? BorderRadius.zero
+                                        : BorderRadius.circular(24),
+                                    child: Container(
+                                      color: Colors.black,
+                                      child: Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          if (widget.media.type ==
+                                              app_models.MediaType.video)
+                                            _buildVideoPreview()
+                                          else
+                                            LayoutBuilder(
+                                              builder: (context, viewport) {
+                                                return _buildPostZoomableImagePreview(
+                                                    viewport);
+                                              },
+                                            ),
+                                          if (!_isStickerDeleteMode &&
+                                              _selectedFilterName != null &&
+                                              _selectedFilter != null &&
+                                              _selectedFilter != 'none')
+                                            Positioned(
+                                              top: 16,
+                                              right: 16,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 6),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black54,
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                ),
+                                                child: Text(
+                                                  'Filter: $_selectedFilterName',
+                                                  style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 12),
+                                                ),
+                                              ),
+                                            ),
+                                          if (!_hideTextOverlaysForCapture)
+                                            ..._textOverlays.asMap().entries.map((entry) {
+                                            final index = entry.key;
+                                            final overlay = entry.value;
+                                            final isActive = _activeTextIndex == null
+                                                ? index == _textOverlays.length - 1
+                                                : index == _activeTextIndex;
+                                            return Positioned(
+                                              left: overlay.position.dx,
+                                              top: overlay.position.dy,
+                                              child: GestureDetector(
+                                                onTapDown: (_) =>
+                                                    _startTextHold(index),
+                                                onTapUp: (_) => _cancelTextHold(),
+                                                onTapCancel: _cancelTextHold,
+                                                onTap: () {
+                                                  if (_suppressTextTap) {
+                                                    _suppressTextTap = false;
+                                                    return;
+                                                  }
+                                                  setState(() {
+                                                    _activeTextIndex = index;
+                                                  });
+                                                  _openPreviewTextEditor(
+                                                      index: index);
+                                                },
+                                                onScaleStart: (d) {
+                                                  setState(() =>
+                                                      _activeTextIndex = index);
+                                                  _cancelTextHold();
+                                                  _handleTextScaleStart(d);
+                                                },
+                                                onScaleUpdate: _handleTextScaleUpdate,
+                                                onScaleEnd: (_) =>
+                                                    _handleTextScaleEnd(),
+                                                child: AnimatedOpacity(
+                                                  duration: const Duration(
+                                                      milliseconds: 180),
+                                                  opacity: _deletingTextIndexes
+                                                          .contains(index)
+                                                      ? 0.0
+                                                      : 1.0,
+                                                  child: AnimatedScale(
+                                                    duration: const Duration(
+                                                        milliseconds: 180),
+                                                    scale: _deletingTextIndexes
+                                                            .contains(index)
+                                                        ? 0.0
+                                                        : 1.0,
+                                                    child: Transform.rotate(
+                                                      angle: overlay.rotation,
+                                                      child: Transform.scale(
+                                                        scale: overlay.scale *
+                                                            (_textDeleteScale[
+                                                                    index] ??
+                                                                1.0),
+                                                        child: _buildOverlayVisual(
+                                                            overlay, isActive),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          }),
+                                          ..._stickerOverlays
+                                              .asMap()
+                                              .entries
+                                              .map((entry) {
+                                            final i = entry.key;
+                                            final s = entry.value;
+                                            final isActive =
+                                                _activeStickerIndex == i;
+                                            return Positioned(
+                                              left: s.position.dx,
+                                              top: s.position.dy,
+                                              child: GestureDetector(
+                                                onTapDown: (_) =>
+                                                    _startStickerHold(i),
+                                                onTapUp: (_) {
+                                                  _cancelStickerHold();
+                                                },
+                                                onTapCancel: () {
+                                                  _cancelStickerHold();
+                                                },
+                                                onTap: () {
+                                                  if (_suppressStickerTap) {
+                                                    _suppressStickerTap = false;
+                                                    return;
+                                                  }
+                                                  setState(() {
+                                                    if (_activeStickerIndex ==
+                                                        i) {
+                                                      _stickerOverlays[i] =
+                                                          s.copyWith(
+                                                        shape:
+                                                            _nextShape(s.shape),
+                                                      );
+                                                    } else {
+                                                      _activeStickerIndex = i;
+                                                    }
+                                                  });
+                                                },
+                                                onScaleStart: (d) {
+                                                  setState(() =>
+                                                      _activeStickerIndex = i);
+                                                  _cancelStickerHold();
+                                                  _handleStickerScaleStart(d);
+                                                },
+                                                onScaleUpdate: (d) =>
+                                                    _handleStickerScaleUpdate(
+                                                        d, context),
+                                                onScaleEnd: (_) =>
+                                                    _handleStickerScaleEnd(
+                                                        context),
+                                                child: AnimatedOpacity(
+                                                  duration: const Duration(
+                                                      milliseconds: 180),
+                                                  opacity:
+                                                      _deletingStickerIds
+                                                              .contains(s.id)
+                                                          ? 0.0
+                                                          : 1.0,
+                                                  child: AnimatedScale(
+                                                    duration: const Duration(
+                                                        milliseconds: 180),
+                                                    scale: _deletingStickerIds
+                                                            .contains(s.id)
+                                                        ? 0.0
+                                                        : 1.0,
+                                                    child: Transform(
+                                                      alignment:
+                                                          Alignment.center,
+                                                      transform: Matrix4
+                                                          .identity()
+                                                        ..rotateZ(s.rotation)
+                                                        ..scale(
+                                                          s.scale *
+                                                              (_stickerDeleteScale[
+                                                                      s.id] ??
+                                                                  1.0),
+                                                        ),
+                                                      child:
+                                                          OverlayStickerWidget(
+                                                        sticker: s,
+                                                        isActive: isActive,
+                                                        onDelete: () {},
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          }),
+                                          if (_isStickerDeleteMode ||
+                                              _isTextDeleteMode)
+                                            Positioned.fill(
+                                              child: GestureDetector(
+                                                behavior:
+                                                    HitTestBehavior.translucent,
+                                                onTap: () {
+                                                  _exitStickerDeleteMode();
+                                                  _exitTextDeleteMode();
+                                                },
+                                              ),
+                                            ),
+                                          Positioned(
+                                            left: 0,
+                                            right: 0,
+                                            bottom: 24,
+                                            child: IgnorePointer(
+                                              ignoring: !(_isStickerDeleteMode ||
+                                                  _isTextDeleteMode),
+                                              child: AnimatedOpacity(
+                                                duration: const Duration(
+                                                    milliseconds: 160),
+                                                curve: Curves.easeOut,
+                                                opacity:
+                                                    (_isStickerDeleteMode ||
+                                                            _isTextDeleteMode)
+                                                        ? 1
+                                                        : 0,
+                                                child: AnimatedScale(
+                                                  duration: const Duration(
+                                                      milliseconds: 160),
+                                                  curve: Curves.easeOut,
+                                                  scale: _isStickerDeleteMode
+                                                      ? 1
+                                                      : _isTextDeleteMode
+                                                          ? 1
+                                                          : 0.9,
+                                                  child: Center(
+                                                    child: GestureDetector(
+                                                      onTap:
+                                                          _deleteActiveSticker,
+                                                      child: Container(
+                                                        width: 56,
+                                                        height: 56,
+                                                        decoration:
+                                                            const BoxDecoration(
+                                                          color: Colors.black87,
+                                                          shape:
+                                                              BoxShape.circle,
+                                                        ),
+                                                        child: const Icon(
+                                                            Icons.delete_outline,
+                                                            color: Colors.white,
+                                                            size: 28),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
                                           ),
-                                          child: Text(
-                                            'Filter: $_selectedFilterName',
-                                            style: const TextStyle(
-                                                color: Colors.white, fontSize: 12),
-                                          ),
-                                        ),
+                                        ],
                                       ),
-                                  ],
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
+                        const Spacer(),
+                      ],
                     ),
-                    const Spacer(),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildPostBottomPill(
-                      icon: Icons.tune,
-                      label: 'Edit',
-                      onTap: widget.media.type == app_models.MediaType.video
-                          ? _openVideoEditor
-                          : _openImageAdjustmentsEditor,
-                    ),
-                    const SizedBox(width: 10),
-                    _buildPostBottomPill(
-                      icon: Icons.filter_alt_outlined,
-                      label: 'Filter',
-                      onTap: _openFilterPicker,
-                      isActive: (_selectedFilter ?? 'none') != 'none',
-                    ),
-                  ],
-                ),
-              ),
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: Row(
-                    children: [
-                      const Spacer(),
-                      ElevatedButton(
-                        onPressed: _proceedToPostDetails,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0095F6),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 26, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(26)),
-                        ),
-                        child: const Text('Next →'),
-                      ),
-                    ],
                   ),
-                ),
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 160),
+                    opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                    child: IgnorePointer(
+                      ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_showMusicControls)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _buildMusicPanel(),
+                              ),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildPostBottomPill(
+                                    icon: Icons.music_note,
+                                    label: 'Audio',
+                                    onTap: () {
+                                      setState(() {
+                                        _showMusicControls = !_showMusicControls;
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _buildPostBottomPill(
+                                    icon: Icons.text_fields,
+                                    label: 'Text',
+                                    onTap: _onTapText,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _buildPostBottomPill(
+                                    icon: Icons.layers_outlined,
+                                    label: 'Overlay',
+                                    onTap: _openOverlayPicker,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _buildPostBottomPill(
+                                    icon: Icons.filter_alt_outlined,
+                                    label: 'Filter Edit',
+                                    onTap: _openFilterPicker,
+                                    isActive: (_selectedFilter ?? 'none') != 'none',
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _buildPostBottomPill(
+                                    icon: Icons.tune,
+                                    label: 'Edit',
+                                    onTap:
+                                        widget.media.type == app_models.MediaType.video
+                                            ? _openVideoEditor
+                                            : _openImageAdjustmentsEditor,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 160),
+                    opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                    child: IgnorePointer(
+                      ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                      child: SafeArea(
+                        top: false,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                          child: Row(
+                            children: [
+                              const Spacer(),
+                              ElevatedButton(
+                                onPressed: _proceedToPostDetails,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0095F6),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 26, vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(26)),
+                                ),
+                                child: const Text('Next →'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1449,73 +2301,91 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF07121E),
       body: SafeArea(
-        child: Stack(
-          children: [
+          child: Stack(
+            children: [
             Column(
               children: [
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(24),
-                      child: GestureDetector(
+                    child: RepaintBoundary(
+                      key: _previewRepaintKey,
+                      child: ClipRRect(
+                        borderRadius: _captureWithoutRadius
+                            ? BorderRadius.zero
+                            : BorderRadius.circular(24),
+                        child: GestureDetector(
                         behavior: HitTestBehavior.translucent,
+                        onTap: () {
+                          if (_activeStickerIndex != null) {
+                            setState(() => _activeStickerIndex = null);
+                          }
+                          if (_activeTextIndex != null) {
+                            setState(() => _activeTextIndex = null);
+                          }
+                          _exitStickerDeleteMode();
+                          _exitTextDeleteMode();
+                        },
                         onScaleStart: _handleTextScaleStart,
                         onScaleUpdate: _handleTextScaleUpdate,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            if (widget.media.type == app_models.MediaType.video)
-                              _buildVideoPreview()
-                            else
-                              _buildImagePreview(),
-                            if (_selectedFilterName != null &&
-                                _selectedFilter != null &&
-                                _selectedFilter != 'none')
-                              Positioned(
-                                top: 16,
-                                right: 16,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    'Filter: $_selectedFilterName',
-                                    style: const TextStyle(
-                                        color: Colors.white, fontSize: 12),
-                                  ),
-                                ),
-                              ),
-                            if (_trimStart != null && _trimEnd != null)
-                              Positioned(
-                                top: 16,
-                                left: 16,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.content_cut,
-                                          color: Colors.white, size: 12),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${_formatDuration(_trimStart!)} – ${_formatDuration(_trimEnd!)}',
-                                        style: const TextStyle(
-                                            color: Colors.white, fontSize: 12),
-                                      ),
-                                    ],
+                        onScaleEnd: (_) => _handleTextScaleEnd(),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              if (widget.media.type == app_models.MediaType.video)
+                                _buildVideoPreview()
+                              else
+                                _buildImagePreview(),
+                              if (!_isStickerDeleteMode &&
+                                  _selectedFilterName != null &&
+                                  _selectedFilter != null &&
+                                  _selectedFilter != 'none')
+                                Positioned(
+                                  top: 16,
+                                  right: 16,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      'Filter: $_selectedFilterName',
+                                      style: const TextStyle(
+                                          color: Colors.white, fontSize: 12),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ..._textOverlays.asMap().entries.map((entry) {
+                              if (!_isStickerDeleteMode &&
+                                  _trimStart != null && _trimEnd != null)
+                                Positioned(
+                                  top: 16,
+                                  left: 16,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.content_cut,
+                                            color: Colors.white, size: 12),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${_formatDuration(_trimStart!)} – ${_formatDuration(_trimEnd!)}',
+                                          style: const TextStyle(
+                                              color: Colors.white, fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            if (!_hideTextOverlaysForCapture)
+                              ..._textOverlays.asMap().entries.map((entry) {
                               final index = entry.key;
                               final overlay = entry.value;
                               final isActive = _activeTextIndex == null
@@ -1525,32 +2395,118 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                 left: overlay.position.dx,
                                 top: overlay.position.dy,
                                 child: GestureDetector(
+                                  onTapDown: (_) => _startTextHold(index),
+                                  onTapUp: (_) => _cancelTextHold(),
+                                  onTapCancel: _cancelTextHold,
                                   onTap: () {
+                                    if (_suppressTextTap) {
+                                      _suppressTextTap = false;
+                                      return;
+                                    }
                                     setState(() {
                                       _activeTextIndex = index;
                                     });
                                     _openPreviewTextEditor(index: index);
                                   },
-                                  child: Transform.rotate(
-                                    angle: overlay.rotation,
-                                    child: Transform.scale(
-                                      scale: overlay.scale,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withOpacity(
-                                              isActive ? 0.4 : 0.25),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
+                                  onScaleStart: (d) {
+                                    setState(() => _activeTextIndex = index);
+                                    _cancelTextHold();
+                                    _handleTextScaleStart(d);
+                                  },
+                                  onScaleUpdate: _handleTextScaleUpdate,
+                                  onScaleEnd: (_) => _handleTextScaleEnd(),
+                                  child: AnimatedOpacity(
+                                    duration:
+                                        const Duration(milliseconds: 180),
+                                    opacity:
+                                        _deletingTextIndexes.contains(index)
+                                            ? 0.0
+                                            : 1.0,
+                                    child: AnimatedScale(
+                                      duration:
+                                          const Duration(milliseconds: 180),
+                                      scale: _deletingTextIndexes.contains(index)
+                                          ? 0.0
+                                          : 1.0,
+                                      child: Transform.rotate(
+                                        angle: overlay.rotation,
+                                        child: Transform.scale(
+                                          scale: overlay.scale *
+                                              (_textDeleteScale[index] ?? 1.0),
+                                          child: _buildOverlayVisual(
+                                              overlay, isActive),
                                         ),
-                                        child: Text(
-                                          overlay.text,
-                                          style: TextStyle(
-                                            color: overlay.color,
-                                            fontSize: 22,
-                                            fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                              }),
+                            ..._stickerOverlays.asMap().entries.map((entry) {
+                              final i = entry.key;
+                              final s = entry.value;
+                              final isActive = _activeStickerIndex == i;
+                              return Positioned(
+                                left: s.position.dx,
+                                top: s.position.dy,
+                                child: GestureDetector(
+                                  onTapDown: (_) => _startStickerHold(i),
+                                  onTapUp: (_) {
+                                    _cancelStickerHold();
+                                  },
+                                  onTapCancel: () {
+                                    _cancelStickerHold();
+                                  },
+                                  onTap: () {
+                                    if (_suppressStickerTap) {
+                                      _suppressStickerTap = false;
+                                      return;
+                                    }
+                                    setState(() {
+                                      if (_activeStickerIndex == i) {
+                                        _stickerOverlays[i] = s.copyWith(
+                                          shape: _nextShape(s.shape),
+                                        );
+                                      } else {
+                                        _activeStickerIndex = i;
+                                      }
+                                    });
+                                  },
+                                  onScaleStart: (d) {
+                                    setState(() => _activeStickerIndex = i);
+                                    _cancelStickerHold();
+                                    _handleStickerScaleStart(d);
+                                  },
+                                  onScaleUpdate: (d) =>
+                                      _handleStickerScaleUpdate(d, context),
+                                  onScaleEnd: (_) =>
+                                      _handleStickerScaleEnd(context),
+                                  child: AnimatedOpacity(
+                                    duration:
+                                        const Duration(milliseconds: 180),
+                                    opacity:
+                                        _deletingStickerIds.contains(s.id)
+                                            ? 0.0
+                                            : 1.0,
+                                    child: AnimatedScale(
+                                      duration:
+                                          const Duration(milliseconds: 180),
+                                      scale: _deletingStickerIds.contains(s.id)
+                                          ? 0.0
+                                          : 1.0,
+                                      child: Transform(
+                                        alignment: Alignment.center,
+                                        transform: Matrix4.identity()
+                                          ..rotateZ(s.rotation)
+                                          ..scale(
+                                            s.scale *
+                                                (_stickerDeleteScale[s.id] ??
+                                                    1.0),
                                           ),
+                                        child: OverlayStickerWidget(
+                                          sticker: s,
+                                          isActive: isActive,
+                                          onDelete: () {},
                                         ),
                                       ),
                                     ),
@@ -1558,83 +2514,151 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                 ),
                               );
                             }),
-                          ],
-                        ),
+                                      if (_isStickerDeleteMode ||
+                                          _isTextDeleteMode)
+                                        Positioned.fill(
+                                          child: GestureDetector(
+                                            behavior: HitTestBehavior.translucent,
+                                            onTap: () {
+                                              _exitStickerDeleteMode();
+                                              _exitTextDeleteMode();
+                                            },
+                                          ),
+                                        ),
+                                      Positioned(
+                                        left: 0,
+                                        right: 0,
+                                        bottom: 24,
+                                        child: IgnorePointer(
+                                          ignoring: !(_isStickerDeleteMode ||
+                                              _isTextDeleteMode),
+                                          child: AnimatedOpacity(
+                                            duration:
+                                                const Duration(milliseconds: 160),
+                                            curve: Curves.easeOut,
+                                            opacity:
+                                                (_isStickerDeleteMode ||
+                                                        _isTextDeleteMode)
+                                                    ? 1
+                                                    : 0,
+                                            child: AnimatedScale(
+                                              duration: const Duration(
+                                                  milliseconds: 160),
+                                              curve: Curves.easeOut,
+                                              scale:
+                                                  (_isStickerDeleteMode ||
+                                                          _isTextDeleteMode)
+                                                      ? 1
+                                                      : 0.9,
+                                              child: Center(
+                                                child: GestureDetector(
+                                                  onTap: _deleteActiveSticker,
+                                                  child: Container(
+                                                    width: 56,
+                                                    height: 56,
+                                                    decoration:
+                                                        const BoxDecoration(
+                                                      color: Colors.black87,
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                        Icons.delete_outline,
+                                                        color: Colors.white,
+                                                        size: 28),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                       ),
                     ),
                   ),
                 ),
-                Container(
-                  height: 72,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  color: Colors.black,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (widget.isPostFlow)
-                        Row(
-                          children: [
-                            _buildPostBottomPill(
-                              icon: Icons.tune,
-                              label: 'Edit',
-                              onTap: widget.media.type == app_models.MediaType.video
-                                  ? _openVideoEditor
-                                  : _openImageAdjustmentsEditor,
-                            ),
-                            const SizedBox(width: 10),
-                            _buildPostBottomPill(
-                              icon: Icons.filter_alt_outlined,
-                              label: 'Filter',
-                              onTap: _openFilterPicker,
-                              isActive: (_selectedFilter ?? 'none') != 'none',
-                            ),
-                          ],
-                        )
-                      else
-                        OutlinedButton(
-                          onPressed: widget.media.type == app_models.MediaType.video
-                              ? _openVideoEditor
-                              : null,
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.white24),
-                            foregroundColor: Colors.white,
-                            backgroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 10),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Text('Edit video'),
-                              if (_trimStart != null) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  width: 7,
-                                  height: 7,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF0095F6),
-                                    shape: BoxShape.circle,
-                                  ),
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 160),
+                  opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                  child: IgnorePointer(
+                    ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                    child: Container(
+                      height: 72,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      color: Colors.black,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          if (widget.isPostFlow)
+                            Row(
+                              children: [
+                                _buildPostBottomPill(
+                                  icon: Icons.tune,
+                                  label: 'Edit',
+                                  onTap: widget.media.type ==
+                                          app_models.MediaType.video
+                                      ? _openVideoEditor
+                                      : _openImageAdjustmentsEditor,
+                                ),
+                                const SizedBox(width: 10),
+                                _buildPostBottomPill(
+                                  icon: Icons.filter_alt_outlined,
+                                  label: 'Filter',
+                                  onTap: _openFilterPicker,
+                                  isActive: (_selectedFilter ?? 'none') != 'none',
                                 ),
                               ],
-                            ],
+                            )
+                          else
+                            OutlinedButton(
+                              onPressed: widget.media.type ==
+                                      app_models.MediaType.video
+                                  ? _openVideoEditor
+                                  : null,
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.white24),
+                                foregroundColor: Colors.white,
+                                backgroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 10),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(24)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Text('Edit video'),
+                                  if (_trimStart != null) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF0095F6),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ElevatedButton(
+                            onPressed: _proceedToPostDetails,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0095F6),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24)),
+                            ),
+                            child: const Text('Next →'),
                           ),
-                        ),
-                      ElevatedButton(
-                        onPressed: _proceedToPostDetails,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0095F6),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 10),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24)),
-                        ),
-                        child: const Text('Next →'),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],
@@ -1643,62 +2667,136 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               left: 0,
               right: 0,
               bottom: 72 + 16,
-              child: widget.isPostFlow
-                  ? const SizedBox.shrink()
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_showMusicControls)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _buildMusicPanel(),
-                          ),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildEditOption(
-                                icon: Icons.text_fields,
-                                label: 'Text',
-                                onTap: _onTapText,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 160),
+                opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                child: IgnorePointer(
+                  ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                  child: widget.isPostFlow
+                      ? const SizedBox.shrink()
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_showMusicControls)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _buildMusicPanel(),
                               ),
-                              const SizedBox(width: 8),
-                              if (widget.media.type == app_models.MediaType.video)
-                                _buildEditOption(
-                                  icon: Icons.content_cut,
-                                  label: 'Trim',
-                                  onTap: _openVideoEditor,
-                                  isActive: _trimStart != null,
-                                ),
-                              const SizedBox(width: 8),
-                              _buildEditOption(
-                                icon: Icons.music_note,
-                                label: 'Music',
-                                onTap: () {
-                                  setState(() {
-                                    _showMusicControls = !_showMusicControls;
-                                  });
-                                },
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildEditOption(
+                                    icon: Icons.text_fields,
+                                    label: 'Text',
+                                    onTap: _onTapText,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  if (widget.media.type ==
+                                      app_models.MediaType.video)
+                                    _buildEditOption(
+                                      icon: Icons.content_cut,
+                                      label: 'Trim',
+                                      onTap: _openVideoEditor,
+                                      isActive: _trimStart != null,
+                                    ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.music_note,
+                                    label: 'Music',
+                                    onTap: () {
+                                      setState(() {
+                                        _showMusicControls = !_showMusicControls;
+                                      });
+                                    },
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                ),
+              ),
             ),
             Positioned(
               top: 16,
               left: 16,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.of(context).pop(),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 160),
+                opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                child: IgnorePointer(
+                  ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
               ),
             ),
-          ],
-        ),
-      ),
+                                      if (_isStickerDeleteMode ||
+                                          _isTextDeleteMode)
+                                        Positioned.fill(
+                                          child: GestureDetector(
+                                            behavior: HitTestBehavior.translucent,
+                                            onTap: () {
+                                              _exitStickerDeleteMode();
+                                              _exitTextDeleteMode();
+                                            },
+                                          ),
+                                        ),
+                                      Positioned(
+                                        left: 0,
+                                        right: 0,
+                                        bottom: 24,
+                                        child: IgnorePointer(
+                                          ignoring: !(_isStickerDeleteMode ||
+                                              _isTextDeleteMode),
+                                          child: AnimatedOpacity(
+                                            duration:
+                                                const Duration(milliseconds: 160),
+                                            curve: Curves.easeOut,
+                                            opacity:
+                                                (_isStickerDeleteMode ||
+                                                        _isTextDeleteMode)
+                                                    ? 1
+                                                    : 0,
+                                            child: AnimatedScale(
+                                              duration: const Duration(
+                                                  milliseconds: 160),
+                                              curve: Curves.easeOut,
+                                              scale:
+                                                  (_isStickerDeleteMode ||
+                                                          _isTextDeleteMode)
+                                                      ? 1
+                                                      : 0.9,
+                                              child: Center(
+                                                child: GestureDetector(
+                                                  onTap: _deleteActiveSticker,
+                                                  child: Container(
+                                                    width: 56,
+                                                    height: 56,
+                                                    decoration:
+                                                        const BoxDecoration(
+                                                      color: Colors.black87,
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                        Icons.delete_outline,
+                                                        color: Colors.white,
+                                                        size: 28),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
     );
   }
 
@@ -1860,14 +2958,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
             Icon(
               icon,
               color: isActive ? const Color(0xFF0095F6) : Colors.white,
-              size: 18,
+              size: 16,
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
                 color: isActive ? const Color(0xFF0095F6) : Colors.white,
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1888,7 +2986,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: isActive
                   ? const Color(0xFF0095F6).withOpacity(0.25)
@@ -1900,17 +2998,23 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
             ),
             child: Icon(icon,
                 color: isActive ? const Color(0xFF0095F6) : Colors.white,
-                size: 24),
+                size: 20),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           Text(label,
               style: TextStyle(
                   color: isActive
                       ? const Color(0xFF0095F6)
                       : Colors.white,
-                  fontSize: 12)),
+                  fontSize: 11)),
         ],
       ),
+    );
+  }
+
+  void _showComingSoon(String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label coming soon')),
     );
   }
 
