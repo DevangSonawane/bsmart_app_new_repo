@@ -206,7 +206,13 @@ class ApiClient {
       final token = await getToken();
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
       if (fields != null) request.fields.addAll(fields);
-      request.files.add(await http.MultipartFile.fromPath(fileField, filePath));
+      final filename = filePath.split(Platform.pathSeparator).last;
+      final ct = _contentTypeForFilename(filename);
+      request.files.add(await http.MultipartFile.fromPath(
+        fileField,
+        filePath,
+        contentType: ct,
+      ));
       final streamed = await request.send().timeout(ApiConfig.timeout);
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:video_player/video_player.dart';
 import '../models/story_model.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/api.dart';
@@ -21,6 +22,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   int _index = 0;
   double _progress = 0.0;
   Timer? _timer;
+  VideoPlayerController? _videoCtl;
   List<Map<String, dynamic>> _viewers = const [];
   int _viewsCount = 0;
   int _uniqueViewersCount = 0;
@@ -35,6 +37,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     _stories = List<Story>.from(widget.stories);
      _viewsCount = widget.stories.isNotEmpty ? widget.stories.first.views : 0;
     _start();
+    _loadVideoForCurrent();
     _loadItemsIfNeeded();
     _loadAnalyticsIfNeeded();
   }
@@ -54,9 +57,32 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         _index = 0;
         _progress = 0.0;
       });
+      _loadVideoForCurrent();
       _start();
     } catch (_) {
       // ignore
+    }
+  }
+
+  Future<void> _loadVideoForCurrent() async {
+    if (_stories.isEmpty) return;
+    final story = _stories[_index];
+    if (story.mediaType == StoryMediaType.video && story.mediaUrl.isNotEmpty) {
+      try {
+        _videoCtl?.dispose();
+        _videoCtl = VideoPlayerController.networkUrl(Uri.parse(story.mediaUrl));
+        await _videoCtl!.initialize();
+        await _videoCtl!.setLooping(true);
+        await _videoCtl!.play();
+        if (mounted) {
+          setState(() {});
+        }
+      } catch (_) {
+        // ignore
+      }
+    } else {
+      _videoCtl?.dispose();
+      _videoCtl = null;
     }
   }
 
@@ -85,6 +111,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   void dispose() {
     _timer?.cancel();
     _controller.dispose();
+    _videoCtl?.dispose();
     super.dispose();
   }
 
@@ -106,10 +133,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         _index++;
         _progress = 0.0;
       });
+      _loadVideoForCurrent();
       if (_controller.hasClients) {
         _controller.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
-      } else {
-        _controller.jumpToPage(_index);
       }
       _start();
     } else {
@@ -123,10 +149,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         _index--;
         _progress = 0.0;
       });
+      _loadVideoForCurrent();
       if (_controller.hasClients) {
         _controller.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
-      } else {
-        _controller.jumpToPage(_index);
       }
       _start();
     } else {
@@ -439,12 +464,28 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: story.mediaUrl.isNotEmpty
-                  ? Image.network(
-                      story.mediaUrl,
-                      fit: BoxFit.cover,
-                    )
-                  : Container(color: Colors.black),
+              child: story.mediaType == StoryMediaType.video
+                  ? (_videoCtl != null && _videoCtl!.value.isInitialized)
+                      ? FittedBox(
+                          fit: BoxFit.contain,
+                          child: SizedBox(
+                            width: _videoCtl!.value.size.width,
+                            height: _videoCtl!.value.size.height,
+                            child: VideoPlayer(_videoCtl!),
+                          ),
+                        )
+                      : const Center(
+                          child: Icon(LucideIcons.play, size: 80, color: Colors.white54),
+                        )
+                  : (story.mediaUrl.isNotEmpty
+                      ? Image.network(
+                          story.mediaUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(LucideIcons.image, size: 80, color: Colors.white54),
+                          ),
+                        )
+                      : Container(color: Colors.black)),
             ),
             Positioned(
               top: 40,

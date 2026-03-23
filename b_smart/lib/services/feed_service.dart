@@ -467,6 +467,9 @@ class FeedService {
                   'post')
               .toLowerCase();
           bool hasVideo = false;
+          if (typeStr == 'video' || typeStr == 'reel') {
+            hasVideo = true;
+          }
           for (final mm in media) {
             if (mm is Map) {
               final t = (mm['type'] as String?)?.toLowerCase();
@@ -495,6 +498,14 @@ class FeedService {
             } else if (mm is String) {
               final s = mm.toLowerCase();
               if (s.endsWith('.mp4') || s.endsWith('.mov')) {
+                hasVideo = true;
+                break;
+              }
+            }
+          }
+          if (!hasVideo) {
+            for (final url in mediaUrls) {
+              if (_looksLikeVideoUrl(url)) {
                 hasVideo = true;
                 break;
               }
@@ -987,6 +998,31 @@ class FeedService {
     return null;
   }
 
+  bool _looksLikeVideoUrl(String url) {
+    if (url.isEmpty) return false;
+    final uri = Uri.tryParse(url);
+    final path = (uri?.path ?? url).toLowerCase();
+    return path.endsWith('.m3u8') ||
+        path.endsWith('.mp4') ||
+        path.endsWith('.mov') ||
+        path.endsWith('.avi') ||
+        path.endsWith('.mkv') ||
+        path.endsWith('.webm');
+  }
+
+  StoryMediaType _storyMediaType(Map<String, dynamic>? media, String mediaUrl) {
+    final raw = (media?['type'] as String?)?.toLowerCase();
+    final isVideo = raw == 'video' ||
+        raw == 'video/mp4' ||
+        raw == 'application/x-mpegurl' ||
+        raw == 'application/vnd.apple.mpegurl' ||
+        _looksLikeVideoUrl(mediaUrl);
+    final isImage = raw == 'image' || (raw?.startsWith('image/') ?? false);
+    if (isVideo) return StoryMediaType.video;
+    if (isImage) return StoryMediaType.image;
+    return StoryMediaType.image;
+  }
+
   // Get stories for online users
   List<StoryGroup> getStories() {
     return [];
@@ -1009,6 +1045,8 @@ class FeedService {
       } else if (rawMedia is Map) {
         media = Map<String, dynamic>.from(rawMedia);
       }
+      final mediaUrl = UrlHelper.normalizeUrl((media?['url'] as String?) ?? '');
+      final mediaType = _storyMediaType(media, mediaUrl);
       return StoryGroup(
         userId: previewUserId.isNotEmpty
             ? previewUserId
@@ -1031,11 +1069,8 @@ class FeedService {
                           '',
                   userName: (user['username'] as String?) ?? 'User',
                   userAvatar: user['avatar_url'] as String?,
-                  mediaUrl:
-                      UrlHelper.normalizeUrl((media['url'] as String?) ?? ''),
-                  mediaType: (media['type'] as String?) == 'image'
-                      ? StoryMediaType.image
-                      : StoryMediaType.video,
+                  mediaUrl: mediaUrl,
+                  mediaType: mediaType,
                   createdAt: DateTime.tryParse(
                           preview['createdAt'] as String? ?? '') ??
                       DateTime.now(),
@@ -1097,9 +1132,7 @@ class FeedService {
         media = Map<String, dynamic>.from(rawMedia);
       }
       final mediaUrl = UrlHelper.normalizeUrl(media?['url'] as String? ?? '');
-      final mediaType = (media?['type'] == 'image')
-          ? StoryMediaType.image
-          : StoryMediaType.video;
+      final mediaType = _storyMediaType(media, mediaUrl);
       final texts = (m['texts'] is List)
           ? (m['texts'] as List)
               .whereType<Map>()

@@ -6,6 +6,7 @@ import 'create_edit_preview_screen.dart';
 import 'story_camera_screen.dart';
 import '../models/media_model.dart';
 import 'advertiser_create_ad_screen.dart';
+import '../widgets/instagram_tab_scaffold.dart';
 
 enum _GallerySource {
   recents,
@@ -189,9 +190,9 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   }
 
   void _onModeTap(UploadMode mode) {
+    if (_mode == mode) return;
     if (widget.isAdFlow) {
       if (mode != UploadMode.post && mode != UploadMode.reel) return;
-      if (_mode == mode) return;
       setState(() {
         _mode = mode;
       });
@@ -199,37 +200,24 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       return;
     }
 
-    if (mode == UploadMode.post) {
-      if (_mode != UploadMode.post) {
-        setState(() {
-          _mode = UploadMode.post;
-          _selectedIds.clear();
-          _currentAsset = null;
-        });
-        _loadGalleryMedia();
-      }
-      return;
-    }
-
-    if (mode == UploadMode.reel) {
-      if (_mode != UploadMode.reel) {
-        setState(() {
-          _mode = UploadMode.reel;
-          _selectedIds.clear();
-          _currentAsset = null;
-        });
-        _loadGalleryMedia();
-      }
-      return;
-    }
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => StoryCameraScreen(
-          initialMode: mode,
+    if (mode == UploadMode.story || mode == UploadMode.live) {
+      setState(() {
+        _mode = mode;
+      });
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => StoryCameraScreen(initialMode: mode),
         ),
-      ),
-    );
+      );
+      return;
+    }
+
+    setState(() {
+      _mode = mode;
+      _selectedIds.clear();
+      _currentAsset = null;
+    });
+    _loadGalleryMedia();
   }
 
   void _onAssetTap(AssetEntity asset) {
@@ -367,10 +355,36 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     }
   }
 
+  int _indexForMode(UploadMode mode) {
+    switch (mode) {
+      case UploadMode.post:
+        return 0;
+      case UploadMode.story:
+        return 1;
+      case UploadMode.reel:
+        return 2;
+      case UploadMode.live:
+        return 3;
+    }
+  }
+
+  UploadMode _modeForIndex(int index) {
+    switch (index) {
+      case 0:
+        return UploadMode.post;
+      case 1:
+        return UploadMode.story;
+      case 2:
+        return UploadMode.reel;
+      case 3:
+        return UploadMode.live;
+      default:
+        return UploadMode.post;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isReelMode = _mode == UploadMode.reel;
-    final safeBottom = MediaQuery.of(context).viewPadding.bottom;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -400,447 +414,52 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       ),
       body: Stack(
         children: [
-          Column(
-            children: [
-              Expanded(
-                child: CustomScrollView(
-                  slivers: [
-                    if (!isReelMode)
-                      SliverToBoxAdapter(
-                        child: AspectRatio(
-                          aspectRatio: 1.0,
-                          child: Container(
-                            width: double.infinity,
-                            color: Colors.black,
-                            child: _currentAsset == null
-                                ? Center(
-                                    child: Icon(Icons.image, size: 64, color: Colors.grey[700]),
-                                  )
-                                : FutureBuilder<Uint8List?>(
-                                    future: () {
-                                      final asset = _currentAsset!;
-                                      final w = asset.width;
-                                      final h = asset.height;
-                                      const maxSide = 1000;
-                                      int thumbW;
-                                      int thumbH;
-                                      if (w >= h && w > 0 && h > 0) {
-                                        thumbW = maxSide;
-                                        thumbH = (maxSide * h / w).round();
-                                      } else if (h > 0 && w > 0) {
-                                        thumbH = maxSide;
-                                        thumbW = (maxSide * w / h).round();
-                                      } else {
-                                        thumbW = maxSide;
-                                        thumbH = maxSide;
-                                      }
-                                      return asset.thumbnailDataWithSize(ThumbnailSize(thumbW, thumbH));
-                                    }(),
-                                    builder: (context, snap) {
-                                      if (snap.connectionState != ConnectionState.done || snap.data == null) {
-                                        return const Center(child: CircularProgressIndicator(color: Colors.white));
-                                      }
-                                      return Image.memory(
-                                        snap.data!,
-                                        fit: BoxFit.contain,
-                                      );
-                                    },
-                                  ),
-                          ),
-                        ),
-                      ),
-                    SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _FixedSliverHeaderDelegate(
-                        height: 56,
-                        child: Container(
-                          color: Colors.black,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: Row(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  final box = _sourceBarKey.currentContext?.findRenderObject();
-                                  if (box is RenderBox) {
-                                    final pos = box.localToGlobal(Offset.zero);
-                                    _sourceMenuPosition = Offset(pos.dx, pos.dy + box.size.height);
-                                  }
-                                  setState(() {
-                                    _showSourceMenu = !_showSourceMenu;
-                                  });
-                                },
-                                child: Row(
-                                  key: _sourceBarKey,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      _sourceLabel,
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-                                  ],
-                                ),
-                              ),
-                              const Spacer(),
-                              TextButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _multiSelect = !_multiSelect;
-                                  });
-                                },
-                                style: TextButton.styleFrom(
-                                  backgroundColor: _multiSelect ? Colors.white : Colors.white10,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                ),
-                                child: Text(
-                                  _multiSelect ? 'Deselect' : 'Select',
-                                  style: TextStyle(
-                                    color: _multiSelect ? Colors.black : Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+          Positioned.fill(
+            child: InstagramTabScaffold(
+              initialIndex: _indexForMode(_mode),
+              onTabChanged: (index) => _onModeTap(_modeForIndex(index)),
+              pages: List.generate(
+                4,
+                (index) => _UploadPage(
+                  isReelMode: _mode == UploadMode.reel,
+                  galleryPermissionDenied: _galleryPermissionDenied,
+                  assets: _assets,
+                  currentAsset: _currentAsset,
+                  selectedIds: _selectedIds,
+                  multiSelect: _multiSelect,
+                  hasSelection: _hasSelection,
+                  sourceLabel: _sourceLabel,
+                  sourceBarKey: index == _indexForMode(_mode) ? _sourceBarKey : GlobalKey(),
+                  onSourceBarTap: () {
+                    final box = _sourceBarKey.currentContext?.findRenderObject();
+                    if (box is RenderBox) {
+                      final pos = box.localToGlobal(Offset.zero);
+                      _sourceMenuPosition = Offset(pos.dx, pos.dy + box.size.height);
+                    }
+                    setState(() {
+                      _showSourceMenu = !_showSourceMenu;
+                    });
+                  },
+                  onMultiSelectToggle: () => setState(() {
+                    _multiSelect = !_multiSelect;
+                  }),
+                  onLoadGalleryMedia: _loadGalleryMedia,
+                  onAssetTap: _onAssetTap,
+                  onCameraTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const StoryCameraScreen(
+                        initialMode: UploadMode.post,
+                        lockMode: true,
                       ),
                     ),
-                    if (_galleryPermissionDenied)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.photo_library_outlined,
-                                size: 72,
-                                color: Colors.white54,
-                              ),
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Allow access to your photos',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 32),
-                                child: Text(
-                                  'Enable photo library permission in Settings to choose photos and videos.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.white60,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              TextButton(
-                                onPressed: _loadGalleryMedia,
-                                child: const Text(
-                                  'Try again',
-                                  style: TextStyle(color: Color(0xFF0095F6)),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              const TextButton(
-                                onPressed: PhotoManager.openSetting,
-                                child: Text(
-                                  'Open Settings',
-                                  style: TextStyle(color: Colors.white70),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    else if (_assets.isEmpty)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.image_search, size: 64, color: Colors.white30),
-                              SizedBox(height: 12),
-                              Text(
-                                'No photos or videos',
-                                style: TextStyle(color: Colors.white60),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.all(1),
-                        sliver: SliverGrid(
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
-                            crossAxisSpacing: 1,
-                            mainAxisSpacing: 1,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              if (index == 0) {
-                                return GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => const StoryCameraScreen(
-                                          initialMode: UploadMode.post,
-                                          lockMode: true,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  child: Container(
-                                    color: const Color(0xFF262626),
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.camera_alt,
-                                        color: Colors.white,
-                                        size: 28,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              final asset = _assets[index - 1];
-                              final isSelected = _selectedIds.contains(asset.id);
-                              return GestureDetector(
-                                onTap: () => _onAssetTap(asset),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    FutureBuilder<Uint8List?>(
-                                      future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
-                                      builder: (context, snap) {
-                                        if (snap.connectionState != ConnectionState.done || snap.data == null) {
-                                          return Container(
-                                            color: Colors.grey[850],
-                                            child: const Center(
-                                              child: Icon(Icons.image, color: Colors.white38),
-                                            ),
-                                          );
-                                        }
-                                        return Image.memory(
-                                          snap.data!,
-                                          fit: BoxFit.cover,
-                                        );
-                                      },
-                                    ),
-                                    if (asset.type == AssetType.video)
-                                      Positioned(
-                                        bottom: 4,
-                                        right: 4,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black54,
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: Text(
-                                            '${asset.duration}s',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    if (isSelected)
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          border: Border.all(color: const Color(0xFF0095F6), width: 2),
-                                        ),
-                                        child: Align(
-                                          alignment: Alignment.topRight,
-                                          child: Container(
-                                            margin: const EdgeInsets.all(4),
-                                            padding: const EdgeInsets.all(2),
-                                            decoration: const BoxDecoration(
-                                              color: Color(0xFF0095F6),
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.check,
-                                              size: 14,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            },
-                            childCount: _assets.length + 1,
-                          ),
-                        ),
-                      ),
-                  ],
+                  ),
+                  onNext: _hasSelection ? _handleNext : null,
+                  firstSelectedAsset: _firstSelectedAsset(),
                 ),
               ),
-            ],
+            ),
           ),
-          if (!isReelMode || !_hasSelection)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                minimum: const EdgeInsets.only(bottom: 16),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        GestureDetector(
-                          onTap: () => _onModeTap(UploadMode.post),
-                          child: AnimatedDefaultTextStyle(
-                            duration: _modeAnimDuration,
-                            style: TextStyle(
-                              color: _mode == UploadMode.post ? Colors.white : Colors.white54,
-                              fontWeight: _mode == UploadMode.post ? FontWeight.bold : FontWeight.w500,
-                              letterSpacing: 1.2,
-                            ),
-                            child: const Text('POST'),
-                          ),
-                        ),
-                        if (!widget.isAdFlow) ...[
-                          const SizedBox(width: 16),
-                          GestureDetector(
-                            onTap: () => _onModeTap(UploadMode.story),
-                            child: AnimatedDefaultTextStyle(
-                              duration: _modeAnimDuration,
-                              style: TextStyle(
-                                color: _mode == UploadMode.story ? Colors.white : Colors.white54,
-                                fontWeight: _mode == UploadMode.story ? FontWeight.bold : FontWeight.w500,
-                                letterSpacing: 1.2,
-                              ),
-                              child: const Text('STORY'),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(width: 16),
-                        GestureDetector(
-                          onTap: () => _onModeTap(UploadMode.reel),
-                          child: AnimatedDefaultTextStyle(
-                            duration: _modeAnimDuration,
-                            style: TextStyle(
-                              color: _mode == UploadMode.reel ? Colors.white : Colors.white54,
-                              fontWeight: _mode == UploadMode.reel ? FontWeight.bold : FontWeight.w500,
-                              letterSpacing: 1.2,
-                            ),
-                            child: const Text('REEL'),
-                          ),
-                        ),
-                        if (!widget.isAdFlow) ...[
-                          const SizedBox(width: 16),
-                          GestureDetector(
-                            onTap: () => _onModeTap(UploadMode.live),
-                            child: AnimatedDefaultTextStyle(
-                              duration: _modeAnimDuration,
-                              style: TextStyle(
-                                color: _mode == UploadMode.live ? Colors.white : Colors.white54,
-                                fontWeight: _mode == UploadMode.live ? FontWeight.bold : FontWeight.w500,
-                                letterSpacing: 1.2,
-                              ),
-                              child: const Text('LIVE'),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          if (isReelMode && _hasSelection)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                minimum: const EdgeInsets.only(bottom: 12),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 16, 16),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0),
-                        Colors.black.withValues(alpha: 0.8),
-                      ],
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 72,
-                        height: 72,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Builder(
-                            builder: (context) {
-                              final asset = _firstSelectedAsset();
-                              if (asset == null) {
-                                return Container(color: Colors.black);
-                              }
-                              return FutureBuilder<Uint8List?>(
-                                future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
-                                builder: (context, snap) {
-                                  if (snap.connectionState != ConnectionState.done || snap.data == null) {
-                                    return Container(
-                                      color: Colors.grey[850],
-                                      child: const Center(
-                                        child: Icon(Icons.image, color: Colors.white38),
-                                      ),
-                                    );
-                                  }
-                                  return Image.memory(
-                                    snap.data!,
-                                    fit: BoxFit.cover,
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      ElevatedButton(
-                        onPressed: _handleNext,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0095F6),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                        ),
-                        child: const Text('Next →'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
           if (_showSourceMenu)
             Positioned.fill(
               child: GestureDetector(
@@ -939,6 +558,391 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _UploadPage extends StatelessWidget {
+  final bool isReelMode;
+  final bool galleryPermissionDenied;
+  final List<AssetEntity> assets;
+  final AssetEntity? currentAsset;
+  final Set<String> selectedIds;
+  final bool multiSelect;
+  final bool hasSelection;
+  final String sourceLabel;
+  final GlobalKey sourceBarKey;
+  final VoidCallback onSourceBarTap;
+  final VoidCallback onMultiSelectToggle;
+  final VoidCallback onLoadGalleryMedia;
+  final ValueChanged<AssetEntity> onAssetTap;
+  final VoidCallback onCameraTap;
+  final VoidCallback? onNext;
+  final AssetEntity? firstSelectedAsset;
+
+  const _UploadPage({
+    required this.isReelMode,
+    required this.galleryPermissionDenied,
+    required this.assets,
+    required this.currentAsset,
+    required this.selectedIds,
+    required this.multiSelect,
+    required this.hasSelection,
+    required this.sourceLabel,
+    required this.sourceBarKey,
+    required this.onSourceBarTap,
+    required this.onMultiSelectToggle,
+    required this.onLoadGalleryMedia,
+    required this.onAssetTap,
+    required this.onCameraTap,
+    this.onNext,
+    this.firstSelectedAsset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Column(
+          children: [
+            Expanded(
+              child: CustomScrollView(
+                slivers: [
+                  if (!isReelMode)
+                    SliverToBoxAdapter(
+                      child: AspectRatio(
+                        aspectRatio: 1.0,
+                        child: Container(
+                          width: double.infinity,
+                          color: Colors.black,
+                          child: currentAsset == null
+                              ? Center(
+                                  child: Icon(Icons.image, size: 64, color: Colors.grey[700]),
+                                )
+                              : FutureBuilder<Uint8List?>(
+                                  future: () {
+                                    final asset = currentAsset!;
+                                    final w = asset.width;
+                                    final h = asset.height;
+                                    const maxSide = 1000;
+                                    int thumbW;
+                                    int thumbH;
+                                    if (w >= h && w > 0 && h > 0) {
+                                      thumbW = maxSide;
+                                      thumbH = (maxSide * h / w).round();
+                                    } else if (h > 0 && w > 0) {
+                                      thumbH = maxSide;
+                                      thumbW = (maxSide * w / h).round();
+                                    } else {
+                                      thumbW = maxSide;
+                                      thumbH = maxSide;
+                                    }
+                                    return asset.thumbnailDataWithSize(ThumbnailSize(thumbW, thumbH));
+                                  }(),
+                                  builder: (context, snap) {
+                                    if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                      return const Center(child: CircularProgressIndicator(color: Colors.white));
+                                    }
+                                    return Image.memory(
+                                      snap.data!,
+                                      fit: BoxFit.contain,
+                                    );
+                                  },
+                                ),
+                        ),
+                      ),
+                    ),
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _FixedSliverHeaderDelegate(
+                      height: 56,
+                      child: Container(
+                        color: Colors.black,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        child: Row(
+                          children: [
+                            GestureDetector(
+                              onTap: onSourceBarTap,
+                              child: Row(
+                                key: sourceBarKey,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    sourceLabel,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                                ],
+                              ),
+                            ),
+                            const Spacer(),
+                            TextButton(
+                              onPressed: onMultiSelectToggle,
+                              style: TextButton.styleFrom(
+                                backgroundColor: multiSelect ? Colors.white : Colors.white10,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              ),
+                              child: Text(
+                                multiSelect ? 'Deselect' : 'Select',
+                                style: TextStyle(
+                                  color: multiSelect ? Colors.black : Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (galleryPermissionDenied)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.photo_library_outlined,
+                              size: 72,
+                              color: Colors.white54,
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Allow access to your photos',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 32),
+                              child: Text(
+                                'Enable photo library permission in Settings to choose photos and videos.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            TextButton(
+                              onPressed: onLoadGalleryMedia,
+                              child: const Text(
+                                'Try again',
+                                style: TextStyle(color: Color(0xFF0095F6)),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const TextButton(
+                              onPressed: PhotoManager.openSetting,
+                              child: Text(
+                                'Open Settings',
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else if (assets.isEmpty)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.image_search, size: 64, color: Colors.white30),
+                            SizedBox(height: 12),
+                            Text(
+                              'No photos or videos',
+                              style: TextStyle(color: Colors.white60),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.all(1),
+                      sliver: SliverGrid(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 4,
+                          crossAxisSpacing: 1,
+                          mainAxisSpacing: 1,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            if (index == 0) {
+                              return GestureDetector(
+                                onTap: onCameraTap,
+                                child: Container(
+                                  color: const Color(0xFF262626),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.camera_alt,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            final asset = assets[index - 1];
+                            final isSelected = selectedIds.contains(asset.id);
+                            return GestureDetector(
+                              onTap: () => onAssetTap(asset),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  FutureBuilder<Uint8List?>(
+                                    future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
+                                    builder: (context, snap) {
+                                      if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                        return Container(
+                                          color: Colors.grey[850],
+                                          child: const Center(
+                                            child: Icon(Icons.image, color: Colors.white38),
+                                          ),
+                                        );
+                                      }
+                                      return Image.memory(
+                                        snap.data!,
+                                        fit: BoxFit.cover,
+                                      );
+                                    },
+                                  ),
+                                  if (asset.type == AssetType.video)
+                                    Positioned(
+                                      bottom: 4,
+                                      right: 4,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black54,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '${asset.duration}s',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  if (isSelected)
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: const Color(0xFF0095F6), width: 2),
+                                      ),
+                                      child: Align(
+                                        alignment: Alignment.topRight,
+                                        child: Container(
+                                          margin: const EdgeInsets.all(4),
+                                          padding: const EdgeInsets.all(2),
+                                          decoration: const BoxDecoration(
+                                            color: Color(0xFF0095F6),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.check,
+                                            size: 14,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          },
+                          childCount: assets.length + 1,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (isReelMode && hasSelection)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              minimum: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 16, 16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0),
+                      Colors.black.withValues(alpha: 0.8),
+                    ],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 72,
+                      height: 72,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Builder(
+                          builder: (context) {
+                            final asset = firstSelectedAsset;
+                            if (asset == null) {
+                              return Container(color: Colors.black);
+                            }
+                            return FutureBuilder<Uint8List?>(
+                              future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
+                              builder: (context, snap) {
+                                if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                  return Container(
+                                    color: Colors.grey[850],
+                                    child: const Center(
+                                      child: Icon(Icons.image, color: Colors.white38),
+                                    ),
+                                  );
+                                }
+                                return Image.memory(
+                                  snap.data!,
+                                  fit: BoxFit.cover,
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    ElevatedButton(
+                      onPressed: onNext,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0095F6),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      ),
+                      child: const Text('Next →'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

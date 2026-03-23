@@ -22,6 +22,15 @@ class StoriesApi {
     return (res as Map).cast<String, dynamic>();
   }
 
+  Future<Map<String, dynamic>> uploadFile(String filePath) async {
+    final res = await _client.multipartPost(
+      _path('/stories/upload'),
+      filePath: filePath,
+      fileField: 'file',
+    );
+    return (res as Map).cast<String, dynamic>();
+  }
+
   Future<Map<String, dynamic>> create(List<Map<String, dynamic>> itemsPayload) async {
     final body = {'items': itemsPayload};
     final res = await _client.post(
