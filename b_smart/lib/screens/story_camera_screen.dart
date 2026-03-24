@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:camera/camera.dart';
@@ -49,32 +50,62 @@ class _LayoutMaskPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final overlayPaint = Paint()..color = maskColor;
-    canvas.saveLayer(Offset.zero & size, Paint());
-    canvas.drawRect(Offset.zero & size, overlayPaint);
-    if (!activeRect.isEmpty) {
-      final rrect = RRect.fromRectAndRadius(activeRect, Radius.circular(borderRadius));
-      final clearPaint = Paint()..blendMode = BlendMode.clear;
-      canvas.drawRRect(rrect, clearPaint);
-    }
-    canvas.restore();
-
+    // Draw thin white dividing lines between slots (internal edges only)
+    final lineShadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.6)
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
     final linePaint = Paint()
-      ..color = Colors.white54
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    for (final r in rects) {
-      canvas.drawRect(r, linePaint);
+      ..color = Colors.white
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+    const eps = 0.5;
+    final seen = <String>{};
+    for (var i = 0; i < rects.length; i++) {
+      final a = rects[i];
+      for (var j = i + 1; j < rects.length; j++) {
+        final b = rects[j];
+        final vGap1 = b.left - a.right;
+        final vGap2 = a.left - b.right;
+        if (vGap1 > eps || vGap2 > eps || (a.right - b.left).abs() < eps || (b.right - a.left).abs() < eps) {
+          final x = vGap1 > eps ? a.right : (vGap2 > eps ? b.right : ((a.right - b.left).abs() < eps ? a.right : b.right));
+          final y1 = math.max(a.top, b.top);
+          final y2 = math.min(a.bottom, b.bottom);
+          if (y2 > y1 + eps) {
+            final key = 'v:${x.toStringAsFixed(1)}:${y1.toStringAsFixed(1)}:${y2.toStringAsFixed(1)}';
+            if (seen.add(key)) {
+              canvas.drawLine(Offset(x, y1), Offset(x, y2), lineShadowPaint);
+              canvas.drawLine(Offset(x, y1), Offset(x, y2), linePaint);
+            }
+          }
+        }
+        final hGap1 = b.top - a.bottom;
+        final hGap2 = a.top - b.bottom;
+        if (hGap1 > eps || hGap2 > eps || (a.bottom - b.top).abs() < eps || (b.bottom - a.top).abs() < eps) {
+          final y = hGap1 > eps ? a.bottom : (hGap2 > eps ? b.bottom : ((a.bottom - b.top).abs() < eps ? a.bottom : b.bottom));
+          final x1 = math.max(a.left, b.left);
+          final x2 = math.min(a.right, b.right);
+          if (x2 > x1 + eps) {
+            final key = 'h:${y.toStringAsFixed(1)}:${x1.toStringAsFixed(1)}:${x2.toStringAsFixed(1)}';
+            if (seen.add(key)) {
+              canvas.drawLine(Offset(x1, y), Offset(x2, y), lineShadowPaint);
+              canvas.drawLine(Offset(x1, y), Offset(x2, y), linePaint);
+            }
+          }
+        }
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant _LayoutMaskPainter oldDelegate) {
-    return oldDelegate.rects != rects || oldDelegate.activeRect != activeRect;
+    return oldDelegate.rects != rects ||
+        oldDelegate.activeRect != activeRect ||
+        oldDelegate.maskColor != maskColor;
   }
 }
 
-enum _StoryElementType { text, sticker }
+enum _StoryElementType { text }
 
 enum _ToolOverlayType { create, boomerang, layout, ai, draw }
 
@@ -102,7 +133,6 @@ class _StoryOverlayElement {
   final String? text;
   final String? style;
   final Color? color;
-  final String? sticker;
   final Offset position;
   final double scale;
   final double rotation;
@@ -113,7 +143,6 @@ class _StoryOverlayElement {
     this.text,
     this.style,
     this.color,
-    this.sticker,
     required this.position,
     required this.scale,
     required this.rotation,
@@ -138,16 +167,6 @@ class _StoryOverlayElement {
     );
   }
 
-  factory _StoryOverlayElement.sticker(String label) {
-    return _StoryOverlayElement._(
-      type: _StoryElementType.sticker,
-      sticker: label,
-      position: const Offset(120, 120),
-      scale: 1.0,
-      rotation: 0.0,
-    );
-  }
-
   _StoryOverlayElement copyWith({
     String? text,
     String? style,
@@ -162,7 +181,6 @@ class _StoryOverlayElement {
       text: text ?? this.text,
       style: style ?? this.style,
       color: color ?? this.color,
-      sticker: sticker,
       position: position ?? this.position,
       scale: scale ?? this.scale,
       rotation: rotation ?? this.rotation,
@@ -231,15 +249,10 @@ class _StoryElementWidget extends StatelessWidget {
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: e.type == _StoryElementType.text
-                  ? Text(
-                      e.text ?? '',
-                      style: _textStyleFor(e.style ?? 'Classic', e.color ?? Colors.white),
-                    )
-                  : Text(
-                      e.sticker ?? '',
-                      style: const TextStyle(fontSize: 32),
-                    ),
+              child: Text(
+                e.text ?? '',
+                style: _textStyleFor(e.style ?? 'Classic', e.color ?? Colors.white),
+              ),
             ),
           ),
         ),
@@ -282,56 +295,6 @@ class _StoryDrawingPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _StoryDrawingPainter oldDelegate) => oldDelegate.strokes != strokes;
 }
-
-class _StoryToolButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _StoryToolButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        InkWell(
-          onTap: onTap,
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              color: Colors.white24,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: Colors.white),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 12,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-const _storyFilterNames = [
-  'Original',
-  'Clarendon',
-  'Gingham',
-  'Moon',
-  'Lark',
-  'Reyes',
-  'Juno',
-];
 
 List<double> _storyFilterMatrixBase({double brightness = 1, double contrast = 1, double saturation = 1}) {
   final b = brightness;
@@ -460,22 +423,18 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   final List<AssetEntity> _recentAssets = [];
 
   bool _isStoryEditing = false;
-  File? _editingImageFile;
   Uint8List? _editingImageBytes;
   File? _editingVideoFile;
   VideoPlayerController? _editingVideoController;
   final GlobalKey _storyRepaintKey = GlobalKey();
   final List<_StoryOverlayElement> _storyElements = [];
   int? _storyActiveElementIndex;
-  bool _storyShowTrash = false;
   bool _storyDrawingMode = false;
-  bool _storyStickerMode = false;
   final List<_StoryStroke> _storyStrokes = [];
   final List<_StoryStroke> _storyRedo = [];
   double _storyBrushSize = 8.0;
   Color _storyCurrentColor = Colors.white;
   String _storyCurrentFilter = 'Original';
-  bool _recordAsReel = false;
   Offset _storyLastFocalPoint = Offset.zero;
   double _storyTransformBaseScale = 1.0;
   double _storyTransformBaseRotation = 0.0;
@@ -488,7 +447,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   bool _layoutMenuOpen = false;
   _StoryLayoutType? _selectedLayout;
   final List<Uint8List?> _layoutSlotImages = [];
+  final List<bool> _layoutSlotFlips = [];
   int _layoutActiveIndex = 0;
+  bool _storyFlipX = false;
 
   @override
   void initState() {
@@ -594,6 +555,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
 
     try {
       await controller.initialize();
+      await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
       await controller.setFlashMode(_flashMode);
       if (mounted) {
         setState(() {
@@ -699,18 +661,31 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
 
   Future<void> _onCapturePressed() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
-    if (_controller!.value.isTakingPicture || _controller!.value.isRecordingVideo) return;
+    if (_controller!.value.isTakingPicture) return;
     if (_boomerangEnabled) {
       await _captureBoomerang();
       return;
     }
+    if (_activeToolOverlay == _ToolOverlayType.draw) {
+      if (_recording) {
+        await _stopVideoAndNavigate();
+      } else {
+        await _onRecordStart();
+      }
+      return;
+    }
+    if (_controller!.value.isRecordingVideo) return;
     if (_activeToolOverlay == _ToolOverlayType.layout && _selectedLayout != null) {
       await _captureLayoutFrame();
       return;
     }
     try {
       final xfile = await _controller!.takePicture();
-      await _navigateToEditor(File(xfile.path), MediaType.image);
+      await _navigateToEditor(
+        File(xfile.path),
+        MediaType.image,
+        flipHorizontal: _isFrontCamera,
+      );
     } catch (e) {
       debugPrint('Error capturing photo: $e');
     }
@@ -724,9 +699,6 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       return;
     }
     try {
-      if (_mode == UploadMode.post) {
-        _recordAsReel = true;
-      }
       await _controller!.startVideoRecording();
       setState(() {
         _recording = true;
@@ -754,14 +726,57 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       setState(() {
         _recording = false;
       });
-      final asReel = _recordAsReel || _mode == UploadMode.reel;
-      _recordAsReel = false;
-      await _navigateToEditor(File(xfile.path), MediaType.video, asReel: asReel);
+      _mode = UploadMode.story;
+      await _navigateToEditor(
+        File(xfile.path),
+        MediaType.video,
+        flipHorizontal: _isFrontCamera,
+        loopPreview: true,
+      );
     } catch (e) {
       debugPrint('Error stopping video recording: $e');
       setState(() {
         _recording = false;
       });
+    }
+  }
+
+  Future<void> _stopVideoAndNavigate() async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    if (!_controller!.value.isRecordingVideo) {
+      if (_recording) {
+        setState(() {
+          _recording = false;
+        });
+      }
+      return;
+    }
+    try {
+      final xfile = await _controller!.stopVideoRecording();
+      if (mounted) {
+        setState(() {
+          _recording = false;
+          _mode = UploadMode.story;
+          _activeToolOverlay = null;
+          _layoutMenuOpen = false;
+          _selectedLayout = null;
+          _layoutSlotImages.clear();
+          _layoutActiveIndex = 0;
+        });
+      }
+      await _navigateToEditor(
+        File(xfile.path),
+        MediaType.video,
+        flipHorizontal: _isFrontCamera,
+        loopPreview: true,
+      );
+    } catch (e) {
+      debugPrint('Error stopping video recording: $e');
+      if (mounted) {
+        setState(() {
+          _recording = false;
+        });
+      }
     }
   }
 
@@ -785,7 +800,12 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       });
       final ok = await _processBoomerang(File(xfile.path));
       if (!ok) {
-        await _navigateToEditor(File(xfile.path), MediaType.video);
+        await _navigateToEditor(
+          File(xfile.path),
+          MediaType.video,
+          flipHorizontal: _isFrontCamera,
+          loopPreview: false,
+        );
       }
     } catch (e) {
       debugPrint('Error capturing boomerang: $e');
@@ -842,7 +862,12 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       });
       final ok = await _processBoomerang(File(xfile.path));
       if (!ok) {
-        await _navigateToEditor(File(xfile.path), MediaType.video);
+        await _navigateToEditor(
+          File(xfile.path),
+          MediaType.video,
+          flipHorizontal: _isFrontCamera,
+          loopPreview: false,
+        );
       }
     } catch (e) {
       debugPrint('Error stopping boomerang recording: $e');
@@ -865,7 +890,12 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     final session = await FFmpegKit.execute(cmd);
     final returnCode = await session.getReturnCode();
     if (ReturnCode.isSuccess(returnCode)) {
-      await _navigateToEditor(File(outputPath), MediaType.video);
+      await _navigateToEditor(
+        File(outputPath),
+        MediaType.video,
+        flipHorizontal: _isFrontCamera,
+        loopPreview: true,
+      );
       return true;
     }
     debugPrint('Boomerang ffmpeg failed: $returnCode');
@@ -876,16 +906,18 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     final file = await asset.originFile;
     if (file == null) return;
     final type = asset.type == AssetType.video ? MediaType.video : MediaType.image;
-    await _navigateToEditor(file, type);
+    await _navigateToEditor(file, type, flipHorizontal: false, loopPreview: false);
   }
 
   void _openToolOverlay(_ToolOverlayType type, {Widget? icon}) {
     setState(() {
       _activeToolOverlay = type;
+      _boomerangEnabled = type == _ToolOverlayType.boomerang;
       if (type != _ToolOverlayType.layout) {
         _layoutMenuOpen = false;
         _selectedLayout = null;
         _layoutSlotImages.clear();
+        _layoutSlotFlips.clear();
         _layoutActiveIndex = 0;
       }
     });
@@ -894,15 +926,29 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   void _closeToolOverlay() {
     setState(() {
       _activeToolOverlay = null;
+      _boomerangEnabled = false;
       _layoutMenuOpen = false;
       _selectedLayout = null;
       _layoutSlotImages.clear();
+      _layoutSlotFlips.clear();
       _layoutActiveIndex = 0;
     });
   }
 
-  Future<void> _navigateToEditor(File file, MediaType type,
-      {bool asReel = false}) async {
+  bool get _isFrontCamera {
+    if (_cameras.isEmpty || _currentCameraIndex >= _cameras.length) {
+      return false;
+    }
+    return _cameras[_currentCameraIndex].lensDirection == CameraLensDirection.front;
+  }
+
+  Future<void> _navigateToEditor(
+    File file,
+    MediaType type, {
+    bool asReel = false,
+    bool flipHorizontal = false,
+    bool loopPreview = false,
+  }) async {
     if (!mounted) return;
     
     if (_mode == UploadMode.story && type == MediaType.image && !asReel) {
@@ -915,18 +961,16 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
         if (!mounted) return;
         
         setState(() {
-          _editingImageFile = file;
           _editingImageBytes = bytes;
           _isStoryEditing = true;
           _storyElements.clear();
           _storyStrokes.clear();
           _storyRedo.clear();
-          _storyShowTrash = false;
           _storyDrawingMode = false;
-          _storyStickerMode = false;
           _storyBrushSize = 8.0;
           _storyCurrentColor = Colors.white;
           _storyCurrentFilter = 'Original';
+          _storyFlipX = flipHorizontal;
         });
         
         debugPrint('Story editor state updated');
@@ -946,24 +990,25 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
         _editingVideoController?.dispose();
         _editingVideoController = VideoPlayerController.file(file);
         await _editingVideoController!.initialize();
-        await _editingVideoController!.setLooping(true);
+        debugPrint(
+          '🎬 video size=${_editingVideoController!.value.size} ar=${_editingVideoController!.value.aspectRatio} rot=${_editingVideoController!.value.rotationCorrection}',
+        );
+        await _editingVideoController!.setLooping(loopPreview);
         await _editingVideoController!.play();
 
         if (!mounted) return;
         setState(() {
           _editingVideoFile = file;
-          _editingImageFile = null;
           _editingImageBytes = null;
           _isStoryEditing = true;
           _storyElements.clear();
           _storyStrokes.clear();
           _storyRedo.clear();
-          _storyShowTrash = false;
           _storyDrawingMode = false;
-          _storyStickerMode = false;
           _storyBrushSize = 8.0;
           _storyCurrentColor = Colors.white;
           _storyCurrentFilter = 'Original';
+          _storyFlipX = flipHorizontal;
         });
       } catch (e) {
         debugPrint('Error loading video for story editor: $e');
@@ -1005,8 +1050,14 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     if (_layoutSlotImages.isEmpty) {
       _layoutSlotImages.addAll(
         List<Uint8List?>.filled(
-          _layoutRects(const Size(1080, 1920), _selectedLayout!, 8).length,
+          _layoutRects(const Size(1080, 1920), _selectedLayout!, 0).length,
           null,
+        ),
+      );
+      _layoutSlotFlips.addAll(
+        List<bool>.filled(
+          _layoutRects(const Size(1080, 1920), _selectedLayout!, 0).length,
+          false,
         ),
       );
     }
@@ -1015,6 +1066,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       final bytes = await File(xfile.path).readAsBytes();
       if (_layoutActiveIndex < _layoutSlotImages.length) {
         _layoutSlotImages[_layoutActiveIndex] = bytes;
+        _layoutSlotFlips[_layoutActiveIndex] = _isFrontCamera;
       }
       final next = _layoutSlotImages.indexWhere((e) => e == null);
       if (next == -1) {
@@ -1031,8 +1083,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
 
   Future<void> _composeLayoutAndOpenEditor() async {
     if (_selectedLayout == null) return;
-    final targetSize = const Size(1080, 1920);
-    final rects = _layoutRects(targetSize, _selectedLayout!, 8);
+    const targetSize = Size(1080, 1920);
+    final rects = _layoutRects(targetSize, _selectedLayout!, 0);
     if (rects.isEmpty) return;
 
     final recorder = ui.PictureRecorder();
@@ -1059,7 +1111,17 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
         final y = (srcSize.height - newH) / 2;
         src = Rect.fromLTWH(0, y, srcSize.width, newH);
       }
-      canvas.drawImageRect(image, src, dst, Paint());
+      final flip = i < _layoutSlotFlips.length && _layoutSlotFlips[i];
+      if (flip) {
+        canvas.save();
+        canvas.translate(dst.left + dst.width, dst.top);
+        canvas.scale(-1, 1);
+        final flippedDst = Rect.fromLTWH(0, 0, dst.width, dst.height);
+        canvas.drawImageRect(image, src, flippedDst, Paint());
+        canvas.restore();
+      } else {
+        canvas.drawImageRect(image, src, dst, Paint());
+      }
     }
 
     final picture = recorder.endRecording();
@@ -1073,7 +1135,6 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     if (!mounted) return;
     setState(() {
       _editingImageBytes = byteData.buffer.asUint8List();
-      _editingImageFile = null;
       _editingVideoFile = null;
       _editingVideoController?.dispose();
       _editingVideoController = null;
@@ -1081,93 +1142,22 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       _storyElements.clear();
       _storyStrokes.clear();
       _storyRedo.clear();
-      _storyShowTrash = false;
       _storyDrawingMode = false;
-      _storyStickerMode = false;
       _storyBrushSize = 8.0;
       _storyCurrentColor = Colors.white;
       _storyCurrentFilter = 'Original';
+      _storyFlipX = false;
       _layoutMenuOpen = false;
       _activeToolOverlay = null;
     });
   }
 
-  Widget _buildToolButton({IconData? icon, Widget? child, VoidCallback? onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Center(
-          child: child ??
-              Icon(
-                icon,
-                color: Colors.white,
-                size: 28,
-              ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMediaCarousel() {
-    if (_recentAssets.isEmpty) {
-      return const SizedBox(height: 56);
-    }
-    return Container(
-      height: 56,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        itemCount: _recentAssets.length,
-        itemBuilder: (context, index) {
-          final asset = _recentAssets[index];
-          return Padding(
-            padding: EdgeInsets.only(right: index < _recentAssets.length - 1 ? 10 : 0),
-            child: GestureDetector(
-              onTap: () => _onThumbnailTap(asset),
-              child: ClipOval(
-                child: FutureBuilder<Uint8List?>(
-                  future: asset.thumbnailDataWithSize(const ThumbnailSize(200, 200)),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done || snapshot.data == null) {
-                      return Container(
-                        width: 48,
-                        height: 48,
-                        color: Colors.grey[900],
-                      );
-                    }
-                    return Image.memory(
-                      snapshot.data!,
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
-                    );
-                  },
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildCaptureControls() {
+    final handsFreeActive = _activeToolOverlay == _ToolOverlayType.draw;
     return GestureDetector(
       onTap: _onCapturePressed,
-      onLongPressStart: (_) => _onRecordStart(),
-      onLongPressEnd: (_) => _onRecordEnd(),
+      onLongPressStart: handsFreeActive ? null : (_) => _onRecordStart(),
+      onLongPressEnd: handsFreeActive ? null : (_) => _onRecordEnd(),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
         width: 72,
@@ -1479,8 +1469,14 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                       _layoutSlotImages
                         ..clear()
                         ..addAll(List<Uint8List?>.filled(
-                          _layoutRects(const Size(1080, 1920), _StoryLayoutType.grid2x2, 8).length,
+                          _layoutRects(const Size(1080, 1920), _StoryLayoutType.grid2x2, 0).length,
                           null,
+                        ));
+                      _layoutSlotFlips
+                        ..clear()
+                        ..addAll(List<bool>.filled(
+                          _layoutRects(const Size(1080, 1920), _StoryLayoutType.grid2x2, 0).length,
+                          false,
                         ));
                       _layoutActiveIndex = 0;
                     });
@@ -1495,13 +1491,19 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                       _layoutMenuOpen = !_layoutMenuOpen;
                     });
                   },
-                  child: const Padding(
-                    padding: EdgeInsets.only(bottom: 18),
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: Center(
-                        child: Icon(Icons.grid_on_rounded, color: Colors.white, size: 18),
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 18),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white54, width: 1.5),
+                      ),
+                      child: const Icon(
+                        Icons.grid_on_rounded,
+                        color: Colors.white,
+                        size: 18,
                       ),
                     ),
                   ),
@@ -1718,7 +1720,10 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                       _layoutMenuOpen = false;
                       _layoutSlotImages
                         ..clear()
-                        ..addAll(List<Uint8List?>.filled(_layoutRects(const Size(1080, 1920), type, 8).length, null));
+                        ..addAll(List<Uint8List?>.filled(_layoutRects(const Size(1080, 1920), type, 0).length, null));
+                      _layoutSlotFlips
+                        ..clear()
+                        ..addAll(List<bool>.filled(_layoutRects(const Size(1080, 1920), type, 0).length, false));
                       _layoutActiveIndex = 0;
                     });
                   },
@@ -1752,7 +1757,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
         final rects = _layoutRects(
           Size(constraints.maxWidth, constraints.maxHeight),
           _selectedLayout!,
-          8,
+          0,
         );
         final activeRect = rects.isNotEmpty && _layoutActiveIndex < rects.length
             ? rects[_layoutActiveIndex]
@@ -1760,29 +1765,60 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
 
         return Stack(
           children: [
+            Positioned.fill(
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                  child: Container(
+                    color: const Color(0x730B0F14),
+                  ),
+                ),
+              ),
+            ),
             ...rects.asMap().entries.map((entry) {
               final i = entry.key;
               final r = entry.value;
               final imageBytes = i < _layoutSlotImages.length ? _layoutSlotImages[i] : null;
+              if (i == _layoutActiveIndex) return const SizedBox.shrink();
               if (imageBytes == null) return const SizedBox.shrink();
               return Positioned(
                 left: r.left,
                 top: r.top,
                 width: r.width,
                 height: r.height,
-                child: Image.memory(
-                  imageBytes,
-                  fit: BoxFit.cover,
+                child: ClipRect(
+                  child: SizedBox(
+                    width: r.width,
+                    height: r.height,
+                    child: Image.memory(
+                      imageBytes,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
                 ),
               );
             }),
+            if (activeRect != Rect.zero)
+              Positioned(
+                left: activeRect.left,
+                top: activeRect.top,
+                width: activeRect.width,
+                height: activeRect.height,
+                child: ClipRect(
+                  child: SizedBox(
+                    width: activeRect.width,
+                    height: activeRect.height,
+                    child: _buildCameraPreview(),
+                  ),
+                ),
+              ),
             Positioned.fill(
               child: CustomPaint(
                 painter: _LayoutMaskPainter(
                   rects: rects,
                   activeRect: activeRect,
                   borderRadius: 0,
-                  maskColor: const Color(0xFF5A5A5A),
+                  maskColor: const Color(0xCC000000),
                 ),
               ),
             ),
@@ -1906,37 +1942,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     );
   }
 
-  Widget _buildSwitchCameraButton() {
-    return GestureDetector(
-      onTap: _isSwitchingCamera ? null : _switchCamera,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.white10,
-          shape: BoxShape.circle,
-        ),
-        child: Center(
-          child: _isSwitchingCamera
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                )
-              : const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 22),
-        ),
-      ),
-    );
-  }
-
   Widget _buildCameraPreview() {
     if (_controller == null || !_controller!.value.isInitialized) {
-      return Container(
-        color: Colors.black,
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.white),
-        ),
-      );
+      return const Center(child: CircularProgressIndicator(color: Colors.white));
     }
 
     return SizedBox.expand(
@@ -1954,6 +1962,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   Widget _buildStoryEditingUi(BuildContext context) {
     final imageBytes = _editingImageBytes;
     final videoController = _editingVideoController;
+    const double storyPreviewBottomInset = 70; // 42 height + 16 bottom spacing + 12 gap
+    const double storyPreviewCornerRadius = 24;
 
     if (imageBytes == null && (videoController == null || !videoController.value.isInitialized)) {
       debugPrint('⚠️ Media not ready in story editor build');
@@ -1979,9 +1989,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            Expanded(
+            Positioned.fill(
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   debugPrint('📐 Layout constraints: ${constraints.maxWidth}x${constraints.maxHeight}');
@@ -2022,82 +2032,127 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                     },
                     child: Stack(
                       children: [
-                        RepaintBoundary(
-                          key: _storyRepaintKey,
-                          child: SizedBox(
-                            width: constraints.maxWidth,
-                            height: constraints.maxHeight,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                if (imageBytes != null)
-                                  ColorFiltered(
-                                    colorFilter: ColorFilter.matrix(_storyFilterMatrixFor(_storyCurrentFilter)),
-                                    child: Image.memory(
-                                      imageBytes,
-                                      fit: BoxFit.cover,
-                                      gaplessPlayback: true,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        debugPrint('❌ Error displaying image: $error');
-                                        return Container(
-                                          color: Colors.grey[900],
-                                          child: Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              const Icon(Icons.error, color: Colors.white, size: 48),
-                                              const SizedBox(height: 8),
-                                              Padding(
-                                                padding: const EdgeInsets.all(16.0),
-                                                child: Text(
-                                                  'Error: $error',
-                                                  style: const TextStyle(color: Colors.white),
-                                                  textAlign: TextAlign.center,
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final availableW = constraints.maxWidth;
+                            final availableH = constraints.maxHeight - storyPreviewBottomInset;
+
+                            return Align(
+                              alignment: Alignment.topCenter,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: availableW,
+                                  maxHeight: availableH,
+                                ),
+                                child: AspectRatio(
+                                  aspectRatio: 9 / 16,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(storyPreviewCornerRadius),
+                                    child: RepaintBoundary(
+                                      key: _storyRepaintKey,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          if (imageBytes != null)
+                                            _maybeFlipStoryMedia(
+                                              ColorFiltered(
+                                                colorFilter: ColorFilter.matrix(_storyFilterMatrixFor(_storyCurrentFilter)),
+                                                child: Image.memory(
+                                                  imageBytes,
+                                                  fit: BoxFit.cover,
+                                                  gaplessPlayback: true,
+                                                  errorBuilder: (context, error, stackTrace) {
+                                                    debugPrint('❌ Error displaying image: $error');
+                                                    return Container(
+                                                      color: Colors.grey[900],
+                                                      child: Column(
+                                                        mainAxisAlignment: MainAxisAlignment.center,
+                                                        children: [
+                                                          const Icon(Icons.error, color: Colors.white, size: 48),
+                                                          const SizedBox(height: 8),
+                                                          Padding(
+                                                            padding: const EdgeInsets.all(16.0),
+                                                            child: Text(
+                                                              'Error: $error',
+                                                              style: const TextStyle(color: Colors.white),
+                                                              textAlign: TextAlign.center,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                  },
                                                 ),
                                               ),
-                                            ],
+                                            )
+                                          else if (videoController != null)
+                                            SizedBox.expand(
+                                              child: FittedBox(
+                                                fit: BoxFit.cover,
+                                                clipBehavior: Clip.hardEdge,
+                                                child: RotatedBox(
+                                                  quarterTurns: 3, // 270 degrees = 3 quarter turns clockwise
+                                                  child: Transform(
+                                                    alignment: Alignment.center,
+                                                    // Flip horizontally for front camera to match mirror look
+                                                    transform: Matrix4.diagonal3Values(
+                                                      _isFrontCamera ? -1.0 : 1.0,
+                                                      1.0,
+                                                      1.0,
+                                                    ),
+                                                    child: SizedBox(
+                                                      // Use original size - RotatedBox handles the dimension swap logically
+                                                      width: videoController.value.size.width,
+                                                      height: videoController.value.size.height,
+                                                      child: VideoPlayer(videoController),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          CustomPaint(painter: _StoryDrawingPainter(_storyStrokes)),
+                                          ..._storyElements.asMap().entries.map(
+                                            (entry) {
+                                              final index = entry.key;
+                                              final e = entry.value;
+                                              final isActive = _storyActiveElementIndex == null
+                                                  ? index == _storyElements.length - 1
+                                                  : index == _storyActiveElementIndex;
+                                              return _StoryElementWidget(
+                                                key: ValueKey(e.hashCode),
+                                                element: e,
+                                                isActive: isActive,
+                                                onTap: () {
+                                                  if (e.type == _StoryElementType.text) {
+                                                    setState(() {
+                                                      _storyActiveElementIndex = index;
+                                                    });
+                                                    _storyEditText(e);
+                                                  }
+                                                },
+                                              );
+                                            },
                                           ),
-                                        );
-                                      },
-                                    ),
-                                  )
-                                else if (videoController != null)
-                                  ColorFiltered(
-                                    colorFilter: ColorFilter.matrix(_storyFilterMatrixFor(_storyCurrentFilter)),
-                                    child: FittedBox(
-                                      fit: BoxFit.cover,
-                                      child: SizedBox(
-                                        width: videoController.value.size.width,
-                                        height: videoController.value.size.height,
-                                        child: VideoPlayer(videoController),
+                                          const Positioned(
+                                            left: 16,
+                                            right: 16,
+                                            bottom: 12,
+                                            child: Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: Text(
+                                                'Add a caption...',
+                                                style: TextStyle(color: Colors.white70, fontSize: 16),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
-                                CustomPaint(painter: _StoryDrawingPainter(_storyStrokes)),
-                                ..._storyElements.asMap().entries.map(
-                                  (entry) {
-                                    final index = entry.key;
-                                    final e = entry.value;
-                                    final isActive = _storyActiveElementIndex == null
-                                        ? index == _storyElements.length - 1
-                                        : index == _storyActiveElementIndex;
-                                    return _StoryElementWidget(
-                                      key: ValueKey(e.hashCode),
-                                      element: e,
-                                      isActive: isActive,
-                                      onTap: () {
-                                        if (e.type == _StoryElementType.text) {
-                                          setState(() {
-                                            _storyActiveElementIndex = index;
-                                          });
-                                          _storyEditText(e);
-                                        }
-                                      },
-                                    );
-                                  },
                                 ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         ),
                         if (_storyDrawingMode)
                           Positioned.fill(
@@ -2185,7 +2240,6 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                               onTap: () {
                                                 setState(() {
                                                   _storyDrawingMode = true;
-                                                  _storyStickerMode = false;
                                                 });
                                               },
                                               showLabel: true,
@@ -2253,19 +2307,19 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                     color: const Color(0xFF4A4A4A),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
-                                  child: Column(
+                                  child: const Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Row(
-                                        children: const [
+                                        children: [
                                           Icon(LucideIcons.tag, color: Colors.white, size: 18),
                                           SizedBox(width: 10),
                                           Text('Label AI', style: TextStyle(color: Colors.white, fontSize: 14)),
                                         ],
                                       ),
-                                      const SizedBox(height: 12),
+                                      SizedBox(height: 12),
                                       Row(
-                                        children: const [
+                                        children: [
                                           Icon(LucideIcons.eyeOff, color: Colors.white, size: 18),
                                           SizedBox(width: 10),
                                           Text('Turn off commenting', style: TextStyle(color: Colors.white, fontSize: 14)),
@@ -2278,97 +2332,90 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                             ),
                           ),
                         ),
-                        Positioned(
-                          left: 24,
-                          right: 24,
-                          bottom: 9,
-                          child: const Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Add a caption...',
-                              style: TextStyle(color: Colors.white70, fontSize: 16),
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   );
-              },
+                },
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _storyPostYourStory,
-                    child: Container(
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: Colors.white12,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        children: const [
-                          CircleAvatar(radius: 12, backgroundColor: Colors.white24, child: Icon(Icons.person, size: 14, color: Colors.white)),
-                          SizedBox(width: 10),
-                          Text('Your story', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Container(
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: Colors.white12,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Row(
-                      children: const [
-                        CircleAvatar(radius: 12, backgroundColor: Color(0xFF22C55E), child: Icon(Icons.star, size: 14, color: Colors.white)),
-                        SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            'Close Friends',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 10),
-                          ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _storyPostYourStory,
+                      child: Container(
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Colors.white12,
+                          borderRadius: BorderRadius.circular(22),
                         ),
-                      ],
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: const Row(
+                          children: [
+                            CircleAvatar(radius: 12, backgroundColor: Colors.white24, child: Icon(Icons.person, size: 14, color: Colors.white)),
+                            SizedBox(width: 10),
+                            Text('Your story', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF536DFE),
-                    shape: BoxShape.circle,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _storyPostCloseFriends,
+                      child: Container(
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Colors.white12,
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: const Row(
+                          children: [
+                            CircleAvatar(radius: 12, backgroundColor: Color(0xFF22C55E), child: Icon(Icons.star, size: 14, color: Colors.white)),
+                            SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                'Close Friends',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 10),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  child: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF536DFE),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   void _exitStoryEditing() {
     setState(() {
       _isStoryEditing = false;
-      _editingImageFile = null;
       _editingImageBytes = null;
       _editingVideoFile = null;
       _editingVideoController?.dispose();
@@ -2376,14 +2423,48 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       _selectedLayout = null;
       _layoutMenuOpen = false;
       _layoutSlotImages.clear();
+      _layoutSlotFlips.clear();
       _layoutActiveIndex = 0;
       _storyElements.clear();
       _storyStrokes.clear();
       _storyRedo.clear();
-      _storyShowTrash = false;
       _storyDrawingMode = false;
-      _storyStickerMode = false;
+      _storyFlipX = false;
     });
+  }
+
+  Widget _maybeFlipStoryMedia(Widget child) {
+    if (!_storyFlipX) return child;
+    return Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.identity()..scaleByDouble(-1.0, 1.0, 1.0, 1.0),
+      child: child,
+    );
+  }
+
+  Widget _buildStoryVideoCover(VideoPlayerController controller) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final videoSize = controller.value.size;
+        final bool isRotated =
+            controller.value.rotationCorrection == 90 ||
+                controller.value.rotationCorrection == 270;
+
+        return SizedBox.expand(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            clipBehavior: Clip.hardEdge,
+            child: SizedBox(
+              width: isRotated ? videoSize.height : videoSize.width,
+              height: isRotated ? videoSize.width : videoSize.height,
+              child: Center(
+                child: VideoPlayer(controller),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _startStoryStroke(Offset pos) {
@@ -2398,28 +2479,6 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     if (!_storyDrawingMode || _storyStrokes.isEmpty) return;
     setState(() {
       _storyStrokes.last.points.add(pos);
-    });
-  }
-
-  void _storyUndo() {
-    if (_storyStrokes.isEmpty) return;
-    setState(() {
-      _storyRedo.add(_storyStrokes.removeLast());
-    });
-  }
-
-  void _storyRedoStroke() {
-    if (_storyRedo.isEmpty) return;
-    setState(() {
-      _storyStrokes.add(_storyRedo.removeLast());
-    });
-  }
-
-  void _storyAddSticker(String label) {
-    setState(() {
-      _storyElements.add(_StoryOverlayElement.sticker(label));
-      _storyStickerMode = false;
-      _storyActiveElementIndex = _storyElements.length - 1;
     });
   }
 
@@ -2821,6 +2880,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   Future<void> _storyPostToApi({bool isCloseFriends = false}) async {
     try {
       final isVideoStory = _editingVideoFile != null;
+      final screenSize = MediaQuery.of(context).size;
       debugPrint('\n════════════════════════════════════════');
       debugPrint('🚀 Starting Story Post');
       debugPrint('════════════════════════════════════════');
@@ -2955,8 +3015,6 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       debugPrint('📝 STEP 2: Creating story via /api/stories');
       debugPrint('════════════════════════════════════════');
 
-      final screenSize = MediaQuery.of(context).size;
-
       final mentionsPayload = <Map<String, dynamic>>[];
       for (final e in _storyElements.where((e) => e.type == _StoryElementType.text)) {
         for (final m in e.mentions) {
@@ -2983,7 +3041,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                   'content': e.text ?? '',
                   'fontSize': 24.0,
                   'fontFamily': (e.style ?? 'classic').toLowerCase(),
-                  'color': '#${(e.color ?? Colors.white).value.toRadixString(16).substring(2, 8).toUpperCase()}',
+                  'color':
+                      '#${(e.color ?? Colors.white).toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}',
                   'align': 'center',
                   'x': e.position.dx / screenSize.width,
                   'y': e.position.dy / screenSize.height,
@@ -3262,25 +3321,6 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                     child: _buildStoryTools(),
                   ),
                   _buildLayoutMenu(),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 12,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 44),
-                            Expanded(
-                              child: Center(
-                                child: _buildCaptureControls(),
-                              ),
-                            ),
-                            const SizedBox(width: 44),
-                          ],
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -3304,6 +3344,30 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                   ],
                 ),
               ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: mediaPadding.bottom + 112,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 44),
+                      Expanded(
+                        child: Center(
+                          child: _buildCaptureControls(),
+                        ),
+                      ),
+                      const SizedBox(width: 44),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],

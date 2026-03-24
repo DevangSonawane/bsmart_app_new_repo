@@ -351,10 +351,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       _videoController = controller;
       _videoInit = controller.initialize().then((_) {
         if (!mounted) return;
-        controller.setLooping(true);
+        controller.setLooping(false);
         controller.addListener(_handlePreviewVideoTick);
-        controller.play();
-        setState(() => _isPlaying = true);
+        setState(() => _isPlaying = false);
       });
     } else if (_currentMedia.type == app_models.MediaType.image && _currentMedia.filePath != null) {
       final provider = FileImage(File(_currentMedia.filePath!));
@@ -408,12 +407,27 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   void _handlePreviewVideoTick() {
     final controller = _videoController;
     if (controller == null || !controller.value.isInitialized) return;
+    final pos = controller.value.position;
+    final duration = controller.value.duration;
     final start = _trimStart;
     final end = _trimEnd;
-    if (start == null || end == null || end <= start) return;
-    final pos = controller.value.position;
-    if (pos < start || pos > end) {
-      controller.seekTo(start);
+    if (start != null && end != null && end > start) {
+      if (pos < start) {
+        controller.seekTo(start);
+      }
+      if (pos >= end) {
+        controller.pause();
+        if (mounted) {
+          setState(() => _isPlaying = false);
+        }
+      }
+      return;
+    }
+    if (duration != null && duration != Duration.zero && pos >= duration) {
+      controller.pause();
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
     }
   }
 
@@ -454,25 +468,22 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         _videoController = controller;
         _videoInit = controller.initialize().then((_) {
           if (!mounted) return;
-          controller.setLooping(true);
+          controller.setLooping(false);
           controller.addListener(_handlePreviewVideoTick);
-          controller.play();
-          setState(() => _isPlaying = true);
+          setState(() => _isPlaying = false);
         });
         setState(() {}); // Trigger immediate rebuild to show loading for the NEW future
       } else {
-      // Seek preview to the new trim start and resume
+      // Seek preview to the new trim start (do not auto-play)
       final controller = _videoController;
       if (controller != null && controller.value.isInitialized) {
         await controller.seekTo(_trimStart!);
-        controller.play();
-        setState(() => _isPlaying = true);
+        setState(() => _isPlaying = false);
       }
       }
     } else {
-      // User cancelled – just resume playback
-      _videoController?.play();
-      setState(() => _isPlaying = true);
+      // User cancelled – do not auto-play
+      setState(() => _isPlaying = false);
     }
   }
 
@@ -2320,11 +2331,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               children: [
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                    padding: widget.media.type == app_models.MediaType.video
+                        ? EdgeInsets.zero
+                        : const EdgeInsets.fromLTRB(16, 10, 16, 10),
                     child: RepaintBoundary(
                       key: _previewRepaintKey,
                       child: ClipRRect(
-                        borderRadius: _captureWithoutRadius
+                        borderRadius: (_captureWithoutRadius ||
+                                widget.media.type == app_models.MediaType.video)
                             ? BorderRadius.zero
                             : BorderRadius.circular(24),
                         child: GestureDetector(
@@ -2343,6 +2357,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                         onScaleUpdate: _handleTextScaleUpdate,
                         onScaleEnd: (_) => _handleTextScaleEnd(),
                           child: Stack(
+                            fit: StackFit.expand,
                             alignment: Alignment.center,
                             children: [
                               if (widget.media.type == app_models.MediaType.video)
@@ -2810,6 +2825,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           return const Center(
               child: CircularProgressIndicator(color: Colors.white));
         }
+        final Size videoSize = controller.value.size;
+
         return GestureDetector(
           onTap: () {
             setState(() {
@@ -2828,12 +2845,25 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
             Stack(
               alignment: Alignment.center,
               children: [
-                FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: controller.value.size.width,
-                    height: controller.value.size.height,
-                    child: VideoPlayer(controller),
+                Container(color: Colors.blue),
+                SizedBox.expand(
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    clipBehavior: Clip.hardEdge,
+                    child: SizedBox(
+                      width: math.min(videoSize.width, videoSize.height),
+                      height: math.max(videoSize.width, videoSize.height),
+                      child: Center(
+                        child: RotatedBox(
+                          quarterTurns: 1,
+                          child: SizedBox(
+                            width: videoSize.width,
+                            height: videoSize.height,
+                            child: VideoPlayer(controller),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 if (!_isPlaying)
@@ -2855,20 +2885,16 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   Widget _buildImagePreview() {
     if (widget.media.filePath != null) {
-      final image = _applyImageAdjustments(_applySelectedFilter(
-        Image.file(
-          File(widget.media.filePath!),
-          fit: BoxFit.cover,
-        ),
-      ));
-      final aspect = _imageAspectRatio;
-      if (aspect == null || aspect.isNaN || aspect.isInfinite || aspect <= 0) {
-        return image;
-      }
-      return Center(
-        child: AspectRatio(
-          aspectRatio: aspect,
-          child: image,
+      return Container(
+        color: Colors.red,
+        child: Center(
+          child: RotatedBox(
+            quarterTurns: 1,
+            child: Image.file(
+              File(widget.media.filePath!),
+              fit: BoxFit.contain,
+            ),
+          ),
         ),
       );
     }
