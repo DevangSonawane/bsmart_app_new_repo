@@ -14,12 +14,13 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
+import '../instagram_text_editor/instagram_text_editor.dart';
+import '../instagram_text_editor/instagram_text_result.dart';
 import '../models/media_model.dart';
 import 'create_post_screen.dart';
 import 'create_upload_screen.dart';
 import 'create_edit_preview_screen.dart';
 import '../api/api.dart';
-import '../services/supabase_service.dart';
 
 class StoryCameraScreen extends StatefulWidget {
   final UploadMode initialMode;
@@ -109,6 +110,8 @@ enum _StoryElementType { text }
 
 enum _ToolOverlayType { create, boomerang, layout, ai, draw }
 
+enum _StoryBrushType { pen, marker, neon, eraser }
+
 enum _StoryLayoutType {
   grid2x2,
   twoVertical,
@@ -128,11 +131,47 @@ class _StoryMention {
   });
 }
 
+enum _StoryStickerType { like, wow, fire, music, travel, coffee }
+
+class _StorySticker {
+  final String id;
+  final _StoryStickerType type;
+  final Offset position;
+  final double scale;
+  final double rotation;
+
+  _StorySticker({
+    required this.id,
+    required this.type,
+    required this.position,
+    required this.scale,
+    required this.rotation,
+  });
+
+  _StorySticker copyWith({
+    Offset? position,
+    double? scale,
+    double? rotation,
+  }) {
+    return _StorySticker(
+      id: id,
+      type: type,
+      position: position ?? this.position,
+      scale: scale ?? this.scale,
+      rotation: rotation ?? this.rotation,
+    );
+  }
+}
+
 class _StoryOverlayElement {
   final _StoryElementType type;
   final String? text;
-  final String? style;
-  final Color? color;
+  final TextStyle? style;
+  final TextAlign alignment;
+  final BackgroundStyle backgroundStyle;
+  final String fontName;
+  final double fontSize;
+  final Color textColor;
   final Offset position;
   final double scale;
   final double rotation;
@@ -142,7 +181,11 @@ class _StoryOverlayElement {
     required this.type,
     this.text,
     this.style,
-    this.color,
+    this.alignment = TextAlign.center,
+    this.backgroundStyle = BackgroundStyle.none,
+    this.fontName = 'Modern',
+    this.fontSize = 32.0,
+    this.textColor = Colors.white,
     required this.position,
     required this.scale,
     required this.rotation,
@@ -151,26 +194,41 @@ class _StoryOverlayElement {
 
   factory _StoryOverlayElement.text(
     String text, {
-    String style = 'Classic',
-    Color color = Colors.white,
+    TextStyle? style,
+    TextAlign alignment = TextAlign.center,
+    BackgroundStyle backgroundStyle = BackgroundStyle.none,
+    String fontName = 'Modern',
+    double fontSize = 32.0,
+    Color textColor = Colors.white,
     List<_StoryMention> mentions = const [],
+    Offset position = const Offset(100, 100),
+    double scale = 1.0,
+    double rotation = 0.0,
   }) {
     return _StoryOverlayElement._(
       type: _StoryElementType.text,
       text: text,
       style: style,
-      color: color,
-      position: const Offset(100, 100),
-      scale: 1.0,
-      rotation: 0.0,
+      alignment: alignment,
+      backgroundStyle: backgroundStyle,
+      fontName: fontName,
+      fontSize: fontSize,
+      textColor: textColor,
+      position: position,
+      scale: scale,
+      rotation: rotation,
       mentions: mentions,
     );
   }
 
   _StoryOverlayElement copyWith({
     String? text,
-    String? style,
-    Color? color,
+    TextStyle? style,
+    TextAlign? alignment,
+    BackgroundStyle? backgroundStyle,
+    String? fontName,
+    double? fontSize,
+    Color? textColor,
     Offset? position,
     double? scale,
     double? rotation,
@@ -180,7 +238,11 @@ class _StoryOverlayElement {
       type: type,
       text: text ?? this.text,
       style: style ?? this.style,
-      color: color ?? this.color,
+      alignment: alignment ?? this.alignment,
+      backgroundStyle: backgroundStyle ?? this.backgroundStyle,
+      fontName: fontName ?? this.fontName,
+      fontSize: fontSize ?? this.fontSize,
+      textColor: textColor ?? this.textColor,
       position: position ?? this.position,
       scale: scale ?? this.scale,
       rotation: rotation ?? this.rotation,
@@ -193,39 +255,116 @@ class _StoryElementWidget extends StatelessWidget {
   final _StoryOverlayElement element;
   final bool isActive;
   final VoidCallback? onTap;
+  final GestureTapDownCallback? onTapDown;
+  final GestureTapUpCallback? onTapUp;
+  final VoidCallback? onTapCancel;
+  final double deleteScale;
+  final bool showDeleteFade;
 
   const _StoryElementWidget({
     super.key,
     required this.element,
     this.isActive = false,
     this.onTap,
+    this.onTapDown,
+    this.onTapUp,
+    this.onTapCancel,
+    this.deleteScale = 1.0,
+    this.showDeleteFade = false,
   });
 
-  TextStyle _textStyleFor(String styleName, Color color) {
-    switch (styleName) {
-      case 'Modern':
-        return TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.w400);
-      case 'Neon':
-        return TextStyle(
-          color: color,
-          fontSize: 24,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.2,
-          shadows: [
-            Shadow(
-              color: color.withAlpha(160),
-              blurRadius: 12,
-            ),
-          ],
-        );
-      case 'Typewriter':
-        return TextStyle(color: color, fontSize: 22, fontWeight: FontWeight.w500, letterSpacing: 2.0);
-      case 'Strong':
-        return TextStyle(color: color, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: 0.8);
-      case 'Classic':
-      default:
-        return TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.w600, letterSpacing: 0.5);
+  Widget _buildOverlayStyledText(_StoryOverlayElement overlay) {
+    final text = overlay.text ?? '';
+    final baseStyle = (overlay.style ?? const TextStyle())
+        .copyWith(color: overlay.textColor, fontSize: overlay.fontSize);
+
+    if (overlay.fontName == 'Contour') {
+      return Text(
+        text,
+        textAlign: overlay.alignment,
+        style: baseStyle.copyWith(
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = overlay.textColor,
+        ),
+      );
     }
+
+    if (overlay.fontName == 'Neon') {
+      return Stack(
+        children: [
+          Text(
+            text,
+            textAlign: overlay.alignment,
+            style: baseStyle.copyWith(
+              foreground: Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 4
+                ..color = overlay.textColor.withValues(alpha: 0.8),
+            ),
+          ),
+          Text(
+            text,
+            textAlign: overlay.alignment,
+            style: baseStyle.copyWith(
+              shadows: [
+                Shadow(color: overlay.textColor, blurRadius: 14),
+                Shadow(
+                  color: overlay.textColor.withValues(alpha: 0.8),
+                  blurRadius: 24,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Text(text, textAlign: overlay.alignment, style: baseStyle);
+  }
+
+  Widget _buildOverlayVisual(_StoryOverlayElement overlay) {
+    final text = overlay.text ?? '';
+    final baseStyle = (overlay.style ?? const TextStyle())
+        .copyWith(color: overlay.textColor, fontSize: overlay.fontSize);
+    Widget content = _buildOverlayStyledText(overlay);
+
+    if (overlay.backgroundStyle == BackgroundStyle.perChar) {
+      final spans = text.split('').map((ch) {
+        return TextSpan(
+          text: ch,
+          style: baseStyle.copyWith(
+            backgroundColor: overlay.textColor.withValues(alpha: 0.2),
+          ),
+        );
+      }).toList();
+      content = Text.rich(TextSpan(children: spans), textAlign: overlay.alignment);
+    } else if (overlay.backgroundStyle == BackgroundStyle.solid ||
+        overlay.backgroundStyle == BackgroundStyle.transparent) {
+      final bgColor = overlay.backgroundStyle == BackgroundStyle.solid
+          ? overlay.textColor.withValues(alpha: 0.9)
+          : overlay.textColor.withValues(alpha: 0.35);
+      final fgColor = overlay.backgroundStyle == BackgroundStyle.solid
+          ? Colors.black
+          : overlay.textColor;
+      content = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: DefaultTextStyle.merge(
+          style: baseStyle.copyWith(color: fgColor),
+          child: content,
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: content,
+    );
   }
 
   @override
@@ -240,18 +379,17 @@ class _StoryElementWidget extends StatelessWidget {
           scale: e.scale,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
+            onTapDown: onTapDown,
+            onTapUp: onTapUp,
+            onTapCancel: onTapCancel,
             onTap: onTap,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: e.type == _StoryElementType.text
-                    ? (isActive ? Colors.white24 : Colors.black26)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                e.text ?? '',
-                style: _textStyleFor(e.style ?? 'Classic', e.color ?? Colors.white),
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 160),
+              opacity: showDeleteFade ? 0.2 : 1.0,
+              child: AnimatedScale(
+                duration: const Duration(milliseconds: 160),
+                scale: deleteScale,
+                child: _buildOverlayVisual(e),
               ),
             ),
           ),
@@ -264,11 +402,17 @@ class _StoryElementWidget extends StatelessWidget {
 class _StoryStroke {
   final Color color;
   final double size;
+  final double opacity;
+  final double blurSigma;
+  final bool isEraser;
   final List<Offset> points;
 
   _StoryStroke({
     required this.color,
     required this.size,
+    this.opacity = 1.0,
+    this.blurSigma = 0.0,
+    this.isEraser = false,
     required this.points,
   });
 }
@@ -280,16 +424,22 @@ class _StoryDrawingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.saveLayer(Offset.zero & size, Paint());
     for (final s in strokes) {
       final paint = Paint()
-        ..color = s.color
+        ..color = s.color.withValues(alpha: s.opacity)
         ..strokeWidth = s.size
         ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round;
+        ..strokeCap = StrokeCap.round
+        ..blendMode = s.isEraser ? BlendMode.clear : BlendMode.srcOver;
+      if (s.blurSigma > 0) {
+        paint.maskFilter = MaskFilter.blur(BlurStyle.normal, s.blurSigma);
+      }
       for (var i = 0; i < s.points.length - 1; i++) {
         canvas.drawLine(s.points[i], s.points[i + 1], paint);
       }
     }
+    canvas.restore();
   }
 
   @override
@@ -433,6 +583,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   final List<_StoryStroke> _storyStrokes = [];
   final List<_StoryStroke> _storyRedo = [];
   double _storyBrushSize = 8.0;
+  _StoryBrushType _storyBrushType = _StoryBrushType.pen;
   Color _storyCurrentColor = Colors.white;
   String _storyCurrentFilter = 'Original';
   Offset _storyLastFocalPoint = Offset.zero;
@@ -450,6 +601,25 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   final List<bool> _layoutSlotFlips = [];
   int _layoutActiveIndex = 0;
   bool _storyFlipX = false;
+  bool _hideStoryTextOverlaysForCapture = false;
+  bool _isStoryTextDeleteMode = false;
+  Timer? _storyTextHoldTimer;
+  bool _storySuppressTextTap = false;
+  final Map<int, double> _storyTextDeleteScale = {};
+  Offset _storyLastLocalFocalPoint = Offset.zero;
+  bool _storyTrashArmed = false;
+  final List<_StorySticker> _storyStickers = [];
+  int? _storyActiveStickerIndex;
+  bool _isStoryStickerDeleteMode = false;
+  Timer? _storyStickerHoldTimer;
+  bool _storySuppressStickerTap = false;
+  final Map<String, double> _storyStickerDeleteScale = {};
+  Offset _storyStickerLastLocalFocalPoint = Offset.zero;
+  double _storyStickerBaseScale = 1.0;
+  double _storyStickerBaseRotation = 0.0;
+  bool _handlingStickerGesture = false;
+  static const double _storyStickerBaseSize = 72.0;
+  final List<_StoryMention> _storyHiddenMentions = [];
 
   @override
   void initState() {
@@ -463,6 +633,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _storyTextHoldTimer?.cancel();
+    _storyStickerHoldTimer?.cancel();
     _controller?.dispose();
     _controller = null;
     _editingVideoController?.dispose();
@@ -727,8 +899,25 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
         _recording = false;
       });
       _mode = UploadMode.story;
+      File videoFile = File(xfile.path);
+      try {
+        await Future.delayed(const Duration(milliseconds: 200));
+        final outputDir = await Directory.systemTemp.createTemp('story_video_');
+        final outputPath = '${outputDir.path}/story_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        final cmd = '-y -i "${xfile.path}" -vf "transpose=cclock" -c:a copy -movflags +faststart "$outputPath"';
+        final session = await FFmpegKit.execute(cmd);
+        final returnCode = await session.getReturnCode();
+        if (ReturnCode.isSuccess(returnCode)) {
+          videoFile = File(outputPath);
+          debugPrint('✅ Video transposed successfully');
+        } else {
+          debugPrint('⚠️ FFmpeg transpose failed, using original');
+        }
+      } catch (e) {
+        debugPrint('FFmpeg error: $e');
+      }
       await _navigateToEditor(
-        File(xfile.path),
+        videoFile,
         MediaType.video,
         flipHorizontal: _isFrontCamera,
         loopPreview: true,
@@ -764,8 +953,25 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
           _layoutActiveIndex = 0;
         });
       }
+      File videoFile = File(xfile.path);
+      try {
+        await Future.delayed(const Duration(milliseconds: 200));
+        final outputDir = await Directory.systemTemp.createTemp('story_video_');
+        final outputPath = '${outputDir.path}/story_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        final cmd = '-y -i "${xfile.path}" -vf "transpose=cclock" -c:a copy -movflags +faststart "$outputPath"';
+        final session = await FFmpegKit.execute(cmd);
+        final returnCode = await session.getReturnCode();
+        if (ReturnCode.isSuccess(returnCode)) {
+          videoFile = File(outputPath);
+          debugPrint('✅ Video transposed successfully');
+        } else {
+          debugPrint('⚠️ FFmpeg transpose failed, using original');
+        }
+      } catch (e) {
+        debugPrint('FFmpeg error: $e');
+      }
       await _navigateToEditor(
-        File(xfile.path),
+        videoFile,
         MediaType.video,
         flipHorizontal: _isFrontCamera,
         loopPreview: true,
@@ -1987,6 +2193,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     }
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Stack(
@@ -1999,20 +2206,24 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                   return GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onScaleStart: (details) {
+                      if (_handlingStickerGesture) return;
                       if (_storyDrawingMode || _storyElements.isEmpty) return;
                       final activeIndex = _storyActiveElementIndex ?? (_storyElements.length - 1);
                       _storyActiveElementIndex = activeIndex;
                       _storyLastFocalPoint = details.focalPoint;
+                      _storyLastLocalFocalPoint = _toStoryLocal(details.focalPoint);
                       final element = _storyElements[activeIndex];
                       _storyTransformBaseScale = element.scale;
                       _storyTransformBaseRotation = element.rotation;
                     },
                     onScaleUpdate: (details) {
+                      if (_handlingStickerGesture) return;
                       if (_storyDrawingMode || _storyElements.isEmpty) return;
                       final activeIndex = _storyActiveElementIndex ?? (_storyElements.length - 1);
                       final element = _storyElements[activeIndex];
                       final delta = details.focalPoint - _storyLastFocalPoint;
                       _storyLastFocalPoint = details.focalPoint;
+                      _storyLastLocalFocalPoint = _toStoryLocal(details.focalPoint);
 
                       double newScale = element.scale;
                       double newRotation = element.rotation;
@@ -2023,12 +2234,27 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                       }
 
                       setState(() {
+                        if (_isStoryTextDeleteMode) {
+                          _updateStoryTextDeleteScale(activeIndex);
+                        }
+                        final nextPosition = _clampStoryTextPosition(
+                          element,
+                          element.position + delta,
+                          newScale,
+                        );
                         _storyElements[activeIndex] = element.copyWith(
-                          position: element.position + delta,
+                          position: nextPosition,
                           scale: newScale,
                           rotation: newRotation,
                         );
                       });
+                    },
+                    onScaleEnd: (_) {
+                      if (_handlingStickerGesture) return;
+                      if (_isStoryTextDeleteMode) {
+                        final activeIndex = _storyActiveElementIndex ?? (_storyElements.length - 1);
+                        _handleStoryTextDeleteEnd(activeIndex);
+                      }
                     },
                     child: Stack(
                       children: [
@@ -2086,53 +2312,179 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                               ),
                                             )
                                           else if (videoController != null)
-                                            SizedBox.expand(
-                                              child: FittedBox(
-                                                fit: BoxFit.cover,
-                                                clipBehavior: Clip.hardEdge,
-                                                child: RotatedBox(
-                                                  quarterTurns: 3, // 270 degrees = 3 quarter turns clockwise
-                                                  child: Transform(
-                                                    alignment: Alignment.center,
-                                                    // Flip horizontally for front camera to match mirror look
-                                                    transform: Matrix4.diagonal3Values(
-                                                      _isFrontCamera ? -1.0 : 1.0,
-                                                      1.0,
-                                                      1.0,
-                                                    ),
-                                                    child: SizedBox(
-                                                      // Use original size - RotatedBox handles the dimension swap logically
-                                                      width: videoController.value.size.width,
-                                                      height: videoController.value.size.height,
-                                                      child: VideoPlayer(videoController),
-                                                    ),
-                                                  ),
+                                            Positioned.fill(
+                                              child: Transform(
+                                                alignment: Alignment.center,
+                                                transform: Matrix4.diagonal3Values(
+                                                  _storyFlipX ? -1.0 : 1.0,
+                                                  1.0,
+                                                  1.0,
+                                                ),
+                                                child: Builder(
+                                                  builder: (context) {
+                                                    final double w = videoController.value.size.width;
+                                                    final double h = videoController.value.size.height;
+                                                    return FittedBox(
+                                                      fit: BoxFit.cover,
+                                                      clipBehavior: Clip.hardEdge,
+                                                      child: SizedBox(
+                                                        width: w,
+                                                        height: h,
+                                                        child: VideoPlayer(videoController),
+                                                      ),
+                                                    );
+                                                  },
                                                 ),
                                               ),
                                             ),
                                           CustomPaint(painter: _StoryDrawingPainter(_storyStrokes)),
-                                          ..._storyElements.asMap().entries.map(
-                                            (entry) {
-                                              final index = entry.key;
-                                              final e = entry.value;
-                                              final isActive = _storyActiveElementIndex == null
-                                                  ? index == _storyElements.length - 1
-                                                  : index == _storyActiveElementIndex;
-                                              return _StoryElementWidget(
-                                                key: ValueKey(e.hashCode),
-                                                element: e,
-                                                isActive: isActive,
-                                                onTap: () {
-                                                  if (e.type == _StoryElementType.text) {
-                                                    setState(() {
-                                                      _storyActiveElementIndex = index;
-                                                    });
-                                                    _storyEditText(e);
-                                                  }
-                                                },
-                                              );
-                                            },
-                                          ),
+                                          ..._storyStickers.asMap().entries.map((entry) {
+                                            final index = entry.key;
+                                            final s = entry.value;
+                                            final isActive = _storyActiveStickerIndex == index;
+                                            final deleteScale =
+                                                _storyStickerDeleteScale[s.id] ?? 1.0;
+                                            final isDeleting =
+                                                _isStoryStickerDeleteMode && isActive;
+                                            return Positioned(
+                                              key: ValueKey('sticker_${s.id}'),
+                                              left: s.position.dx,
+                                              top: s.position.dy,
+                                              child: Transform.rotate(
+                                                angle: s.rotation,
+                                                child: Transform.scale(
+                                                  scale: s.scale,
+                                                  child: GestureDetector(
+                                                    onTapDown: (d) {
+                                                      _storyStickerLastLocalFocalPoint =
+                                                          _toStoryLocal(d.globalPosition);
+                                                      _startStoryStickerHold(index);
+                                                    },
+                                                    onTapUp: (_) =>
+                                                        _handleStoryStickerDeleteEnd(index),
+                                                    onTapCancel: _cancelStoryStickerHold,
+                                                    onTap: () {
+                                                      if (_storySuppressStickerTap) {
+                                                        setState(() => _storySuppressStickerTap = false);
+                                                        return;
+                                                      }
+                                                      if (_isStoryStickerDeleteMode) {
+                                                        _exitStoryStickerDeleteMode();
+                                                        return;
+                                                      }
+                                                      setState(() {
+                                                        _storyActiveStickerIndex = index;
+                                                        _storyActiveElementIndex = null;
+                                                      });
+                                                    },
+                                                    onScaleStart: (d) {
+                                                      _handlingStickerGesture = true;
+                                                      setState(() {
+                                                        _storyActiveStickerIndex = index;
+                                                        _storyActiveElementIndex = null;
+                                                      });
+                                                      _storyStickerLastLocalFocalPoint =
+                                                          _toStoryLocal(d.focalPoint);
+                                                      _storyStickerBaseScale = _storyStickers[index].scale;
+                                                      _storyStickerBaseRotation = _storyStickers[index].rotation;
+                                                      _cancelStoryStickerHold();
+                                                    },
+                                                    onScaleUpdate: (d) {
+                                                      final current = _storyStickers[index];
+                                                      final local =
+                                                          _toStoryLocal(d.focalPoint);
+                                                      final delta =
+                                                          local - _storyStickerLastLocalFocalPoint;
+                                                      _storyStickerLastLocalFocalPoint = local;
+                                                      double newScale = current.scale;
+                                                      double newRotation = current.rotation;
+                                                      if (d.pointerCount > 1) {
+                                                        newScale = (_storyStickerBaseScale * d.scale)
+                                                            .clamp(0.4, 6.0);
+                                                        newRotation = _storyStickerBaseRotation + d.rotation;
+                                                      }
+                                                      final nextPos = _clampStoryStickerPosition(
+                                                        current.position + delta,
+                                                        newScale,
+                                                      );
+                                                      setState(() {
+                                                        if (_isStoryStickerDeleteMode) {
+                                                          _updateStoryStickerDeleteScale(index);
+                                                        }
+                                                        _storyStickers[index] = current.copyWith(
+                                                          position: nextPos,
+                                                          scale: newScale,
+                                                          rotation: newRotation,
+                                                        );
+                                                      });
+                                                    },
+                                                    onScaleEnd: (_) {
+                                                      _handlingStickerGesture = false;
+                                                      if (_isStoryStickerDeleteMode) {
+                                                        _handleStoryStickerDeleteEnd(index);
+                                                      }
+                                                    },
+                                                    child: AnimatedOpacity(
+                                                      duration: const Duration(milliseconds: 160),
+                                                      opacity:
+                                                          isDeleting && _storyTrashArmed ? 0.2 : 1.0,
+                                                      child: AnimatedScale(
+                                                        duration: const Duration(milliseconds: 160),
+                                                        scale: isDeleting ? deleteScale : 1.0,
+                                                        child: _buildStoryStickerWidget(
+                                                          s.type,
+                                                          size: _storyStickerBaseSize,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          }),
+                                          if (!_hideStoryTextOverlaysForCapture)
+                                            ..._storyElements.asMap().entries.map(
+                                              (entry) {
+                                                final index = entry.key;
+                                                final e = entry.value;
+                                                final isActive = _storyActiveElementIndex == null
+                                                    ? index == _storyElements.length - 1
+                                                    : index == _storyActiveElementIndex;
+                                                final deleteScale = _storyTextDeleteScale[index] ?? 1.0;
+                                                final isDeleting = _isStoryTextDeleteMode &&
+                                                    _storyActiveElementIndex == index;
+                                                return _StoryElementWidget(
+                                                  key: ValueKey(e.hashCode),
+                                                  element: e,
+                                                  isActive: isActive,
+                                                  deleteScale: isDeleting ? deleteScale : 1.0,
+                                                  showDeleteFade: isDeleting && _storyTrashArmed,
+                                                  onTap: () {
+                                                    if (e.type == _StoryElementType.text) {
+                                                      if (_storySuppressTextTap) {
+                                                        setState(() => _storySuppressTextTap = false);
+                                                        return;
+                                                      }
+                                                      if (_isStoryTextDeleteMode) {
+                                                        _exitStoryTextDeleteMode();
+                                                        return;
+                                                      }
+                                                      setState(() {
+                                                        _storyActiveElementIndex = index;
+                                                      });
+                                                      _storyEditText(e);
+                                                    }
+                                                  },
+                                                  onTapDown: (d) {
+                                                    _storyLastLocalFocalPoint =
+                                                        _toStoryLocal(d.globalPosition);
+                                                    _startStoryTextHold(index);
+                                                  },
+                                                  onTapUp: (_) => _handleStoryTextDeleteEnd(index),
+                                                  onTapCancel: _cancelStoryTextHold,
+                                                );
+                                              },
+                                            ),
                                           const Positioned(
                                             left: 16,
                                             right: 16,
@@ -2163,131 +2515,151 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                               child: const SizedBox.expand(),
                             ),
                           ),
-                        Positioned(
-                          left: 16,
-                          top: 16,
-                          child: ClipOval(
-                            child: Material(
-                              color: Colors.black.withAlpha(140),
-                              child: IconButton(
-                                icon: const Icon(Icons.close, color: Colors.white),
-                                onPressed: _exitStoryEditing,
+                        if (!_storyDrawingMode)
+                          Positioned(
+                            left: 16,
+                            top: 16,
+                            child: ClipOval(
+                              child: Material(
+                                color: Colors.black.withAlpha(140),
+                                child: IconButton(
+                                  icon: const Icon(Icons.close, color: Colors.white),
+                                  onPressed: _exitStoryEditing,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          right: 16,
-                          top: 16,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              _buildEditActionRow(
-                                label: 'Text',
-                                onTap: _storyAddText,
-                                showLabel: _storyToolsExpanded,
-                                icon: const Text(
-                                  'Aa',
-                                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                        if (!_storyDrawingMode)
+                          Positioned(
+                            right: 16,
+                            top: 16,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                _buildEditActionRow(
+                                  label: 'Text',
+                                  onTap: _storyAddText,
+                                  showLabel: _storyToolsExpanded,
+                                  icon: const Text(
+                                    'Aa',
+                                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              _buildEditActionRow(
-                                label: 'Stickers',
-                                onTap: () {},
-                                showLabel: _storyToolsExpanded,
-                                icon: const Icon(LucideIcons.sticker, color: Colors.white, size: 22),
-                              ),
-                              const SizedBox(height: 10),
-                              _buildEditActionRow(
-                                label: 'Audio',
-                                onTap: () {},
-                                showLabel: _storyToolsExpanded,
-                                icon: const Icon(LucideIcons.music, color: Colors.white, size: 22),
-                              ),
-                              const SizedBox(height: 10),
-                              _buildEditActionRow(
-                                label: 'Effects',
-                                onTap: () {},
-                                showLabel: _storyToolsExpanded,
-                                icon: const Icon(LucideIcons.sparkles, color: Colors.white, size: 22),
-                              ),
-                              const SizedBox(height: 10),
-                              AnimatedSize(
-                                duration: const Duration(milliseconds: 220),
-                                curve: Curves.easeInOut,
-                                alignment: Alignment.topRight,
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 180),
-                                  switchInCurve: Curves.easeOut,
-                                  switchOutCurve: Curves.easeIn,
-                                  child: _storyToolsExpanded
-                                      ? Column(
-                                          key: const ValueKey('edit_more_menu'),
-                                          crossAxisAlignment: CrossAxisAlignment.end,
-                                          children: [
-                                            const SizedBox(height: 10),
-                                            _buildEditActionRow(
-                                              label: 'Mention',
-                                              onTap: () {},
-                                              showLabel: true,
-                                              icon: const Icon(Icons.alternate_email, color: Colors.white, size: 22),
-                                            ),
-                                            const SizedBox(height: 10),
-                                            _buildEditActionRow(
-                                              label: 'Draw',
-                                              onTap: () {
-                                                setState(() {
-                                                  _storyDrawingMode = true;
-                                                });
-                                              },
-                                              showLabel: true,
-                                              icon: const Icon(LucideIcons.pencil, color: Colors.white, size: 22),
-                                            ),
-                                            const SizedBox(height: 10),
-                                            _buildEditActionRow(
-                                              label: 'Download',
-                                              onTap: () {},
-                                              showLabel: true,
-                                              icon: const Icon(Icons.download_rounded, color: Colors.white, size: 22),
-                                            ),
-                                            const SizedBox(height: 10),
-                                            _buildEditActionRow(
-                                              label: 'More',
-                                              onTap: () {
-                                                setState(() {
-                                                  _showMoreMenu = !_showMoreMenu;
-                                                });
-                                              },
-                                              showLabel: true,
-                                              icon: const Icon(Icons.more_horiz, color: Colors.white, size: 22),
-                                            ),
-                                          ],
-                                        )
-                                      : const SizedBox.shrink(key: ValueKey('edit_more_menu_empty')),
+                                const SizedBox(height: 10),
+                                _buildEditActionRow(
+                                  label: 'Stickers',
+                                  onTap: _openStoryStickerPicker,
+                                  showLabel: _storyToolsExpanded,
+                                  icon: const Icon(LucideIcons.sticker, color: Colors.white, size: 22),
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _storyToolsExpanded = !_storyToolsExpanded;
-                                    if (!_storyToolsExpanded) {
-                                      _showMoreMenu = false;
-                                    }
-                                  });
-                                },
-                                child: AnimatedRotation(
+                                const SizedBox(height: 10),
+                                _buildEditActionRow(
+                                  label: 'Audio',
+                                  onTap: () {},
+                                  showLabel: _storyToolsExpanded,
+                                  icon: const Icon(LucideIcons.music, color: Colors.white, size: 22),
+                                ),
+                                const SizedBox(height: 10),
+                                _buildEditActionRow(
+                                  label: 'Effects',
+                                  onTap: () {},
+                                  showLabel: _storyToolsExpanded,
+                                  icon: const Icon(LucideIcons.sparkles, color: Colors.white, size: 22),
+                                ),
+                                const SizedBox(height: 10),
+                                AnimatedSize(
                                   duration: const Duration(milliseconds: 220),
                                   curve: Curves.easeInOut,
-                                  turns: _storyToolsExpanded ? 0.5 : 0.0,
-                                  child: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 28),
+                                  alignment: Alignment.topRight,
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 180),
+                                    switchInCurve: Curves.easeOut,
+                                    switchOutCurve: Curves.easeIn,
+                                    child: _storyToolsExpanded
+                                        ? Column(
+                                            key: const ValueKey('edit_more_menu'),
+                                            crossAxisAlignment: CrossAxisAlignment.end,
+                                            children: [
+                                              const SizedBox(height: 10),
+                                              _buildEditActionRow(
+                                                label: 'Mention',
+                                                onTap: _openStoryMentionSheet,
+                                                showLabel: true,
+                                                icon: const Icon(Icons.alternate_email, color: Colors.white, size: 22),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              _buildEditActionRow(
+                                                label: 'Draw',
+                                                onTap: () {
+                                                  setState(() {
+                                                    _storyDrawingMode = true;
+                                                    _storyBrushType = _StoryBrushType.pen;
+                                                  });
+                                                },
+                                                showLabel: true,
+                                                icon: const Icon(LucideIcons.pencil, color: Colors.white, size: 22),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              _buildEditActionRow(
+                                                label: 'Download',
+                                                onTap: () {},
+                                                showLabel: true,
+                                                icon: const Icon(Icons.download_rounded, color: Colors.white, size: 22),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              _buildEditActionRow(
+                                                label: 'More',
+                                                onTap: () {
+                                                  setState(() {
+                                                    _showMoreMenu = !_showMoreMenu;
+                                                  });
+                                                },
+                                                showLabel: true,
+                                                icon: const Icon(Icons.more_horiz, color: Colors.white, size: 22),
+                                              ),
+                                            ],
+                                          )
+                                        : const SizedBox.shrink(key: ValueKey('edit_more_menu_empty')),
+                                  ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 10),
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _storyToolsExpanded = !_storyToolsExpanded;
+                                      if (!_storyToolsExpanded) {
+                                        _showMoreMenu = false;
+                                      }
+                                    });
+                                  },
+                                  child: AnimatedRotation(
+                                    duration: const Duration(milliseconds: 220),
+                                    curve: Curves.easeInOut,
+                                    turns: _storyToolsExpanded ? 0.5 : 0.0,
+                                    child: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 28),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                        if (_storyDrawingMode)
+                          Positioned(
+                            left: 16,
+                            right: 16,
+                            top: 16,
+                            child: _buildStoryDrawTopBar(),
+                          ),
+                        if (_storyDrawingMode)
+                          Positioned(
+                            left: 16,
+                            top: 120,
+                            bottom: 120,
+                            child: SizedBox(
+                              width: 28,
+                              child: _buildStoryBrushSizeBar(),
+                            ),
+                          ),
                         Positioned(
                           right: 96,
                           bottom: 180,
@@ -2326,6 +2698,41 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                         ],
                                       ),
                                     ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 92,
+                          child: IgnorePointer(
+                            ignoring: !(_isStoryTextDeleteMode || _isStoryStickerDeleteMode),
+                            child: AnimatedOpacity(
+                              opacity: (_isStoryTextDeleteMode || _isStoryStickerDeleteMode) ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 160),
+                              curve: Curves.easeInOut,
+                              child: Center(
+                                child: AnimatedScale(
+                                  duration: const Duration(milliseconds: 140),
+                                  scale: _storyTrashArmed ? 1.12 : 1.0,
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 140),
+                                    width: 56,
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: _storyTrashArmed
+                                          ? const Color(0xFFEF4444).withAlpha(220)
+                                          : Colors.black.withAlpha(170),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: _storyTrashArmed ? Colors.white70 : Colors.white24,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 26),
                                   ),
                                 ),
                               ),
@@ -2430,7 +2837,17 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       _storyRedo.clear();
       _storyDrawingMode = false;
       _storyFlipX = false;
+      _isStoryTextDeleteMode = false;
+      _storySuppressTextTap = false;
+      _storyStickers.clear();
+      _storyActiveStickerIndex = null;
+      _isStoryStickerDeleteMode = false;
+      _storySuppressStickerTap = false;
+      _storyStickerDeleteScale.clear();
+      _storyHiddenMentions.clear();
     });
+    _storyTextHoldTimer?.cancel();
+    _storyStickerHoldTimer?.cancel();
   }
 
   Widget _maybeFlipStoryMedia(Widget child) {
@@ -2442,262 +2859,688 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     );
   }
 
-  Widget _buildStoryVideoCover(VideoPlayerController controller) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final videoSize = controller.value.size;
-        final bool isRotated =
-            controller.value.rotationCorrection == 90 ||
-                controller.value.rotationCorrection == 270;
+  Widget _buildStoryStickerWidget(_StoryStickerType type, {double size = 72}) {
+    BoxDecoration baseDecoration({required List<Color> colors}) {
+      return BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: colors,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      );
+    }
 
-        return SizedBox.expand(
-          child: FittedBox(
-            fit: BoxFit.cover,
-            clipBehavior: Clip.hardEdge,
-            child: SizedBox(
-              width: isRotated ? videoSize.height : videoSize.width,
-              height: isRotated ? videoSize.width : videoSize.height,
-              child: Center(
-                child: VideoPlayer(controller),
-              ),
+    Widget glossyHighlight() {
+      return Positioned(
+        top: 6,
+        left: 6,
+        right: 6,
+        child: Container(
+          height: size * 0.28,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withValues(alpha: 0.65),
+                Colors.white.withValues(alpha: 0.0),
+              ],
             ),
+          ),
+        ),
+      );
+    }
+
+    switch (type) {
+      case _StoryStickerType.like:
+        return Container(
+          width: size,
+          height: size,
+          decoration: baseDecoration(colors: const [Color(0xFF7C3AED), Color(0xFF4F46E5)]),
+          child: Stack(
+            children: [
+              glossyHighlight(),
+              const Center(
+                child: Icon(Icons.thumb_up_alt_rounded, color: Colors.white, size: 34),
+              ),
+            ],
+          ),
+        );
+      case _StoryStickerType.wow:
+        return Container(
+          width: size,
+          height: size,
+          decoration: baseDecoration(colors: const [Color(0xFFFFB703), Color(0xFFFB8500)]),
+          child: Stack(
+            children: [
+              glossyHighlight(),
+              const Center(
+                child: Text('WOW', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ),
+        );
+      case _StoryStickerType.fire:
+        return Container(
+          width: size,
+          height: size,
+          decoration: baseDecoration(colors: const [Color(0xFFEF4444), Color(0xFFF97316)]),
+          child: Stack(
+            children: [
+              glossyHighlight(),
+              const Center(
+                child: Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 34),
+              ),
+            ],
+          ),
+        );
+      case _StoryStickerType.music:
+        return Container(
+          width: size,
+          height: size,
+          decoration: baseDecoration(colors: const [Color(0xFF06B6D4), Color(0xFF3B82F6)]),
+          child: Stack(
+            children: [
+              glossyHighlight(),
+              const Center(
+                child: Icon(Icons.music_note_rounded, color: Colors.white, size: 34),
+              ),
+            ],
+          ),
+        );
+      case _StoryStickerType.travel:
+        return Container(
+          width: size,
+          height: size,
+          decoration: baseDecoration(colors: const [Color(0xFF22C55E), Color(0xFF16A34A)]),
+          child: Stack(
+            children: [
+              glossyHighlight(),
+              const Center(
+                child: Icon(Icons.flight_takeoff_rounded, color: Colors.white, size: 34),
+              ),
+            ],
+          ),
+        );
+      case _StoryStickerType.coffee:
+        return Container(
+          width: size,
+          height: size,
+          decoration: baseDecoration(colors: const [Color(0xFF9A3412), Color(0xFFB45309)]),
+          child: Stack(
+            children: [
+              glossyHighlight(),
+              const Center(
+                child: Icon(Icons.coffee_rounded, color: Colors.white, size: 34),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+
+  String _textAlignToApi(TextAlign align) {
+    switch (align) {
+      case TextAlign.left:
+      case TextAlign.start:
+        return 'left';
+      case TextAlign.right:
+      case TextAlign.end:
+        return 'right';
+      case TextAlign.justify:
+        return 'justify';
+      case TextAlign.center:
+        return 'center';
+    }
+  }
+
+  Size? _storyPreviewSize() {
+    final renderBox = _storyRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    return renderBox?.size;
+  }
+
+  Offset _normalizeStoryPosition(Offset position) {
+    final size = _storyPreviewSize();
+    if (size == null || size.width == 0 || size.height == 0) {
+      return position;
+    }
+    final dx = (position.dx / size.width).clamp(0.0, 1.0);
+    final dy = (position.dy / size.height).clamp(0.0, 1.0);
+    return Offset(dx, dy);
+  }
+
+  Offset _denormalizeStoryPosition(Offset normalized) {
+    final size = _storyPreviewSize();
+    if (size == null || size.width == 0 || size.height == 0) {
+      return normalized;
+    }
+    return Offset(
+      normalized.dx * size.width,
+      normalized.dy * size.height,
+    );
+  }
+
+  Size _measureStoryTextSize(_StoryOverlayElement overlay, double maxWidth) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: overlay.text ?? '',
+        style: (overlay.style ?? const TextStyle()).copyWith(
+          color: overlay.textColor,
+          fontSize: overlay.fontSize,
+        ),
+      ),
+      textAlign: overlay.alignment,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    return textPainter.size;
+  }
+
+  Offset _clampStoryTextPosition(
+    _StoryOverlayElement overlay,
+    Offset position,
+    double scale,
+  ) {
+    final renderBox = _storyRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return position;
+    final bounds = renderBox.size;
+    final textSize = _measureStoryTextSize(overlay, bounds.width);
+    final scaled = Size(textSize.width * scale, textSize.height * scale);
+    final maxX = (bounds.width - scaled.width).clamp(0.0, bounds.width);
+    final maxY = (bounds.height - scaled.height).clamp(0.0, bounds.height);
+    final clampedX = position.dx.clamp(0.0, maxX);
+    final clampedY = position.dy.clamp(0.0, maxY);
+    return Offset(clampedX, clampedY);
+  }
+
+  Offset _storyTrashCenterLocal() {
+    final renderBox = _storyRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return const Offset(0, 0);
+    final size = renderBox.size;
+    return Offset(size.width / 2, size.height - 24 - 28);
+  }
+
+  Offset _toStoryLocal(Offset global) {
+    final renderBox = _storyRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return global;
+    return renderBox.globalToLocal(global);
+  }
+
+  void _updateStoryTextDeleteScale(int index) {
+    if (!_isStoryTextDeleteMode) return;
+    final center = _storyTrashCenterLocal();
+    final distance = (center - _storyLastLocalFocalPoint).distance;
+    const threshold = 120.0;
+    final t = (distance / threshold).clamp(0.0, 1.0);
+    final scale = 0.2 + (0.8 * t);
+    _storyTextDeleteScale[index] = scale;
+    _storyTrashArmed = distance <= 44;
+  }
+
+  Offset _storyStickerCenter() {
+    final size = _storyPreviewSize();
+    if (size == null) return const Offset(120, 220);
+    return Offset(
+      (size.width - _storyStickerBaseSize) / 2,
+      (size.height - _storyStickerBaseSize) / 2,
+    );
+  }
+
+  Offset _clampStoryStickerPosition(Offset position, double scale) {
+    final renderBox = _storyRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return position;
+    final bounds = renderBox.size;
+    final scaledSize = _storyStickerBaseSize * scale;
+    final maxX = (bounds.width - scaledSize).clamp(0.0, bounds.width);
+    final maxY = (bounds.height - scaledSize).clamp(0.0, bounds.height);
+    final clampedX = position.dx.clamp(0.0, maxX);
+    final clampedY = position.dy.clamp(0.0, maxY);
+    return Offset(clampedX, clampedY);
+  }
+
+  void _startStoryStickerHold(int index) {
+    _storyStickerHoldTimer?.cancel();
+    _storyStickerHoldTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      setState(() {
+        _storySuppressStickerTap = true;
+        _isStoryStickerDeleteMode = true;
+        _storyActiveStickerIndex = index;
+        _storyStickerDeleteScale[_storyStickers[index].id] = 1.0;
+        _storyTrashArmed = false;
+      });
+    });
+  }
+
+  void _cancelStoryStickerHold() {
+    _storyStickerHoldTimer?.cancel();
+    _storyStickerHoldTimer = null;
+  }
+
+  void _exitStoryStickerDeleteMode() {
+    if (!mounted) return;
+    setState(() {
+      _isStoryStickerDeleteMode = false;
+      _storySuppressStickerTap = false;
+      _storyTrashArmed = false;
+      _storyStickerDeleteScale.clear();
+    });
+  }
+
+  void _deleteStoryStickerAt(int index) {
+    if (!mounted) return;
+    setState(() {
+      if (index >= 0 && index < _storyStickers.length) {
+        _storyStickers.removeAt(index);
+      }
+      _storyActiveStickerIndex =
+          _storyStickers.isEmpty ? null : (_storyStickers.length - 1);
+      _isStoryStickerDeleteMode = false;
+      _storySuppressStickerTap = false;
+      _storyTrashArmed = false;
+      _storyStickerDeleteScale.clear();
+    });
+  }
+
+  void _updateStoryStickerDeleteScale(int index) {
+    if (!_isStoryStickerDeleteMode) return;
+    final center = _storyTrashCenterLocal();
+    final distance = (center - _storyStickerLastLocalFocalPoint).distance;
+    const threshold = 120.0;
+    final t = (distance / threshold).clamp(0.0, 1.0);
+    final scale = 0.2 + (0.8 * t);
+    _storyStickerDeleteScale[_storyStickers[index].id] = scale;
+    _storyTrashArmed = distance <= 44;
+  }
+
+  void _handleStoryStickerDeleteEnd(int index) {
+    _cancelStoryStickerHold();
+    if (!_isStoryStickerDeleteMode) return;
+    if (index < 0 || index >= _storyStickers.length) {
+      _exitStoryStickerDeleteMode();
+      return;
+    }
+    final trashCenter = _storyTrashCenterLocal();
+    if ((_storyStickerLastLocalFocalPoint - trashCenter).distance <= 44) {
+      _deleteStoryStickerAt(index);
+    } else {
+      _exitStoryStickerDeleteMode();
+    }
+  }
+
+  void _startStoryTextHold(int index) {
+    _storyTextHoldTimer?.cancel();
+    _storyTextHoldTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      setState(() {
+        _storySuppressTextTap = true;
+        _isStoryTextDeleteMode = true;
+        _storyActiveElementIndex = index;
+        _storyTextDeleteScale[index] = 1.0;
+        _storyTrashArmed = false;
+      });
+    });
+  }
+
+  void _cancelStoryTextHold() {
+    _storyTextHoldTimer?.cancel();
+    _storyTextHoldTimer = null;
+  }
+
+  void _exitStoryTextDeleteMode() {
+    if (!mounted) return;
+    setState(() {
+      _isStoryTextDeleteMode = false;
+      _storySuppressTextTap = false;
+      _storyTrashArmed = false;
+      _storyTextDeleteScale.clear();
+    });
+  }
+
+  void _deleteStoryTextAt(int index) {
+    if (!mounted) return;
+    setState(() {
+      if (index >= 0 && index < _storyElements.length) {
+        _storyElements.removeAt(index);
+      }
+      _storyActiveElementIndex =
+          _storyElements.isEmpty ? null : (_storyElements.length - 1);
+      _isStoryTextDeleteMode = false;
+      _storySuppressTextTap = false;
+      _storyTrashArmed = false;
+      _storyTextDeleteScale.clear();
+    });
+  }
+
+  void _handleStoryTextDeleteEnd(int index) {
+    _cancelStoryTextHold();
+    if (!_isStoryTextDeleteMode) return;
+    if (index < 0 || index >= _storyElements.length) {
+      _exitStoryTextDeleteMode();
+      return;
+    }
+    final trashCenter = _storyTrashCenterLocal();
+    if ((_storyLastLocalFocalPoint - trashCenter).distance <= 44) {
+      _deleteStoryTextAt(index);
+    } else {
+      _exitStoryTextDeleteMode();
+    }
+  }
+
+  Future<ImageProvider> _buildStoryTextEditorBackground() async {
+    final devicePixelRatio = View.of(context).devicePixelRatio;
+    if (mounted) {
+      setState(() => _hideStoryTextOverlaysForCapture = true);
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    if (!mounted) {
+      if (_editingImageBytes != null) {
+        return MemoryImage(_editingImageBytes!);
+      }
+      return const AssetImage('assets/images/dashboard_sample.png');
+    }
+    final boundary = _storyRepaintKey.currentContext?.findRenderObject();
+    try {
+      if (boundary is RenderRepaintBoundary) {
+        final pixelRatio = math.min(2.0, devicePixelRatio);
+        final image = await boundary.toImage(pixelRatio: pixelRatio);
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (data != null) {
+          return MemoryImage(data.buffer.asUint8List());
+        }
+      }
+    } catch (_) {
+      // Fallback below.
+    } finally {
+      if (mounted) {
+        setState(() => _hideStoryTextOverlaysForCapture = false);
+      }
+    }
+    if (_editingImageBytes != null) {
+      return MemoryImage(_editingImageBytes!);
+    }
+    return const AssetImage('assets/images/dashboard_sample.png');
+  }
+
+  Future<void> _openStoryTextEditor({int? index}) async {
+    final existing =
+        index != null && index >= 0 && index < _storyElements.length ? _storyElements[index] : null;
+    final background = await _buildStoryTextEditorBackground();
+    if (!mounted) return;
+    final normalizedInitialPosition =
+        existing != null ? _normalizeStoryPosition(existing.position) : null;
+    final result = await InstagramTextEditor.open(
+      context,
+      backgroundImage: background,
+      initialText: existing?.text,
+      initialColor: existing?.textColor ?? _storyCurrentColor,
+      initialAlignment: existing?.alignment ?? TextAlign.center,
+      initialBackgroundStyle: existing?.backgroundStyle ?? BackgroundStyle.none,
+      initialScale: existing?.scale ?? 1.0,
+      initialRotation: existing?.rotation ?? 0.0,
+      initialPosition: normalizedInitialPosition,
+      initialFont: existing?.fontName ?? 'Modern',
+      initialFontSize: existing?.fontSize ?? 32.0,
+    );
+
+    if (result == null || !mounted) return;
+    if (result.text.trim().isEmpty) return;
+
+    final resolvedPosition = _denormalizeStoryPosition(result.position);
+    final overlay = _StoryOverlayElement.text(
+      result.text,
+      style: result.style,
+      alignment: result.alignment,
+      backgroundStyle: result.backgroundStyle,
+      fontName: result.fontName,
+      fontSize: result.fontSize,
+      textColor: result.textColor,
+      position: resolvedPosition,
+      scale: result.scale,
+      rotation: result.rotation,
+      mentions: existing?.mentions ?? const [],
+    );
+    final clamped = overlay.copyWith(
+      position: _clampStoryTextPosition(overlay, overlay.position, overlay.scale),
+    );
+
+    setState(() {
+      final targetIndex = index ?? _storyActiveElementIndex;
+      if (targetIndex != null &&
+          targetIndex >= 0 &&
+          targetIndex < _storyElements.length) {
+        _storyElements[targetIndex] = clamped;
+        _storyActiveElementIndex = targetIndex;
+      } else {
+        _storyElements.add(clamped);
+        _storyActiveElementIndex = _storyElements.length - 1;
+      }
+      _storyCurrentColor = clamped.textColor;
+    });
+  }
+
+  void _openStoryStickerPicker() {
+    final stickers = [
+      _StoryStickerType.like,
+      _StoryStickerType.wow,
+      _StoryStickerType.fire,
+      _StoryStickerType.music,
+      _StoryStickerType.travel,
+      _StoryStickerType.coffee,
+    ];
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          top: false,
+          child: GridView.builder(
+            padding: const EdgeInsets.all(16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 1,
+            ),
+            itemCount: stickers.length,
+            itemBuilder: (context, index) {
+              final sticker = stickers[index];
+              return GestureDetector(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  final center = _storyStickerCenter();
+                  setState(() {
+                    _storyStickers.add(
+                      _StorySticker(
+                        id: DateTime.now().millisecondsSinceEpoch.toString(),
+                        type: sticker,
+                        position: center,
+                        scale: 1.0,
+                        rotation: 0.0,
+                      ),
+                    );
+                    _storyActiveStickerIndex = _storyStickers.length - 1;
+                  });
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white10,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24, width: 1),
+                  ),
+                  child: Center(
+                    child: _buildStoryStickerWidget(sticker, size: 60),
+                  ),
+                ),
+              );
+            },
           ),
         );
       },
     );
   }
+  Future<void> _openStoryMentionSheet() async {
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+    List<Map<String, dynamic>> results = [];
+    bool loading = true;
+    Future<void> loadResults(StateSetter setModalState) async {
+      setModalState(() {
+        loading = true;
+      });
+      try {
+        final fetched = await UsersApi().search('');
+        if (!mounted) return;
+        setModalState(() {
+          results = fetched;
+          loading = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setModalState(() {
+          results = [];
+          loading = false;
+        });
+      }
+    }
 
-  void _startStoryStroke(Offset pos) {
-    if (!_storyDrawingMode) return;
-    setState(() {
-      _storyStrokes.add(_StoryStroke(color: _storyCurrentColor, size: _storyBrushSize, points: [pos]));
-      _storyRedo.clear();
-    });
-  }
-
-  void _appendStoryStroke(Offset pos) {
-    if (!_storyDrawingMode || _storyStrokes.isEmpty) return;
-    setState(() {
-      _storyStrokes.last.points.add(pos);
-    });
-  }
-
-  Future<_StoryOverlayElement?> _showStoryTextEditor({
-    String initialText = '',
-    String initialStyle = 'Classic',
-    Color? initialColor,
-    List<_StoryMention> initialMentions = const [],
-  }) {
-    final controller = TextEditingController(text: initialText);
-    String style = initialStyle;
-    Color color = initialColor ?? _storyCurrentColor;
-    List<_StoryMention> selectedMentions = List.of(initialMentions);
-    List<Map<String, dynamic>> mentionResults = [];
-    bool showMentionList = false;
-    bool mentionLoading = false;
-    String currentMentionQuery = '';
-    return showModalBottomSheet<_StoryOverlayElement>(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
       builder: (ctx) {
         final media = MediaQuery.of(ctx);
+        final height = media.size.height * 0.55;
         return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            TextStyle textStyleFor(String name, Color c) {
-              switch (name) {
-                case 'Modern':
-                  return TextStyle(
-                    color: c,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: 0.0,
-                  );
-                case 'Neon':
-                  return TextStyle(
-                    color: c,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                    shadows: [
-                      Shadow(
-                        color: c.withAlpha(160),
-                        blurRadius: 14,
-                      ),
-                    ],
-                  );
-                case 'Typewriter':
-                  return TextStyle(
-                    color: c,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 2.0,
-                  );
-                case 'Strong':
-                  return TextStyle(
-                    color: c,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                  );
-                case 'Classic':
-                default:
-                  return TextStyle(
-                    color: c,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  );
-              }
+          builder: (context, setModalState) {
+            if (loading && results.isEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!loading) return;
+                loadResults(setModalState);
+              });
             }
-
-            return Container(
-              color: Colors.black.withAlpha(230),
-              padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
-              child: SafeArea(
+            return SafeArea(
+              top: false,
+              child: Container(
+                height: height,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF0F1115),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+                ),
                 child: Column(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            icon: const Icon(Icons.close, color: Colors.white),
-                          ),
-                          const Spacer(),
-                          TextButton(
-                            onPressed: () {
-                              final text = controller.text.trim().isEmpty ? 'Tap to edit' : controller.text.trim();
-                              Navigator.pop(
-                                ctx,
-                                _StoryOverlayElement.text(
-                                  text,
-                                  style: style,
-                                  color: color,
-                                  mentions: selectedMentions,
-                                ),
-                              );
-                            },
-                            child: const Text(
-                              'Done',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 46,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    Expanded(
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: TextField(
-                            controller: controller,
-                            autofocus: true,
-                            textAlign: TextAlign.center,
-                            maxLines: null,
-                            style: textStyleFor(style, color),
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              hintText: 'Type something...',
-                              hintStyle: TextStyle(color: Colors.white54),
+                    const SizedBox(height: 16),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Mention',
+                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () async {
+                          Navigator.of(ctx).pop();
+                          if (!mounted) return;
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (screenCtx) => _StoryMentionPickerScreen(
+                                initialSelected: List.of(_storyHiddenMentions),
+                                onDone: (selected) {
+                                  setState(() {
+                                    _storyHiddenMentions
+                                      ..clear()
+                                      ..addAll(selected);
+                                  });
+                                },
+                              ),
                             ),
-                            onChanged: (value) async {
-                              final selection = controller.selection;
-                              int cursor = selection.baseOffset;
-                              if (cursor < 0 || cursor > value.length) {
-                                cursor = value.length;
-                              }
-                              final prefix = value.substring(0, cursor);
-                              final atIndex = prefix.lastIndexOf('@');
-                              if (atIndex == -1) {
-                                setModalState(() {
-                                  showMentionList = false;
-                                  mentionResults = [];
-                                  currentMentionQuery = '';
-                                });
-                                return;
-                              }
-                              // Allow @ mentions anywhere in the text; we only
-                              // restrict by the characters that follow it.
-                              final afterAt = prefix.substring(atIndex + 1);
-                              if (afterAt.contains(' ')) {
-                                setModalState(() {
-                                  showMentionList = false;
-                                  mentionResults = [];
-                                  currentMentionQuery = '';
-                                });
-                                return;
-                              }
-
-                              currentMentionQuery = afterAt;
-
-                              setModalState(() {
-                                mentionLoading = true;
-                                showMentionList = true;
-                              });
-
-                              try {
-                                List<Map<String, dynamic>> results;
-                                if (currentMentionQuery.isEmpty) {
-                                  // No query yet – show a default list of users.
-                                  results = await SupabaseService().fetchUsers(limit: 20);
-                                } else {
-                                  results = await UsersApi().search(currentMentionQuery);
-                                  if (results.isEmpty) {
-                                    // Fallback to local samples so UI still shows something.
-                                    results = await SupabaseService().fetchUsers(limit: 20);
-                                  }
-                                }
-                                setModalState(() {
-                                  mentionLoading = false;
-                                  mentionResults = results;
-                                  showMentionList = results.isNotEmpty;
-                                });
-                              } catch (_) {
-                                try {
-                                  final fallback = await SupabaseService().fetchUsers(limit: 20);
-                                  setModalState(() {
-                                    mentionLoading = false;
-                                    mentionResults = fallback;
-                                    showMentionList = fallback.isNotEmpty;
-                                  });
-                                } catch (_) {
-                                  setModalState(() {
-                                    mentionLoading = false;
-                                    mentionResults = [];
-                                    showMentionList = false;
-                                  });
-                                }
-                              }
-                            },
+                          );
+                        },
+                        child: Container(
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF232833),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Row(
+                            children: [
+                              SizedBox(width: 12),
+                              Icon(Icons.search, color: Colors.white54, size: 20),
+                              SizedBox(width: 8),
+                              Text('Search', style: TextStyle(color: Colors.white54)),
+                            ],
                           ),
                         ),
                       ),
                     ),
-                    if (showMentionList)
-                      SizedBox(
-                        height: 160,
-                        child: Container(
-                          color: Colors.black.withAlpha(230),
-                          child: mentionLoading
+                    const SizedBox(height: 12),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          "People added here will be mentioned in your story but their username won't be visible.",
+                          style: TextStyle(color: Colors.white60, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: loading
+                          ? const Center(
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              ),
+                            )
+                          : results.isEmpty
                               ? const Center(
-                                  child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                    ),
+                                  child: Text(
+                                    'No suggestions right now',
+                                    style: TextStyle(color: Colors.white38),
                                   ),
                                 )
-                              : ListView.builder(
-                                  itemCount: mentionResults.length,
+                              : ListView.separated(
+                                  itemCount: results.length,
+                                  separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white12),
                                   itemBuilder: (context, index) {
-                                    final user = mentionResults[index];
+                                    final user = results[index];
                                     final username = (user['username'] as String?) ?? '';
                                     final fullName = user['full_name'] as String?;
                                     final avatarUrl = user['avatar_url'] as String?;
+                                    final userId = (user['id'] as String?) ?? (user['_id'] as String?) ?? '';
+                                    final selected = userId.isNotEmpty &&
+                                        _storyHiddenMentions.any((m) => m.userId == userId);
                                     return ListTile(
                                       leading: CircleAvatar(
                                         backgroundColor: Colors.white24,
@@ -2712,118 +3555,46 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                             : null,
                                       ),
                                       title: Text(
-                                        username,
+                                        fullName?.isNotEmpty == true ? fullName! : username,
                                         style: const TextStyle(color: Colors.white),
                                       ),
-                                      subtitle: fullName != null
-                                          ? Text(
-                                              fullName,
-                                              style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                            )
-                                          : null,
-                                      onTap: () {
-                                        final value = controller.text;
-                                        final selection = controller.selection;
-                                        int cursor = selection.baseOffset;
-                                        if (cursor < 0 || cursor > value.length) {
-                                          cursor = value.length;
-                                        }
-                                        final prefix = value.substring(0, cursor);
-                                        final suffix = value.substring(cursor);
-                                        final atIndex = prefix.lastIndexOf('@');
-                                        if (atIndex == -1) {
-                                          return;
-                                        }
-                                        final before = value.substring(0, atIndex);
-                                        final mentionText = '@$username ';
-                                        final newText = before + mentionText + suffix;
-                                        controller.value = controller.value.copyWith(
-                                          text: newText,
-                                          selection: TextSelection.collapsed(
-                                            offset: (before + mentionText).length,
+                                      subtitle: Text(
+                                        username,
+                                        style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                      ),
+                                      trailing: Container(
+                                        width: 22,
+                                        height: 22,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: Colors.white,
+                                            width: 2,
                                           ),
-                                        );
-                                        final userId = (user['id'] as String?) ?? (user['_id'] as String?) ?? '';
-                                        if (userId.isNotEmpty &&
-                                            !selectedMentions.any((m) => m.userId == userId)) {
-                                          selectedMentions.add(
-                                            _StoryMention(userId: userId, username: username),
-                                          );
-                                        }
-                                        setModalState(() {
-                                          showMentionList = false;
-                                          mentionResults = [];
+                                          color: selected ? Colors.white : Colors.transparent,
+                                        ),
+                                        child: selected
+                                            ? const Icon(Icons.check, color: Colors.black, size: 14)
+                                            : null,
+                                      ),
+                                      onTap: () {
+                                        if (userId.isEmpty) return;
+                                        setState(() {
+                                          final idx = _storyHiddenMentions.indexWhere((m) => m.userId == userId);
+                                          if (idx == -1) {
+                                            _storyHiddenMentions.add(
+                                              _StoryMention(userId: userId, username: username),
+                                            );
+                                          } else {
+                                            _storyHiddenMentions.removeAt(idx);
+                                          }
                                         });
+                                        setModalState(() {});
                                       },
                                     );
                                   },
                                 ),
-                        ),
-                      ),
-                    SizedBox(
-                      height: 40,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          for (final s in ['Classic', 'Modern', 'Neon', 'Typewriter', 'Strong'])
-                            GestureDetector(
-                              onTap: () {
-                                setModalState(() {
-                                  style = s;
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                margin: const EdgeInsets.only(right: 8),
-                                decoration: BoxDecoration(
-                                  color: s == style ? Colors.white.withAlpha(80) : Colors.white.withAlpha(30),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Text(
-                                  s,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: s == style ? FontWeight.bold : FontWeight.normal,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
                     ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 32,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          for (final c in [Colors.white, Colors.black, Colors.red, Colors.yellow, Colors.green, Colors.blue, Colors.purple])
-                            GestureDetector(
-                              onTap: () {
-                                setModalState(() {
-                                  color = c;
-                                });
-                              },
-                              child: Container(
-                                width: 26,
-                                height: 26,
-                                margin: const EdgeInsets.only(right: 8),
-                                decoration: BoxDecoration(
-                                  color: c,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: c == color ? Colors.white : Colors.white54,
-                                    width: c == color ? 2 : 1,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -2834,39 +3605,184 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     );
   }
 
-  void _storyAddText() {
-    _showStoryTextEditor().then((value) {
-      if (value != null && mounted) {
-        setState(() {
-          _storyCurrentColor = value.color ?? _storyCurrentColor;
-          _storyElements.add(value);
-          _storyActiveElementIndex = _storyElements.length - 1;
-        });
-      }
+  void _startStoryStroke(Offset pos) {
+    if (!_storyDrawingMode) return;
+    final bool isEraser = _storyBrushType == _StoryBrushType.eraser;
+    double opacity = 1.0;
+    double blurSigma = 0.0;
+    switch (_storyBrushType) {
+      case _StoryBrushType.marker:
+        opacity = 0.65;
+        break;
+      case _StoryBrushType.neon:
+        opacity = 0.9;
+        blurSigma = 6.0;
+        break;
+      case _StoryBrushType.eraser:
+      case _StoryBrushType.pen:
+        break;
+    }
+    setState(() {
+      _storyStrokes.add(
+        _StoryStroke(
+          color: _storyCurrentColor,
+          size: _storyBrushSize,
+          opacity: opacity,
+          blurSigma: blurSigma,
+          isEraser: isEraser,
+          points: [pos],
+        ),
+      );
+      _storyRedo.clear();
     });
   }
 
-  Future<void> _storyEditText(_StoryOverlayElement e) async {
-    final updated = await _showStoryTextEditor(
-      initialText: e.text ?? '',
-      initialStyle: e.style ?? 'Classic',
-      initialColor: e.color ?? Colors.white,
-      initialMentions: e.mentions,
+  void _appendStoryStroke(Offset pos) {
+    if (!_storyDrawingMode || _storyStrokes.isEmpty) return;
+    setState(() {
+      _storyStrokes.last.points.add(pos);
+    });
+  }
+
+  void _storyUndoStroke() {
+    if (_storyStrokes.isEmpty) return;
+    setState(() {
+      _storyRedo.add(_storyStrokes.removeLast());
+    });
+  }
+
+  void _storyExitDrawMode() {
+    setState(() {
+      _storyDrawingMode = false;
+    });
+  }
+
+  Widget _buildStoryBrushButton({
+    required _StoryBrushType type,
+    required IconData icon,
+  }) {
+    final bool isActive = _storyBrushType == type;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _storyBrushType = type;
+        });
+      },
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isActive ? Colors.white : Colors.transparent,
+          border: Border.all(color: Colors.white, width: 1.6),
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: isActive ? Colors.black : Colors.white,
+        ),
+      ),
     );
-    if (updated != null && mounted) {
-      setState(() {
-        final idx = _storyElements.indexOf(e);
-        if (idx != -1) {
-          _storyElements[idx] = e.copyWith(
-            text: updated.text,
-            style: updated.style,
-            color: updated.color,
-            mentions: updated.mentions,
-          );
-          _storyCurrentColor = updated.color ?? _storyCurrentColor;
-        }
-      });
-    }
+  }
+
+  Widget _buildStoryBrushSizeBar() {
+    const double minSize = 2.0;
+    const double maxSize = 28.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.maxHeight;
+        final t = (_storyBrushSize - minSize) / (maxSize - minSize);
+        final thumbY = (1 - t).clamp(0.0, 1.0) * height;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (d) {
+            final local = d.localPosition.dy.clamp(0.0, height);
+            final newT = 1 - local / height;
+            setState(() {
+              _storyBrushSize = minSize + newT * (maxSize - minSize);
+            });
+          },
+          onVerticalDragUpdate: (d) {
+            final local = d.localPosition.dy.clamp(0.0, height);
+            final newT = 1 - local / height;
+            setState(() {
+              _storyBrushSize = minSize + newT * (maxSize - minSize);
+            });
+          },
+          child: Stack(
+            alignment: Alignment.topCenter,
+            children: [
+              Align(
+                alignment: Alignment.center,
+                child: Container(
+                  width: 4,
+                  height: height,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: thumbY - 10,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStoryDrawTopBar() {
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: _storyUndoStroke,
+          child: Text(
+            'Undo',
+            style: TextStyle(
+              color: _storyStrokes.isEmpty ? Colors.white38 : Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const Spacer(),
+        _buildStoryBrushButton(type: _StoryBrushType.pen, icon: Icons.edit),
+        const SizedBox(width: 12),
+        _buildStoryBrushButton(type: _StoryBrushType.marker, icon: Icons.brush),
+        const SizedBox(width: 12),
+        _buildStoryBrushButton(type: _StoryBrushType.neon, icon: Icons.auto_awesome),
+        const SizedBox(width: 12),
+        _buildStoryBrushButton(type: _StoryBrushType.eraser, icon: Icons.cleaning_services),
+        const Spacer(),
+        GestureDetector(
+          onTap: _storyExitDrawMode,
+          child: const Text(
+            'Done',
+            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _storyAddText() {
+    _openStoryTextEditor();
+  }
+
+  Future<void> _storyEditText(_StoryOverlayElement e) async {
+    final idx = _storyElements.indexOf(e);
+    if (idx == -1) return;
+    _openStoryTextEditor(index: idx);
   }
 
   Future<void> _storyPostYourStory() async {
@@ -3028,6 +3944,17 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
           }
         }
       }
+      for (final m in _storyHiddenMentions) {
+        if (mentionsPayload.any((item) => item['user_id'] == m.userId)) {
+          continue;
+        }
+        mentionsPayload.add({
+          'user_id': m.userId,
+          'username': m.username,
+          'x': 0.5,
+          'y': 0.9,
+        });
+      }
 
       final storyItem = <String, dynamic>{
         'media': mediaPayload,
@@ -3039,11 +3966,11 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
             .where((e) => e.type == _StoryElementType.text)
             .map((e) => {
                   'content': e.text ?? '',
-                  'fontSize': 24.0,
-                  'fontFamily': (e.style ?? 'classic').toLowerCase(),
+                  'fontSize': e.fontSize,
+                  'fontFamily': e.fontName.toLowerCase(),
                   'color':
-                      '#${(e.color ?? Colors.white).toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}',
-                  'align': 'center',
+                      '#${e.textColor.toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}',
+                  'align': _textAlignToApi(e.alignment),
                   'x': e.position.dx / screenSize.width,
                   'y': e.position.dy / screenSize.height,
                 })
@@ -3369,6 +4296,210 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StoryMentionPickerScreen extends StatefulWidget {
+  final List<_StoryMention> initialSelected;
+  final ValueChanged<List<_StoryMention>> onDone;
+
+  const _StoryMentionPickerScreen({
+    required this.initialSelected,
+    required this.onDone,
+  });
+
+  @override
+  State<_StoryMentionPickerScreen> createState() => _StoryMentionPickerScreenState();
+}
+
+class _StoryMentionPickerScreenState extends State<_StoryMentionPickerScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _results = [];
+  bool _loading = true;
+  final List<_StoryMention> _selected = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _selected.addAll(widget.initialSelected);
+    _loadResults('');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      FocusScope.of(context).unfocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadResults(String query) async {
+    setState(() => _loading = true);
+    try {
+      final fetched = await UsersApi().search(query);
+      if (!mounted) return;
+      setState(() {
+        _results = fetched;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _results = [];
+        _loading = false;
+      });
+    }
+  }
+
+  void _toggleUser(String userId, String username) {
+    final idx = _selected.indexWhere((m) => m.userId == userId);
+    if (idx == -1) {
+      _selected.add(_StoryMention(userId: userId, username: username));
+    } else {
+      _selected.removeAt(idx);
+    }
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F1115),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0F1115),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Mention',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              widget.onDone(List.of(_selected));
+              Navigator.pop(context);
+            },
+            child: const Text('Done', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Container(
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFF232833),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  const Icon(Icons.search, color: Colors.white54, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (value) => _loadResults(value.trim()),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        hintText: 'Search',
+                        hintStyle: TextStyle(color: Colors.white54),
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                "People added here will be mentioned in your story but their username won't be visible.",
+                style: TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: _results.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white12),
+                    itemBuilder: (context, index) {
+                      final user = _results[index];
+                      final username = (user['username'] as String?) ?? '';
+                      final fullName = user['full_name'] as String?;
+                      final avatarUrl = user['avatar_url'] as String?;
+                      final userId = (user['id'] as String?) ?? (user['_id'] as String?) ?? '';
+                      final selected = userId.isNotEmpty &&
+                          _selected.any((m) => m.userId == userId);
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.white24,
+                          backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                              ? NetworkImage(avatarUrl)
+                              : null,
+                          child: avatarUrl == null || avatarUrl.isEmpty
+                              ? Text(
+                                  username.isNotEmpty ? username[0].toUpperCase() : '?',
+                                  style: const TextStyle(color: Colors.white),
+                                )
+                              : null,
+                        ),
+                        title: Text(
+                          fullName?.isNotEmpty == true ? fullName! : username,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        subtitle: Text(
+                          username,
+                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                        ),
+                        trailing: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 2,
+                            ),
+                            color: selected ? Colors.white : Colors.transparent,
+                          ),
+                          child: selected
+                              ? const Icon(Icons.check, color: Colors.black, size: 14)
+                              : null,
+                        ),
+                        onTap: () {
+                          if (userId.isEmpty) return;
+                          _toggleUser(userId, username);
+                        },
+                      );
+                    },
+                  ),
           ),
         ],
       ),

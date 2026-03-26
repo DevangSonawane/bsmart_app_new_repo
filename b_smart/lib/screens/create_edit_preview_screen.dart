@@ -2825,8 +2825,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           return const Center(
               child: CircularProgressIndicator(color: Colors.white));
         }
-        final Size videoSize = controller.value.size;
-
         return GestureDetector(
           onTap: () {
             setState(() {
@@ -2851,18 +2849,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                     fit: BoxFit.cover,
                     clipBehavior: Clip.hardEdge,
                     child: SizedBox(
-                      width: math.min(videoSize.width, videoSize.height),
-                      height: math.max(videoSize.width, videoSize.height),
-                      child: Center(
-                        child: RotatedBox(
-                          quarterTurns: 1,
-                          child: SizedBox(
-                            width: videoSize.width,
-                            height: videoSize.height,
-                            child: VideoPlayer(controller),
-                          ),
-                        ),
-                      ),
+                      width: controller.value.size.width,
+                      height: controller.value.size.height,
+                      child: VideoPlayer(controller),
                     ),
                   ),
                 ),
