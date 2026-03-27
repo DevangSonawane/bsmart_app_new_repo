@@ -21,6 +21,9 @@ import 'create_post_screen.dart';
 import 'create_upload_screen.dart';
 import 'create_edit_preview_screen.dart';
 import '../api/api.dart';
+import '../state/store.dart';
+import '../utils/url_helper.dart';
+import '../services/story_cache.dart';
 
 class StoryCameraScreen extends StatefulWidget {
   final UploadMode initialMode;
@@ -443,7 +446,7 @@ class _StoryDrawingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _StoryDrawingPainter oldDelegate) => oldDelegate.strokes != strokes;
+  bool shouldRepaint(covariant _StoryDrawingPainter oldDelegate) => true;
 }
 
 List<double> _storyFilterMatrixBase({double brightness = 1, double contrast = 1, double saturation = 1}) {
@@ -601,6 +604,12 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   final List<bool> _layoutSlotFlips = [];
   int _layoutActiveIndex = 0;
   bool _storyFlipX = false;
+  bool _storySavingToGallery = false;
+  bool _storyCaptionOpen = false;
+  String _storyCaption = '';
+  final TextEditingController _storyCaptionController = TextEditingController();
+  final FocusNode _storyCaptionFocus = FocusNode();
+  bool _storyCommentingOff = false;
   bool _hideStoryTextOverlaysForCapture = false;
   bool _isStoryTextDeleteMode = false;
   Timer? _storyTextHoldTimer;
@@ -620,6 +629,18 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   bool _handlingStickerGesture = false;
   static const double _storyStickerBaseSize = 72.0;
   final List<_StoryMention> _storyHiddenMentions = [];
+  final List<String> _storyFilters = const [
+    'Original',
+    'Clarendon',
+    'Gingham',
+    'Moon',
+    'Lark',
+    'Reyes',
+    'Juno',
+  ];
+  String _storyFilterLabel = '';
+  double _storyFilterLabelOpacity = 0.0;
+  Timer? _storyFilterLabelTimer;
 
   @override
   void initState() {
@@ -635,6 +656,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     WidgetsBinding.instance.removeObserver(this);
     _storyTextHoldTimer?.cancel();
     _storyStickerHoldTimer?.cancel();
+    _storyCaptionController.dispose();
+    _storyCaptionFocus.dispose();
+    _storyFilterLabelTimer?.cancel();
     _controller?.dispose();
     _controller = null;
     _editingVideoController?.dispose();
@@ -2256,6 +2280,13 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                         _handleStoryTextDeleteEnd(activeIndex);
                       }
                     },
+                    onHorizontalDragEnd: (details) {
+                      if (_handlingStickerGesture) return;
+                      if (_storyDrawingMode) return;
+                      final v = details.primaryVelocity ?? 0;
+                      if (v.abs() < 250) return;
+                      _cycleStoryFilter(v < 0 ? 1 : -1);
+                    },
                     child: Stack(
                       children: [
                         LayoutBuilder(
@@ -2320,20 +2351,24 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                                   1.0,
                                                   1.0,
                                                 ),
-                                                child: Builder(
-                                                  builder: (context) {
-                                                    final double w = videoController.value.size.width;
-                                                    final double h = videoController.value.size.height;
-                                                    return FittedBox(
-                                                      fit: BoxFit.cover,
-                                                      clipBehavior: Clip.hardEdge,
-                                                      child: SizedBox(
-                                                        width: w,
-                                                        height: h,
-                                                        child: VideoPlayer(videoController),
-                                                      ),
-                                                    );
-                                                  },
+                                                child: ColorFiltered(
+                                                  colorFilter:
+                                                      ColorFilter.matrix(_storyFilterMatrixFor(_storyCurrentFilter)),
+                                                  child: Builder(
+                                                    builder: (context) {
+                                                      final double w = videoController.value.size.width;
+                                                      final double h = videoController.value.size.height;
+                                                      return FittedBox(
+                                                        fit: BoxFit.cover,
+                                                        clipBehavior: Clip.hardEdge,
+                                                        child: SizedBox(
+                                                          width: w,
+                                                          height: h,
+                                                          child: VideoPlayer(videoController),
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
                                                 ),
                                               ),
                                             ),
@@ -2485,15 +2520,23 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                                 );
                                               },
                                             ),
-                                          const Positioned(
+                                        if (!_storyDrawingMode &&
+                                            !_storyCommentingOff &&
+                                            !_hideStoryTextOverlaysForCapture)
+                                          Positioned(
                                             left: 16,
-                                            right: 16,
                                             bottom: 12,
-                                            child: Align(
-                                              alignment: Alignment.centerLeft,
+                                            child: GestureDetector(
+                                              onTap: _openStoryCaptionInput,
                                               child: Text(
-                                                'Add a caption...',
-                                                style: TextStyle(color: Colors.white70, fontSize: 16),
+                                                _storyCaption.isEmpty ? 'Add a caption...' : _storyCaption,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: _storyCaption.isEmpty ? Colors.white70 : Colors.white,
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -2510,8 +2553,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                           Positioned.fill(
                             child: GestureDetector(
                               behavior: HitTestBehavior.translucent,
-                              onPanStart: (d) => _startStoryStroke(d.localPosition),
-                              onPanUpdate: (d) => _appendStoryStroke(d.localPosition),
+                              onPanStart: (d) => _startStoryStroke(_toStoryLocal(d.globalPosition)),
+                              onPanUpdate: (d) => _appendStoryStroke(_toStoryLocal(d.globalPosition)),
                               child: const SizedBox.expand(),
                             ),
                           ),
@@ -2603,7 +2646,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                               const SizedBox(height: 10),
                                               _buildEditActionRow(
                                                 label: 'Download',
-                                                onTap: () {},
+                                                onTap: _storySavingToGallery ? () {} : _storySaveToGallery,
                                                 showLabel: true,
                                                 icon: const Icon(Icons.download_rounded, color: Colors.white, size: 22),
                                               ),
@@ -2660,6 +2703,25 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                               child: _buildStoryBrushSizeBar(),
                             ),
                           ),
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: AnimatedOpacity(
+                              opacity: _storyFilterLabelOpacity,
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOut,
+                              child: Center(
+                                child: Text(
+                                  _storyFilterLabel,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                         Positioned(
                           right: 96,
                           bottom: 180,
@@ -2679,23 +2741,42 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                     color: const Color(0xFF4A4A4A),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
-                                  child: const Column(
+                                  child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Row(
+                                      const Row(
                                         children: [
                                           Icon(LucideIcons.tag, color: Colors.white, size: 18),
                                           SizedBox(width: 10),
                                           Text('Label AI', style: TextStyle(color: Colors.white, fontSize: 14)),
                                         ],
                                       ),
-                                      SizedBox(height: 12),
-                                      Row(
-                                        children: [
-                                          Icon(LucideIcons.eyeOff, color: Colors.white, size: 18),
-                                          SizedBox(width: 10),
-                                          Text('Turn off commenting', style: TextStyle(color: Colors.white, fontSize: 14)),
-                                        ],
+                                      const SizedBox(height: 12),
+                                      GestureDetector(
+                                        onTap: () {
+                                          setState(() {
+                                            _storyCommentingOff = !_storyCommentingOff;
+                                            if (_storyCommentingOff) {
+                                              _storyCaptionOpen = false;
+                                              _storyCaptionFocus.unfocus();
+                                            }
+                                            _showMoreMenu = false;
+                                          });
+                                        },
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              _storyCommentingOff ? LucideIcons.eyeOff : LucideIcons.messageCircleOff,
+                                              color: Colors.white,
+                                              size: 18,
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Text(
+                                              _storyCommentingOff ? 'Commenting off' : 'Turn off commenting',
+                                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -2704,6 +2785,77 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                             ),
                           ),
                         ),
+                        if (_storyCaptionOpen)
+                          Positioned.fill(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onTap: _closeStoryCaptionInput,
+                              child: Container(
+                                color: Colors.black.withAlpha(80),
+                                alignment: Alignment.bottomCenter,
+                                child: AnimatedPadding(
+                                  duration: const Duration(milliseconds: 160),
+                                  curve: Curves.easeOut,
+                                  padding: EdgeInsets.only(
+                                    left: 16,
+                                    right: 16,
+                                    bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+                                  ),
+                                  child: GestureDetector(
+                                    onTap: () {},
+                                    child: Container(
+                                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF2B2B2B),
+                                        borderRadius: BorderRadius.circular(24),
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            width: 36,
+                                            height: 4,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white24,
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Row(
+                                            children: [
+                                              const CircleAvatar(
+                                                radius: 18,
+                                                backgroundColor: Colors.white10,
+                                                child: Icon(Icons.person, color: Colors.white70, size: 18),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: TextField(
+                                                  controller: _storyCaptionController,
+                                                  focusNode: _storyCaptionFocus,
+                                                  autofocus: true,
+                                                  textInputAction: TextInputAction.done,
+                                                  onSubmitted: (_) => _closeStoryCaptionInput(),
+                                                  onChanged: (v) => setState(() => _storyCaption = v),
+                                                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                                                  decoration: const InputDecoration(
+                                                    hintText: 'Add a caption...',
+                                                    hintStyle: TextStyle(color: Colors.white54),
+                                                    border: InputBorder.none,
+                                                    isDense: true,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         Positioned(
                           left: 0,
                           right: 0,
@@ -2762,11 +2914,23 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                           borderRadius: BorderRadius.circular(22),
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: const Row(
+                        child: Row(
                           children: [
-                            CircleAvatar(radius: 12, backgroundColor: Colors.white24, child: Icon(Icons.person, size: 14, color: Colors.white)),
-                            SizedBox(width: 10),
-                            Text('Your story', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                            CircleAvatar(
+                              radius: 12,
+                              backgroundColor: Colors.white24,
+                              backgroundImage: _currentUserAvatarUrl() != null
+                                  ? NetworkImage(_currentUserAvatarUrl()!)
+                                  : null,
+                              child: _currentUserAvatarUrl() == null
+                                  ? const Icon(Icons.person, size: 14, color: Colors.white)
+                                  : null,
+                            ),
+                            const SizedBox(width: 10),
+                            const Text(
+                              'Your story',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
                           ],
                         ),
                       ),
@@ -3001,6 +3165,13 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     }
   }
 
+  String _textColorToApi(Color color) {
+    final argb = color.toARGB32();
+    if (argb == 0xFFFFFFFF) return 'white';
+    if (argb == 0xFF000000) return 'black';
+    return '#${argb.toRadixString(16).substring(2, 8).toUpperCase()}';
+  }
+
   Size? _storyPreviewSize() {
     final renderBox = _storyRepaintKey.currentContext?.findRenderObject() as RenderBox?;
     return renderBox?.size;
@@ -3025,6 +3196,12 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       normalized.dx * size.width,
       normalized.dy * size.height,
     );
+  }
+
+  Set<String> _extractMentionUsernames(String text) {
+    final exp = RegExp(r'@([A-Za-z0-9_\\.]+)');
+    final matches = exp.allMatches(text);
+    return matches.map((m) => m.group(1) ?? '').where((e) => e.isNotEmpty).toSet();
   }
 
   Size _measureStoryTextSize(_StoryOverlayElement overlay, double maxWidth) {
@@ -3293,6 +3470,13 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     if (result.text.trim().isEmpty) return;
 
     final resolvedPosition = _denormalizeStoryPosition(result.position);
+    final mentionList = result.mentions.isNotEmpty
+        ? result.mentions
+        : (existing?.mentions.map((m) => {
+              'user_id': m.userId,
+              'username': m.username,
+            }).toList() ??
+            const <Map<String, String>>[]);
     final overlay = _StoryOverlayElement.text(
       result.text,
       style: result.style,
@@ -3304,7 +3488,15 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       position: resolvedPosition,
       scale: result.scale,
       rotation: result.rotation,
-      mentions: existing?.mentions ?? const [],
+      mentions: mentionList
+          .map(
+            (m) => _StoryMention(
+              userId: m['user_id'] ?? '',
+              username: m['username'] ?? '',
+            ),
+          )
+          .where((m) => m.userId.isNotEmpty && m.username.isNotEmpty)
+          .toList(),
     );
     final clamped = overlay.copyWith(
       position: _clampStoryTextPosition(overlay, overlay.position, overlay.scale),
@@ -3657,6 +3849,62 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     });
   }
 
+  void _cycleStoryFilter(int direction) {
+    if (_storyFilters.isEmpty) return;
+    final currentIndex = _storyFilters.indexOf(_storyCurrentFilter);
+    final baseIndex = currentIndex >= 0 ? currentIndex : 0;
+    var next = baseIndex + direction;
+    if (next < 0) next = _storyFilters.length - 1;
+    if (next >= _storyFilters.length) next = 0;
+    setState(() {
+      _storyCurrentFilter = _storyFilters[next];
+      _storyFilterLabel = _storyCurrentFilter;
+      _storyFilterLabelOpacity = 1.0;
+    });
+    _storyFilterLabelTimer?.cancel();
+    _storyFilterLabelTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      setState(() => _storyFilterLabelOpacity = 0.0);
+    });
+  }
+
+  String? _currentUserAvatarUrl() {
+    Map<String, dynamic>? profile;
+    try {
+      profile = globalStore.state.profileState.profile;
+    } catch (_) {
+      profile = null;
+    }
+    final raw = (profile?['avatar_url'] ??
+            profile?['avatar'] ??
+            profile?['profile_image'] ??
+            profile?['profileImage'])
+        ?.toString()
+        .trim();
+    if (raw == null || raw.isEmpty) return null;
+    return UrlHelper.normalizeUrl(raw);
+  }
+
+  void _openStoryCaptionInput() {
+    if (_storyCaptionOpen) return;
+    setState(() {
+      _storyCaptionOpen = true;
+      _storyCaptionController.text = _storyCaption;
+      _storyCaptionController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _storyCaptionController.text.length),
+      );
+    });
+    Future.microtask(() => _storyCaptionFocus.requestFocus());
+  }
+
+  void _closeStoryCaptionInput() {
+    if (!_storyCaptionOpen) return;
+    _storyCaptionFocus.unfocus();
+    setState(() {
+      _storyCaptionOpen = false;
+    });
+  }
+
   Widget _buildStoryBrushButton({
     required _StoryBrushType type,
     required IconData icon,
@@ -3776,6 +4024,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   }
 
   void _storyAddText() {
+    setState(() {
+      _storyActiveElementIndex = null;
+    });
     _openStoryTextEditor();
   }
 
@@ -3796,7 +4047,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
   Future<void> _storyPostToApi({bool isCloseFriends = false}) async {
     try {
       final isVideoStory = _editingVideoFile != null;
-      final screenSize = MediaQuery.of(context).size;
+      // final screenSize = MediaQuery.of(context).size;
       debugPrint('\n════════════════════════════════════════');
       debugPrint('🚀 Starting Story Post');
       debugPrint('════════════════════════════════════════');
@@ -3849,7 +4100,14 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
 
         debugPrint('✅ RepaintBoundary found');
         debugPrint('\n📸 Capturing image from RepaintBoundary...');
+        if (mounted) {
+          setState(() => _hideStoryTextOverlaysForCapture = true);
+          await WidgetsBinding.instance.endOfFrame;
+        }
         final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+        if (mounted) {
+          setState(() => _hideStoryTextOverlaysForCapture = false);
+        }
         debugPrint('✅ Image captured: ${image.width}x${image.height}');
 
         final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -3933,13 +4191,14 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
 
       final mentionsPayload = <Map<String, dynamic>>[];
       for (final e in _storyElements.where((e) => e.type == _StoryElementType.text)) {
+        final normalized = _normalizeStoryPosition(e.position);
         for (final m in e.mentions) {
           if ((e.text ?? '').contains('@${m.username}')) {
             mentionsPayload.add({
               'user_id': m.userId,
               'username': m.username,
-              'x': e.position.dx / screenSize.width,
-              'y': e.position.dy / screenSize.height,
+              'x': normalized.dx,
+              'y': normalized.dy,
             });
           }
         }
@@ -3956,24 +4215,69 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
         });
       }
 
+      // Fallback: resolve @usernames typed manually (no selection)
+      final missingUsernames = <String>{};
+      for (final e in _storyElements.where((e) => e.type == _StoryElementType.text)) {
+        missingUsernames.addAll(_extractMentionUsernames(e.text ?? ''));
+      }
+      for (final existing in mentionsPayload) {
+        final u = (existing['username'] as String?) ?? '';
+        if (u.isNotEmpty) missingUsernames.remove(u);
+      }
+      for (final username in missingUsernames.take(8)) {
+        try {
+          final results = await UsersApi().search(username);
+          final match = results.firstWhere(
+            (u) => (u['username']?.toString().toLowerCase() ?? '') == username.toLowerCase(),
+            orElse: () => const {},
+          );
+          final userId = (match['id'] as String?) ?? (match['_id'] as String?) ?? '';
+          if (userId.isEmpty) continue;
+          mentionsPayload.add({
+            'user_id': userId,
+            'username': username,
+            'x': 0.5,
+            'y': 0.5,
+          });
+        } catch (_) {
+          // ignore lookup failures
+        }
+      }
+
       final storyItem = <String, dynamic>{
         'media': mediaPayload,
+        'transform': {
+          'x': 0.5,
+          'y': 0.5,
+          'scale': 1.0,
+          'rotation': 0.0,
+        },
         'filter': {
           'name': _storyCurrentFilter.toLowerCase(),
           'intensity': 1.0,
         },
         'texts': _storyElements
             .where((e) => e.type == _StoryElementType.text)
-            .map((e) => {
-                  'content': e.text ?? '',
-                  'fontSize': e.fontSize,
-                  'fontFamily': e.fontName.toLowerCase(),
-                  'color':
-                      '#${e.textColor.toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}',
-                  'align': _textAlignToApi(e.alignment),
-                  'x': e.position.dx / screenSize.width,
-                  'y': e.position.dy / screenSize.height,
-                })
+            .map((e) {
+              final normalized = _normalizeStoryPosition(e.position);
+              final bgEnabled = e.backgroundStyle != BackgroundStyle.none;
+              final bgOpacity = e.backgroundStyle == BackgroundStyle.transparent ? 0.3 : 0.6;
+              return {
+                'content': e.text ?? '',
+                'fontSize': e.fontSize,
+                'fontFamily': e.fontName.toLowerCase(),
+                  'color': _textColorToApi(e.textColor),
+                'align': _textAlignToApi(e.alignment),
+                'rotation': e.rotation,
+                'x': normalized.dx,
+                'y': normalized.dy,
+                  'background': {
+                    'enabled': bgEnabled,
+                    if (bgEnabled) 'color': '#000000',
+                    if (bgEnabled) 'opacity': bgOpacity,
+                  },
+              };
+            })
             .toList(),
         'mentions': mentionsPayload,
       };
@@ -3985,7 +4289,29 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       debugPrint('📋 Story item payload:');
       debugPrint(jsonEncode(storyItem));
 
-      final createResponse = await StoriesApi().create([storyItem]).timeout(const Duration(seconds: 15));
+      final createResponse =
+          await StoriesApi().create([storyItem]).timeout(const Duration(seconds: 15));
+
+      final mediaUrl = UrlHelper.normalizeUrl(mediaPayload['url'] as String? ?? '');
+      if (mediaUrl.isNotEmpty) {
+        StoryCache.put(mediaUrl, {
+          'texts': storyItem['texts'],
+          'mentions': storyItem['mentions'],
+        });
+      }
+      final items = createResponse['items'];
+      if (items is List && items.isNotEmpty) {
+        final item0 = items.first;
+        if (item0 is Map) {
+          final itemId = (item0['_id'] as String?) ?? '';
+          if (itemId.isNotEmpty) {
+            StoryCache.putById(itemId, {
+              'texts': storyItem['texts'],
+              'mentions': storyItem['mentions'],
+            });
+          }
+        }
+      }
 
       debugPrint('✅ Create response: $createResponse');
       debugPrint('\n════════════════════════════════════════');
@@ -4031,6 +4357,69 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       }
 
       _storyShowError('$errorMessage\n\nCheck console for details');
+    }
+  }
+
+  Future<void> _storySaveToGallery() async {
+    if (_storySavingToGallery) return;
+    setState(() => _storySavingToGallery = true);
+    try {
+      final PermissionState ps = await PhotoManager.requestPermissionExtend();
+      if (!ps.isAuth) {
+        _showStorySnack('Gallery permission is required to save.');
+        return;
+      }
+
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final title = 'bsmart_story_$stamp';
+
+      if (_editingVideoFile != null && _editingVideoController != null) {
+        final saved = await PhotoManager.editor.saveVideo(
+          _editingVideoFile!,
+          title: title,
+        );
+        if (saved == null) {
+          _showStorySnack('Failed to save video to gallery.');
+          return;
+        }
+      } else {
+        final boundary = _storyRepaintKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+        if (boundary == null) {
+          _showStorySnack('Unable to capture story image.');
+          return;
+        }
+
+        final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData == null) {
+          _showStorySnack('Failed to capture image.');
+          return;
+        }
+
+        var jpg = await FlutterImageCompress.compressWithList(
+          byteData.buffer.asUint8List(),
+          quality: 92,
+          format: CompressFormat.jpeg,
+        );
+
+        final saved = await PhotoManager.editor.saveImage(
+          jpg,
+          title: title,
+          filename: '$title.jpg',
+        );
+        if (saved == null) {
+          _showStorySnack('Failed to save image to gallery.');
+          return;
+        }
+      }
+
+      _showStorySnack('Saved to gallery.');
+    } catch (e) {
+      _showStorySnack('Save failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _storySavingToGallery = false);
+      }
     }
   }
 
@@ -4104,6 +4493,18 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
           textColor: Colors.white,
           onPressed: () => _storyPostToApi(),
         ),
+      ),
+    );
+  }
+
+  void _showStorySnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.black87,
+        duration: const Duration(seconds: 3),
       ),
     );
   }

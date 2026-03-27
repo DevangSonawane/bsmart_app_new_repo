@@ -245,6 +245,21 @@ class SupabaseService {
 
   Future<List<Map<String, dynamic>>> getUserPosts(String userId,
       {int limit = 20, int offset = 0}) async {
+    List<Map<String, dynamic>> slice(List<Map<String, dynamic>> posts) {
+      if (posts.isEmpty) return posts;
+      final safeOffset = offset < 0 ? 0 : offset;
+      if (safeOffset >= posts.length) return <Map<String, dynamic>>[];
+      final safeLimit = limit <= 0 ? posts.length : limit;
+      final end = (safeOffset + safeLimit);
+      return posts.sublist(
+        safeOffset,
+        end > posts.length ? posts.length : end,
+      );
+    }
+    try {
+      final posts = await _usersApi.getUserPosts(userId);
+      return slice(posts);
+    } catch (_) {}
     try {
       final data = await _usersApi.getUserProfile(userId);
       List<dynamic> posts = [];
@@ -258,7 +273,7 @@ class SupabaseService {
         posts = ((data['data'] as Map)['posts'] as List<dynamic>);
       }
       if (posts.isNotEmpty) {
-        return posts.cast<Map<String, dynamic>>();
+        return slice(posts.cast<Map<String, dynamic>>());
       }
     } catch (_) {}
     try {
@@ -287,7 +302,7 @@ class SupabaseService {
         }
         return false;
       }).toList();
-      return posts.cast<Map<String, dynamic>>();
+      return slice(posts.cast<Map<String, dynamic>>());
     } catch (_) {
       return [];
     }

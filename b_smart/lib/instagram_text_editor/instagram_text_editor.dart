@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'dart:ui';
 import 'dart:math' as math;
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../api/api.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vector_math/vector_math_64.dart' as vmath;
 import 'color_picker_strip.dart';
@@ -152,11 +154,19 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
   double _rotationStart = 0.0;
   bool _positionInitialized = false;
   Size _editorSize = Size.zero;
+  bool _showMentionStrip = false;
+  bool _mentionLoading = false;
+  int? _activeMentionStart;
+  String _mentionQuery = '';
+  List<Map<String, dynamic>> _mentionResults = [];
+  final List<Map<String, String>> _selectedMentions = [];
+  Timer? _mentionDebounce;
 
   @override
   void initState() {
     super.initState();
     _controller.text = widget.initialText ?? '';
+    _controller.addListener(_handleTextChange);
     _selectedFont = widget.initialFont;
     _alignment = widget.initialAlignment;
     _textColor = widget.initialColor;
@@ -185,9 +195,104 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
     if (_bgStream != null && _bgListener != null) {
       _bgStream!.removeListener(_bgListener!);
     }
+    _mentionDebounce?.cancel();
+    _controller.removeListener(_handleTextChange);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _handleTextChange() {
+    final selection = _controller.selection;
+    if (!selection.isValid) {
+      _hideMentions();
+      return;
+    }
+    final cursor = selection.baseOffset;
+    if (cursor < 0) {
+      _hideMentions();
+      return;
+    }
+    final text = _controller.text;
+    final start = _findMentionStart(text, cursor);
+    if (start == null) {
+      _hideMentions();
+      return;
+    }
+    final query = text.substring(start + 1, cursor);
+    _activeMentionStart = start;
+    _mentionQuery = query;
+    setState(() {
+      _showMentionStrip = true;
+      _showFontSelector = false;
+    });
+    _debouncedMentionSearch(query);
+  }
+
+  int? _findMentionStart(String text, int cursor) {
+    if (cursor == 0) return null;
+    for (int i = cursor - 1; i >= 0; i--) {
+      final ch = text[i];
+      if (ch == '@') return i;
+      if (ch == ' ' || ch == '\n' || ch == '\t') return null;
+    }
+    return null;
+  }
+
+  void _hideMentions() {
+    if (_showMentionStrip) {
+      setState(() => _showMentionStrip = false);
+    }
+    _activeMentionStart = null;
+    _mentionQuery = '';
+  }
+
+  void _debouncedMentionSearch(String query) {
+    _mentionDebounce?.cancel();
+    _mentionDebounce = Timer(const Duration(milliseconds: 200), () {
+      _loadMentionResults(query);
+    });
+  }
+
+  Future<void> _loadMentionResults(String query) async {
+    setState(() => _mentionLoading = true);
+    try {
+      final results = await UsersApi().search(query);
+      if (!mounted) return;
+      setState(() {
+        _mentionResults = results;
+        _mentionLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _mentionResults = [];
+        _mentionLoading = false;
+      });
+    }
+  }
+
+  void _insertMention(String userId, String username) {
+    final selection = _controller.selection;
+    if (_activeMentionStart == null || !selection.isValid) return;
+    final start = _activeMentionStart!;
+    final end = selection.baseOffset;
+    final text = _controller.text;
+    final replacement = '@$username ';
+    final newText = text.replaceRange(start, end, replacement);
+    final newCursor = start + replacement.length;
+    _controller.value = _controller.value.copyWith(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCursor),
+    );
+    final exists = _selectedMentions.any((m) => m['user_id'] == userId);
+    if (!exists) {
+      _selectedMentions.add({
+        'user_id': userId,
+        'username': username,
+      });
+    }
+    _hideMentions();
   }
 
   void _resolveBackgroundSize() {
@@ -493,6 +598,9 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
     final text = _controller.text.trim().isEmpty ? ' ' : _controller.text;
     final style = _baseTextStyle().copyWith(color: _textColor);
     final normalizedPosition = _normalizeToImageRect(_textPosition);
+    final filteredMentions = _selectedMentions
+        .where((m) => text.contains('@${m['username'] ?? ''}'))
+        .toList(growable: false);
     Navigator.of(context).pop(
       InstagramTextResult(
         text: text,
@@ -505,6 +613,7 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
         backgroundStyle: _backgroundStyle,
         fontName: _selectedFont,
         fontSize: _fontSizeValue,
+        mentions: filteredMentions,
       ),
     );
   }
@@ -609,14 +718,20 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                                       ),
                                       cursorColor: _textColor,
                                       maxLines: null,
+                                      keyboardType: TextInputType.multiline,
+                                      enableInteractiveSelection: false,
+                                      scrollPhysics: const NeverScrollableScrollPhysics(),
                                       decoration: const InputDecoration(
                                         border: InputBorder.none,
                                         hintText: '',
                                       ),
-                                      onChanged: (_) => setState(() {
-                                        _textPosition = _clampToImageRect(
-                                            _textPosition, _scale);
-                                      }),
+                                      onChanged: (_) {
+                                        _handleTextChange();
+                                        setState(() {
+                                          _textPosition = _clampToImageRect(
+                                              _textPosition, _scale);
+                                        });
+                                      },
                                     ),
                                   ),
                                 ),
@@ -665,7 +780,81 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                       ),
                     ),
                   ),
-                if (_showFontSelector)
+                if (_showMentionStrip)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: keyboardInset + (_showColorStrip ? 140 : 96),
+                    child: SizedBox(
+                      height: 86,
+                      child: _mentionLoading
+                          ? const Center(
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              ),
+                            )
+                              : _mentionResults.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No suggestions',
+                                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _mentionResults.length,
+                                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                                  itemBuilder: (context, index) {
+                                    final user = _mentionResults[index];
+                                    final username = (user['username'] as String?) ?? '';
+                                    final userId =
+                                        (user['id'] as String?) ?? (user['_id'] as String?) ?? '';
+                                    final avatarUrl = user['avatar_url'] as String?;
+                                    return GestureDetector(
+                                      onTap: username.isEmpty || userId.isEmpty
+                                          ? null
+                                          : () => _insertMention(userId, username),
+                                      child: SizedBox(
+                                        width: 70,
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 24,
+                                              backgroundColor: Colors.white24,
+                                              backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                                                  ? NetworkImage(avatarUrl)
+                                                  : null,
+                                              child: avatarUrl == null || avatarUrl.isEmpty
+                                                  ? Text(
+                                                      username.isNotEmpty ? username[0].toUpperCase() : '?',
+                                                      style: const TextStyle(color: Colors.white, fontSize: 18),
+                                                    )
+                                                  : null,
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              username.isEmpty ? 'user' : username,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                    ),
+                  ),
+                if (_showFontSelector && !_showMentionStrip)
                   Positioned(
                     left: 0,
                     right: 0,

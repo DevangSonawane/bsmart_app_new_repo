@@ -73,6 +73,9 @@ class StoriesApi {
 
   Future<List<Map<String, dynamic>>> archive() async {
     final res = await _client.get(_path('/stories/archive'));
+    if (res is Map && res['stories'] is List) {
+      return List<Map<String, dynamic>>.from(res['stories'] as List);
+    }
     return List<Map<String, dynamic>>.from(res as List);
   }
 
@@ -80,7 +83,11 @@ class StoriesApi {
     await _client.delete(_path('/stories/$storyId'));
   }
 
-  Future<void> deleteItem(String itemId) async {
-    await _client.delete(_path('/stories/items/$itemId'));
+  Future<Map<String, dynamic>> deleteItem(String itemId) async {
+    final res = await _client.delete(_path('/stories/items/$itemId'));
+    if (res is Map) {
+      return res.cast<String, dynamic>();
+    }
+    return const <String, dynamic>{};
   }
 }

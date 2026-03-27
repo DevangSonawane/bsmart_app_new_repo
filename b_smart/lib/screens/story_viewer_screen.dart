@@ -5,6 +5,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 import '../models/story_model.dart';
 import '../services/feed_service.dart';
+import '../services/story_cache.dart';
+import '../utils/url_helper.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/api.dart';
 
@@ -541,10 +543,21 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   Widget _buildStoryContent(Story story) {
     final isImage = story.mediaType == StoryMediaType.image;
     final hasUrl = story.mediaUrl.isNotEmpty && (story.mediaUrl.startsWith('http://') || story.mediaUrl.startsWith('https://'));
+    final normalizedUrl =
+        story.mediaUrl.isNotEmpty ? UrlHelper.normalizeUrl(story.mediaUrl) : story.mediaUrl;
+    final cached = StoryCache.get(normalizedUrl) ?? StoryCache.getById(story.id);
+    final cachedTexts = cached?['texts'] as List<dynamic>?;
+    final cachedMentions = cached?['mentions'] as List<dynamic>?;
     return LayoutBuilder(
       builder: (context, constraints) {
         final cw = constraints.maxWidth;
         final ch = constraints.maxHeight;
+        final texts = (story.texts == null || story.texts!.isEmpty)
+            ? (cachedTexts ?? const [])
+            : story.texts!;
+        final mentions = (story.mentions == null || story.mentions!.isEmpty)
+            ? (cachedMentions ?? const [])
+            : story.mentions!;
         return Stack(
           children: [
             Positioned.fill(
@@ -554,13 +567,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                     ? CachedNetworkImage(
                         imageUrl: story.mediaUrl,
                         httpHeaders: _videoHeaders,
-                        fit: BoxFit.contain,
+                        fit: BoxFit.cover,
                         placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Colors.white)),
                         errorWidget: (_, __, ___) => const Center(child: Icon(LucideIcons.image, size: 100, color: Colors.white54)),
                       )
                     : (story.mediaType == StoryMediaType.video && hasUrl && _videoCtl != null && _videoCtl!.value.isInitialized)
                         ? FittedBox(
-                            fit: BoxFit.contain,
+                            fit: BoxFit.cover,
                             child: SizedBox(
                               width: _videoCtl!.value.size.width,
                               height: _videoCtl!.value.size.height,
@@ -574,28 +587,142 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                           ),
               ),
             ),
-            ...((story.mentions ?? []).asMap().entries.map((e) {
-              final m = e.value;
-              final left = ((m['x'] as num?) ?? 0) * cw;
-              final top = ((m['y'] as num?) ?? 0) * ch;
-              final username = (m['username'] as String?) ?? '';
+            ...((texts).asMap().entries.map((e) {
+              final t = e.value as Map? ?? const {};
+              final left = ((t['x'] as num?) ?? 0) * cw;
+              final top = ((t['y'] as num?) ?? 0) * ch;
+              final clampedLeft = left.clamp(0.0, cw - 8);
+              final clampedTop = top.clamp(0.0, ch - 8);
+              final content = (t['content'] as String?) ?? '';
+              final fontSize = (t['fontSize'] as num?)?.toDouble() ?? 20.0;
+              final color = _parseStoryColor(t['color']);
+              final align = (t['align'] as String?) ?? 'center';
+              final rotation = (t['rotation'] as num?)?.toDouble() ?? 0.0;
+              TextAlign textAlign = TextAlign.center;
+              if (align == 'left') textAlign = TextAlign.left;
+              if (align == 'right') textAlign = TextAlign.right;
               return Positioned(
-                left: left.clamp(0, cw - 8),
-                top: top.clamp(0, ch - 8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(12),
+                left: clampedLeft,
+                top: clampedTop,
+                child: Transform.rotate(
+                  angle: rotation,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: cw - 24),
+                    child: Text(
+                      content,
+                      textAlign: textAlign,
+                      style: TextStyle(
+                        color: color ?? Colors.white,
+                        fontSize: fontSize,
+                        fontWeight: FontWeight.w600,
+                        shadows: const [
+                          Shadow(
+                            offset: Offset(0, 1),
+                            blurRadius: 3,
+                            color: Color(0xAA000000),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: Text('@$username', style: const TextStyle(color: Colors.white, fontSize: 12)),
                 ),
               );
             }).toList()),
+            ..._buildMentionOverlays(mentions, texts, cw, ch),
           ],
         );
       },
     );
+  }
+
+  List<Widget> _buildMentionOverlays(
+    List<dynamic> mentionData,
+    List<dynamic> textData,
+    double cw,
+    double ch,
+  ) {
+    if (mentionData.isNotEmpty) {
+      return mentionData.map((m) {
+        final left = ((m['x'] as num?) ?? 0) * cw;
+        final top = ((m['y'] as num?) ?? 0) * ch;
+        final username = (m['username'] as String?) ?? '';
+        final scale = _mentionScaleFor(username, textData);
+        return Positioned(
+          left: left.clamp(0, cw - 8),
+          top: (top - (18 * scale) - 4).clamp(0, ch - 8),
+          child: _mentionChip(username, scale: scale),
+        );
+      }).toList();
+    }
+
+    // Fallback: derive mentions from text content if API didn't send mentions.
+    final exp = RegExp(r'@([A-Za-z0-9_\\.]+)');
+    final widgets = <Widget>[];
+    for (final t in textData) {
+      final content = (t['content'] as String?) ?? '';
+      final match = exp.firstMatch(content);
+      if (match == null) continue;
+      final username = match.group(1) ?? '';
+      if (username.isEmpty) continue;
+      final left = ((t['x'] as num?) ?? 0) * cw;
+      final top = ((t['y'] as num?) ?? 0) * ch;
+      widgets.add(
+        Positioned(
+          left: left.clamp(0, cw - 8),
+          top: (top - (18 * 1.0) - 4).clamp(0, ch - 8),
+          child: _mentionChip(username, scale: 1.0),
+        ),
+      );
+    }
+    return widgets;
+  }
+
+  double _mentionScaleFor(String username, List<dynamic> textData) {
+    if (username.isEmpty) return 1.0;
+    for (final t in textData) {
+      final content = (t['content'] as String?) ?? '';
+      if (content.contains('@$username')) {
+        final size = (t['fontSize'] as num?)?.toDouble() ?? 32.0;
+        return (size / 32.0).clamp(0.6, 1.4);
+      }
+    }
+    return 1.0;
+  }
+
+  Widget _mentionChip(String username, {double scale = 1.0}) {
+    final clamped = scale.clamp(0.6, 1.4);
+    return Text(
+      '@$username',
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: 12 * clamped,
+        fontWeight: FontWeight.w600,
+        shadows: const [
+          Shadow(
+            offset: Offset(0, 1),
+            blurRadius: 3,
+            color: Color(0xAA000000),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color? _parseStoryColor(dynamic value) {
+    if (value == null) return null;
+    final raw = value.toString().trim();
+    if (raw.isEmpty) return null;
+    final lower = raw.toLowerCase();
+    if (lower == 'white') return Colors.white;
+    if (lower == 'black') return Colors.black;
+    var hex = raw.startsWith('#') ? raw.substring(1) : raw;
+    if (hex.length == 6) {
+      hex = 'FF$hex';
+    }
+    if (hex.length != 8) return null;
+    final parsed = int.tryParse(hex, radix: 16);
+    if (parsed == null) return null;
+    return Color(parsed);
   }
 
   void _setupCurrentStoryMedia(Story story) async {

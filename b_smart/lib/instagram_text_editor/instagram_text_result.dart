@@ -18,6 +18,7 @@ class InstagramTextResult {
   final BackgroundStyle backgroundStyle;
   final String fontName;
   final double fontSize;
+  final List<Map<String, String>> mentions;
 
   const InstagramTextResult({
     required this.text,
@@ -30,5 +31,6 @@ class InstagramTextResult {
     required this.backgroundStyle,
     this.fontName = 'Modern',
     this.fontSize = 32.0,
+    this.mentions = const [],
   });
 }

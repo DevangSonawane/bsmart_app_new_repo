@@ -21,6 +21,24 @@ class UsersApi {
     return res as Map<String, dynamic>;
   }
 
+  /// Get a user's posts.
+  ///
+  /// Returns a list of posts or an object containing `posts`.
+  Future<List<Map<String, dynamic>>> getUserPosts(String userId) async {
+    final res = await _client.get('/users/$userId/posts');
+    List<dynamic> raw = [];
+    if (res is Map<String, dynamic>) {
+      final posts = res['posts'] ?? res['data'] ?? res['items'] ?? res['userPosts'];
+      if (posts is List) raw = posts;
+    } else if (res is List) {
+      raw = res;
+    }
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
   /// Update the authenticated user's profile.
   ///
   /// Accepts optional fields: `full_name`, `bio`, `avatar_url`, `phone`, `username`.

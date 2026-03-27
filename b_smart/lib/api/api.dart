@@ -10,3 +10,4 @@ export 'upload_api.dart';
 export 'stories_api.dart';
 export 'follows_api.dart';
 export 'ads_api.dart';
+export 'highlights_api.dart';
