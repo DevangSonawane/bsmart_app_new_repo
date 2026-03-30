@@ -16,11 +16,15 @@ class ProfileHeader extends StatelessWidget {
   final bool isMe;
   final bool isVendor;
   final bool isFollowing;
+  final bool isFavorite;
   final bool hasStory;
   final VoidCallback? onEdit;
   final VoidCallback? onFollow;
   final VoidCallback? onAvatarTap;
   final VoidCallback? onMessage;
+  final VoidCallback? onShare;
+  final VoidCallback? onFavorite;
+  final VoidCallback? onMore;
 
   const ProfileHeader({
     super.key,
@@ -35,11 +39,15 @@ class ProfileHeader extends StatelessWidget {
     this.isMe = false,
     this.isVendor = false,
     this.isFollowing = false,
+    this.isFavorite = false,
     this.hasStory = false,
     this.onEdit,
     this.onFollow,
     this.onAvatarTap,
     this.onMessage,
+    this.onShare,
+    this.onFavorite,
+    this.onMore,
   });
 
   @override
@@ -165,9 +173,47 @@ class ProfileHeader extends StatelessWidget {
           ],
           const SizedBox(height: 12),
           if (isMe)
-            _primaryButton(
-              label: 'Edit profile',
-              onTap: onEdit,
+            Row(
+              children: [
+                Expanded(
+                  child: _primaryButton(
+                    label: 'Edit profile',
+                    onTap: onEdit,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _actionIconButton(
+                  context,
+                  icon: Icons.share_outlined,
+                  onTap: onShare ?? () {},
+                ),
+                _actionIconButton(
+                  context,
+                  icon: isFavorite ? Icons.favorite : Icons.favorite_border,
+                  onTap: onFavorite ?? () {},
+                ),
+                _actionIconButton(
+                  context,
+                  icon: LucideIcons.messageCircle,
+                  onTap: onMessage ?? () {},
+                ),
+              ],
+            )
+          else if (isVendor)
+            Row(
+              children: [
+                Expanded(
+                  child: _followButton(onTap: onFollow),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _secondaryButton(
+                    context: context,
+                    label: 'Message',
+                    onTap: onMessage,
+                  ),
+                ),
+              ],
             )
           else
             Row(
@@ -182,6 +228,12 @@ class ProfileHeader extends StatelessWidget {
                     label: 'Message',
                     onTap: onMessage,
                   ),
+                ),
+                const SizedBox(width: 8),
+                _actionIconButton(
+                  context,
+                  icon: LucideIcons.ellipsis,
+                  onTap: onMore ?? () {},
                 ),
               ],
             ),

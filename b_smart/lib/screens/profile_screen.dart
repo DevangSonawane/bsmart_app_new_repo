@@ -31,6 +31,7 @@ import '../models/story_model.dart';
 import 'story_viewer_screen.dart';
 import '../models/media_model.dart';
 import 'create_upload_screen.dart';
+import 'messaging_screen.dart';
 import '../api/highlights_api.dart';
 import '../services/highlight_service.dart';
 import '../utils/url_helper.dart';
@@ -151,6 +152,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : 'Removed @$username from favorites',
         ),
       ),
+    );
+  }
+
+  void _openMessaging() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const MessagingScreen()),
     );
   }
 
@@ -1507,26 +1514,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onPressed: () =>
                         Navigator.of(context).pushNamed('/settings'),
                   ),
-                ] else ...[
-                  IconButton(
-                    icon: Icon(Icons.share_outlined, color: fgColor),
-                    onPressed: () => _shareProfile(displayProfile),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      _isFavoriteProfile
-                          ? Icons.favorite
-                          : Icons.favorite_border,
-                      color: _isFavoriteProfile
-                          ? Colors.redAccent
-                          : fgColor,
-                    ),
-                    onPressed: () => _toggleFavoriteProfile(username),
-                  ),
-                  IconButton(
-                    icon: Icon(LucideIcons.ellipsis, color: fgColor),
-                    onPressed: () => _showProfileMoreActions(displayProfile),
-                  ),
                 ],
               ],
             ),
@@ -1550,9 +1537,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       isFollowing:
                           (displayProfile?['is_followed_by_me'] as bool?) ??
                               false,
+                      isFavorite: _isFavoriteProfile,
                       hasStory: _hasStory,
                       onEdit: isMe ? _onEdit : null,
                       onFollow: isMe ? null : _onFollow,
+                      onShare: () => _shareProfile(displayProfile),
+                      onFavorite: () => _toggleFavoriteProfile(username),
+                      onMore: () => _showProfileMoreActions(displayProfile),
+                      onMessage: _openMessaging,
                       onAvatarTap: _openStoriesFromProfile,
                     ),
                   ),
