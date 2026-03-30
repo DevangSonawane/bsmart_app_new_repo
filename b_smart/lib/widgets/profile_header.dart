@@ -25,6 +25,7 @@ class ProfileHeader extends StatelessWidget {
   final VoidCallback? onShare;
   final VoidCallback? onFavorite;
   final VoidCallback? onMore;
+  final VoidCallback? onUser;
 
   const ProfileHeader({
     super.key,
@@ -48,6 +49,7 @@ class ProfileHeader extends StatelessWidget {
     this.onShare,
     this.onFavorite,
     this.onMore,
+    this.onUser,
   });
 
   @override
@@ -73,7 +75,7 @@ class ProfileHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               GestureDetector(
                 onTap: onAvatarTap,
@@ -108,19 +110,32 @@ class ProfileHeader extends StatelessWidget {
               ),
               const SizedBox(width: 18),
               Expanded(
-                child: Wrap(
-                  spacing: 18,
-                  runSpacing: 8,
-                  children: stats
-                      .map((item) => _statPill(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Align(
+                    alignment: Alignment.center,
+                  child: Wrap(
+                    spacing: 18,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      ...stats.map((item) => _statPill(
                             context,
                             item.count,
                             item.label,
                             fgColor,
                             mutedColor,
-                          ))
-                      .toList(),
+                          )),
+                      if (!isVendor)
+                        _statIconButton(
+                          context,
+                          icon: Icons.person_outline,
+                          onTap: onUser,
+                        ),
+                    ],
+                  ),
                 ),
+              ),
               ),
             ],
           ),
@@ -175,23 +190,26 @@ class ProfileHeader extends StatelessWidget {
           if (isMe)
             Row(
               children: [
-                Expanded(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 160),
                   child: _primaryButton(
                     label: 'Edit profile',
                     onTap: onEdit,
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 16),
                 _actionIconButton(
                   context,
                   icon: Icons.share_outlined,
                   onTap: onShare ?? () {},
                 ),
+                const SizedBox(width: 12),
                 _actionIconButton(
                   context,
-                  icon: isFavorite ? Icons.favorite : Icons.favorite_border,
+                  icon: isFavorite ? Icons.star : Icons.star_border,
                   onTap: onFavorite ?? () {},
                 ),
+                const SizedBox(width: 12),
                 _actionIconButton(
                   context,
                   icon: LucideIcons.messageCircle,
@@ -252,7 +270,7 @@ class ProfileHeader extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
           decoration: const BoxDecoration(
             gradient: DesignTokens.instaGradient,
             borderRadius: BorderRadius.all(Radius.circular(10)),
@@ -390,6 +408,30 @@ class ProfileHeader extends StatelessWidget {
           style: TextStyle(color: mutedColor, fontSize: 11),
         ),
       ],
+    );
+  }
+
+  Widget _statIconButton(
+    BuildContext context, {
+    required IconData icon,
+    VoidCallback? onTap,
+  }) {
+    final theme = Theme.of(context);
+    final fgColor = theme.colorScheme.onSurface;
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 2),
+          Icon(icon, size: 30, color: fgColor),
+          const SizedBox(height: 4),
+          const Text(
+            ' ',
+            style: TextStyle(fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:io';
-import 'dart:ui';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -28,6 +27,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   late PageController _controller;
   int _index = 0;
   double _progress = 0.0;
+  bool _waitingForMedia = false;
   Timer? _timer;
   VideoPlayerController? _videoCtl;
   List<Map<String, dynamic>> _viewers = const [];
@@ -74,6 +74,16 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   Future<void> _loadVideoForCurrent() async {
     if (_stories.isEmpty) return;
     final story = _stories[_index];
+    if (story.thumbnailUrl != null && story.thumbnailUrl!.isNotEmpty) {
+      try {
+        await precacheImage(
+          NetworkImage(story.thumbnailUrl!),
+          context,
+        );
+      } catch (_) {
+        // ignore thumbnail precache errors
+      }
+    }
     if (story.mediaType == StoryMediaType.video && story.mediaUrl.isNotEmpty) {
       try {
         _videoCtl?.dispose();
@@ -81,8 +91,10 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         await _videoCtl!.initialize();
         await _videoCtl!.setLooping(true);
         await _videoCtl!.play();
-        if (mounted) {
-          setState(() {});
+        if (!mounted) return;
+        setState(() {});
+        if (_waitingForMedia) {
+          _start();
         }
       } catch (_) {
         // ignore
@@ -90,6 +102,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     } else {
       _videoCtl?.dispose();
       _videoCtl = null;
+      _waitingForMedia = false;
     }
   }
 
@@ -118,6 +131,15 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   void _start() {
     _timer?.cancel();
     _progress = 0.0;
+    if (_stories.isNotEmpty) {
+      final story = _stories[_index];
+      if (story.mediaType == StoryMediaType.video &&
+          !(_videoCtl?.value.isInitialized ?? false)) {
+        _waitingForMedia = true;
+        return;
+      }
+    }
+    _waitingForMedia = false;
     _timer = Timer.periodic(const Duration(milliseconds: 50), (t) {
       setState(() => _progress += 0.01);
       if (_progress >= 1.0) {
@@ -1701,8 +1723,6 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     final timeLabel = _timeAgoShort(createdAt);
     final w = MediaQuery.of(context).size.width;
     final h = MediaQuery.of(context).size.height;
-    final cardWidth = (w - 32).clamp(240.0, 380.0);
-    final cardHeight = (cardWidth * 1.35).clamp(300.0, h * 0.72);
     final safeTop = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1747,9 +1767,13 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                             child: VideoPlayer(_videoCtl!),
                           ),
                         )
-                      : const Center(
-                          child: Icon(LucideIcons.play, size: 80, color: Colors.white54),
-                        )
+                      : (mediaUrl.isNotEmpty
+                          ? Image.network(
+                              mediaUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(color: Colors.black),
+                            )
+                          : Container(color: Colors.black))
                   : (mediaUrl.isNotEmpty
                       ? Image.network(
                           mediaUrl,
@@ -1760,115 +1784,63 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         )
                       : Container(color: Colors.black)),
             ),
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.black.withValues(alpha: 0.15),
-                        Colors.black.withValues(alpha: 0.55),
-                      ],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Align(
-              alignment: Alignment.center,
-              child: SizedBox(
-                width: cardWidth,
-                height: cardHeight,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: story.mediaType == StoryMediaType.video
-                            ? (_videoCtl != null && _videoCtl!.value.isInitialized)
-                                ? FittedBox(
-                                    fit: BoxFit.cover,
-                                    child: SizedBox(
-                                      width: _videoCtl!.value.size.width,
-                                      height: _videoCtl!.value.size.height,
-                                      child: VideoPlayer(_videoCtl!),
-                                    ),
-                                  )
-                                : Container(color: Colors.black87)
-                            : (mediaUrl.isNotEmpty
-                                ? Image.network(
-                                    mediaUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        Container(color: Colors.black87),
-                                  )
-                                : Container(color: Colors.black87)),
+            ...((story.texts ?? const []).asMap().entries.map((e) {
+              final t = e.value as Map? ?? const {};
+              final left = ((t['x'] as num?) ?? 0) * w;
+              final top = ((t['y'] as num?) ?? 0) * h;
+              final clampedLeft = left.clamp(8.0, w - 8);
+              final clampedTop = top.clamp(8.0, h - 8);
+              final content = (t['content'] as String?) ?? '';
+              final fontSize = (t['fontSize'] as num?)?.toDouble() ?? 20.0;
+              final color = _parseStoryColor(t['color']) ?? Colors.white;
+              return Positioned(
+                left: clampedLeft,
+                top: clampedTop,
+                child: Text(
+                  content,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.w600,
+                    shadows: const [
+                      Shadow(
+                        offset: Offset(0, 1),
+                        blurRadius: 3,
+                        color: Color(0xAA000000),
                       ),
-                      ...((story.texts ?? const []).asMap().entries.map((e) {
-                        final t = e.value as Map? ?? const {};
-                        final left = ((t['x'] as num?) ?? 0) * cardWidth;
-                        final top = ((t['y'] as num?) ?? 0) * cardHeight;
-                        final clampedLeft = left.clamp(8.0, cardWidth - 8);
-                        final clampedTop = top.clamp(8.0, cardHeight - 8);
-                        final content = (t['content'] as String?) ?? '';
-                        final fontSize = (t['fontSize'] as num?)?.toDouble() ?? 20.0;
-                        final color = _parseStoryColor(t['color']) ?? Colors.white;
-                        return Positioned(
-                          left: clampedLeft,
-                          top: clampedTop,
-                          child: Text(
-                            content,
-                            style: TextStyle(
-                              color: color,
-                              fontSize: fontSize,
-                              fontWeight: FontWeight.w600,
-                              shadows: const [
-                                Shadow(
-                                  offset: Offset(0, 1),
-                                  blurRadius: 3,
-                                  color: Color(0xAA000000),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList()),
-                      ...((story.mentions ?? const []).asMap().entries.map((e) {
-                        final m = e.value as Map? ?? const {};
-                        final left = ((m['x'] as num?) ?? 0) * cardWidth;
-                        final top = ((m['y'] as num?) ?? 0) * cardHeight;
-                        final clampedLeft = left.clamp(8.0, cardWidth - 8);
-                        final clampedTop = top.clamp(8.0, cardHeight - 8);
-                        final username = (m['username'] as String?) ?? '';
-                        final scale = _mentionScaleFor(username, story.texts ?? const []);
-                        return Positioned(
-                          left: clampedLeft,
-                          top: (clampedTop - (18 * scale) - 4).clamp(8.0, cardHeight - 8),
-                          child: Text(
-                            '@$username',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12 * scale,
-                              fontWeight: FontWeight.w600,
-                              shadows: const [
-                                Shadow(
-                                  offset: Offset(0, 1),
-                                  blurRadius: 3,
-                                  color: Color(0xAA000000),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList()),
                     ],
                   ),
                 ),
-              ),
-            ),
+              );
+            }).toList()),
+            ...((story.mentions ?? const []).asMap().entries.map((e) {
+              final m = e.value as Map? ?? const {};
+              final left = ((m['x'] as num?) ?? 0) * w;
+              final top = ((m['y'] as num?) ?? 0) * h;
+              final clampedLeft = left.clamp(8.0, w - 8);
+              final clampedTop = top.clamp(8.0, h - 8);
+              final username = (m['username'] as String?) ?? '';
+              final scale = _mentionScaleFor(username, story.texts ?? const []);
+              return Positioned(
+                left: clampedLeft,
+                top: (clampedTop - (18 * scale) - 4).clamp(8.0, h - 8),
+                child: Text(
+                  '@$username',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12 * scale,
+                    fontWeight: FontWeight.w600,
+                    shadows: const [
+                      Shadow(
+                        offset: Offset(0, 1),
+                        blurRadius: 3,
+                        color: Color(0xAA000000),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList()),
             Positioned(
               top: safeTop + 8,
               left: 12,

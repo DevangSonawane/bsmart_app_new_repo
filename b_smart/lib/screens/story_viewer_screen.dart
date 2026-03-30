@@ -32,6 +32,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   Timer? _autoPlayTimer;
   double _progress = 0.0;
   bool _paused = false;
+  bool _waitingForMedia = false;
+  String? _pendingStoryId;
   final TextEditingController _messageController = TextEditingController();
   final FeedService _feedService = FeedService();
   final Set<String> _viewedItemIds = <String>{};
@@ -82,8 +84,20 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     }
 
     final currentStory = currentGroup.stories[_currentStoryIndex];
+    _pendingStoryId = currentStory.id;
+    _waitingForMedia = currentStory.mediaType == StoryMediaType.video;
     _setupCurrentStoryMedia(currentStory);
 
+    if (!_waitingForMedia) {
+      _startAutoPlayTimer(currentStory);
+    } else if (_videoCtl != null && _videoCtl!.value.isInitialized) {
+      _waitingForMedia = false;
+      _startAutoPlayTimer(currentStory);
+    }
+  }
+
+  void _startAutoPlayTimer(Story currentStory) {
+    _autoPlayTimer?.cancel();
     final isImage = currentStory.mediaType == StoryMediaType.image;
     final durationMs = isImage ? 5000 : ((currentStory.durationSec ?? 5) * 1000);
     const tickMs = 50;
@@ -571,20 +585,26 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                         placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Colors.white)),
                         errorWidget: (_, __, ___) => const Center(child: Icon(LucideIcons.image, size: 100, color: Colors.white54)),
                       )
-                    : (story.mediaType == StoryMediaType.video && hasUrl && _videoCtl != null && _videoCtl!.value.isInitialized)
-                        ? FittedBox(
-                            fit: BoxFit.cover,
-                            child: SizedBox(
-                              width: _videoCtl!.value.size.width,
-                              height: _videoCtl!.value.size.height,
-                              child: VideoPlayer(_videoCtl!),
-                            ),
-                          )
-                        : Center(
-                            child: story.mediaType == StoryMediaType.video
-                                ? const Icon(LucideIcons.play, size: 100, color: Colors.white54)
-                                : const Icon(LucideIcons.image, size: 100, color: Colors.white54),
-                          ),
+                    : (story.mediaType == StoryMediaType.video && hasUrl)
+                        ? (_videoCtl != null && _videoCtl!.value.isInitialized)
+                            ? FittedBox(
+                                fit: BoxFit.cover,
+                                child: SizedBox(
+                                  width: _videoCtl!.value.size.width,
+                                  height: _videoCtl!.value.size.height,
+                                  child: VideoPlayer(_videoCtl!),
+                                ),
+                              )
+                            : CachedNetworkImage(
+                                imageUrl: story.mediaUrl,
+                                httpHeaders: _videoHeaders,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) =>
+                                    Container(color: Colors.black),
+                                errorWidget: (_, __, ___) =>
+                                    Container(color: Colors.black),
+                              )
+                        : const SizedBox.shrink(),
               ),
             ),
             ...((texts).asMap().entries.map((e) {
@@ -738,12 +758,18 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
           _videoCtl!.setLooping(true);
           _videoCtl!.setVolume(0);
           _videoCtl!.play();
-          if (mounted) setState(() {});
+          if (!mounted) return;
+          setState(() {});
+          if (_waitingForMedia && _pendingStoryId == story.id) {
+            _waitingForMedia = false;
+            _startAutoPlayTimer(story);
+          }
         });
       } catch (_) {
         if (mounted) setState(() {});
       }
     } else {
+      _waitingForMedia = false;
       if (mounted) setState(() {});
     }
   }
