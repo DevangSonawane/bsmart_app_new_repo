@@ -190,6 +190,16 @@ class AdsApi {
           : (res['data'] is Map && (res['data'] as Map)['ads'] is List)
               ? ((res['data'] as Map)['ads'] as List)
               : const <dynamic>[];
+      final rawUsers = res['users'] ??
+          res['vendors'] ??
+          (res['data'] is Map ? (res['data'] as Map)['users'] : null) ??
+          (res['data'] is Map ? (res['data'] as Map)['vendors'] : null);
+      final users = rawUsers is List
+          ? rawUsers
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+          : const <Map<String, dynamic>>[];
 
       return {
         'total': res['total'],
@@ -200,6 +210,7 @@ class AdsApi {
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
             .toList(),
+        'users': users,
       };
     }
 

@@ -12,10 +12,19 @@ import '../models/ad_model.dart';
 import '../models/ad_category_model.dart';
 import '../services/ads_service.dart';
 import '../services/supabase_service.dart';
+import '../services/wallet_service.dart';
 import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
+
+String? _adProfileId(Ad ad) {
+  final userId = ad.userId?.trim();
+  if (userId != null && userId.isNotEmpty) return userId;
+  final companyId = ad.companyId.trim();
+  if (companyId.isNotEmpty) return companyId;
+  return null;
+}
 
 class AdsPageScreen extends StatefulWidget {
   final bool isTabActive;
@@ -27,11 +36,28 @@ class AdsPageScreen extends StatefulWidget {
 
 class _AdsPageScreenState extends State<AdsPageScreen> {
   final AdsService _adsService = AdsService();
+  final WalletService _walletService = WalletService();
   static final Set<String> _sessionViewedAdIds = <String>{};
+  Map<String, String>? _mediaHeaders;
+  int _walletBalance = 0;
+  Timer? _walletTimer;
 
   List<AdCategory> _categories = [];
   String _selectedCategoryId = 'All';
   String _searchQuery = '';
+  String _searchInput = '';
+  bool _searchOpen = false;
+  bool _searchLoading = false;
+  bool _searchDropdownVisible = false;
+  List<_SearchUser> _searchUsers = [];
+  List<Ad> _searchAds = [];
+  _ViewRewardPopupData? _viewRewardPopup;
+  _ViewRecordedPopupData? _viewRecordedPopup;
+  Timer? _searchDebounce;
+  int _searchEpoch = 0;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode =
+      FocusNode(debugLabel: 'ads-search-focus');
   List<Ad> _ads = [];
   bool _categoriesExpanded = false;
 
@@ -65,17 +91,51 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   void initState() {
     super.initState();
     _init();
+    _loadMediaHeaders();
+    unawaited(_refreshWallet());
+    _walletTimer?.cancel();
+    _walletTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(_refreshWallet()),
+    );
   }
 
   @override
   void dispose() {
     _keyboardFocusNode.dispose();
     _pageController.dispose();
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _walletTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _init() async {
     await _loadCategoriesAndAds();
+  }
+
+  Future<void> _loadMediaHeaders() async {
+    if (_mediaHeaders != null) return;
+    final token = await ApiClient().getToken();
+    if (!mounted) return;
+    if (token != null && token.isNotEmpty) {
+      setState(() {
+        _mediaHeaders = {'Authorization': 'Bearer $token'};
+      });
+    }
+  }
+
+  Future<void> _refreshWallet() async {
+    try {
+      final bal = await _walletService.getCoinBalance();
+      if (!mounted) return;
+      setState(() {
+        _walletBalance = bal;
+      });
+    } catch (_) {
+      // ignore wallet errors on ads screen
+    }
   }
 
   Future<void> _loadCategoriesAndAds() async {
@@ -161,11 +221,12 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
         _error = e.toString();
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _isLoadingMore = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      }
     }
   }
 
@@ -183,48 +244,118 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     await _fetchAdsPage(reset: true);
   }
 
-  Future<void> _openSearchDialog() async {
-    final controller = TextEditingController(text: _searchQuery);
-    final query = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Search Ads'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textInputAction: TextInputAction.search,
-          decoration: const InputDecoration(
-            hintText: 'Search by keyword, hashtag, caption...',
-          ),
-          onSubmitted: (_) => Navigator.of(context).pop(controller.text.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(''),
-            child: const Text('Clear'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Search'),
-          ),
-        ],
-      ),
-    );
-
-    if (query == null) return;
+  void _openSearch() {
     setState(() {
-      _searchQuery = query.trim();
-      _focusedIndex = 0;
+      _searchOpen = true;
+      _searchDropdownVisible = true;
     });
+    _searchController.text = _searchInput;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _searchFocusNode.requestFocus();
+      }
+    });
+  }
 
-    if (_pageController.hasClients) {
-      _pageController.jumpToPage(0);
+  void _closeSearch() {
+    setState(() {
+      _searchOpen = false;
+      _searchDropdownVisible = false;
+      _searchLoading = false;
+      _searchInput = '';
+      _searchUsers = [];
+      _searchAds = [];
+    });
+    _searchController.clear();
+  }
+
+  void _onSearchChanged(String value) {
+    final next = value.trim();
+    setState(() {
+      _searchInput = value;
+    });
+    _searchDebounce?.cancel();
+    if (next.isEmpty) {
+      setState(() {
+        _searchUsers = [];
+        _searchAds = [];
+        _searchDropdownVisible = false;
+        _searchLoading = false;
+      });
+      return;
     }
-    await _fetchAdsPage(reset: true);
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      unawaited(_runSearch(next));
+    });
+  }
+
+  Future<void> _runSearch(String query) async {
+    final normalized = query.trim();
+    if (normalized.isEmpty) {
+      setState(() {
+        _searchLoading = false;
+        _searchUsers = [];
+        _searchAds = [];
+        _searchDropdownVisible = false;
+      });
+      return;
+    }
+    final epoch = ++_searchEpoch;
+    setState(() {
+      _searchLoading = true;
+      _searchDropdownVisible = true;
+    });
+    try {
+      final result = await _adsService.searchAds(
+        q: normalized,
+        status: 'active',
+        page: 1,
+        limit: 20,
+      );
+      if (!mounted || epoch != _searchEpoch) return;
+
+      final users = (result['users'] as List<dynamic>? ?? const <dynamic>[])
+          .whereType<Map>()
+          .map((u) => _SearchUser.fromMap(Map<String, dynamic>.from(u)))
+          .where((u) => u.id.isNotEmpty)
+          .toList();
+      final ads = (result['ads'] as List<Ad>? ?? const <Ad>[]);
+      setState(() {
+        _searchUsers = users;
+        _searchAds = ads;
+        _searchLoading = false;
+        _searchDropdownVisible = true;
+      });
+    } catch (_) {
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() {
+        _searchUsers = [];
+        _searchAds = [];
+        _searchLoading = false;
+        _searchDropdownVisible = true;
+      });
+    }
+  }
+
+  void _handleSearchUserTap(_SearchUser user) {
+    if (user.id.isEmpty) return;
+    _closeSearch();
+    Navigator.of(context).pushNamed('/profile/${user.id}');
+  }
+
+  void _handleSearchAdTap(Ad ad) {
+    _closeSearch();
+    final index = _ads.indexWhere((a) => a.id == ad.id);
+    if (index >= 0) {
+      _goToPage(index);
+    }
+  }
+
+  void _handleSearchAdVendorTap(Ad ad) {
+    final uid = _adProfileId(ad);
+    if (uid == null || uid.isEmpty) return;
+    _closeSearch();
+    Navigator.of(context).pushNamed('/profile/$uid');
   }
 
   Future<void> _recordViewForAd(Ad ad) async {
@@ -234,10 +365,69 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
 
     _sessionViewedAdIds.add(ad.id);
     try {
-      await _adsService.recordAdView(adId: ad.id, userId: userId);
+      final res = await _adsService.recordAdView(adId: ad.id, userId: userId);
+      if (!mounted) return;
+      _handleViewReward(res, ad);
     } catch (_) {
       _sessionViewedAdIds.remove(ad.id);
     }
+  }
+
+  void _handleViewReward(Map<String, dynamic> res, Ad ad) {
+    final rewarded = res['rewarded'] == true;
+    final coinsRaw = res['coins_rewarded'] ??
+        res['coins'] ??
+        res['reward'] ??
+        (res['data'] is Map ? (res['data'] as Map)['coins_rewarded'] : null);
+    final coins = coinsRaw is num
+        ? coinsRaw.round()
+        : int.tryParse(coinsRaw?.toString() ?? '');
+    final viewCountRaw = res['view_count'] ??
+        (res['data'] is Map ? (res['data'] as Map)['view_count'] : null);
+    final viewCount = viewCountRaw is num
+        ? viewCountRaw.round()
+        : int.tryParse(viewCountRaw?.toString() ?? '');
+    if (rewarded) {
+      final reward = (coins ?? (ad.coinReward > 0 ? ad.coinReward : 10));
+      _showViewRewardPopup(amount: reward);
+      unawaited(_refreshWallet());
+      return;
+    }
+    if (res.containsKey('rewarded') || res.containsKey('view_count')) {
+      _showViewRecordedPopup(viewCount: viewCount);
+    }
+  }
+
+  void _showViewRewardPopup({required int amount}) {
+    setState(() {
+      _viewRewardPopup = _ViewRewardPopupData(
+        id: DateTime.now().millisecondsSinceEpoch,
+        amount: amount,
+      );
+      _viewRecordedPopup = null;
+    });
+  }
+
+  void _showViewRecordedPopup({int? viewCount}) {
+    setState(() {
+      _viewRecordedPopup = _ViewRecordedPopupData(
+        id: DateTime.now().millisecondsSinceEpoch,
+        viewCount: viewCount,
+      );
+      _viewRewardPopup = null;
+    });
+  }
+
+  void _hideViewRewardPopup() {
+    setState(() {
+      _viewRewardPopup = null;
+    });
+  }
+
+  void _hideViewRecordedPopup() {
+    setState(() {
+      _viewRecordedPopup = null;
+    });
   }
 
   Future<void> _openAdComments(Ad ad) async {
@@ -363,8 +553,12 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     );
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.black,
-      body: Stack(
+      body: MediaQuery.removeViewInsets(
+        context: context,
+        removeBottom: true,
+        child: Stack(
         children: [
           // Layer 1: Main Content (Video Feed)
           _isLoading
@@ -412,6 +606,69 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               child: _buildTopBar(isDesktop: isDesktop),
             ),
           ),
+          if (_searchOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _closeSearch,
+                behavior: HitTestBehavior.translucent,
+                child: const SizedBox.expand(),
+              ),
+            ),
+          _buildSearchDropdown(isDesktop: isDesktop),
+          if (_viewRewardPopup != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                ignoring: _viewRewardPopup == null,
+                child: Center(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutBack,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child:
+                            ScaleTransition(scale: animation, child: child),
+                      );
+                    },
+                    child: _viewRewardPopup == null
+                        ? const SizedBox.shrink()
+                        : _ViewRewardPopupCard(
+                            key: ValueKey<int>(_viewRewardPopup!.id),
+                            data: _viewRewardPopup!,
+                            onOk: _hideViewRewardPopup,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          if (_viewRecordedPopup != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                ignoring: _viewRecordedPopup == null,
+                child: Center(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutBack,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child:
+                            ScaleTransition(scale: animation, child: child),
+                      );
+                    },
+                    child: _viewRecordedPopup == null
+                        ? const SizedBox.shrink()
+                        : _ViewRecordedPopupCard(
+                            key: ValueKey<int>(_viewRecordedPopup!.id),
+                            data: _viewRecordedPopup!,
+                            onOk: _hideViewRecordedPopup,
+                          ),
+                  ),
+                ),
+              ),
+            ),
           if (!_isLoading && _error == null && _ads.isNotEmpty && isDesktop)
             Positioned(
               right: 20,
@@ -466,6 +723,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               ),
             ),
         ],
+        ),
       ),
     );
   }
@@ -510,22 +768,111 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     }
 
     Widget searchButton() {
-      return IconButton(
-        icon: Icon(LucideIcons.search, color: searchIconColor, size: searchIconSize),
-        onPressed: _openSearchDialog,
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(LucideIcons.search,
+                color: searchIconColor, size: searchIconSize),
+            onPressed: _openSearch,
+          ),
+          _buildWalletPill(),
+        ],
+      );
+    }
+
+    Widget searchField() {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(LucideIcons.search,
+                color: Colors.white.withValues(alpha: 0.8), size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: _onSearchChanged,
+                onSubmitted: (value) => _runSearch(value.trim()),
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                cursorColor: Colors.white,
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: 'Search ads, users…',
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+            if (_searchLoading)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                ),
+              )
+            else if (_searchInput.trim().isNotEmpty)
+              IconButton(
+                onPressed: () {
+                  _searchController.clear();
+                  _onSearchChanged('');
+                },
+                icon: Icon(LucideIcons.x,
+                    color: Colors.white.withValues(alpha: 0.7), size: 16),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              ),
+          ],
+        ),
       );
     }
 
     Widget inlineCategories() {
       if (_categories.isEmpty) return const SizedBox.shrink();
       return SizedBox(
-        height: 44,
+        height: 36,
         child: ListView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           children: _categories
               .map((c) => _buildCategoryChip(c.id, c.name, isDesktop))
               .toList(),
+        ),
+      );
+    }
+
+    if (_searchOpen) {
+      return Container(
+        padding: EdgeInsets.symmetric(
+          vertical: isDesktop ? 6 : 8,
+          horizontal: 12,
+        ),
+        child: Row(
+          children: [
+            Expanded(child: searchField()),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: _closeSearch,
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -582,23 +929,16 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: EdgeInsets.symmetric(
-          horizontal: isDesktop ? 12 : 16,
-          vertical: isDesktop ? 5 : 6,
+          horizontal: isDesktop ? 10 : 12,
+          vertical: isDesktop ? 4 : 5,
         ),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isSelected
               ? Colors.white
-              : (isDesktop
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : Colors.black.withValues(alpha: 0.3)),
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? Colors.white
-                : Colors.white.withValues(alpha: isDesktop ? 0.10 : 0.2),
-            width: 1,
-          ),
+          border: isSelected ? Border.all(color: Colors.white, width: 1) : null,
         ),
         child: Text(
           label,
@@ -607,10 +947,343 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                 ? Colors.black
                 : Colors.white.withValues(alpha: isDesktop ? 0.75 : 0.9),
             fontWeight: FontWeight.w600,
-            fontSize: isDesktop ? 12 : 13,
+            fontSize: isDesktop ? 11 : 12,
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildWalletPill() {
+    return InkWell(
+      onTap: () => Navigator.of(context).pushNamed('/wallet'),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 18,
+              height: 18,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [Color(0xFFFDE047), Color(0xFFF59E0B), Color(0xFFF97316)],
+                ),
+              ),
+              child: const Icon(LucideIcons.wallet, size: 12, color: Colors.white),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$_walletBalance',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchDropdown({required bool isDesktop}) {
+    if (!_searchOpen || !_searchDropdownVisible) {
+      return const SizedBox.shrink();
+    }
+
+    final query = _searchInput.trim();
+    final hasResults = _searchUsers.isNotEmpty || _searchAds.isNotEmpty;
+    final maxHeight =
+        isDesktop ? 320.0 : MediaQuery.of(context).size.height * 0.5;
+    final maxWidth = isDesktop ? 340.0 : double.infinity;
+
+    return Positioned(
+      top: isDesktop ? 60 : 86,
+      left: 12,
+      right: 12,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight, maxWidth: maxWidth),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.88),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x55000000),
+                blurRadius: 24,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Material(
+              color: Colors.transparent,
+              child: _searchLoading
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 28),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                        ),
+                      ),
+                    )
+                  : !hasResults && query.isNotEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 24, horizontal: 16),
+                          child: Text(
+                            'No results for "$query"',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.75),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      : !hasResults
+                          ? const SizedBox.shrink()
+                          : ListView(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              children: [
+                                if (_searchUsers.isNotEmpty) ...[
+                                  _buildSearchSectionHeader('People'),
+                                  ..._searchUsers.map(_buildSearchUserTile),
+                                ],
+                                if (_searchAds.isNotEmpty) ...[
+                                  _buildSearchSectionHeader('Ads'),
+                                  ..._searchAds.map(_buildSearchAdTile),
+                                ],
+                              ],
+                            ),
+            ),
+          ),
+        ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchSectionHeader(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.6),
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchUserTile(_SearchUser user) {
+    return InkWell(
+      onTap: () => _handleSearchUserTap(user),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            _buildSearchAvatar(
+              url: user.avatarUrl,
+              fallback: user.initials,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  if (user.username.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      '@${user.username}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchAdTile(Ad ad) {
+    return InkWell(
+      onTap: () => _handleSearchAdTap(ad),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            _buildSearchAdThumb(ad),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    (ad.caption ?? ad.description ?? 'Ad').trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      if ((ad.category ?? '').trim().isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            ad.category!.trim(),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: InkWell(
+                          onTap: (ad.userId?.trim().isNotEmpty ?? false)
+                              ? () => _handleSearchAdVendorTap(ad)
+                              : null,
+                          child: Text(
+                            ad.vendorBusinessName ?? ad.userName ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchAvatar({String? url, required String fallback}) {
+    final child = url != null && url.trim().isNotEmpty
+        ? ClipOval(
+            child: Image.network(
+              url,
+              width: 36,
+              height: 36,
+              fit: BoxFit.cover,
+            ),
+          )
+        : CircleAvatar(
+            radius: 18,
+            backgroundColor: const Color(0xFF1F2937),
+            child: Text(
+              fallback,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          );
+
+    return Container(
+      width: 40,
+      height: 40,
+      padding: const EdgeInsets.all(1.5),
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Color(0xFFFDE047), Color(0xFFF97316), Color(0xFFEC4899)],
+        ),
+      ),
+      child: ClipOval(child: child),
+    );
+  }
+
+  Widget _buildSearchAdThumb(Ad ad) {
+    final url = ad.imageUrl;
+    if (url != null && url.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: CachedNetworkImage(
+          imageUrl: url,
+          httpHeaders: UrlHelper.shouldAttachAuthHeader(url)
+              ? (_mediaHeaders ?? const {})
+              : null,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          placeholder: (context, _) => Container(
+            color: Colors.white.withValues(alpha: 0.08),
+            alignment: Alignment.center,
+            child: const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+          errorWidget: (context, _, __) => Container(
+            color: Colors.white.withValues(alpha: 0.08),
+            alignment: Alignment.center,
+            child: const Icon(Icons.image, color: Colors.white54, size: 16),
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.shopping_bag, color: Colors.white54, size: 18),
     );
   }
 
@@ -1237,9 +1910,9 @@ class _AdVideoItemState extends State<AdVideoItem>
         Positioned(
           left: 0,
           right: 0,
-          bottom: 0,
+          top: 0,
           child: SafeArea(
-            top: false,
+            bottom: false,
             child: Container(
               height: 2.5,
               color: Colors.white.withValues(alpha: 0.22),
@@ -1309,14 +1982,14 @@ class _AdVideoItemState extends State<AdVideoItem>
               const SizedBox(height: 16),
               _buildGlassAction(
                 icon: LucideIcons.send,
-                label: 'Share',
+                label: '',
                 onTap: () {},
                 rotate: -0.2, // ~12 degrees
               ),
               const SizedBox(height: 16),
               _buildGlassAction(
                 icon: _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                label: 'Save',
+                label: '',
                 iconColor: Colors.white,
                 onTap: _toggleSaveAd,
               ),
@@ -1324,7 +1997,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                 const SizedBox(height: 16),
                 _buildGlassAction(
                   icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                  label: _isMuted ? 'Unmute' : 'Mute',
+                  label: '',
                   onTap: () {
                     setState(() {
                       _isMuted = !_isMuted;
@@ -1341,7 +2014,7 @@ class _AdVideoItemState extends State<AdVideoItem>
         Positioned(
           left: 16,
           right: 80,
-          bottom: 84,
+          bottom: 60,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -1350,32 +2023,14 @@ class _AdVideoItemState extends State<AdVideoItem>
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.3), width: 1),
-                    ),
-                    child: CircleAvatar(
-                      radius: 16,
-                      backgroundImage: (widget.ad.userAvatarUrl ??
-                                  widget.ad.companyLogo) !=
-                              null
-                          ? NetworkImage(
-                              widget.ad.userAvatarUrl ?? widget.ad.companyLogo!)
-                          : null,
-                      child: (widget.ad.userAvatarUrl ??
-                                  widget.ad.companyLogo) ==
-                              null
-                          ? Text(
-                              (widget.ad.vendorBusinessName ??
-                                  widget.ad.userName ??
-                                  widget.ad.companyName)[0],
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold),
-                            )
-                          : null,
-                    ),
+                  InkWell(
+                    onTap: () {
+                      final uid = _adProfileId(widget.ad);
+                      if (uid == null || uid.isEmpty) return;
+                      Navigator.of(context).pushNamed('/profile/$uid');
+                    },
+                    borderRadius: BorderRadius.circular(10),
+                    child: _buildAdAvatarThumb(),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -1386,16 +2041,24 @@ class _AdVideoItemState extends State<AdVideoItem>
                         Row(
                           children: [
                             Flexible(
-                              child: Text(
-                                widget.ad.vendorBusinessName ??
-                                    widget.ad.userName ??
-                                    widget.ad.companyName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                              child: InkWell(
+                                onTap: () {
+                                  final uid = _adProfileId(widget.ad);
+                                  if (uid == null || uid.isEmpty) return;
+                                  Navigator.of(context)
+                                      .pushNamed('/profile/$uid');
+                                },
+                                child: Text(
+                                  widget.ad.vendorBusinessName ??
+                                      widget.ad.userName ??
+                                      widget.ad.companyName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -1460,19 +2123,6 @@ class _AdVideoItemState extends State<AdVideoItem>
                             ),
                           ],
                         ),
-                        if ((widget.ad.category ?? '').isNotEmpty ||
-                            widget.ad.targetCategories.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            widget.ad.targetCategories.isNotEmpty
-                                ? widget.ad.targetCategories.join(' • ')
-                                : (widget.ad.category ?? ''),
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
                         const SizedBox(height: 4),
                         Builder(builder: (context) {
                           final caption =
@@ -1538,6 +2188,59 @@ class _AdVideoItemState extends State<AdVideoItem>
                             ),
                           );
                         }),
+                        if ((widget.ad.category ?? '').isNotEmpty ||
+                            widget.ad.targetCategories.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.ad.targetCategories.isNotEmpty
+                                ? widget.ad.targetCategories.join(' • ')
+                                : (widget.ad.category ?? ''),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                        if (widget.ad.targetLanguages.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              ...widget.ad.targetLanguages.take(3).map(
+                                    (lang) => _buildMetaPill(
+                                      icon: Icons.language,
+                                      label: lang,
+                                    ),
+                                  ),
+                              if (widget.ad.targetLanguages.length > 3)
+                                _buildMetaPill(
+                                  label:
+                                      '+${widget.ad.targetLanguages.length - 3}',
+                                ),
+                            ],
+                          ),
+                        ],
+                        if (widget.ad.targetLocations.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              ...widget.ad.targetLocations.take(2).map(
+                                    (loc) => _buildMetaPill(
+                                      icon: Icons.place,
+                                      label: loc,
+                                    ),
+                                  ),
+                              if (widget.ad.targetLocations.length > 2)
+                                _buildMetaPill(
+                                  label:
+                                      '+${widget.ad.targetLocations.length - 2} more',
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1587,23 +2290,18 @@ class _AdVideoItemState extends State<AdVideoItem>
       onTap: onTap,
       child: Column(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.3),
-              shape: BoxShape.circle,
-              border: Border.all(
-                  color:
-                      Colors.transparent), // React has border but it's subtle
-            ),
-            child: Transform.rotate(
-              angle: rotate,
-              child: Icon(
-                icon,
-                color: iconColor,
-                size: 22,
-                // fill: fillColor, // IconData doesn't support fill property directly in standard Icon widget usually, unless using specific icon set that supports it or fill property. LucideIcons are outline by default.
+          SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Transform.rotate(
+                angle: rotate,
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 22,
+                  // fill: fillColor, // IconData doesn't support fill property directly in standard Icon widget usually, unless using specific icon set that supports it or fill property. LucideIcons are outline by default.
+                ),
               ),
             ),
           ),
@@ -1629,6 +2327,66 @@ class _AdVideoItemState extends State<AdVideoItem>
     );
   }
 
+  Widget _buildMetaPill({IconData? icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: Colors.white70),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdAvatarThumb() {
+    final avatarUrl = widget.ad.userAvatarUrl ?? widget.ad.companyLogo;
+    final name =
+        (widget.ad.vendorBusinessName ?? widget.ad.userName ?? widget.ad.companyName)
+            .trim();
+    final ch = name.isEmpty ? 'A' : name[0].toUpperCase();
+
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.white54, width: 1.4),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: avatarUrl != null && avatarUrl.isNotEmpty
+          ? Image.network(avatarUrl, fit: BoxFit.cover)
+          : Container(
+              color: const Color(0xFFF97316),
+              alignment: Alignment.center,
+              child: Text(
+                ch,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+    );
+  }
+
   String _formatCount(int count) {
     if (count >= 1000000) {
       return '${(count / 1000000).toStringAsFixed(1)}M';
@@ -1648,6 +2406,26 @@ class _LikeRewardPopupData {
     required this.id,
     required this.amount,
     required this.isLike,
+  });
+}
+
+class _ViewRewardPopupData {
+  final int id;
+  final int amount;
+
+  const _ViewRewardPopupData({
+    required this.id,
+    required this.amount,
+  });
+}
+
+class _ViewRecordedPopupData {
+  final int id;
+  final int? viewCount;
+
+  const _ViewRecordedPopupData({
+    required this.id,
+    required this.viewCount,
   });
 }
 
@@ -1749,6 +2527,270 @@ class _LikeRewardPopupCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _ViewRewardPopupCard extends StatelessWidget {
+  final _ViewRewardPopupData data;
+  final VoidCallback onOk;
+
+  const _ViewRewardPopupCard({
+    super.key,
+    required this.data,
+    required this.onOk,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const borderColor = Color(0xFFFDE68A);
+    const pillTextColor = Color(0xFFF59E0B);
+    const circleGradient = LinearGradient(
+      colors: [Color(0xFFFCD34D), Color(0xFFF59E0B)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
+    const buttonGradient = LinearGradient(
+      colors: [Color(0xFFFBBF24), Color(0xFFF97316)],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 260, maxWidth: 320),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: borderColor),
+            boxShadow: const [
+              BoxShadow(color: Color(0x33000000), blurRadius: 30, offset: Offset(0, 18)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: circleGradient,
+                ),
+                child: const Icon(LucideIcons.coins, color: Colors.white, size: 36),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '+${data.amount} Coins',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: pillTextColor,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Earned for watching the full ad',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF111827),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: buttonGradient,
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x22000000), blurRadius: 14, offset: Offset(0, 10)),
+                    ],
+                  ),
+                  child: TextButton(
+                    onPressed: onOk,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    ),
+                    child: const Text(
+                      'Awesome!',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewRecordedPopupCard extends StatelessWidget {
+  final _ViewRecordedPopupData data;
+  final VoidCallback onOk;
+
+  const _ViewRecordedPopupCard({
+    super.key,
+    required this.data,
+    required this.onOk,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const borderColor = Color(0xFFE5E7EB);
+    const circleGradient = LinearGradient(
+      colors: [Color(0xFF9CA3AF), Color(0xFF6B7280)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
+    const buttonGradient = LinearGradient(
+      colors: [Color(0xFF6B7280), Color(0xFF374151)],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 260, maxWidth: 320),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: borderColor),
+            boxShadow: const [
+              BoxShadow(color: Color(0x33000000), blurRadius: 30, offset: Offset(0, 18)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: circleGradient,
+                ),
+                child: const Icon(Icons.remove_red_eye, color: Colors.white, size: 34),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'View Recorded',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF111827),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (data.viewCount != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Total views: ${data.viewCount}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF4B5563),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 6),
+              const Text(
+                'No coins rewarded for this view',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF6B7280),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: buttonGradient,
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x22000000), blurRadius: 14, offset: Offset(0, 10)),
+                    ],
+                  ),
+                  child: TextButton(
+                    onPressed: onOk,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchUser {
+  final String id;
+  final String username;
+  final String? fullName;
+  final String? avatarUrl;
+
+  const _SearchUser({
+    required this.id,
+    required this.username,
+    required this.fullName,
+    required this.avatarUrl,
+  });
+
+  factory _SearchUser.fromMap(Map<String, dynamic> raw) {
+    String pickString(dynamic value) {
+      final v = value?.toString().trim();
+      return v == null ? '' : v;
+    }
+
+    final id = pickString(raw['_id'] ?? raw['id'] ?? raw['user_id']);
+    final username = pickString(raw['username']);
+    final fullName = pickString(raw['full_name'] ?? raw['name']);
+    final avatar = pickString(raw['avatar_url'] ?? raw['avatar'] ?? raw['photo']);
+
+    return _SearchUser(
+      id: id,
+      username: username,
+      fullName: fullName.isEmpty ? null : fullName,
+      avatarUrl: avatar.isEmpty ? null : avatar,
+    );
+  }
+
+  String get displayName {
+    if (fullName != null && fullName!.trim().isNotEmpty) return fullName!;
+    if (username.trim().isNotEmpty) return username;
+    return 'User';
+  }
+
+  String get initials {
+    final name = displayName.trim();
+    if (name.isEmpty) return 'U';
+    return name.substring(0, 1).toUpperCase();
   }
 }
 
@@ -2458,6 +3500,12 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     }
   }
 
+  void _openAdVendorProfile(Ad ad) {
+    final uid = _adProfileId(ad);
+    if (uid == null || uid.isEmpty) return;
+    Navigator.of(context).pushNamed('/profile/$uid');
+  }
+
   String _fmtCount(int n) {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
@@ -2595,10 +3643,16 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
         children: [
           Row(
             children: [
-              _avatar(
-                avatarUrl,
-                name.isNotEmpty ? name[0].toUpperCase() : 'A',
-                size: 16,
+              InkWell(
+                onTap: (ad.userId?.trim().isNotEmpty ?? false)
+                    ? () => _openAdVendorProfile(ad)
+                    : null,
+                borderRadius: BorderRadius.circular(999),
+                child: _avatar(
+                  avatarUrl,
+                  name.isNotEmpty ? name[0].toUpperCase() : 'A',
+                  size: 16,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -2608,11 +3662,16 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          child: InkWell(
+                            onTap: (ad.userId?.trim().isNotEmpty ?? false)
+                                ? () => _openAdVendorProfile(ad)
+                                : null,
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),

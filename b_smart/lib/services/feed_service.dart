@@ -233,6 +233,10 @@ class FeedService {
         adTitle: 'Special Offer',
         adCompanyId: 'company-1',
         adCompanyName: 'TechCorp',
+        adCategory: 'Electronics',
+        totalBudgetCoins: 5000,
+        targetLocations: const ['All'],
+        targetLanguages: const ['All'],
       ),
     ];
   }
@@ -839,19 +843,24 @@ class FeedService {
 
       mapped.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-      if (offset > 0) {
-        return mapped;
-      }
-
       List<FeedPost> sponsored = const <FeedPost>[];
       try {
         final rawAds = await _adsApi.getFeed();
-        sponsored = _mapAdsToFeedPosts(rawAds.take(1).toList());
+        sponsored = _mapAdsToFeedPosts(rawAds);
       } catch (_) {
         sponsored = const <FeedPost>[];
       }
+      if (sponsored.isEmpty) {
+        // Fallback so ads still appear if ads API returns nothing.
+        sponsored = _getAds();
+      }
 
-      return _injectSingleSponsoredPost(mapped, sponsored);
+      return _injectAdsEveryN(
+        mapped,
+        sponsored,
+        interval: 5,
+        offset: offset,
+      );
     } catch (e) {
       if (!swallowErrors) rethrow;
       // On any top-level error, fall back to empty list so UI can recover.
@@ -950,6 +959,10 @@ class FeedService {
             adTitle: ad.title,
             adCompanyId: ad.companyId,
             adCompanyName: ad.companyName,
+            adCategory: ad.category,
+            totalBudgetCoins: ad.totalBudgetCoins,
+            targetLocations: ad.targetLocations,
+            targetLanguages: ad.targetLanguages,
           ),
         );
       } catch (_) {
@@ -975,6 +988,43 @@ class FeedService {
       insertAt,
       selected.copyWith(id: '${selected.id}-slot-home'),
     );
+    return merged;
+  }
+
+  List<FeedPost> _injectAdsEveryN(
+    List<FeedPost> posts,
+    List<FeedPost> ads, {
+    required int interval,
+    required int offset,
+  }) {
+    if (interval <= 0) return posts;
+
+    final basePosts = posts.where((p) => !p.isAd).toList();
+    final pool = <FeedPost>[];
+    final seenAdIds = <String>{};
+    for (final a in ads) {
+      if (a.id.isEmpty || seenAdIds.contains(a.id)) continue;
+      pool.add(a);
+      seenAdIds.add(a.id);
+    }
+    for (final p in posts.where((p) => p.isAd)) {
+      if (p.id.isEmpty || seenAdIds.contains(p.id)) continue;
+      pool.add(p);
+      seenAdIds.add(p.id);
+    }
+    if (pool.isEmpty) return posts;
+
+    final merged = <FeedPost>[];
+    var adIndex = 0;
+    for (var i = 0; i < basePosts.length; i++) {
+      merged.add(basePosts[i]);
+      final globalIndex = offset + i + 1; // 1-based position in feed
+      if (globalIndex % interval == 0 && i < basePosts.length - 1) {
+        final ad = pool[adIndex % pool.length];
+        merged.add(ad.copyWith(id: '${ad.id}-slot-$globalIndex'));
+        adIndex += 1;
+      }
+    }
     return merged;
   }
 

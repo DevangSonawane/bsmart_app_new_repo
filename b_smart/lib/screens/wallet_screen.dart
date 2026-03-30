@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +7,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/api.dart';
 import '../services/wallet_service.dart';
 import '../models/ledger_model.dart';
+import '../widgets/floating_message_overlay.dart';
+import 'messaging_screen.dart';
 
 enum _WalletSection { none, transaction, account, help }
 enum _TransactionQuickFilter { all, earned, spent }
@@ -197,97 +200,112 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
     final titleColor = isDark ? Colors.white : const Color(0xFF0A0A0A);
     return Scaffold(
       backgroundColor: scaffoldBg,
-      body: RefreshIndicator(
-        onRefresh: _loadWallet,
-        color: const Color(0xFFF97316),
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverAppBar(
-              pinned: true,
-              backgroundColor: appBarBg,
-              elevation: 0,
-              leading: Padding(
-                padding: const EdgeInsets.only(left: 12),
-                child: _HeaderIconButton(
-                  icon: LucideIcons.arrowLeft,
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  isLoading: false,
-                ),
-              ),
-              title: Row(
-                children: [
-                  const Icon(LucideIcons.wallet, size: 18, color: Color(0xFFFB923C)),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Wallet & Coins',
-                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w800, fontSize: 16, color: titleColor),
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            onRefresh: _loadWallet,
+            color: const Color(0xFFF97316),
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverAppBar(
+                  pinned: true,
+                  backgroundColor: appBarBg,
+                  elevation: 0,
+                  leading: Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: _HeaderIconButton(
+                      icon: LucideIcons.arrowLeft,
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      isLoading: false,
+                    ),
                   ),
-                ],
-              ),
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: _HeaderIconButton(
-                    icon: LucideIcons.refreshCw,
-                    onPressed: _loadWallet,
-                    isLoading: _isLoading,
-                  ),
-                ),
-              ],
-              flexibleSpace: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                  child: Container(color: Colors.transparent),
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-              sliver: SliverToBoxAdapter(
-                child: DefaultTextStyle(
-                  style: GoogleFonts.dmSans(color: titleColor),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  title: Row(
                     children: [
-                      _buildBalanceCard(),
-                      const SizedBox(height: 12),
-                      if (_errorMessage != null) _buildErrorBanner(),
-                      const SizedBox(height: 12),
-                      _AccordionItem(
-                        title: 'Transaction History',
-                        badge: _transactions.isEmpty ? null : _transactions.length,
-                        isOpen: _openSection == _WalletSection.transaction,
-                        onToggle: () => setState(() {
-                          _openSection = _openSection == _WalletSection.transaction ? _WalletSection.none : _WalletSection.transaction;
-                        }),
-                        child: _buildTransactionHistory(),
-                      ),
-                      const SizedBox(height: 12),
-                      _AccordionItem(
-                        title: 'Account Details',
-                        isOpen: _openSection == _WalletSection.account,
-                        onToggle: () => setState(() {
-                          _openSection = _openSection == _WalletSection.account ? _WalletSection.none : _WalletSection.account;
-                        }),
-                        child: _buildAccountDetails(),
-                      ),
-                      const SizedBox(height: 12),
-                      _AccordionItem(
-                        title: 'Help',
-                        isOpen: _openSection == _WalletSection.help,
-                        onToggle: () => setState(() {
-                          _openSection = _openSection == _WalletSection.help ? _WalletSection.none : _WalletSection.help;
-                        }),
-                        child: _buildHelp(),
+                      const Icon(LucideIcons.wallet, size: 18, color: Color(0xFFFB923C)),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Wallet & Coins',
+                        style: GoogleFonts.dmSans(fontWeight: FontWeight.w800, fontSize: 16, color: titleColor),
                       ),
                     ],
                   ),
+                  actions: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: _HeaderIconButton(
+                        icon: LucideIcons.refreshCw,
+                        onPressed: _loadWallet,
+                        isLoading: _isLoading,
+                      ),
+                    ),
+                  ],
+                  flexibleSpace: ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(color: Colors.transparent),
+                    ),
+                  ),
                 ),
-              ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                  sliver: SliverToBoxAdapter(
+                    child: DefaultTextStyle(
+                      style: GoogleFonts.dmSans(color: titleColor),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildBalanceCard(),
+                          const SizedBox(height: 12),
+                          if (_errorMessage != null) _buildErrorBanner(),
+                          const SizedBox(height: 12),
+                          _AccordionItem(
+                            title: 'Transaction History',
+                            badge: _transactions.isEmpty ? null : _transactions.length,
+                            isOpen: _openSection == _WalletSection.transaction,
+                            onToggle: () => setState(() {
+                              _openSection = _openSection == _WalletSection.transaction ? _WalletSection.none : _WalletSection.transaction;
+                            }),
+                            child: _buildTransactionHistory(),
+                          ),
+                          const SizedBox(height: 12),
+                          _AccordionItem(
+                            title: 'Account Details',
+                            isOpen: _openSection == _WalletSection.account,
+                            onToggle: () => setState(() {
+                              _openSection = _openSection == _WalletSection.account ? _WalletSection.none : _WalletSection.account;
+                            }),
+                            child: _buildAccountDetails(),
+                          ),
+                          const SizedBox(height: 12),
+                          _AccordionItem(
+                            title: 'Help',
+                            isOpen: _openSection == _WalletSection.help,
+                            onToggle: () => setState(() {
+                              _openSection = _openSection == _WalletSection.help ? _WalletSection.none : _WalletSection.help;
+                            }),
+                            child: _buildHelp(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          Positioned.fill(
+            child: FloatingMessageOverlay(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const MessagingScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -593,17 +611,19 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
               ),
             )
           else
-            ListView.separated(
-              padding: EdgeInsets.zero,
-              primary: false,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: filtered.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (_, i) => _TransactionTile(
-                tx: filtered[i],
-                meta: _txMeta(filtered[i]),
-                formatDate: _formatDateTime,
+            SizedBox(
+              height: math.min(filtered.length, 5) * 68 + (math.min(filtered.length, 5) - 1) * 10,
+              child: ListView.separated(
+                padding: EdgeInsets.zero,
+                primary: false,
+                shrinkWrap: true,
+                itemCount: filtered.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (_, i) => _TransactionTile(
+                  tx: filtered[i],
+                  meta: _txMeta(filtered[i]),
+                  formatDate: _formatDateTime,
+                ),
               ),
             ),
         ],

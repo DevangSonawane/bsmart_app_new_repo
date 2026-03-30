@@ -9,21 +9,23 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/users_api.dart';
 
 class TagPeopleScreen extends StatefulWidget {
-  final String mediaPath;
-  final bool isVideo;
-  final String filterName;
-  final Map<String, int> adjustments;
-  final bool alreadyProcessed;
-  final List<Map<String, dynamic>> initialTags;
+  final List<String> mediaPaths;
+  final List<bool> isVideos;
+  final List<String> filterNames;
+  final List<Map<String, int>> adjustments;
+  final List<bool> alreadyProcessed;
+  final Map<int, List<Map<String, dynamic>>> initialTagsByIndex;
+  final int initialIndex;
 
   const TagPeopleScreen({
     super.key,
-    required this.mediaPath,
-    required this.isVideo,
-    required this.filterName,
+    required this.mediaPaths,
+    required this.isVideos,
+    required this.filterNames,
     required this.adjustments,
     required this.alreadyProcessed,
-    required this.initialTags,
+    required this.initialTagsByIndex,
+    required this.initialIndex,
   });
 
   @override
@@ -34,7 +36,10 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
   final TextEditingController _searchCtl = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
 
-  List<Map<String, dynamic>> _tags = [];
+  final Map<int, List<Map<String, dynamic>>> _tagsByIndex = {};
+  int _currentIndex = 0;
+  PageController? _pageController;
+  late final List<Map<String, dynamic>> _initialFlattened;
   String? _selectedTagId;
   String? _draggingTagId;
   bool _tapStartedOnTag = false;
@@ -50,7 +55,23 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
   @override
   void initState() {
     super.initState();
-    _tags = widget.initialTags.map((t) => Map<String, dynamic>.from(t)).toList();
+    _initialFlattened = widget.initialTagsByIndex.entries
+        .expand((entry) => entry.value.map((t) => {
+              ...t,
+              'mediaIndex': entry.key,
+            }))
+        .toList();
+    for (final entry in widget.initialTagsByIndex.entries) {
+      _tagsByIndex[entry.key] =
+          entry.value.map((t) => Map<String, dynamic>.from(t)).toList();
+    }
+    if (widget.mediaPaths.isEmpty) {
+      _currentIndex = 0;
+      _pageController = PageController();
+    } else {
+      _currentIndex = widget.initialIndex.clamp(0, widget.mediaPaths.length - 1);
+      _pageController = PageController(initialPage: _currentIndex);
+    }
   }
 
   @override
@@ -58,7 +79,33 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
     _debounce?.cancel();
     _searchCtl.dispose();
     _searchFocus.dispose();
+    _pageController?.dispose();
     super.dispose();
+  }
+
+  List<Map<String, dynamic>> _tagsForIndex(int index) {
+    return _tagsByIndex[index] ?? <Map<String, dynamic>>[];
+  }
+
+  void _setTagsForIndex(int index, List<Map<String, dynamic>> tags) {
+    if (tags.isEmpty) {
+      _tagsByIndex.remove(index);
+    } else {
+      _tagsByIndex[index] = tags;
+    }
+  }
+
+  List<Map<String, dynamic>> _flattenTags() {
+    final out = <Map<String, dynamic>>[];
+    for (final entry in _tagsByIndex.entries) {
+      for (final t in entry.value) {
+        out.add({
+          ...t,
+          'mediaIndex': entry.key,
+        });
+      }
+    }
+    return out;
   }
 
   void _openSearchAt(Offset localPosition, Size size) {
@@ -116,12 +163,14 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
   void _addTag(Map<String, dynamic> user) {
     final id = '${DateTime.now().millisecondsSinceEpoch}_${user['id'] ?? user['_id'] ?? ''}';
     setState(() {
-      _tags.add({
+      final list = List<Map<String, dynamic>>.from(_tagsForIndex(_currentIndex));
+      list.add({
         'id': id,
         'x': _pendingX,
         'y': _pendingY,
         'user': user,
       });
+      _setTagsForIndex(_currentIndex, list);
       _selectedTagId = id;
       _showSearch = false;
     });
@@ -131,7 +180,9 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
 
   void _removeTag(String id) {
     setState(() {
-      _tags.removeWhere((t) => t['id'] == id);
+      final list = List<Map<String, dynamic>>.from(_tagsForIndex(_currentIndex));
+      list.removeWhere((t) => t['id'] == id);
+      _setTagsForIndex(_currentIndex, list);
       if (_selectedTagId == id) _selectedTagId = null;
       if (_draggingTagId == id) _draggingTagId = null;
     });
@@ -139,19 +190,21 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
 
   void _moveTagByDelta(String id, Offset delta, Size size) {
     if (size.width <= 0 || size.height <= 0) return;
-    final idx = _tags.indexWhere((t) => (t['id'] ?? '').toString() == id);
+    final list = List<Map<String, dynamic>>.from(_tagsForIndex(_currentIndex));
+    final idx = list.indexWhere((t) => (t['id'] ?? '').toString() == id);
     if (idx < 0) return;
-    final current = _tags[idx];
+    final current = list[idx];
     final cx = (current['x'] as num?)?.toDouble() ?? 0.5;
     final cy = (current['y'] as num?)?.toDouble() ?? 0.5;
     final nextX = ((cx * size.width) + delta.dx) / size.width;
     final nextY = ((cy * size.height) + delta.dy) / size.height;
     setState(() {
-      _tags[idx] = {
+      list[idx] = {
         ...current,
         'x': nextX.clamp(0.0, 1.0),
         'y': nextY.clamp(0.0, 1.0),
       };
+      _setTagsForIndex(_currentIndex, list);
     });
   }
 
@@ -246,9 +299,17 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
     return out;
   }
 
-  Widget _buildMediaPreview() {
+  Widget _buildMediaPreview(int index) {
     final theme = Theme.of(context);
-    if (widget.isVideo) {
+    if (index < 0 ||
+        index >= widget.mediaPaths.length ||
+        index >= widget.isVideos.length ||
+        index >= widget.filterNames.length ||
+        index >= widget.adjustments.length ||
+        index >= widget.alreadyProcessed.length) {
+      return const SizedBox();
+    }
+    if (widget.isVideos[index]) {
       return Container(
         color: theme.colorScheme.surface,
         child: Center(
@@ -260,10 +321,10 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
         ),
       );
     }
-    final file = File(widget.mediaPath);
+    final file = File(widget.mediaPaths[index]);
     Widget image = Image.file(file, fit: BoxFit.cover);
-    if (!widget.alreadyProcessed) {
-      final adj = widget.adjustments;
+    if (!widget.alreadyProcessed[index]) {
+      final adj = widget.adjustments[index];
       final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
       final luxBC = 1.0 + (lux * 0.35);
       final luxS = 1.0 + (lux * 0.2);
@@ -271,7 +332,7 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
       final c = ((adj['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
       final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
       final opacity = 1.0 - (adj['opacity'] ?? 0) / 100.0;
-      final presetMatrix = _filterMatrixFor(widget.filterName);
+      final presetMatrix = _filterMatrixFor(widget.filterNames[index]);
       final adjustmentMatrix = _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
       image = Opacity(
         opacity: opacity.clamp(0.0, 1.0),
@@ -297,6 +358,7 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
         theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
     final appBarFg =
         theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
+    final currentTags = _tagsForIndex(_currentIndex);
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
@@ -309,11 +371,11 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
         ),
         leading: IconButton(
           icon: Icon(Icons.close, color: appBarFg.withValues(alpha: 0.7)),
-          onPressed: () => Navigator.of(context).pop(widget.initialTags),
+          onPressed: () => Navigator.of(context).pop(_initialFlattened),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(_tags),
+            onPressed: () => Navigator.of(context).pop(_flattenTags()),
             child: Text(
               'Done',
               style: TextStyle(
@@ -339,117 +401,139 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                         child: SizedBox(
                           width: side,
                           height: side,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(18),
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final size = constraints.biggest;
-                                return GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTapUp: (d) {
-                                    if (_tapStartedOnTag || _draggingTagId != null) {
-                                      _tapStartedOnTag = false;
-                                      return;
-                                    }
-                                    setState(() => _selectedTagId = null);
-                                    _openSearchAt(d.localPosition, size);
-                                  },
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      _buildMediaPreview(),
-                                      for (final t in _tags)
-                                        Positioned(
-                                          left: (((t['x'] as num?)?.toDouble() ?? 0.5) * size.width) - 8,
-                                          top: (((t['y'] as num?)?.toDouble() ?? 0.5) * size.height) - 34,
-                                          child: GestureDetector(
-                                            behavior: HitTestBehavior.opaque,
-                                            onTapDown: (_) => _tapStartedOnTag = true,
-                                            onTap: () {
-                                              setState(() {
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: PageView.builder(
+                            controller: _pageController,
+                            itemCount: widget.mediaPaths.length,
+                            onPageChanged: (i) {
+                              setState(() {
+                                _currentIndex = i;
+                                _selectedTagId = null;
+                                _draggingTagId = null;
+                                _showSearch = false;
+                              });
+                            },
+                            itemBuilder: (context, index) {
+                              return LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final size = constraints.biggest;
+                                  final tags = _tagsForIndex(index);
+                                  return GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTapUp: (d) {
+                                      if (_currentIndex != index) return;
+                                      if (_tapStartedOnTag || _draggingTagId != null) {
+                                        _tapStartedOnTag = false;
+                                        return;
+                                      }
+                                      setState(() => _selectedTagId = null);
+                                      _openSearchAt(d.localPosition, size);
+                                    },
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        _buildMediaPreview(index),
+                                        for (final t in tags)
+                                          Positioned(
+                                            left: (((t['x'] as num?)?.toDouble() ?? 0.5) * size.width) - 8,
+                                            top: (((t['y'] as num?)?.toDouble() ?? 0.5) * size.height) - 34,
+                                            child: GestureDetector(
+                                              behavior: HitTestBehavior.opaque,
+                                              onTapDown: (_) => _tapStartedOnTag = true,
+                                              onTap: () {
+                                                if (_currentIndex != index) return;
+                                                setState(() {
+                                                  final id = (t['id'] ?? '').toString();
+                                                  _selectedTagId = (_selectedTagId == id) ? null : id;
+                                                });
+                                                _tapStartedOnTag = false;
+                                              },
+                                              onPanStart: (_) {
+                                                if (_currentIndex != index) return;
+                                                _tapStartedOnTag = true;
+                                                setState(() {
+                                                  final id = (t['id'] ?? '').toString();
+                                                  _draggingTagId = id;
+                                                  _selectedTagId = id;
+                                                });
+                                              },
+                                              onPanUpdate: (d) {
+                                                if (_currentIndex != index) return;
                                                 final id = (t['id'] ?? '').toString();
-                                                _selectedTagId = (_selectedTagId == id) ? null : id;
-                                              });
-                                              _tapStartedOnTag = false;
-                                            },
-                                            onPanStart: (_) {
-                                              _tapStartedOnTag = true;
-                                              setState(() {
-                                                final id = (t['id'] ?? '').toString();
-                                                _draggingTagId = id;
-                                                _selectedTagId = id;
-                                              });
-                                            },
-                                            onPanUpdate: (d) {
-                                              final id = (t['id'] ?? '').toString();
-                                              if (_draggingTagId != id) return;
-                                              _moveTagByDelta(id, d.delta, size);
-                                            },
-                                            onPanEnd: (_) {
-                                              _tapStartedOnTag = false;
-                                              setState(() => _draggingTagId = null);
-                                            },
-                                            onPanCancel: () {
-                                              _tapStartedOnTag = false;
-                                              setState(() => _draggingTagId = null);
-                                            },
-                                            child: Stack(
-                                              clipBehavior: Clip.none,
-                                              children: [
-                                                Container(
-                                                  padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.black.withValues(
-                                                      alpha: isDark ? 0.65 : 0.5,
+                                                if (_draggingTagId != id) return;
+                                                _moveTagByDelta(id, d.delta, size);
+                                              },
+                                              onPanEnd: (_) {
+                                                if (_currentIndex != index) return;
+                                                _tapStartedOnTag = false;
+                                                setState(() => _draggingTagId = null);
+                                              },
+                                              onPanCancel: () {
+                                                if (_currentIndex != index) return;
+                                                _tapStartedOnTag = false;
+                                                setState(() => _draggingTagId = null);
+                                              },
+                                              child: Stack(
+                                                clipBehavior: Clip.none,
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black.withValues(
+                                                        alpha: isDark ? 0.65 : 0.5,
+                                                      ),
+                                                      borderRadius: BorderRadius.circular(14),
                                                     ),
-                                                    borderRadius: BorderRadius.circular(14),
-                                                  ),
-                                                  child: Text(
-                                                    ((t['user'] as Map<String, dynamic>)['username'] as String?) ?? '',
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontWeight: FontWeight.w600,
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ),
-                                                if (_selectedTagId == (t['id'] ?? '').toString())
-                                                  Positioned(
-                                                    top: -6,
-                                                    right: -6,
-                                                    child: GestureDetector(
-                                                      behavior: HitTestBehavior.opaque,
-                                                      onTapDown: (_) => _tapStartedOnTag = true,
-                                                      onTap: () {
-                                                        _tapStartedOnTag = false;
-                                                        _removeTag((t['id'] ?? '').toString());
-                                                      },
-                                                      child: Container(
-                                                        width: 18,
-                                                        height: 18,
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.black.withValues(
-                                                            alpha: isDark ? 0.75 : 0.6,
-                                                          ),
-                                                          shape: BoxShape.circle,
-                                                          border: Border.all(color: Colors.white24, width: 1),
-                                                        ),
-                                                        child: const Center(
-                                                          child: Icon(Icons.close, size: 12, color: Colors.white),
-                                                        ),
+                                                    child: Text(
+                                                      ((t['user'] as Map<String, dynamic>)['username'] as String?) ?? '',
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight: FontWeight.w600,
+                                                        fontSize: 12,
                                                       ),
                                                     ),
                                                   ),
-                                              ],
+                                                  if (_selectedTagId == (t['id'] ?? '').toString())
+                                                    Positioned(
+                                                      top: -6,
+                                                      right: -6,
+                                                      child: GestureDetector(
+                                                        behavior: HitTestBehavior.opaque,
+                                                        onTapDown: (_) => _tapStartedOnTag = true,
+                                                        onTap: () {
+                                                          if (_currentIndex != index) return;
+                                                          _tapStartedOnTag = false;
+                                                          _removeTag((t['id'] ?? '').toString());
+                                                        },
+                                                        child: Container(
+                                                          width: 18,
+                                                          height: 18,
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.black.withValues(
+                                                              alpha: isDark ? 0.75 : 0.6,
+                                                            ),
+                                                            shape: BoxShape.circle,
+                                                            border: Border.all(color: Colors.white24, width: 1),
+                                                          ),
+                                                          child: const Center(
+                                                            child: Icon(Icons.close, size: 12, color: Colors.white),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            },
                           ),
+                        ),
                         ),
                       ),
                     );
@@ -464,17 +548,17 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _tags.isEmpty
+                    child: currentTags.isEmpty
                         ? const SizedBox()
                         : ListView.separated(
                             padding: const EdgeInsets.only(top: 6, bottom: 10),
-                            itemCount: _tags.length,
+                            itemCount: currentTags.length,
                             separatorBuilder: (_, __) => Container(
                               height: 1,
                               color: theme.dividerColor.withValues(alpha: 0.3),
                             ),
                             itemBuilder: (context, i) {
-                              final t = _tags[i];
+                              final t = currentTags[i];
                               final user = (t['user'] as Map<String, dynamic>);
                               final username = (user['username'] as String?) ?? '';
                               final fullName = (user['full_name'] as String?) ?? '';

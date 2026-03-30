@@ -27,7 +27,7 @@ class NotificationService {
     return [
       NotificationItem(
         id: 'notif-1',
-        type: NotificationType.ad,
+        typeKey: 'ad',
         title: 'New Ad Available',
         message: 'A new ad has been added. Check it out now.',
         timestamp: now.subtract(const Duration(minutes: 5)),
@@ -36,7 +36,7 @@ class NotificationService {
       ),
       NotificationItem(
         id: 'notif-2',
-        type: NotificationType.activity,
+        typeKey: 'follow',
         title: 'New Follower',
         message: 'Alice Smith started following you',
         timestamp: now.subtract(const Duration(hours: 1)),
@@ -81,21 +81,49 @@ class NotificationService {
         .toList();
   }
 
-  Future<List<NotificationItem>> getNotifications({bool forceRefresh = true}) async {
+  Future<NotificationPage> getNotifications({
+    bool forceRefresh = true,
+    int page = 1,
+    int limit = 15,
+    String? typeFilter,
+    bool? isRead,
+  }) async {
     if (!forceRefresh && _notifications.isNotEmpty) {
-      return _sortedCopy(_notifications);
+      return NotificationPage(items: _sortedCopy(_notifications), total: _notifications.length);
     }
     try {
-      final res = await _client.get('$_basePath/notifications');
+      final query = <String, String>{
+        'page': page.toString(),
+        'limit': limit.toString(),
+      };
+      if (typeFilter != null && typeFilter.isNotEmpty && typeFilter != 'all') {
+        if (typeFilter == 'unread') {
+          query['isRead'] = 'false';
+        } else {
+          query['type'] = typeFilter;
+        }
+      }
+      if (isRead != null) {
+        query['isRead'] = isRead ? 'true' : 'false';
+      }
+      final res = await _client.get('$_basePath/notifications', queryParams: query);
       final parsed = _parseNotifications(res);
       if (parsed.isNotEmpty || _notifications.isEmpty) {
         _notifications = parsed;
         _controller.add(_sortedCopy(_notifications));
       }
+      int total = parsed.length;
+      if (res is Map<String, dynamic>) {
+        final v = res['total'] ?? (res['data'] is Map ? (res['data'] as Map)['total'] : null);
+        if (v is int) total = v;
+        if (v is num) total = v.toInt();
+        if (v is String) total = int.tryParse(v) ?? total;
+      }
+      return NotificationPage(items: _sortedCopy(_notifications), total: total);
     } catch (_) {
       // keep cached notifications if network/API fails
     }
-    return _sortedCopy(_notifications);
+    return NotificationPage(items: _sortedCopy(_notifications), total: _notifications.length);
   }
 
   Future<int> getUnreadCount() async {
@@ -130,6 +158,18 @@ class NotificationService {
       _notifications[index] = _notifications[index].copyWith(isRead: true);
       _controller.add(_sortedCopy(_notifications));
     }
+  }
+
+  Future<void> deleteNotification(String notificationId) async {
+    final id = notificationId.trim();
+    if (id.isEmpty) return;
+    try {
+      await _client.delete('$_basePath/notifications/$id');
+    } catch (_) {
+      // best-effort; still update local cache
+    }
+    _notifications.removeWhere((n) => n.id == id);
+    _controller.add(_sortedCopy(_notifications));
   }
 
   // Mark all as read
@@ -189,7 +229,7 @@ class NotificationService {
   void addNewAdNotification(String adId, String adTitle) {
     final notification = NotificationItem(
       id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-      type: NotificationType.ad,
+      typeKey: 'ad',
       title: 'New Ad Available',
       message: adTitle.isNotEmpty
           ? '$adTitle - Check it out now!'

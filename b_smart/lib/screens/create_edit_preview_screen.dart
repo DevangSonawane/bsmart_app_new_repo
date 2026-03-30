@@ -9,6 +9,7 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:math' as math;
 import 'package:extended_image/extended_image.dart';
+import 'package:vector_math/vector_math_64.dart' as vector_math;
 import '../models/media_model.dart' as app_models;
 import '../services/create_service.dart';
 import 'create_post_screen.dart';
@@ -90,12 +91,14 @@ class _ImageToolSpec {
 
 class CreateEditPreviewScreen extends StatefulWidget {
   final app_models.MediaItem media;
+  final List<app_models.MediaItem>? mediaList;
   final String? selectedFilter;
   final bool isPostFlow;
 
   const CreateEditPreviewScreen({
     super.key,
     required this.media,
+    this.mediaList,
     this.selectedFilter,
     this.isPostFlow = false,
   });
@@ -107,6 +110,14 @@ class CreateEditPreviewScreen extends StatefulWidget {
 class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   final CreateService _createService = CreateService();
   late app_models.MediaItem _currentMedia;
+  late List<app_models.MediaItem> _mediaList;
+  int _currentIndex = 0;
+  bool _showInlineImageEditor = false;
+  final Map<String, Map<String, int>> _mediaAdjustments = {};
+  final Map<String, String?> _mediaFilters = {};
+  final Map<String, List<_PreviewTextOverlay>> _mediaTextOverlays = {};
+  final Map<String, List<OverlaySticker>> _mediaStickerOverlays = {};
+  PageController? _postPageController;
   String? _selectedFilter;
   String? _selectedFilterName;
   String? _selectedMusic;
@@ -121,18 +132,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   int? _activeTextIndex;
   int _zCounter = 0;
   final Map<String, int> _layerZOrder = {};
-  Offset _textLastFocalPoint = Offset.zero;
   Offset _textLastLocalFocalPoint = Offset.zero;
   double _textTransformBaseScale = 1.0;
   double _textTransformBaseRotation = 0.0;
   final List<OverlaySticker> _stickerOverlays = [];
   int? _activeStickerIndex;
-  Offset _stickerLastFocalPoint = Offset.zero;
   Offset _stickerLastLocalFocalPoint = Offset.zero;
   double _stickerBaseScale = 1.0;
   double _stickerBaseRotation = 0.0;
   bool _isStickerDeleteMode = false;
-  Offset _stickerLastGlobalFocalPoint = Offset.zero;
   final Map<String, double> _stickerDeleteScale = {};
   final Set<String> _deletingStickerIds = {};
   Timer? _stickerHoldTimer;
@@ -145,7 +153,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   bool _hideTextOverlaysForCapture = false;
   bool _captureWithoutRadius = false;
   ImageProvider? _cachedTextEditorBackground;
-  Offset? _cachedTrashCenter;
   double? _imageAspectRatio;
   Size? _imagePixelSize;
   ImageStream? _imageStream;
@@ -177,6 +184,13 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           ? controller.value.aspectRatio
           : 1.0;
       return _clampInstagramPostAspect(a);
+    }
+    if (widget.isPostFlow) {
+      final aspect = _imageAspectRatio ?? 1.0;
+      if ((aspect - 1.0).abs() <= 0.05) {
+        return 1.0;
+      }
+      return 4 / 5;
     }
     return _clampInstagramPostAspect(_imageAspectRatio ?? 1.0);
   }
@@ -246,15 +260,20 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     }
   }
 
-  Widget _applySelectedFilter(Widget child) {
-    if (_selectedFilter == null || _selectedFilter == 'none') {
-      return child;
+  Widget _applySelectedFilter(Widget child, {List<String>? filterIds}) {
+    final ids = (filterIds ?? const <String>[])
+        .where((id) => id != 'none')
+        .toList();
+    if (ids.isEmpty) return child;
+    Widget out = child;
+    for (final id in ids) {
+      final matrix = _reelFilterMatrixFor(id);
+      out = ColorFiltered(
+        colorFilter: ColorFilter.matrix(matrix),
+        child: out,
+      );
     }
-    final matrix = _reelFilterMatrixFor(_selectedFilter!);
-    return ColorFiltered(
-      colorFilter: ColorFilter.matrix(matrix),
-      child: child,
-    );
+    return out;
   }
 
   List<double> _buildAdjustmentMatrix({
@@ -276,8 +295,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     ];
   }
 
-  Widget _applyImageAdjustments(Widget child) {
-    final adj = _imageAdjustments;
+  Widget _applyImageAdjustments(Widget child, {Map<String, int>? adjustments}) {
+    final adj = adjustments ?? _imageAdjustments;
     final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
     final luxBC = 1.0 + (lux * 0.35);
     final luxS = 1.0 + (lux * 0.2);
@@ -330,15 +349,75 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     return out;
   }
 
+  Map<String, int> _effectiveAdjustments(app_models.MediaItem media) {
+    final base = _imageAdjustments;
+    final delta = _mediaAdjustments[media.id];
+    if (delta == null) return base;
+    return _mergeAdjustments(base, delta);
+  }
+
+  String? _effectiveFilter(app_models.MediaItem media) {
+    return _mediaFilters.containsKey(media.id)
+        ? _mediaFilters[media.id]
+        : _selectedFilter;
+  }
+
+  List<String> _effectiveFilterIds(app_models.MediaItem media) {
+    final ids = <String>[];
+    final global = _selectedFilter;
+    if (global != null && global != 'none') {
+      ids.add(global);
+    }
+    final per = _mediaFilters[media.id];
+    if (per != null && per != 'none' && per != global) {
+      ids.add(per);
+    }
+    return ids;
+  }
+
+  Map<String, int> _mergeAdjustments(
+    Map<String, int> base,
+    Map<String, int> delta,
+  ) {
+    int clampValue(String key, int value) {
+      if (key == 'lux' || key == 'opacity' || key == 'vignette') {
+        return value.clamp(0, 100);
+      }
+      return value.clamp(-100, 100);
+    }
+
+    final out = <String, int>{};
+    for (final entry in base.entries) {
+      final next = entry.value + (delta[entry.key] ?? 0);
+      out[entry.key] = clampValue(entry.key, next);
+    }
+    for (final entry in delta.entries) {
+      out[entry.key] ??= clampValue(entry.key, entry.value);
+    }
+    return out;
+  }
+
+  List<_PreviewTextOverlay> _effectiveTextOverlays(app_models.MediaItem media) {
+    return _mediaTextOverlays[media.id] ?? const [];
+  }
+
+  List<OverlaySticker> _effectiveStickerOverlays(app_models.MediaItem media) {
+    return _mediaStickerOverlays[media.id] ?? const [];
+  }
+
   @override
   void initState() {
     super.initState();
-    _currentMedia = widget.media;
+    _mediaList = widget.mediaList != null && widget.mediaList!.isNotEmpty
+        ? List<app_models.MediaItem>.from(widget.mediaList!)
+        : [widget.media];
+    _currentIndex = 0;
+    _currentMedia = _mediaList[_currentIndex];
+    if (_mediaList.length > 1 && widget.media.type != app_models.MediaType.video) {
+      _postPageController = PageController();
+    }
     _selectedFilter = widget.selectedFilter;
     _primeTextEditorBackground();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateCachedTrashCenter();
-    });
     if (_selectedFilter != null) {
       final filters = _createService.getFilters();
       final match = filters.where((f) => f.id == _selectedFilter).toList();
@@ -375,13 +454,11 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateCachedTrashCenter();
-    });
   }
 
   @override
   void dispose() {
+    _postPageController?.dispose();
     _stickerHoldTimer?.cancel();
     _textHoldTimer?.cancel();
     _videoController?.removeListener(_handlePreviewVideoTick);
@@ -423,7 +500,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       }
       return;
     }
-    if (duration != null && duration != Duration.zero && pos >= duration) {
+    if (duration != Duration.zero && pos >= duration) {
       controller.pause();
       if (mounted) {
         setState(() => _isPlaying = false);
@@ -627,6 +704,41 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     );
   }
 
+  Future<void> _openPerImageEditor(app_models.MediaItem media) async {
+    if (media.filePath == null) return;
+    final result = await Navigator.of(context).push<_PerImageEditResult>(
+      MaterialPageRoute(
+        builder: (_) => _PerImageEditPage(
+          media: media,
+          frameAspect: _postFrameAspect(),
+          initialFilter: _mediaFilters[media.id] ?? 'none',
+          initialAdjustments:
+              Map<String, int>.from(_mediaAdjustments[media.id] ?? {}),
+          globalFilter: _selectedFilter,
+          globalAdjustments: Map<String, int>.from(_imageAdjustments),
+          initialTextOverlays:
+              List<_PreviewTextOverlay>.from(_effectiveTextOverlays(media)),
+          initialStickerOverlays:
+              List<OverlaySticker>.from(_effectiveStickerOverlays(media)),
+          filters: _createService.getFilters(),
+          filterMatrixFor: _reelFilterMatrixFor,
+          buildAdjustmentMatrix: _buildAdjustmentMatrix,
+          buildSepiaMatrix: _buildSepiaMatrix,
+        ),
+      ),
+    );
+    if (result == null) return;
+    setState(() {
+      _mediaFilters[media.id] = result.filterId;
+      _mediaAdjustments[media.id] = Map<String, int>.from(result.adjustments);
+      _mediaTextOverlays[media.id] =
+          List<_PreviewTextOverlay>.from(result.textOverlays);
+      _mediaStickerOverlays[media.id] =
+          List<OverlaySticker>.from(result.stickerOverlays);
+      _cachedTextEditorBackground = null;
+    });
+  }
+
   void _openImageAdjustmentsEditor() {
     const tools = <_ImageToolSpec>[
       _ImageToolSpec(key: 'lux', label: 'Lux', icon: Icons.auto_fix_high, min: 0, max: 100),
@@ -657,7 +769,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                   children: [
                     Row(
                       children: [
-                        Expanded(child: SizedBox()),
+                        const Expanded(child: SizedBox()),
                         Text(current.toString(), style: const TextStyle(color: Colors.white70)),
                       ],
                     ),
@@ -853,25 +965,61 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     );
   }
 
-  Widget _buildPostZoomableImagePreview(BoxConstraints viewport) {
-    if (widget.media.filePath == null) {
+  Widget _buildPostZoomableImagePreview(
+    BoxConstraints viewport, {
+    required bool enableGesture,
+  }) {
+    return _buildPostZoomableImagePreviewFor(
+      _currentMedia,
+      viewport,
+      enableGesture: enableGesture,
+    );
+  }
+
+  Widget _buildPostZoomableImagePreviewFor(
+    app_models.MediaItem media,
+    BoxConstraints viewport, {
+    required bool enableGesture,
+  }) {
+    if (media.filePath == null) {
       return const Icon(Icons.image, size: 100, color: Colors.white54);
     }
     _postViewportSize = viewport.biggest;
-    final imageAspect = _imageAspectRatio ?? 1.0;
-    final viewportAspect = (viewport.maxHeight <= 0) ? 1.0 : (viewport.maxWidth / viewport.maxHeight);
-    final ratio = math.max(imageAspect / viewportAspect, viewportAspect / imageAspect).clamp(1.0, 5.0);
-    final initialScale = ratio;
-    final media = _applyImageAdjustments(_applySelectedFilter(
-      ExtendedImage.file(
-        key: ValueKey(
-          'postZoom-${_imageAspectRatio?.toStringAsFixed(4) ?? 'na'}',
+    if (!enableGesture) {
+      final preview = _applyImageAdjustments(
+        _applySelectedFilter(
+          Image.file(
+            File(media.filePath!),
+            fit: BoxFit.cover,
+            width: viewport.maxWidth,
+            height: viewport.maxHeight,
+          ),
+          filterIds: _effectiveFilterIds(media),
         ),
-        extendedImageGestureKey: _postGestureKey,
-        File(widget.media.filePath!),
+        adjustments: _effectiveAdjustments(media),
+      );
+      return SizedBox(
         width: viewport.maxWidth,
         height: viewport.maxHeight,
-        fit: BoxFit.contain,
+        child: preview,
+      );
+    }
+    final imageAspect = _imageAspectRatio ?? 1.0;
+    final viewportAspect =
+        (viewport.maxHeight <= 0) ? 1.0 : (viewport.maxWidth / viewport.maxHeight);
+    final ratio =
+        math.max(imageAspect / viewportAspect, viewportAspect / imageAspect)
+            .clamp(1.0, 5.0);
+    final initialScale = ratio;
+    final preview = _applyImageAdjustments(
+      _applySelectedFilter(
+      ExtendedImage.file(
+        key: ValueKey('postZoom-${media.id}-$_currentIndex'),
+        extendedImageGestureKey: _postGestureKey,
+        File(media.filePath!),
+        width: viewport.maxWidth,
+        height: viewport.maxHeight,
+        fit: BoxFit.cover,
         borderRadius: BorderRadius.circular(24),
         clipBehavior: Clip.antiAlias,
         mode: ExtendedImageMode.gesture,
@@ -888,15 +1036,20 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         },
         onDoubleTap: (ExtendedImageGestureState s) {
           final begin = s.gestureDetails?.totalScale ?? 1.0;
-          final end = begin < (initialScale * 1.5) ? math.max(initialScale * 2.0, 2.0) : initialScale;
+          final end = begin < (initialScale * 1.5)
+              ? math.max(initialScale * 2.0, 2.0)
+              : initialScale;
           s.handleDoubleTap(scale: end);
         },
       ),
-    ));
+      filterIds: _effectiveFilterIds(media),
+      ),
+      adjustments: _effectiveAdjustments(media),
+    );
     return SizedBox(
       width: viewport.maxWidth,
       height: viewport.maxHeight,
-      child: media,
+      child: preview,
     );
   }
 
@@ -1046,7 +1199,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   Future<String?> _writeProcessedImageFile({
     required String sourcePath,
-    required String? filterId,
+    required List<String> filterIds,
     required Map<String, int> adjustments,
   }) async {
     final srcFile = File(sourcePath);
@@ -1067,9 +1220,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final sepiaAmount = (tempRaw / 100.0) * 0.35;
     final vignette = ((adjustments['vignette'] ?? 0).clamp(0, 100) / 100.0) * 0.65;
 
-    final preset = (filterId == null || filterId == 'none')
-        ? _buildAdjustmentMatrix(brightness: 1.0, contrast: 1.0, saturation: 1.0)
-        : _reelFilterMatrixFor(filterId);
+    final identity = _buildAdjustmentMatrix(
+      brightness: 1.0,
+      contrast: 1.0,
+      saturation: 1.0,
+    );
+    var preset = identity;
+    for (final id in filterIds.where((e) => e != 'none')) {
+      preset = _combineColorMatrices(_reelFilterMatrixFor(id), preset);
+    }
     final sepiaMatrix = (sepiaAmount <= 0)
         ? _buildAdjustmentMatrix(brightness: 1.0, contrast: 1.0, saturation: 1.0)
         : _buildSepiaMatrix(amount: sepiaAmount, brightness: 1.0, contrast: 1.0, saturation: 1.0);
@@ -1225,13 +1384,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     }
 
     if (!usedComposite && !isVideo && nextMedia.filePath != null) {
-      final hasFilter = (_selectedFilter ?? 'none') != 'none';
-      final hasAdjustments = _imageAdjustments.values.any((v) => v != 0);
+      final hasFilter = _effectiveFilterIds(nextMedia).isNotEmpty;
+      final hasAdjustments =
+          _effectiveAdjustments(nextMedia).values.any((v) => v != 0);
       if (hasFilter || hasAdjustments) {
         final processedPath = await _writeProcessedImageFile(
           sourcePath: nextMedia.filePath!,
-          filterId: _selectedFilter,
-          adjustments: _imageAdjustments,
+          filterIds: _effectiveFilterIds(nextMedia),
+          adjustments: _effectiveAdjustments(nextMedia),
         );
         if (processedPath != null && processedPath.isNotEmpty) {
           nextMedia = app_models.MediaItem(
@@ -1248,11 +1408,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     }
 
     if (!mounted) return;
+    final processedList =
+        widget.isPostFlow ? await _buildProcessedMediaList() : null;
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => widget.isPostFlow
             ? CreatePostScreen(
                 initialMedia: nextMedia,
+                initialMediaList: processedList,
                 initialAspect: nextAspect,
                 initialFilterName: null,
                 initialAdjustments: null,
@@ -1282,11 +1445,77 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     }
   }
 
+  Future<List<app_models.MediaItem>?> _buildProcessedMediaList() async {
+    final list = widget.mediaList;
+    if (list == null || list.length <= 1) return null;
+
+    final prevIndex = _currentIndex;
+    final prevMedia = _currentMedia;
+    final processed = <app_models.MediaItem>[];
+
+    for (int i = 0; i < list.length; i++) {
+      final media = list[i];
+      if (media.type == app_models.MediaType.video || media.filePath == null) {
+        processed.add(media);
+        continue;
+      }
+
+      final hasOverlays = _textOverlays.isNotEmpty ||
+          _stickerOverlays.isNotEmpty ||
+          _effectiveTextOverlays(media).isNotEmpty ||
+          _effectiveStickerOverlays(media).isNotEmpty;
+      final hasFilter = _effectiveFilterIds(media).isNotEmpty;
+      final hasAdjustments =
+          _effectiveAdjustments(media).values.any((v) => v != 0);
+
+      String? outPath;
+      if (hasOverlays) {
+        setState(() {
+          _currentIndex = i;
+          _currentMedia = media;
+        });
+        _postPageController?.jumpToPage(i);
+        await WidgetsBinding.instance.endOfFrame;
+        outPath = await _exportPreviewCompositeToFile();
+      }
+
+      if ((outPath == null || outPath.isEmpty) &&
+          (hasFilter || hasAdjustments)) {
+        outPath = await _writeProcessedImageFile(
+          sourcePath: media.filePath!,
+          filterIds: _effectiveFilterIds(media),
+          adjustments: _effectiveAdjustments(media),
+        );
+      }
+
+      if (outPath != null && outPath.isNotEmpty) {
+        processed.add(
+          app_models.MediaItem(
+            id: media.id,
+            type: media.type,
+            filePath: outPath,
+            thumbnailPath: media.thumbnailPath,
+            duration: media.duration,
+            createdAt: media.createdAt,
+          ),
+        );
+      } else {
+        processed.add(media);
+      }
+    }
+
+    setState(() {
+      _currentIndex = prevIndex;
+      _currentMedia = prevMedia;
+    });
+    _postPageController?.jumpToPage(prevIndex);
+    return processed;
+  }
+
   void _handleTextScaleStart(ScaleStartDetails details) {
     if (_textOverlays.isEmpty) return;
     final activeIndex = _activeTextIndex ?? (_textOverlays.length - 1);
     _bringTextToFront(activeIndex);
-    _textLastFocalPoint = details.focalPoint;
     _textLastLocalFocalPoint = _toPreviewLocal(details.focalPoint);
     final overlay = _textOverlays[activeIndex];
     _textTransformBaseScale = overlay.scale;
@@ -1300,7 +1529,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final local = _toPreviewLocal(details.focalPoint);
     final delta = local - _textLastLocalFocalPoint;
     _textLastLocalFocalPoint = local;
-    _textLastFocalPoint = details.focalPoint;
 
     double newScale = overlay.scale;
     double newRotation = overlay.rotation;
@@ -1389,9 +1617,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (_stickerOverlays.isEmpty) return;
     final activeIndex = _activeStickerIndex ?? (_stickerOverlays.length - 1);
     _bringStickerToFront(activeIndex);
-    _stickerLastFocalPoint = details.focalPoint;
     _stickerLastLocalFocalPoint = _toPreviewLocal(details.focalPoint);
-    _stickerLastGlobalFocalPoint = details.focalPoint;
     final overlay = _stickerOverlays[activeIndex];
     _stickerBaseScale = overlay.scale;
     _stickerBaseRotation = overlay.rotation;
@@ -1407,8 +1633,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final local = _toPreviewLocal(details.focalPoint);
     final delta = local - _stickerLastLocalFocalPoint;
     _stickerLastLocalFocalPoint = local;
-    _stickerLastFocalPoint = details.focalPoint;
-    _stickerLastGlobalFocalPoint = details.focalPoint;
 
     double newScale = overlay.scale;
     double newRotation = overlay.rotation;
@@ -1432,6 +1656,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (mounted) {
       setState(() => _hideTextOverlaysForCapture = true);
       await WidgetsBinding.instance.endOfFrame;
+    }
+    if (!mounted) {
+      return const AssetImage('assets/images/dashboard_sample.png');
     }
     final boundary = _previewRepaintKey.currentContext?.findRenderObject();
     try {
@@ -1487,6 +1714,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       setState(() => _captureWithoutRadius = true);
       await WidgetsBinding.instance.endOfFrame;
     }
+    if (!mounted) return null;
     final boundary = _previewRepaintKey.currentContext?.findRenderObject();
     try {
       if (boundary is RenderRepaintBoundary) {
@@ -1608,7 +1836,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   }
 
   OverlayShape _nextShape(OverlayShape shape) {
-    final values = OverlayShape.values;
+    const values = OverlayShape.values;
     final next = (values.indexOf(shape) + 1) % values.length;
     return values[next];
   }
@@ -1697,20 +1925,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     });
   }
 
-  void _updateCachedTrashCenter() {
-    final renderBox =
-        _previewRepaintKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null || !mounted) return;
-    final size = renderBox.size;
-    final topLeft = renderBox.localToGlobal(Offset.zero);
-    setState(() {
-      _cachedTrashCenter = Offset(
-        topLeft.dx + size.width / 2,
-        topLeft.dy + size.height - 60,
-      );
-    });
-  }
-
   void _bringTextToFront(int index) {
     _zCounter++;
     _layerZOrder['text_$index'] = _zCounter;
@@ -1744,14 +1958,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     layers.sort((a, b) =>
         (a['zOrder'] as int).compareTo(b['zOrder'] as int));
     return layers;
-  }
-
-  Offset _effectiveTrashCenter(BuildContext context) {
-    final fallback = Offset(
-      MediaQuery.of(context).size.width / 2,
-      MediaQuery.of(context).size.height - 100,
-    );
-    return _cachedTrashCenter ?? fallback;
   }
 
   Offset _toPreviewLocal(Offset global) {
@@ -1899,6 +2105,55 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     );
   }
 
+  List<Widget> _buildPerImageOverlayWidgets(app_models.MediaItem media) {
+    final perText = _effectiveTextOverlays(media);
+    final perStickers = _effectiveStickerOverlays(media);
+    final widgets = <Widget>[];
+
+    for (int i = 0; i < perText.length; i++) {
+      final overlay = perText[i];
+      widgets.add(
+        Positioned(
+          key: ValueKey('per_text_${media.id}_$i'),
+          left: overlay.position.dx,
+          top: overlay.position.dy,
+          child: Transform.rotate(
+            angle: overlay.rotation,
+            child: Transform.scale(
+              scale: overlay.scale,
+              child: _buildOverlayVisual(overlay, false),
+            ),
+          ),
+        ),
+      );
+    }
+
+    for (int i = 0; i < perStickers.length; i++) {
+      final s = perStickers[i];
+      widgets.add(
+        Positioned(
+          key: ValueKey('per_sticker_${media.id}_${s.id}'),
+          left: s.position.dx,
+          top: s.position.dy,
+          child: Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..rotateZ(s.rotation)
+              ..scaleByVector3(
+                vector_math.Vector3.all(s.scale),
+              ),
+            child: OverlayStickerWidget(
+              sticker: s,
+              isActive: false,
+              onDelete: () {},
+            ),
+          ),
+        ),
+      );
+    }
+    return widgets;
+  }
+
   Widget _buildOverlayStyledText(_PreviewTextOverlay overlay) {
     final text = overlay.text;
     final baseStyle = overlay.style
@@ -1996,219 +2251,301 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                     borderRadius: _captureWithoutRadius
                                         ? BorderRadius.zero
                                         : BorderRadius.circular(24),
-                                    child: Container(
-                                      color: Colors.black,
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          if (widget.media.type ==
-                                              app_models.MediaType.video)
-                                            _buildVideoPreview()
-                                          else
-                                            LayoutBuilder(
-                                              builder: (context, viewport) {
-                                                return _buildPostZoomableImagePreview(
-                                                    viewport);
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        if (_currentMedia.type ==
+                                            app_models.MediaType.video)
+                                          _buildVideoPreview()
+                                        else if (_mediaList.length > 1)
+                                          PageView.builder(
+                                            controller: _postPageController,
+                                            itemCount: _mediaList.length,
+                                            onPageChanged: (i) {
+                                              setState(() {
+                                                _currentIndex = i;
+                                                _currentMedia =
+                                                    _mediaList[_currentIndex];
+                                              });
+                                            },
+                                            itemBuilder: (context, i) {
+                                              final item = _mediaList[i];
+                                              return GestureDetector(
+                                                  onTap: () {
+                                                  setState(() {
+                                                    _currentIndex = i;
+                                                    _currentMedia =
+                                                        _mediaList[i];
+                                                  });
+                                                  _openPerImageEditor(_mediaList[i]);
+                                                  },
+                                                child: LayoutBuilder(
+                                                  builder:
+                                                      (context, viewport) {
+                                                    return _buildPostZoomableImagePreviewFor(
+                                                      item,
+                                                      viewport,
+                                                      enableGesture: false,
+                                                    );
+                                                  },
+                                                ),
+                                              );
+                                            },
+                                          )
+                                        else
+                                          LayoutBuilder(
+                                            builder: (context, viewport) {
+                                              return GestureDetector(
+                                                  onTap: () {
+                                                  _openPerImageEditor(_currentMedia);
+                                                  },
+                                                child:
+                                                    _buildPostZoomableImagePreview(
+                                                  viewport,
+                                                  enableGesture: false,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        if (!_hideTextOverlaysForCapture)
+                                          ..._buildPerImageOverlayWidgets(
+                                              _currentMedia),
+                                        if (!_hideTextOverlaysForCapture)
+                                          ..._buildSortedLayers().map((layer) {
+                                            if (layer['type'] == 'text') {
+                                              final index =
+                                                  layer['index'] as int;
+                                              if (index >=
+                                                  _textOverlays.length) {
+                                                return const SizedBox.shrink();
+                                              }
+                                              final overlay =
+                                                  _textOverlays[index];
+                                              final isActive =
+                                                  _activeTextIndex == index;
+                                              return Positioned(
+                                                key: ValueKey('text_$index'),
+                                                left: overlay.position.dx,
+                                                top: overlay.position.dy,
+                                                child: GestureDetector(
+                                                  onTapDown: (_) =>
+                                                      _startTextHold(index),
+                                                  onTapUp: (_) =>
+                                                      _cancelTextHold(),
+                                                  onTapCancel: _cancelTextHold,
+                                                  onTap: () {
+                                                    if (_suppressTextTap) {
+                                                      _suppressTextTap = false;
+                                                      return;
+                                                    }
+                                                    setState(() =>
+                                                        _bringTextToFront(
+                                                            index));
+                                                    _openPreviewTextEditor(
+                                                        index: index);
+                                                  },
+                                                  onScaleStart: (d) {
+                                                    setState(() =>
+                                                        _bringTextToFront(
+                                                            index));
+                                                    _cancelTextHold();
+                                                    _handleTextScaleStart(d);
+                                                  },
+                                                  onScaleUpdate:
+                                                      _handleTextScaleUpdate,
+                                                  onScaleEnd: (_) =>
+                                                      _handleTextScaleEnd(),
+                                                  child: AnimatedOpacity(
+                                                    duration: const Duration(
+                                                        milliseconds: 180),
+                                                    opacity:
+                                                        _deletingTextIndexes
+                                                                .contains(
+                                                                    index)
+                                                            ? 0.0
+                                                            : 1.0,
+                                                    child: AnimatedScale(
+                                                      duration:
+                                                          const Duration(
+                                                              milliseconds:
+                                                                  180),
+                                                      scale:
+                                                          _deletingTextIndexes
+                                                                  .contains(
+                                                                      index)
+                                                              ? 0.0
+                                                              : 1.0,
+                                                      child: Transform.rotate(
+                                                        angle: overlay.rotation,
+                                                        child: Transform.scale(
+                                                          scale: overlay.scale *
+                                                              (_textDeleteScale[
+                                                                      index] ??
+                                                                  1.0),
+                                                          child:
+                                                              _buildOverlayVisual(
+                                                                  overlay,
+                                                                  isActive),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                            final i = layer['index'] as int;
+                                            if (i >= _stickerOverlays.length) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final s = _stickerOverlays[i];
+                                            final isActive =
+                                                _activeStickerIndex == i;
+                                            return Positioned(
+                                              key: ValueKey('sticker_${s.id}'),
+                                              left: s.position.dx,
+                                              top: s.position.dy,
+                                              child: GestureDetector(
+                                                onTapDown: (_) =>
+                                                    _startStickerHold(i),
+                                                onTapUp: (_) =>
+                                                    _cancelStickerHold(),
+                                                onTapCancel: () =>
+                                                    _cancelStickerHold(),
+                                                onTap: () {
+                                                  if (_suppressStickerTap) {
+                                                    _suppressStickerTap = false;
+                                                    return;
+                                                  }
+                                                  setState(() {
+                                                    if (_activeStickerIndex ==
+                                                        i) {
+                                                      _stickerOverlays[i] =
+                                                          s.copyWith(
+                                                        shape:
+                                                            _nextShape(s.shape),
+                                                      );
+                                                    }
+                                                    _bringStickerToFront(i);
+                                                  });
+                                                },
+                                                onScaleStart: (d) {
+                                                  setState(() =>
+                                                      _bringStickerToFront(i));
+                                                  _cancelStickerHold();
+                                                  _handleStickerScaleStart(d);
+                                                },
+                                                onScaleUpdate: (d) =>
+                                                    _handleStickerScaleUpdate(
+                                                        d, context),
+                                                onScaleEnd: (_) =>
+                                                    _handleStickerScaleEnd(
+                                                        context),
+                                                child: AnimatedOpacity(
+                                                  duration: const Duration(
+                                                      milliseconds: 180),
+                                                  opacity:
+                                                      _deletingStickerIds
+                                                              .contains(s.id)
+                                                          ? 0.0
+                                                          : 1.0,
+                                                  child: AnimatedScale(
+                                                    duration: const Duration(
+                                                        milliseconds: 180),
+                                                    scale:
+                                                        _deletingStickerIds
+                                                                .contains(
+                                                                    s.id)
+                                                            ? 0.0
+                                                            : 1.0,
+                                                    child: Transform(
+                                                      alignment:
+                                                          Alignment.center,
+                                                      transform:
+                                                          Matrix4.identity()
+                                                            ..rotateZ(
+                                                                s.rotation)
+                                                            ..scaleByVector3(
+                                                              vector_math
+                                                                  .Vector3.all(
+                                                                s.scale *
+                                                                    (_stickerDeleteScale[
+                                                                            s.id] ??
+                                                                        1.0),
+                                                              ),
+                                                            ),
+                                                      child:
+                                                          OverlayStickerWidget(
+                                                        sticker: s,
+                                                        isActive: isActive,
+                                                        onDelete: () {},
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          }),
+                                        if (_isStickerDeleteMode ||
+                                            _isTextDeleteMode)
+                                          Positioned.fill(
+                                            child: GestureDetector(
+                                              behavior: HitTestBehavior
+                                                  .translucent,
+                                              onTap: () {
+                                                _exitStickerDeleteMode();
+                                                _exitTextDeleteMode();
                                               },
                                             ),
-                                          if (!_isStickerDeleteMode &&
-                                              _selectedFilterName != null &&
-                                              _selectedFilter != null &&
-                                              _selectedFilter != 'none')
-                                            Positioned(
-                                              top: 16,
-                                              right: 16,
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 6),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.black54,
-                                                  borderRadius:
-                                                      BorderRadius.circular(20),
-                                                ),
-                                                child: Text(
-                                                  'Filter: $_selectedFilterName',
-                                                  style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 12),
-                                                ),
-                                              ),
-                                            ),
-                                          if (!_hideTextOverlaysForCapture)
-                                            ..._buildSortedLayers().map((layer) {
-                                              if (layer['type'] == 'text') {
-                                                final index = layer['index'] as int;
-                                                if (index >= _textOverlays.length) {
-                                                  return const SizedBox.shrink();
-                                                }
-                                                final overlay = _textOverlays[index];
-                                                final isActive = _activeTextIndex == index;
-                                                return Positioned(
-                                                  key: ValueKey('text_$index'),
-                                                  left: overlay.position.dx,
-                                                  top: overlay.position.dy,
-                                                  child: GestureDetector(
-                                                    onTapDown: (_) => _startTextHold(index),
-                                                    onTapUp: (_) => _cancelTextHold(),
-                                                    onTapCancel: _cancelTextHold,
-                                                    onTap: () {
-                                                      if (_suppressTextTap) {
-                                                        _suppressTextTap = false;
-                                                        return;
-                                                      }
-                                                      setState(() => _bringTextToFront(index));
-                                                      _openPreviewTextEditor(index: index);
-                                                    },
-                                                    onScaleStart: (d) {
-                                                      setState(() => _bringTextToFront(index));
-                                                      _cancelTextHold();
-                                                      _handleTextScaleStart(d);
-                                                    },
-                                                    onScaleUpdate: _handleTextScaleUpdate,
-                                                    onScaleEnd: (_) => _handleTextScaleEnd(),
-                                                    child: AnimatedOpacity(
-                                                      duration: const Duration(milliseconds: 180),
-                                                      opacity: _deletingTextIndexes.contains(index) ? 0.0 : 1.0,
-                                                      child: AnimatedScale(
-                                                        duration: const Duration(milliseconds: 180),
-                                                        scale: _deletingTextIndexes.contains(index) ? 0.0 : 1.0,
-                                                        child: Transform.rotate(
-                                                          angle: overlay.rotation,
-                                                          child: Transform.scale(
-                                                            scale: overlay.scale * (_textDeleteScale[index] ?? 1.0),
-                                                            child: _buildOverlayVisual(overlay, isActive),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                );
-                                              } else {
-                                                final i = layer['index'] as int;
-                                                if (i >= _stickerOverlays.length) {
-                                                  return const SizedBox.shrink();
-                                                }
-                                                final s = _stickerOverlays[i];
-                                                final isActive = _activeStickerIndex == i;
-                                                return Positioned(
-                                                  key: ValueKey('sticker_${s.id}'),
-                                                  left: s.position.dx,
-                                                  top: s.position.dy,
-                                                  child: GestureDetector(
-                                                    onTapDown: (_) => _startStickerHold(i),
-                                                    onTapUp: (_) => _cancelStickerHold(),
-                                                    onTapCancel: () => _cancelStickerHold(),
-                                                    onTap: () {
-                                                      if (_suppressStickerTap) {
-                                                        _suppressStickerTap = false;
-                                                        return;
-                                                      }
-                                                      setState(() {
-                                                        if (_activeStickerIndex == i) {
-                                                          _stickerOverlays[i] = s.copyWith(
-                                                            shape: _nextShape(s.shape),
-                                                          );
-                                                        }
-                                                        _bringStickerToFront(i);
-                                                      });
-                                                    },
-                                                    onScaleStart: (d) {
-                                                      setState(() => _bringStickerToFront(i));
-                                                      _cancelStickerHold();
-                                                      _handleStickerScaleStart(d);
-                                                    },
-                                                    onScaleUpdate: (d) => _handleStickerScaleUpdate(d, context),
-                                                    onScaleEnd: (_) => _handleStickerScaleEnd(context),
-                                                    child: AnimatedOpacity(
-                                                      duration: const Duration(milliseconds: 180),
-                                                      opacity: _deletingStickerIds.contains(s.id) ? 0.0 : 1.0,
-                                                      child: AnimatedScale(
-                                                        duration: const Duration(milliseconds: 180),
-                                                        scale: _deletingStickerIds.contains(s.id) ? 0.0 : 1.0,
-                                                        child: Transform(
-                                                          alignment: Alignment.center,
-                                                          transform: Matrix4.identity()
-                                                            ..rotateZ(s.rotation)
-                                                            ..scale(
-                                                              s.scale * (_stickerDeleteScale[s.id] ?? 1.0),
-                                                            ),
-                                                          child: OverlayStickerWidget(
-                                                            sticker: s,
-                                                            isActive: isActive,
-                                                            onDelete: () {},
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                );
-                                              }
-                                            }),
-                                          if (_isStickerDeleteMode ||
-                                              _isTextDeleteMode)
-                                            Positioned.fill(
-                                              child: GestureDetector(
-                                                behavior:
-                                                    HitTestBehavior.translucent,
-                                                onTap: () {
-                                                  _exitStickerDeleteMode();
-                                                  _exitTextDeleteMode();
-                                                },
-                                              ),
-                                            ),
-                                          Positioned(
-                                            left: 0,
-                                            right: 0,
-                                            bottom: 24,
-                                            child: IgnorePointer(
-                                              ignoring: !(_isStickerDeleteMode ||
-                                                  _isTextDeleteMode),
-                                              child: AnimatedOpacity(
+                                          ),
+                                        Positioned(
+                                          left: 0,
+                                          right: 0,
+                                          bottom: 24,
+                                          child: IgnorePointer(
+                                            ignoring: !(_isStickerDeleteMode ||
+                                                _isTextDeleteMode),
+                                            child: AnimatedOpacity(
+                                              duration: const Duration(
+                                                  milliseconds: 160),
+                                              curve: Curves.easeOut,
+                                              opacity: (_isStickerDeleteMode ||
+                                                      _isTextDeleteMode)
+                                                  ? 1
+                                                  : 0,
+                                              child: AnimatedScale(
                                                 duration: const Duration(
                                                     milliseconds: 160),
                                                 curve: Curves.easeOut,
-                                                opacity:
-                                                    (_isStickerDeleteMode ||
-                                                            _isTextDeleteMode)
+                                                scale: _isStickerDeleteMode
+                                                    ? 1
+                                                    : _isTextDeleteMode
                                                         ? 1
-                                                        : 0,
-                                                child: AnimatedScale(
-                                                  duration: const Duration(
-                                                      milliseconds: 160),
-                                                  curve: Curves.easeOut,
-                                                  scale: _isStickerDeleteMode
-                                                      ? 1
-                                                      : _isTextDeleteMode
-                                                          ? 1
-                                                          : 0.9,
-                                                  child: Center(
-                                                    child: GestureDetector(
-                                                      onTap:
-                                                          _deleteActiveSticker,
-                                                      child: Container(
-                                                        width: 56,
-                                                        height: 56,
-                                                        decoration:
-                                                            const BoxDecoration(
-                                                          color: Colors.black87,
-                                                          shape:
-                                                              BoxShape.circle,
-                                                        ),
-                                                        child: const Icon(
-                                                            Icons.delete_outline,
-                                                            color: Colors.white,
-                                                            size: 28),
+                                                        : 0.9,
+                                                child: Center(
+                                                  child: GestureDetector(
+                                                    onTap:
+                                                        _deleteActiveSticker,
+                                                    child: Container(
+                                                      width: 56,
+                                                      height: 56,
+                                                      decoration:
+                                                          const BoxDecoration(
+                                                        color: Colors.black87,
+                                                        shape:
+                                                            BoxShape.circle,
                                                       ),
+                                                      child: const Icon(
+                                                          Icons.delete_outline,
+                                                          color: Colors.white,
+                                                          size: 28),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -2317,6 +2654,151 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                   ),
                 ],
               ),
+              if (_showInlineImageEditor)
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _showInlineImageEditor = false;
+                      });
+                    },
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          width: double.infinity,
+                          height:
+                              MediaQuery.of(context).size.height * 0.72,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF0B0B0E),
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(20),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Align(
+                                alignment: Alignment.topLeft,
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.only(left: 12, top: 8),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(20),
+                                    onTap: () {
+                                      setState(() {
+                                        _showInlineImageEditor = false;
+                                      });
+                                    },
+                                    child: Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white10,
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: const Icon(Icons.close,
+                                          color: Colors.white, size: 18),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Center(
+                                  child: LayoutBuilder(
+                                    builder: (context, outerViewport) {
+                                      final frameAspect = _postFrameAspect();
+                                      return AspectRatio(
+                                        aspectRatio: frameAspect,
+                                        child: LayoutBuilder(
+                                          builder: (context, viewport) {
+                                            return _buildPostZoomableImagePreviewFor(
+                                              _currentMedia,
+                                              viewport,
+                                              enableGesture: true,
+                                            );
+                                          },
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      _buildPostBottomPill(
+                                        icon: Icons.text_fields,
+                                        label: 'Text',
+                                        onTap: _onTapText,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      _buildPostBottomPill(
+                                        icon: Icons.layers_outlined,
+                                        label: 'Overlay',
+                                        onTap: _openOverlayPicker,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      _buildPostBottomPill(
+                                        icon: Icons.filter_alt_outlined,
+                                        label: 'Filter',
+                                        onTap: _openFilterPicker,
+                                        isActive:
+                                            (_selectedFilter ?? 'none') !=
+                                                'none',
+                                      ),
+                                      const SizedBox(width: 10),
+                                      _buildPostBottomPill(
+                                        icon: Icons.tune,
+                                        label: 'Edit',
+                                        onTap: _openImageAdjustmentsEditor,
+                                        isActive: _imageAdjustments.values
+                                            .any((v) => v != 0),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                                child: Center(
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _showInlineImageEditor = false;
+                                      });
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: Colors.black,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 28, vertical: 12),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(24),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Done',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -2364,27 +2846,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                 _buildVideoPreview()
                               else
                                 _buildImagePreview(),
-                              if (!_isStickerDeleteMode &&
-                                  _selectedFilterName != null &&
-                                  _selectedFilter != null &&
-                                  _selectedFilter != 'none')
-                                Positioned(
-                                  top: 16,
-                                  right: 16,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      'Filter: $_selectedFilterName',
-                                      style: const TextStyle(
-                                          color: Colors.white, fontSize: 12),
-                                    ),
-                                  ),
-                                ),
                               if (!_isStickerDeleteMode &&
                                   _trimStart != null && _trimEnd != null)
                                 Positioned(
@@ -2507,8 +2968,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                             alignment: Alignment.center,
                                             transform: Matrix4.identity()
                                               ..rotateZ(s.rotation)
-                                              ..scale(
-                                                s.scale * (_stickerDeleteScale[s.id] ?? 1.0),
+                                              ..scaleByVector3(
+                                                vector_math.Vector3.all(
+                                                  s.scale * (_stickerDeleteScale[s.id] ?? 1.0),
+                                                ),
                                               ),
                                             child: OverlayStickerWidget(
                                               sticker: s,
@@ -2997,7 +3460,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: isActive
-                  ? const Color(0xFF0095F6).withOpacity(0.25)
+                  ? const Color(0xFF0095F6).withValues(alpha: 0.25)
                   : Colors.grey[800],
               shape: BoxShape.circle,
               border: isActive
@@ -3020,63 +3483,1017 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     );
   }
 
-  void _showComingSoon(String label) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label coming soon')),
+
+}
+
+
+class _PerImageEditResult {
+  final String? filterId;
+  final Map<String, int> adjustments;
+  final List<_PreviewTextOverlay> textOverlays;
+  final List<OverlaySticker> stickerOverlays;
+
+  const _PerImageEditResult({
+    required this.filterId,
+    required this.adjustments,
+    required this.textOverlays,
+    required this.stickerOverlays,
+  });
+}
+
+class _PerImageEditPage extends StatefulWidget {
+  final app_models.MediaItem media;
+  final double frameAspect;
+  final String? initialFilter;
+  final Map<String, int> initialAdjustments;
+  final String? globalFilter;
+  final Map<String, int> globalAdjustments;
+  final List<_PreviewTextOverlay> initialTextOverlays;
+  final List<OverlaySticker> initialStickerOverlays;
+  final List<app_models.Filter> filters;
+  final List<double> Function(String id) filterMatrixFor;
+  final List<double> Function({
+    required double brightness,
+    required double contrast,
+    required double saturation,
+  }) buildAdjustmentMatrix;
+  final List<double> Function({
+    required double amount,
+    required double brightness,
+    required double contrast,
+    required double saturation,
+  }) buildSepiaMatrix;
+
+  const _PerImageEditPage({
+    required this.media,
+    required this.frameAspect,
+    required this.initialFilter,
+    required this.initialAdjustments,
+    required this.globalFilter,
+    required this.globalAdjustments,
+    required this.initialTextOverlays,
+    required this.initialStickerOverlays,
+    required this.filters,
+    required this.filterMatrixFor,
+    required this.buildAdjustmentMatrix,
+    required this.buildSepiaMatrix,
+  });
+
+  @override
+  State<_PerImageEditPage> createState() => _PerImageEditPageState();
+}
+
+class _PerImageEditPageState extends State<_PerImageEditPage> {
+  final GlobalKey<ExtendedImageGestureState> _gestureKey =
+      GlobalKey<ExtendedImageGestureState>();
+  final GlobalKey _previewKey = GlobalKey();
+  late String? _selectedFilter;
+  late Map<String, int> _adjustments;
+  late List<_PreviewTextOverlay> _textOverlays;
+  late List<OverlaySticker> _stickerOverlays;
+  int? _activeTextIndex;
+  int? _activeStickerIndex;
+  Offset _textLastLocalFocalPoint = Offset.zero;
+  double _textTransformBaseScale = 1.0;
+  double _textTransformBaseRotation = 0.0;
+  Offset _stickerLastLocalFocalPoint = Offset.zero;
+  double _stickerBaseScale = 1.0;
+  double _stickerBaseRotation = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFilter = widget.initialFilter ?? 'none';
+    _adjustments = Map<String, int>.from(widget.initialAdjustments);
+    _textOverlays = List<_PreviewTextOverlay>.from(widget.initialTextOverlays);
+    _stickerOverlays =
+        List<OverlaySticker>.from(widget.initialStickerOverlays);
+  }
+
+  Widget _applySelectedFilter(Widget child) {
+    final ids = <String>[];
+    final global = widget.globalFilter;
+    if (global != null && global != 'none') {
+      ids.add(global);
+    }
+    final per = _selectedFilter;
+    if (per != null && per != 'none' && per != global) {
+      ids.add(per);
+    }
+    if (ids.isEmpty) return child;
+    Widget out = child;
+    for (final id in ids) {
+      final matrix = widget.filterMatrixFor(id);
+      out = ColorFiltered(
+        colorFilter: ColorFilter.matrix(matrix),
+        child: out,
+      );
+    }
+    return out;
+  }
+
+  Widget _applyAdjustments(Widget child) {
+    final adj = _mergeAdjustments(widget.globalAdjustments, _adjustments);
+    final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
+    final luxBC = 1.0 + (lux * 0.35);
+    final luxS = 1.0 + (lux * 0.2);
+    final b = ((adj['brightness'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final c = ((adj['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
+    final fade = 1.0 - (adj['opacity'] ?? 0) / 100.0;
+    final tempRaw = (adj['sepia'] ?? 0).abs().clamp(0, 100);
+    final sepiaAmount = (tempRaw / 100.0) * 0.35;
+    final vignette = ((adj['vignette'] ?? 0).clamp(0, 100) / 100.0) * 0.65;
+
+    Widget out = child;
+    if (sepiaAmount > 0) {
+      out = ColorFiltered(
+        colorFilter: ColorFilter.matrix(
+          widget.buildSepiaMatrix(
+            amount: sepiaAmount,
+            brightness: 1.0,
+            contrast: 1.0,
+            saturation: 1.0,
+          ),
+        ),
+        child: out,
+      );
+    }
+    out = ColorFiltered(
+      colorFilter: ColorFilter.matrix(
+        widget.buildAdjustmentMatrix(
+          brightness: b,
+          contrast: c,
+          saturation: s,
+        ),
+      ),
+      child: out,
+    );
+    out = Opacity(
+      opacity: fade.clamp(0.0, 1.0),
+      child: out,
+    );
+    if (vignette > 0) {
+      out = Stack(
+        fit: StackFit.expand,
+        children: [
+          out,
+          Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: vignette),
+                ],
+                stops: const [0.55, 1.0],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return out;
+  }
+
+  Map<String, int> _mergeAdjustments(
+    Map<String, int> base,
+    Map<String, int> delta,
+  ) {
+    int clampValue(String key, int value) {
+      if (key == 'lux' || key == 'opacity' || key == 'vignette') {
+        return value.clamp(0, 100);
+      }
+      return value.clamp(-100, 100);
+    }
+
+    final out = <String, int>{};
+    for (final entry in base.entries) {
+      final next = entry.value + (delta[entry.key] ?? 0);
+      out[entry.key] = clampValue(entry.key, next);
+    }
+    for (final entry in delta.entries) {
+      out[entry.key] ??= clampValue(entry.key, entry.value);
+    }
+    return out;
+  }
+
+  Widget _buildOverlayStyledText(_PreviewTextOverlay overlay) {
+    final text = overlay.text;
+    final baseStyle = overlay.style
+        .copyWith(color: overlay.textColor, fontSize: overlay.fontSize);
+
+    if (overlay.fontName == 'Contour') {
+      return Text(
+        text,
+        textAlign: overlay.alignment,
+        style: baseStyle.copyWith(
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = overlay.textColor,
+        ),
+      );
+    }
+    if (overlay.fontName == 'Neon') {
+      return Text(
+        text,
+        textAlign: overlay.alignment,
+        style: baseStyle.copyWith(
+          shadows: [
+            Shadow(
+              color: overlay.textColor.withValues(alpha: 0.8),
+              blurRadius: 12,
+            ),
+          ],
+        ),
+      );
+    }
+    return Text(
+      text,
+      textAlign: overlay.alignment,
+      style: baseStyle,
     );
   }
 
-  void _showAIOptions() {
-    showModalBottomSheet(
+  Widget _buildOverlayVisual(_PreviewTextOverlay overlay, bool isActive) {
+    final text = overlay.text;
+    final baseStyle = overlay.style
+        .copyWith(color: overlay.textColor, fontSize: overlay.fontSize);
+    Widget content = _buildOverlayStyledText(overlay);
+
+    if (overlay.backgroundStyle == BackgroundStyle.perChar) {
+      final spans = text.split('').map((ch) {
+        return TextSpan(
+          text: ch,
+          style: baseStyle.copyWith(
+            backgroundColor: overlay.textColor.withValues(alpha: 0.2),
+          ),
+        );
+      }).toList();
+      content = Text.rich(
+        TextSpan(children: spans),
+        textAlign: overlay.alignment,
+      );
+    } else if (overlay.backgroundStyle == BackgroundStyle.solid ||
+        overlay.backgroundStyle == BackgroundStyle.transparent) {
+      final bgColor = overlay.backgroundStyle == BackgroundStyle.solid
+          ? overlay.textColor.withValues(alpha: 0.9)
+          : overlay.textColor.withValues(alpha: 0.35);
+      final fgColor = overlay.backgroundStyle == BackgroundStyle.solid
+          ? Colors.black
+          : overlay.textColor;
+      content = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: DefaultTextStyle.merge(
+          style: baseStyle.copyWith(color: fgColor),
+          child: content,
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: content,
+    );
+  }
+
+  Size? _previewSize() {
+    final render = _previewKey.currentContext?.findRenderObject();
+    if (render is RenderBox) return render.size;
+    return null;
+  }
+
+  Offset _overlayCenter() {
+    final size = _previewSize();
+    if (size == null) return const Offset(120, 200);
+    return Offset((size.width - 120) / 2, (size.height - 120) / 2);
+  }
+
+  Offset _toPreviewLocal(Offset global) {
+    final renderBox = _previewKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return global;
+    return renderBox.globalToLocal(global);
+  }
+
+  Offset _normalizePosition(Offset position) {
+    final size = _previewSize();
+    if (size == null || size.width == 0 || size.height == 0) {
+      return position;
+    }
+    final dx = (position.dx / size.width).clamp(0.0, 1.0);
+    final dy = (position.dy / size.height).clamp(0.0, 1.0);
+    return Offset(dx, dy);
+  }
+
+  Offset _denormalizePosition(Offset normalized) {
+    final size = _previewSize();
+    if (size == null || size.width == 0 || size.height == 0) {
+      return normalized;
+    }
+    return Offset(
+      normalized.dx * size.width,
+      normalized.dy * size.height,
+    );
+  }
+
+  Size _measureTextSize(_PreviewTextOverlay overlay, double maxWidth) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: overlay.text,
+        style: overlay.style.copyWith(color: overlay.textColor),
+      ),
+      textAlign: overlay.alignment,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    return textPainter.size;
+  }
+
+  Offset _clampTextPosition(
+    _PreviewTextOverlay overlay,
+    Offset position,
+    double scale,
+  ) {
+    final renderBox = _previewKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return position;
+    final bounds = renderBox.size;
+    final textSize = _measureTextSize(overlay, bounds.width);
+    final scaled = Size(textSize.width * scale, textSize.height * scale);
+    final maxX = (bounds.width - scaled.width).clamp(0.0, bounds.width);
+    final maxY = (bounds.height - scaled.height).clamp(0.0, bounds.height);
+    final clampedX = position.dx.clamp(0.0, maxX);
+    final clampedY = position.dy.clamp(0.0, maxY);
+    return Offset(clampedX, clampedY);
+  }
+
+  Future<void> _openTextEditor({int? index}) async {
+    final existing = index != null && index >= 0 && index < _textOverlays.length
+        ? _textOverlays[index]
+        : null;
+    final filePath = widget.media.filePath;
+    final ImageProvider<Object> background = filePath != null
+        ? FileImage(File(filePath)) as ImageProvider<Object>
+        : const AssetImage('assets/images/dashboard_sample.png');
+    final normalizedInitialPosition =
+        existing != null ? _normalizePosition(existing.position) : null;
+    final result = await InstagramTextEditor.open(
+      context,
+      backgroundImage: background,
+      initialText: existing?.text,
+      initialColor: existing?.textColor ?? Colors.white,
+      initialAlignment: existing?.alignment ?? TextAlign.center,
+      initialBackgroundStyle: existing?.backgroundStyle ?? BackgroundStyle.none,
+      initialScale: existing?.scale ?? 1.0,
+      initialRotation: existing?.rotation ?? 0.0,
+      initialPosition: normalizedInitialPosition,
+      initialFont: existing?.fontName ?? 'Modern',
+      initialFontSize: existing?.fontSize ?? 32.0,
+    );
+    if (result == null || result.text.trim().isEmpty) return;
+    final resolvedPosition = _denormalizePosition(result.position);
+    final overlay = _PreviewTextOverlay(
+      text: result.text,
+      style: result.style,
+      alignment: result.alignment,
+      textColor: result.textColor,
+      backgroundStyle: result.backgroundStyle,
+      position: resolvedPosition,
+      scale: result.scale,
+      rotation: result.rotation,
+      fontName: result.fontName,
+      fontSize: result.fontSize,
+    );
+    final clamped = overlay.copyWith(
+      position: _clampTextPosition(overlay, overlay.position, overlay.scale),
+    );
+    setState(() {
+      final targetIndex = index ?? _activeTextIndex;
+      if (targetIndex != null &&
+          targetIndex >= 0 &&
+          targetIndex < _textOverlays.length) {
+        _textOverlays[targetIndex] = clamped;
+        _activeTextIndex = targetIndex;
+      } else {
+        _textOverlays.add(clamped);
+        _activeTextIndex = _textOverlays.length - 1;
+      }
+    });
+  }
+
+  Future<void> _openOverlayPicker() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    final file = File(picked.path);
+    final center = _overlayCenter();
+    setState(() {
+      _stickerOverlays.add(
+        OverlaySticker(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          imageFile: file,
+          shape: OverlayShape.none,
+          position: center,
+        ),
+      );
+      _activeStickerIndex = _stickerOverlays.length - 1;
+    });
+  }
+
+  Future<void> _openFilterPicker() async {
+    if (widget.media.filePath == null) return;
+    await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.grey[900],
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
+      backgroundColor: const Color(0xFF1C1C1E),
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          top: false,
+          child: StatefulBuilder(
+            builder: (context, setSheetState) {
+              return SizedBox(
+                height: MediaQuery.of(context).size.height * 0.32,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 6),
+                    Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: widget.filters.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, i) {
+                          final f = widget.filters[i];
+                          final isActive = (_selectedFilter ?? 'none') == f.id;
+                          final file = File(widget.media.filePath!);
+                          final base = Image.file(file, fit: BoxFit.cover);
+                          final preview = (f.id == 'none')
+                              ? base
+                              : ColorFiltered(
+                                  colorFilter: ColorFilter.matrix(
+                                    widget.filterMatrixFor(f.id),
+                                  ),
+                                  child: base,
+                                );
+                          final displayName =
+                              f.id == 'none' ? 'Normal' : f.name;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedFilter = f.id;
+                              });
+                              setSheetState(() {});
+                            },
+                            child: SizedBox(
+                              width: 88,
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 76,
+                                      height: 76,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: isActive
+                                              ? const Color(0xFF0095F6)
+                                              : Colors.white24,
+                                          width: isActive ? 2 : 1,
+                                        ),
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: preview,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      displayName,
+                                      style: TextStyle(
+                                        color: isActive
+                                            ? const Color(0xFF0095F6)
+                                            : Colors.white70,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  void _openAdjustmentsEditor() {
+    const tools = <_ImageToolSpec>[
+      _ImageToolSpec(
+          key: 'lux',
+          label: 'Lux',
+          icon: Icons.auto_fix_high,
+          min: 0,
+          max: 100),
+      _ImageToolSpec(
+          key: 'brightness',
+          label: 'Brightness',
+          icon: Icons.wb_sunny_outlined,
+          min: -100,
+          max: 100),
+      _ImageToolSpec(
+          key: 'contrast',
+          label: 'Contrast',
+          icon: Icons.contrast,
+          min: -100,
+          max: 100),
+      _ImageToolSpec(
+          key: 'saturate',
+          label: 'Saturation',
+          icon: Icons.palette_outlined,
+          min: -100,
+          max: 100),
+      _ImageToolSpec(
+          key: 'sepia',
+          label: 'Temperature',
+          icon: Icons.thermostat_outlined,
+          min: -100,
+          max: 100),
+      _ImageToolSpec(
+          key: 'opacity',
+          label: 'Fade',
+          icon: Icons.blur_on_outlined,
+          min: 0,
+          max: 100),
+      _ImageToolSpec(
+          key: 'vignette',
+          label: 'Vignette',
+          icon: Icons.vignette_outlined,
+          min: 0,
+          max: 100),
+    ];
+    String? selectedKey;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          top: false,
+          child: StatefulBuilder(
+            builder: (context, setSheetState) {
+              Widget sliderForTool(_ImageToolSpec tool) {
+                final current = _adjustments[tool.key] ?? 0;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(child: SizedBox()),
+                        Text(current.toString(),
+                            style: const TextStyle(color: Colors.white70)),
+                      ],
+                    ),
+                    Slider(
+                      value: current.toDouble(),
+                      min: tool.min.toDouble(),
+                      max: tool.max.toDouble(),
+                      onChanged: (v) {
+                        final next = v.round();
+                        setState(() {
+                          _adjustments = {
+                            ..._adjustments,
+                            tool.key: next,
+                          };
+                        });
+                        setSheetState(() {});
+                      },
+                      activeColor: const Color(0xFF0095F6),
+                      inactiveColor: Colors.white24,
+                    ),
+                  ],
+                );
+              }
+
+              final selectedTool = selectedKey == null
+                  ? null
+                  : tools.firstWhere((t) => t.key == selectedKey,
+                      orElse: () => tools[0]);
+
+              return SizedBox(
+                height: MediaQuery.of(context).size.height * 0.46,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const SizedBox(width: 64),
+                        const Text('Edit',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600)),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Done',
+                              style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            height: 92,
+                            child: ListView.separated(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              scrollDirection: Axis.horizontal,
+                              itemCount: tools.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 12),
+                              itemBuilder: (context, i) {
+                                final tool = tools[i];
+                                final isActive = selectedKey == tool.key;
+                                return GestureDetector(
+                                  onTap: () {
+                                    setSheetState(() {
+                                      selectedKey = tool.key;
+                                    });
+                                  },
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 52,
+                                        height: 52,
+                                        decoration: BoxDecoration(
+                                          color: isActive
+                                              ? const Color(0xFF0095F6)
+                                                  .withValues(alpha: 0.25)
+                                              : Colors.white10,
+                                          shape: BoxShape.circle,
+                                          border: isActive
+                                              ? Border.all(
+                                                  color:
+                                                      const Color(0xFF0095F6),
+                                                  width: 1.2,
+                                                )
+                                              : null,
+                                        ),
+                                        child: Icon(tool.icon,
+                                            color: isActive
+                                                ? const Color(0xFF0095F6)
+                                                : Colors.white,
+                                            size: 22),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(tool.label,
+                                          style: TextStyle(
+                                              color: isActive
+                                                  ? const Color(0xFF0095F6)
+                                                  : Colors.white70,
+                                              fontSize: 11)),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (selectedTool != null)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: sliderForTool(selectedTool),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBottomPill({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isActive = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: isActive
+              ? Border.all(color: const Color(0xFF0095F6))
+              : null,
+        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('AI Enhancements',
+            Icon(icon,
+                color: isActive ? const Color(0xFF0095F6) : Colors.white,
+                size: 20),
+            const SizedBox(height: 3),
+            Text(label,
                 style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            GridView.count(
-              shrinkWrap: true,
-              crossAxisCount: 2,
-              childAspectRatio: 2.5,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              children: [
-                _buildAIOption('Background Removal', Icons.auto_fix_high),
-                _buildAIOption('Face Enhancement', Icons.face),
-                _buildAIOption('Auto Crop', Icons.crop),
-                _buildAIOption('Stabilize', Icons.video_stable),
-              ],
-            ),
+                    color: isActive
+                        ? const Color(0xFF0095F6)
+                        : Colors.white,
+                    fontSize: 11)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAIOption(String label, IconData icon) {
-    return ElevatedButton.icon(
-      onPressed: () async {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Processing $label...')));
-        await Future.delayed(const Duration(seconds: 2));
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('$label applied successfully')));
-        }
-      },
-      icon: Icon(icon),
-      label: Text(label),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+  @override
+  Widget build(BuildContext context) {
+    final filePath = widget.media.filePath;
+    return Scaffold(
+      backgroundColor: const Color(0xFF07121E),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: widget.frameAspect,
+                    child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: LayoutBuilder(
+                      builder: (context, viewport) {
+                        if (filePath == null) {
+                          return const Icon(Icons.image,
+                              size: 100, color: Colors.white54);
+                        }
+                        final preview = _applyAdjustments(_applySelectedFilter(
+                          ExtendedImage.file(
+                            File(filePath),
+                            width: viewport.maxWidth,
+                            height: viewport.maxHeight,
+                            fit: BoxFit.cover,
+                            borderRadius: BorderRadius.circular(24),
+                            clipBehavior: Clip.antiAlias,
+                            mode: ExtendedImageMode.gesture,
+                            extendedImageGestureKey: _gestureKey,
+                            initGestureConfigHandler: (_) {
+                              return GestureConfig(
+                                minScale: 1.0,
+                                maxScale: 4.0,
+                                initialScale: 1.0,
+                                speed: 1.0,
+                                inertialSpeed: 100.0,
+                                cacheGesture: true,
+                                inPageView: false,
+                              );
+                            },
+                          ),
+                        ));
+                        return SizedBox(
+                          key: _previewKey,
+                          width: viewport.maxWidth,
+                          height: viewport.maxHeight,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              preview,
+                              ..._textOverlays.asMap().entries.map((entry) {
+                                final i = entry.key;
+                                final overlay = entry.value;
+                                final isActive = _activeTextIndex == i;
+                                return Positioned(
+                                  left: overlay.position.dx,
+                                  top: overlay.position.dy,
+                                  child: GestureDetector(
+                                    onTap: () => _openTextEditor(index: i),
+                                    onScaleStart: (d) {
+                                      _activeTextIndex = i;
+                                      _textLastLocalFocalPoint =
+                                          _toPreviewLocal(d.focalPoint);
+                                      _textTransformBaseScale = overlay.scale;
+                                      _textTransformBaseRotation =
+                                          overlay.rotation;
+                                    },
+                                    onScaleUpdate: (d) {
+                                      final local =
+                                          _toPreviewLocal(d.focalPoint);
+                                      final delta =
+                                          local - _textLastLocalFocalPoint;
+                                      _textLastLocalFocalPoint = local;
+                                      double newScale = overlay.scale;
+                                      double newRotation = overlay.rotation;
+                                      if (d.pointerCount > 1) {
+                                        newScale =
+                                            (_textTransformBaseScale *
+                                                    d.scale)
+                                                .clamp(0.2, 8.0);
+                                        newRotation =
+                                            _textTransformBaseRotation +
+                                                d.rotation;
+                                      }
+                                      final nextPosition = _clampTextPosition(
+                                        overlay,
+                                        overlay.position + delta,
+                                        newScale,
+                                      );
+                                      setState(() {
+                                        _textOverlays[i] = overlay.copyWith(
+                                          position: nextPosition,
+                                          scale: newScale,
+                                          rotation: newRotation,
+                                        );
+                                      });
+                                    },
+                                    child: Transform.rotate(
+                                      angle: overlay.rotation,
+                                      child: Transform.scale(
+                                        scale: overlay.scale,
+                                        child: _buildOverlayVisual(
+                                            overlay, isActive),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                              ..._stickerOverlays.asMap().entries.map((entry) {
+                                final i = entry.key;
+                                final s = entry.value;
+                                final isActive = _activeStickerIndex == i;
+                                return Positioned(
+                                  left: s.position.dx,
+                                  top: s.position.dy,
+                                  child: GestureDetector(
+                                    onScaleStart: (d) {
+                                      _activeStickerIndex = i;
+                                      _stickerLastLocalFocalPoint =
+                                          _toPreviewLocal(d.focalPoint);
+                                      _stickerBaseScale = s.scale;
+                                      _stickerBaseRotation = s.rotation;
+                                    },
+                                    onScaleUpdate: (d) {
+                                      final local =
+                                          _toPreviewLocal(d.focalPoint);
+                                      final delta =
+                                          local - _stickerLastLocalFocalPoint;
+                                      _stickerLastLocalFocalPoint = local;
+                                      double newScale = s.scale;
+                                      double newRotation = s.rotation;
+                                      if (d.pointerCount > 1) {
+                                        newScale =
+                                            (_stickerBaseScale * d.scale)
+                                                .clamp(0.2, 8.0);
+                                        newRotation =
+                                            _stickerBaseRotation +
+                                                d.rotation;
+                                      }
+                                      setState(() {
+                                        _stickerOverlays[i] = s.copyWith(
+                                          position: s.position + delta,
+                                          scale: newScale,
+                                          rotation: newRotation,
+                                        );
+                                      });
+                                    },
+                                    child: Transform(
+                                      alignment: Alignment.center,
+                                      transform: Matrix4.identity()
+                                        ..rotateZ(s.rotation)
+                                        ..scaleByVector3(
+                                          vector_math.Vector3.all(s.scale),
+                                        ),
+                                      child: OverlayStickerWidget(
+                                        sticker: s,
+                                        isActive: isActive,
+                                        onDelete: () {},
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildBottomPill(
+                      icon: Icons.music_note,
+                      label: 'Audio',
+                      onTap: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Audio is global only'),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 10),
+                    _buildBottomPill(
+                      icon: Icons.text_fields,
+                      label: 'Text',
+                      onTap: () => _openTextEditor(),
+                    ),
+                    const SizedBox(width: 10),
+                    _buildBottomPill(
+                      icon: Icons.layers_outlined,
+                      label: 'Overlay',
+                      onTap: _openOverlayPicker,
+                    ),
+                    const SizedBox(width: 10),
+                    _buildBottomPill(
+                      icon: Icons.filter_alt_outlined,
+                      label: 'Filter',
+                      onTap: _openFilterPicker,
+                      isActive: (_selectedFilter ?? 'none') != 'none',
+                    ),
+                    const SizedBox(width: 10),
+                    _buildBottomPill(
+                      icon: Icons.tune,
+                      label: 'Edit',
+                      onTap: _openAdjustmentsEditor,
+                      isActive: _adjustments.values.any((v) => v != 0),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              child: Center(
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(_PerImageEditResult(
+                      filterId: _selectedFilter,
+                      adjustments: _adjustments,
+                      textOverlays: _textOverlays,
+                      stickerOverlays: _stickerOverlays,
+                    ));
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                  child: const Text(
+                    'Done',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

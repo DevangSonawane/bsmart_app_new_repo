@@ -36,11 +36,13 @@ import '../api/api_client.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/url_helper.dart';
 import '../widgets/dynamic_media_widget.dart';
+import '../widgets/floating_message_overlay.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'profile_screen.dart';
 import '../routes.dart';
+import 'messaging_screen.dart';
 
 class HomeDashboard extends StatefulWidget {
   final int? initialIndex;
@@ -67,10 +69,13 @@ class _HomeDashboardState extends State<HomeDashboard>
   bool _yourStoryHasActive = false;
   Map<String, Map<String, bool>> _storyStatuses = {};
   int _currentIndex = 0;
+  PageController? _tabPageController;
+  static const List<int> _swipeTabs = [0, 1, 3, 4];
   int _balance = 0;
   bool _reelsPrefetched = false;
   String? _activeFeedPostId;
   Timer? _activeFeedDebounce;
+  bool _isCommentsOpen = false;
 
   final ScrollController _feedScrollController = ScrollController();
   final int _pageSize = 25;
@@ -214,6 +219,8 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (widget.initialIndex != null) {
       _currentIndex = widget.initialIndex!;
     }
+    final initialPage = _swipeTabs.indexOf(_currentIndex);
+    _tabPageController = PageController(initialPage: initialPage < 0 ? 0 : initialPage);
     _feedScrollController.addListener(_onFeedScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(primeMediaAuthHeaders());
@@ -265,6 +272,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     _autoRefreshDebounce?.cancel();
     _feedScrollController.removeListener(_onFeedScroll);
     _feedScrollController.dispose();
+    _tabPageController?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     if (_subscribedRoute != null) {
       appRouteObserver.unsubscribe(this);
@@ -843,6 +851,7 @@ class _HomeDashboardState extends State<HomeDashboard>
       final adId = _extractAdId(post.id);
       if (adId.isEmpty) return;
       if (isMobile) {
+        setState(() => _isCommentsOpen = true);
         showModalBottomSheet(
           context: context,
           isScrollControlled: true,
@@ -854,8 +863,11 @@ class _HomeDashboardState extends State<HomeDashboard>
             height: MediaQuery.of(context).size.height * 0.82,
             child: AdCommentsSheet(adId: adId),
           ),
-        );
+        ).whenComplete(() {
+          if (mounted) setState(() => _isCommentsOpen = false);
+        });
       } else {
+        setState(() => _isCommentsOpen = true);
         showGeneralDialog<void>(
           context: context,
           barrierDismissible: true,
@@ -886,11 +898,14 @@ class _HomeDashboardState extends State<HomeDashboard>
               ),
             );
           },
-        );
+        ).whenComplete(() {
+          if (mounted) setState(() => _isCommentsOpen = false);
+        });
       }
       return;
     }
     if (isMobile) {
+      setState(() => _isCommentsOpen = true);
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -900,13 +915,18 @@ class _HomeDashboardState extends State<HomeDashboard>
           heightFactor: 0.9,
           child: CommentsSheet(postId: post.id),
         ),
-      );
+      ).whenComplete(() {
+        if (mounted) setState(() => _isCommentsOpen = false);
+      });
     } else {
+      setState(() => _isCommentsOpen = true);
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => PostDetailModal(postId: post.id),
         ),
-      );
+      ).whenComplete(() {
+        if (mounted) setState(() => _isCommentsOpen = false);
+      });
     }
   }
 
@@ -1420,7 +1440,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     );
   }
 
-  void _onNavTap(int idx) {
+  void _setTabIndex(int idx, {required bool userInitiated, required bool fromSwipe}) {
     if (idx == 2) {
       _pendingHomeRefreshAfterRoute = true;
       if (_isVendor) {
@@ -1468,7 +1488,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     // scroll-to-top behavior which we handle separately)
     if (switchingToHome) {
       _scheduleHomeRefresh();
-    } else if (idx == 0 && wasOnHome) {
+    } else if (idx == 0 && wasOnHome && userInitiated && !fromSwipe) {
       // Already on home — scroll to top like Instagram does
       if (_feedScrollController.hasClients) {
         _feedScrollController.animateTo(
@@ -1478,6 +1498,21 @@ class _HomeDashboardState extends State<HomeDashboard>
         );
       }
     }
+  }
+
+  void _onNavTap(int idx) {
+    if (_swipeTabs.contains(idx)) {
+      final page = _swipeTabs.indexOf(idx);
+      final controller = _tabPageController;
+      if (controller != null && controller.hasClients) {
+        controller.animateToPage(
+          page,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    }
+    _setTabIndex(idx, userInitiated: true, fromSwipe: false);
   }
 
   void _showCreateModal() {
@@ -1588,6 +1623,9 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   @override
   Widget build(BuildContext context) {
+    _tabPageController ??= PageController(
+      initialPage: math.max(0, _swipeTabs.indexOf(_currentIndex)),
+    );
     final store = StoreProvider.of<AppState>(context);
     final feedState = store.state.feedState;
     final totalCount = feedState.posts.length;
@@ -1620,6 +1658,7 @@ class _HomeDashboardState extends State<HomeDashboard>
           ? null
           : AppBar(
               title: ShaderMask(
+                blendMode: BlendMode.srcIn,
                 shaderCallback: (bounds) => const LinearGradient(
                   colors: [
                     DesignTokens.instaPurple,
@@ -1629,7 +1668,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                 ).createShader(bounds),
                 child: Text('b_smart',
                     style: TextStyle(
-                        color: appBarFg,
+                        color: Colors.white,
                         fontWeight: FontWeight.bold,
                         fontSize: 22,
                         fontFamily: 'cursive')),
@@ -1789,197 +1828,245 @@ class _HomeDashboardState extends State<HomeDashboard>
         color: isFullScreen
             ? (isDark ? const Color(0xFF121212) : Colors.black)
             : theme.scaffoldBackgroundColor,
-        child: ScrollConfiguration(
-          behavior: const _NoGlowScrollBehavior(),
-          child: IndexedStack(
-            index: _currentIndex,
-            children: [
-          // Home tab
-          RefreshIndicator(
-            onRefresh: _onRefresh,
-            child: Stack(
-              children: [
-                Visibility(
-                  visible: !isLoading,
-                  maintainState: true,
-                  maintainAnimation: true,
-                  maintainSize: true,
-                  child: CustomScrollView(
-                    controller: _feedScrollController,
-                    cacheExtent: 180,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildLocationSelector(isDark: isDark),
-                            StoriesRow(
-                              users: _storyUsers,
-                              onYourStoryTap: () {
-                                if (_yourStoryHasActive) {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => OwnStoryViewerScreen(
-                                        stories: _myStories,
-                                        storyId: _myStoryId,
-                                        userName:
-                                            (_currentUserProfile?['username'] ??
-                                                    _currentUserProfile?[
-                                                        'full_name'] ??
-                                                    'You')
-                                                .toString(),
-                                      ),
-                                    ),
-                                  );
-                                } else {
-                                  _openStoryCamera();
-                                }
-                              },
-                              onYourStoryAddTap: _openStoryCamera,
-                              onUserStoryTap:
-                                  _storyGroups.isEmpty ? null : _onStoryTap,
-                              yourStoryHasActive: _yourStoryHasActive,
-                              showYourStory: true,
-                              userStatuses: _storyStatuses,
+        child: Stack(
+          children: [
+            ScrollConfiguration(
+              behavior: const _NoGlowScrollBehavior(),
+              child: PageView.builder(
+                controller: _tabPageController,
+                itemCount: _swipeTabs.length,
+                onPageChanged: (page) {
+                  final idx = _swipeTabs[page];
+                  _setTabIndex(idx, userInitiated: false, fromSwipe: true);
+                },
+                itemBuilder: (context, page) {
+              final idx = _swipeTabs[page];
+              if (idx == 0) {
+                return RefreshIndicator(
+                  onRefresh: _onRefresh,
+                  child: Stack(
+                    children: [
+                      Visibility(
+                        visible: !isLoading,
+                        maintainState: true,
+                        maintainAnimation: true,
+                        maintainSize: true,
+                        child: CustomScrollView(
+                          controller: _feedScrollController,
+                          cacheExtent: 180,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          slivers: [
+                            SliverToBoxAdapter(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildLocationSelector(isDark: isDark),
+                                  StoriesRow(
+                                    users: _storyUsers,
+                                    onYourStoryTap: () {
+                                      if (_yourStoryHasActive) {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => OwnStoryViewerScreen(
+                                              stories: _myStories,
+                                              storyId: _myStoryId,
+                                              userName:
+                                                  (_currentUserProfile?['username'] ??
+                                                          _currentUserProfile?[
+                                                              'full_name'] ??
+                                                          'You')
+                                                      .toString(),
+                                            ),
+                                          ),
+                                        );
+                                      } else {
+                                        _openStoryCamera();
+                                      }
+                                    },
+                                    onYourStoryAddTap: _openStoryCamera,
+                                    onUserStoryTap:
+                                        _storyGroups.isEmpty ? null : _onStoryTap,
+                                    yourStoryHasActive: _yourStoryHasActive,
+                                    yourAvatarUrl:
+                                        (_currentUserProfile?['avatar_url'] ??
+                                                _currentUserProfile?['avatar'] ??
+                                                _currentUserProfile?['profile_image'])
+                                            ?.toString(),
+                                    showYourStory: true,
+                                    userStatuses: _storyStatuses,
+                                  ),
+                                ],
+                              ),
                             ),
+                            if (posts.isEmpty)
+                              SliverFillRemaining(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 24),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(LucideIcons.image,
+                                          size: 48,
+                                          color: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.color),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'No posts yet',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 16,
+                                          color:
+                                              Theme.of(context).colorScheme.onSurface,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'Create your first post from the + button',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.color,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            else
+                              SliverList(
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, index) {
+                                    final p = posts[index];
+                                    final isOwnPost = _currentUserId != null &&
+                                        p.userId == _currentUserId;
+                                    Widget itemWidget;
+                                    try {
+                                      itemWidget = VisibilityDetector(
+                                        key: ValueKey('feed-vis-${p.id}'),
+                                        onVisibilityChanged: (info) {
+                                          _onFeedItemVisibilityChanged(
+                                            p.id,
+                                            info.visibleFraction,
+                                          );
+                                        },
+                                        child: RepaintBoundary(
+                                            child: PostCard(
+                                            key: ValueKey(
+                                                'card-${p.id}'), // Prevent unnecessary rebuilds
+                                            post: p,
+                                            isTabActive:
+                                                _currentIndex == 0 && _isRouteActive,
+                                            isActive: _activeFeedPostId == p.id,
+                                            isOwnPost: isOwnPost,
+                                            onUserTap: p.userId.isNotEmpty
+                                                ? () => Navigator.of(context)
+                                                    .pushNamed('/profile/${p.userId}')
+                                                : null,
+                                            onLike: () => _onLikePost(p),
+                                            onDoubleTapLike: () =>
+                                                _onDoubleTapLikePost(p),
+                                            onComment: () => _onCommentPost(p),
+                                            onShare: () => _onSharePost(p),
+                                            onSave: () => _onSavePost(p),
+                                            onFollow: isOwnPost ? null : () => _onFollowPost(p),
+                                            onMore: () => _onMorePost(context, p),
+                                          ),
+                                        ),
+                                      );
+                                    } catch (e, st) {
+                                      itemWidget = Padding(
+                                        padding: const EdgeInsets.all(16.0),
+                                        child: Column(
+                                          children: [
+                                            const Icon(Icons.broken_image, size: 40),
+                                            const SizedBox(height: 8),
+                                            Text('Failed to load post', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                                          ],
+                                        ),
+                                      );
+                                    }
+                                    return itemWidget;
+                                  },
+                                  childCount: posts.length,
+                                ),
+                              ),
+                            if (hasMoreToShow)
+                              const SliverToBoxAdapter(child: SizedBox(height: 28)),
+                            const SliverToBoxAdapter(child: SizedBox(height: 16)),
                           ],
                         ),
                       ),
-                      if (posts.isEmpty)
-                        SliverFillRemaining(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(LucideIcons.image,
-                                    size: 48,
-                                    color: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.color),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'No posts yet',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 16,
-                                    color:
-                                        Theme.of(context).colorScheme.onSurface,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Create your first post from the + button',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.color,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      else
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final p = posts[index];
-                              final isOwnPost = _currentUserId != null &&
-                                  p.userId == _currentUserId;
-                              Widget itemWidget;
-                              try {
-                                itemWidget = VisibilityDetector(
-                                  key: ValueKey('feed-vis-${p.id}'),
-                                  onVisibilityChanged: (info) {
-                                    _onFeedItemVisibilityChanged(
-                                      p.id,
-                                      info.visibleFraction,
-                                    );
-                                  },
-                                  child: RepaintBoundary(
-                                      child: PostCard(
-                                      key: ValueKey(
-                                          'card-${p.id}'), // Prevent unnecessary rebuilds
-                                      post: p,
-                                      isTabActive:
-                                          _currentIndex == 0 && _isRouteActive,
-                                      isActive: _activeFeedPostId == p.id,
-                                      isOwnPost: isOwnPost,
-                                      onUserTap: p.userId.isNotEmpty
-                                          ? () => Navigator.of(context)
-                                              .pushNamed('/profile/${p.userId}')
-                                          : null,
-                                      onLike: () => _onLikePost(p),
-                                      onDoubleTapLike: () =>
-                                          _onDoubleTapLikePost(p),
-                                      onComment: () => _onCommentPost(p),
-                                      onShare: () => _onSharePost(p),
-                                      onSave: () => _onSavePost(p),
-                                      onFollow: isOwnPost ? null : () => _onFollowPost(p),
-                                      onMore: () => _onMorePost(context, p),
-                                    ),
-                                  ),
-                                );
-                              } catch (e, st) {
-                                itemWidget = Padding(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: Column(
-                                    children: [
-                                      const Icon(Icons.broken_image, size: 40),
-                                      const SizedBox(height: 8),
-                                      Text('Failed to load post', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-                                    ],
-                                  ),
-                                );
-                              }
-                              return itemWidget;
-                            },
-                            childCount: posts.length,
+                      if (isLoading)
+                        const ColoredBox(
+                          color: Colors.transparent,
+                          child: Center(
+                            child: CircularProgressIndicator(
+                                color: DesignTokens.instaPink),
                           ),
                         ),
-                      if (hasMoreToShow)
-                        const SliverToBoxAdapter(child: SizedBox(height: 28)),
-                      const SliverToBoxAdapter(child: SizedBox(height: 16)),
                     ],
                   ),
-                ),
-                if (isLoading)
-                  const ColoredBox(
-                    color: Colors.transparent,
-                    child: Center(
-                      child: CircularProgressIndicator(
-                          color: DesignTokens.instaPink),
-                    ),
-                  ),
-              ],
+                );
+              }
+              if (idx == 1) {
+                return AdsPageScreen(isTabActive: _currentIndex == 1 && _isRouteActive);
+              }
+              if (idx == 3) {
+                return const PromoteScreen();
+              }
+              if (idx == 4) {
+                return Container(
+                  color: Colors.black,
+                  child: ReelsScreen(isActive: _currentIndex == 4 && _isRouteActive),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+              ),
             ),
-          ),
-          // Ads tab
-          AdsPageScreen(isTabActive: _currentIndex == 1 && _isRouteActive),
-          // Placeholder for create (kept empty since create opens modal/route)
-          Container(),
-          // Promote tab
-          const PromoteScreen(),
-          // Reels tab
-          Container(
-            color: Colors.black,
-            child: ReelsScreen(isActive: _currentIndex == 4 && _isRouteActive),
-          ),
+            if (!isDesktop &&
+                !_isCommentsOpen &&
+                (_currentIndex == 0 ||
+                    _currentIndex == 1 ||
+                    _currentIndex == 3 ||
+                    _currentIndex == 4))
+              Positioned.fill(
+                child: FloatingMessageOverlay(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const MessagingScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
           ],
-          ),
         ),
       ),
-      bottomNavigationBar: isDesktop
+      bottomNavigationBar: isDesktop || _currentIndex == 4
           ? null
-          : BottomNav(currentIndex: _currentIndex, onTap: _onNavTap),
+          : AnimatedSlide(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              offset: _currentIndex == 0 ? Offset.zero : const Offset(0, 1),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                opacity: _currentIndex == 0 ? 1 : 0,
+                child: BottomNav(
+                  currentIndex: _currentIndex,
+                  onTap: _onNavTap,
+                ),
+              ),
+            ),
     );
 
     if (isDesktop) {

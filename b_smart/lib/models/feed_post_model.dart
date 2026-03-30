@@ -35,6 +35,10 @@ class FeedPost {
   final String? adTitle;
   final String? adCompanyId;
   final String? adCompanyName;
+  final String? adCategory;
+  final int totalBudgetCoins;
+  final List<String>? targetLocations;
+  final List<String>? targetLanguages;
   final bool commentsDisabled;
   final String? location; // Added location field
   final String? latestCommentUser;
@@ -71,6 +75,10 @@ class FeedPost {
     this.adTitle,
     this.adCompanyId,
     this.adCompanyName,
+    this.adCategory,
+    this.totalBudgetCoins = 0,
+    this.targetLocations = const [],
+    this.targetLanguages = const [],
     this.commentsDisabled = false,
     this.location, // Added
     this.latestCommentUser,
@@ -159,6 +167,13 @@ class FeedPost {
       adTitle: json['adTitle'],
       adCompanyId: json['adCompanyId'],
       adCompanyName: json['adCompanyName'],
+      adCategory: json['adCategory'] ?? json['category'],
+      totalBudgetCoins:
+          json['total_budget_coins'] ?? json['totalBudgetCoins'] ?? 0,
+      targetLocations: _asStringList(
+          json['targetLocations'] ?? json['target_location']),
+      targetLanguages: _asStringList(
+          json['targetLanguages'] ?? json['target_language']),
       commentsDisabled: json['turn_off_commenting'] ??
           json['commentsDisabled'] ??
           json['comments_disabled'] ??
@@ -173,6 +188,19 @@ class FeedPost {
           json['hide_likes'] ??
           false,
     );
+  }
+
+  static List<String> _asStringList(dynamic value) {
+    if (value is List) {
+      return value
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      return [value.trim()];
+    }
+    return const [];
   }
 
   FeedPost copyWith({
@@ -203,6 +231,10 @@ class FeedPost {
     String? adTitle,
     String? adCompanyId,
     String? adCompanyName,
+    String? adCategory,
+    int? totalBudgetCoins,
+    List<String>? targetLocations,
+    List<String>? targetLanguages,
     bool? commentsDisabled,
     String? latestCommentUser,
     String? latestCommentText,
@@ -238,6 +270,10 @@ class FeedPost {
       adTitle: adTitle ?? this.adTitle,
       adCompanyId: adCompanyId ?? this.adCompanyId,
       adCompanyName: adCompanyName ?? this.adCompanyName,
+      adCategory: adCategory ?? this.adCategory,
+      totalBudgetCoins: totalBudgetCoins ?? this.totalBudgetCoins,
+      targetLocations: targetLocations ?? this.targetLocations,
+      targetLanguages: targetLanguages ?? this.targetLanguages,
       commentsDisabled: commentsDisabled ?? this.commentsDisabled,
       latestCommentUser: latestCommentUser ?? this.latestCommentUser,
       latestCommentText: latestCommentText ?? this.latestCommentText,

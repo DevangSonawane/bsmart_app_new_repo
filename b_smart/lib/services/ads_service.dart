@@ -135,10 +135,15 @@ class AdsService {
     );
 
     final rawAds = (res['ads'] as List<dynamic>? ?? const <dynamic>[]);
+    final rawUsers = (res['users'] as List<dynamic>? ?? const <dynamic>[]);
     final ads = rawAds
         .whereType<Map>()
         .map((item) => Ad.fromApi(Map<String, dynamic>.from(item)))
         .where((ad) => ad.id.isNotEmpty)
+        .toList();
+    final users = rawUsers
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
         .toList();
 
     int toInt(dynamic value, int fallback) {
@@ -154,6 +159,7 @@ class AdsService {
       'limit': toInt(res['limit'], limit),
       'totalPages': toInt(res['totalPages'], 1),
       'ads': ads,
+      'users': users,
     };
   }
 

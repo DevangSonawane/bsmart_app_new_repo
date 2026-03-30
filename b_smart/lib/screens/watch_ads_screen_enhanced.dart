@@ -281,7 +281,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
       _notificationService.addNotification(
         NotificationItem(
           id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-          type: NotificationType.activity,
+          typeKey: 'reward',
           title: 'Coins Earned',
           message: 'You earned ${_currentAd!.coinReward} coins by watching an ad',
           timestamp: DateTime.now(),

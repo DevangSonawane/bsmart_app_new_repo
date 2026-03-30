@@ -17,7 +17,8 @@ import '../widgets/comments_sheet.dart';
 
 class ReelsScreen extends StatefulWidget {
   final bool isActive;
-  const ReelsScreen({super.key, this.isActive = true});
+  final String? initialReelId;
+  const ReelsScreen({super.key, this.isActive = true, this.initialReelId});
 
   @override
   State<ReelsScreen> createState() => _ReelsScreenState();
@@ -61,9 +62,21 @@ class _ReelsScreenState extends State<ReelsScreen>
   void initState() {
     super.initState();
     final cached = _reelsService.getReels();
+    final initialId = widget.initialReelId?.trim();
     if (cached.isNotEmpty) {
       _reels = cached;
       _isLoading = false;
+      if (initialId != null && initialId.isNotEmpty) {
+        final idx = _reels.indexWhere((r) => r.id == initialId);
+        if (idx >= 0) {
+          _currentIndex = idx;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_pageController.hasClients) {
+              _pageController.jumpToPage(idx);
+            }
+          });
+        }
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _reels.isEmpty || !widget.isActive) return;
         _poolOps = _poolOps.then<void>((_) async {
@@ -119,15 +132,24 @@ class _ReelsScreenState extends State<ReelsScreen>
       final reels = await _reelsService.fetchReels(limit: 20, offset: 0);
       if (!mounted) return;
 
+      int nextIndex = 0;
+      final initialId = widget.initialReelId?.trim();
+      if (initialId != null && initialId.isNotEmpty) {
+        final idx = reels.indexWhere((r) => r.id == initialId);
+        if (idx >= 0) nextIndex = idx;
+      }
       setState(() {
         _reels = reels;
-        _currentIndex = 0;
+        _currentIndex = nextIndex;
         _isLoading = false;
         _hasMore = reels.length >= 20;
       });
+      if (_pageController.hasClients && nextIndex != 0) {
+        _pageController.jumpToPage(nextIndex);
+      }
 
       if (_reels.isNotEmpty) {
-        unawaited(_reelsService.incrementViews(_reels.first.id));
+        unawaited(_reelsService.incrementViews(_reels[_currentIndex].id));
         if (!widget.isActive) return;
         _poolOps = _poolOps.then<void>((_) async {
           await _initializePoolAt(_currentIndex);
@@ -822,6 +844,41 @@ class _ReelsScreenState extends State<ReelsScreen>
                         ),
                       ],
                     ),
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    top: MediaQuery.of(context).padding.top + 8,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            _isMuted
+                                ? LucideIcons.volumeX
+                                : LucideIcons.volume2,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isMuted = !_isMuted;
+                            });
+                            final volume = _isMuted ? 0.0 : 1.0;
+                            for (final controller in _videoControllers.values) {
+                              unawaited(
+                                  _setControllerVolumeSafely(controller, volume));
+                            }
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(LucideIcons.search,
+                              color: Colors.white, size: 24),
+                          onPressed: () =>
+                              Navigator.of(context).pushNamed('/search'),
+                        ),
+                      ],
+                    ),
+                  ),
                   if (isDesktop) _buildDesktopArrows(),
                 ],
               ),
@@ -875,33 +932,6 @@ class _ReelsScreenState extends State<ReelsScreen>
                 ),
               ),
             ),
-            Positioned(
-              right: 12,
-              top: 60,
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isMuted = !_isMuted;
-                  });
-                  final volume = _isMuted ? 0.0 : 1.0;
-                  for (final controller in _videoControllers.values) {
-                    unawaited(_setControllerVolumeSafely(controller, volume));
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
             if (!isDesktop)
               Positioned(
                 right: 10,
@@ -925,7 +955,6 @@ class _ReelsScreenState extends State<ReelsScreen>
     final thumb = reel.thumbnailUrl == null
         ? null
         : UrlHelper.absoluteUrl(reel.thumbnailUrl!);
-    final aspectRatio = _aspectRatioForReel(reel);
 
     return _ReelPlayerItem(
       key: ValueKey('reel-item-$index-${reel.id}'),
@@ -933,32 +962,20 @@ class _ReelsScreenState extends State<ReelsScreen>
       thumbnailUrl: thumb,
       headers:
           thumb == null || thumb.isEmpty ? const {} : _headersForUrl(thumb),
-      aspectRatio: aspectRatio,
       isFailed: _failedControllerIndexes.contains(index),
       onRetry: index == _currentIndex ? _retryCurrentReel : null,
     );
   }
 
-  double _aspectRatioForReel(Reel reel) {
-    final ratio = reel.aspectRatio?.trim();
-    if (ratio == '1:1') return 1.0;
-    if (ratio == '16:9') return 16 / 9;
-    if (ratio == '4:5') return 4 / 5;
-    if (ratio == '9:16') return 9 / 16;
-    if (ratio != null) {
-      final parts = ratio.split(':');
-      if (parts.length == 2) {
-        final w = double.tryParse(parts[0]);
-        final h = double.tryParse(parts[1]);
-        if (w != null && h != null && h > 0) return w / h;
-      }
-    }
-    return 9 / 16;
-  }
-
   Widget _buildMobileActions(Reel reel) {
     return Column(
       children: [
+        _buildMobileAction(
+          icon: LucideIcons.eye,
+          count: _formatCount(reel.views),
+          onTap: () {},
+        ),
+        const SizedBox(height: 18),
         _buildMobileAction(
           icon: reel.isLiked ? Icons.favorite : LucideIcons.heart,
           count: _formatCount(reel.likes),
@@ -1041,6 +1058,14 @@ class _ReelsScreenState extends State<ReelsScreen>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        circleButton(
+          onTap: () {},
+          child: const Icon(LucideIcons.eye, size: 21, color: Colors.white),
+        ),
+        const SizedBox(height: 4),
+        Text(_formatCount(reel.views),
+            style: const TextStyle(color: Colors.white, fontSize: 12)),
+        const SizedBox(height: 14),
         circleButton(
           onTap: _toggleLike,
           child: Icon(
@@ -1315,7 +1340,6 @@ class _ReelPlayerItem extends StatefulWidget {
   final VideoPlayerController? controller;
   final String? thumbnailUrl;
   final Map<String, String> headers;
-  final double aspectRatio;
   final bool isFailed;
   final VoidCallback? onRetry;
 
@@ -1324,7 +1348,6 @@ class _ReelPlayerItem extends StatefulWidget {
     required this.controller,
     required this.thumbnailUrl,
     required this.headers,
-    required this.aspectRatio,
     required this.isFailed,
     required this.onRetry,
   });
@@ -1349,33 +1372,30 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Center(
-            child: AspectRatio(
-              aspectRatio: widget.aspectRatio,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
-                    CachedNetworkImage(
-                      imageUrl: thumbnailUrl,
-                      fit: BoxFit.cover,
-                      httpHeaders: widget.headers,
-                      errorWidget: (_, __, ___) =>
-                          Container(color: Colors.black),
-                    )
-                  else
-                    Container(color: Colors.black),
-                  if (controller != null && isInitialized)
-                    FittedBox(
-                      fit: BoxFit.contain,
-                      child: SizedBox(
-                        width: controller.value.size.width,
-                        height: controller.value.size.height,
-                        child: VideoPlayer(controller),
-                      ),
+          ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
+                  CachedNetworkImage(
+                    imageUrl: thumbnailUrl,
+                    fit: BoxFit.cover,
+                    httpHeaders: widget.headers,
+                    errorWidget: (_, __, ___) =>
+                        Container(color: Colors.black),
+                  )
+                else
+                  Container(color: Colors.black),
+                if (controller != null && isInitialized)
+                  FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: controller.value.size.width,
+                      height: controller.value.size.height,
+                      child: VideoPlayer(controller),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
           ),
           if (!isInitialized)

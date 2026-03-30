@@ -4,6 +4,7 @@ import '../../api/auth_api.dart';
 import '../theme/design_tokens.dart';
 import '../theme/theme_scope.dart';
 import 'auth/login/login_screen.dart';
+import '../services/ui_prefs.dart';
 
 /// Settings: Preferences, Account, About sections + Log out.
 class SettingsScreen extends StatefulWidget {
@@ -55,6 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           _sectionTitle('Preferences'),
           _darkModeTile(context, isDark),
+          _floatingMessageTile(),
           _settingTile(icon: LucideIcons.globe, label: 'Language / Region', subLabel: 'Default: English', onTap: () {}),
           _settingTile(icon: LucideIcons.bell, label: 'Notifications', subLabel: 'Manage notifications', onTap: () {}),
           const SizedBox(height: 24),
@@ -152,6 +154,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _floatingMessageTile() {
+    final theme = Theme.of(context);
+    return ValueListenableBuilder<bool>(
+      valueListenable: UiPrefs.showFloatingMessage,
+      builder: (context, show, _) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Material(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              onTap: () => UiPrefs.showFloatingMessage.value = !show,
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(color: DesignTokens.instaPink.withOpacity(0.12), shape: BoxShape.circle),
+                      child: const Icon(LucideIcons.messageCircle, color: DesignTokens.instaPink, size: 20),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Floating messages', style: TextStyle(fontWeight: FontWeight.w500, color: theme.textTheme.bodyLarge?.color)),
+                          const SizedBox(height: 2),
+                          Text(show ? 'Shown on main tabs' : 'Hidden', style: TextStyle(fontSize: 12, color: theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600)),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: show,
+                      onChanged: (v) => UiPrefs.showFloatingMessage.value = v,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

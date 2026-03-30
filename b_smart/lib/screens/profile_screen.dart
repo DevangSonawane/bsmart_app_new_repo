@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'dart:async';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -12,6 +13,8 @@ import '../widgets/profile_header.dart';
 import '../widgets/posts_grid.dart';
 import '../widgets/post_detail_modal.dart';
 import '../models/feed_post_model.dart';
+import '../models/ad_model.dart';
+import 'ad_detail_screen.dart';
 import '../theme/design_tokens.dart';
 import '../state/app_state.dart';
 import '../state/profile_actions.dart';
@@ -32,6 +35,7 @@ import '../api/highlights_api.dart';
 import '../services/highlight_service.dart';
 import '../utils/url_helper.dart';
 import 'highlight_story_picker_screen.dart';
+import '../services/ads_service.dart';
 
 /// Heroicons badge-check (same as React web app verified badge)
 const String _verifiedBadgeSvg = r'''
@@ -50,10 +54,12 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final SupabaseService _svc = SupabaseService();
+  final AdsService _adsService = AdsService();
   Map<String, dynamic>? _profile;
   List<FeedPost> _posts = [];
   List<FeedPost> _saved = [];
   List<FeedPost> _tagged = [];
+  List<Ad> _vendorAds = [];
   bool _loading = true;
   bool _usedCache = false;
   bool _hasError = false;
@@ -63,13 +69,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   static const int _initialPostsLimit = 20;
   final FeedService _feedService = FeedService();
   List<StoryGroup> _storyGroups = const [];
+  bool _hasStory = false;
   final HighlightService _highlightService = HighlightService();
   List<Map<String, dynamic>> _highlights = const [];
   final Map<String, List<Map<String, dynamic>>> _highlightItemsById = {};
   bool _highlightsLoading = false;
   bool _highlightsError = false;
   Map<String, String>? _reelImageHeaders;
+  Map<String, String>? _adsMediaHeaders;
   bool _isOwnProfile = false;
+  bool _isFavoriteProfile = false;
   StreamSubscription<AppState>? _storeSub;
 
   @override
@@ -80,6 +89,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (token != null && token.isNotEmpty) {
         setState(() {
           _reelImageHeaders = {'Authorization': 'Bearer $token'};
+          _adsMediaHeaders = {'Authorization': 'Bearer $token'};
         });
       }
     });
@@ -102,6 +112,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final origin =
         '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
     return url.startsWith('/') ? '$origin$url' : '$origin/$url';
+  }
+
+  Future<void> _shareProfile(Map<String, dynamic>? profile) async {
+    if (profile == null) return;
+    final userId = (profile['id'] ?? profile['_id'])?.toString().trim();
+    final username = (profile['username'] as String?)?.trim() ?? 'user';
+    final url = _buildProfileShareUrl(userId, username);
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile link copied')),
+    );
+  }
+
+  String _buildProfileShareUrl(String? userId, String username) {
+    final safeId = userId != null && userId.isNotEmpty ? userId : username;
+    try {
+      final apiUri = Uri.parse(ApiConfig.baseUrl);
+      final scheme = apiUri.scheme.isEmpty ? 'https' : apiUri.scheme;
+      final apiHost = apiUri.host;
+      final appHost = apiHost.startsWith('api.')
+          ? 'app.${apiHost.substring(4)}'
+          : 'app.bebsmart.online';
+      return '$scheme://$appHost/profile/$safeId';
+    } catch (_) {
+      return 'https://app.bebsmart.online/profile/$safeId';
+    }
+  }
+
+  void _toggleFavoriteProfile(String username) {
+    setState(() => _isFavoriteProfile = !_isFavoriteProfile);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _isFavoriteProfile
+              ? 'Added @$username to favorites'
+              : 'Removed @$username from favorites',
+        ),
+      ),
+    );
+  }
+
+  void _showProfileMoreActions(Map<String, dynamic>? profile) {
+    if (profile == null) return;
+    final username = (profile['username'] as String?)?.trim() ?? 'user';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.report_outlined),
+              title: const Text('Report user'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Report submitted')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.userX),
+              title: Text('Block @$username'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('User blocked')),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -309,6 +400,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
       return;
+    }
+
+    final isVendor =
+        (profile?['role'] as String?)?.toLowerCase() == 'vendor';
+    List<Ad> vendorAds = [];
+    if (isVendor && targetId.isNotEmpty) {
+      try {
+        vendorAds = await _adsService.fetchUserAds(userId: targetId);
+      } catch (_) {}
     }
 
     if (profile == null && _profile == null) {
@@ -642,11 +742,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _posts = posts;
         _saved = saved;
         _tagged = tagged;
+        _vendorAds = vendorAds;
         _userReels = combinedReels.values.toList();
         _storyGroups = const [];
         _loading = false;
       });
-      _loadHighlightsForUser(targetId);
+      _loadStoryStatus(targetId);
       // Cache own profile in Redux for instant load next time
       if (widget.userId == null) {
         // Only dispatch if we have valid data (e.g., a username or id) to prevent overwriting with empty state
@@ -677,6 +778,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _loadStoryStatus(String userId) async {
+    if (userId.isEmpty) return;
+    try {
+      final groups = await _feedService.fetchStoriesFeed();
+      final hasStory = groups.any(
+        (g) => g.userId == userId && g.stories.isNotEmpty,
+      );
+      if (!mounted) return;
+      if (_hasStory != hasStory) {
+        setState(() {
+          _hasStory = hasStory;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      if (_hasStory) {
+        setState(() {
+          _hasStory = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadHighlightsForUser(String userId) async {
@@ -914,6 +1038,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  void _showAdDetail(String adId) {
+    if (adId.isEmpty) return;
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
+    if (isMobile) {
+      Navigator.of(context).pushNamed('/ad/$adId');
+    } else {
+      showDialog(
+        context: context,
+        barrierColor: Colors.black54,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: AdDetailScreen(adId: adId),
+        ),
+      );
+    }
+  }
+
   Future<void> _openCreateUpload({
     UploadMode mode = UploadMode.post,
     bool isAdFlow = false,
@@ -1121,6 +1264,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _buildAdsGrid() {
+    if (_vendorAds.isEmpty) return const SizedBox.shrink();
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _vendorAds.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 1,
+        mainAxisSpacing: 1,
+      ),
+      itemBuilder: (context, index) {
+        final ad = _vendorAds[index];
+        final thumb = (ad.imageUrl ?? '').trim();
+        final isVideo = (ad.videoUrl ?? '').trim().isNotEmpty;
+        final url = thumb.isNotEmpty ? thumb : (ad.videoUrl ?? '').trim();
+        if (url.isEmpty) {
+          return Container(color: Colors.grey[300]);
+        }
+        return GestureDetector(
+          onTap: () => _showAdDetail(ad.id),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CachedNetworkImage(
+                imageUrl: url,
+                httpHeaders: UrlHelper.shouldAttachAuthHeader(url)
+                    ? (_adsMediaHeaders ?? const {})
+                    : null,
+                fit: BoxFit.cover,
+                placeholder: (ctx, _) => Container(color: Colors.grey[300]),
+                errorWidget: (ctx, _, __) => Container(
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.broken_image),
+                ),
+              ),
+              if (isVideo)
+                const Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Icon(
+                    LucideIcons.video,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Wrap with StoreConnector to listen to profile changes for "My Profile"
@@ -1170,283 +1366,134 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final following = (displayProfile?['following_count'] as int?) ?? 0;
         final isVendor =
             (displayProfile?['role'] as String?)?.toLowerCase() == 'vendor';
-        final adPosts = _posts.where((p) => p.isAd).toList();
 
         final theme = Theme.of(context);
         final fgColor = theme.colorScheme.onSurface;
 
-        final tabs = <Tab>[
-          const Tab(icon: Icon(LucideIcons.layoutGrid)),
-          const Tab(icon: Icon(LucideIcons.video)),
-          if (isVendor) const Tab(icon: Icon(LucideIcons.megaphone)),
-          if (isMe) const Tab(icon: Icon(LucideIcons.bookmark)),
-          const Tab(icon: Icon(LucideIcons.tag)),
-        ];
+        final tabs = isVendor
+            ? <Tab>[
+                const Tab(icon: Icon(LucideIcons.megaphone)),
+              ]
+            : <Tab>[
+                const Tab(icon: Icon(LucideIcons.layoutGrid)),
+                const Tab(icon: Icon(LucideIcons.video)),
+                if (isMe) const Tab(icon: Icon(LucideIcons.bookmark)),
+                const Tab(icon: Icon(LucideIcons.tag)),
+              ];
 
-        final tabViews = <Widget>[
-          // ... (keep existing tab views logic) ...
-          _posts.isEmpty
-              ? SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 48),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: theme.dividerColor, width: 2)),
-                          child: Icon(LucideIcons.layoutGrid,
-                              size: 32,
-                              color: theme.colorScheme.onSurface
-                                  .withValues(alpha: 0.5)),
-                        ),
-                        const SizedBox(height: 16),
-                        Text('No Posts Yet',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600, color: fgColor)),
-                        const SizedBox(height: 8),
-                        Text(
-                            'When you share photos, they will appear on your profile.',
-                            style: TextStyle(
-                                color: theme.textTheme.bodyMedium?.color ??
-                                    Colors.grey.shade600,
-                                fontSize: 14),
-                            textAlign: TextAlign.center),
-                        if (isMe) ...[
-                          const SizedBox(height: 16),
-                          TextButton(
-                            onPressed: () => _openCreateUpload(
-                              mode: UploadMode.post,
-                            ),
-                            child: const Text('Share your first photo',
-                                style:
-                                    TextStyle(color: DesignTokens.instaPink)),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                )
-              : Padding(
+        final tabViews = isVendor
+            ? <Widget>[
+                Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: PostsGrid(posts: _posts, onTap: (p) => _onPostTap(p)),
+                  child: _buildAdsGrid(),
                 ),
-          _userReels.isEmpty
-              ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Center(
-                          child: Text('No reels yet',
-                              style: TextStyle(color: fgColor))),
-                    ),
-                  ],
-                )
-              : Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _userReels.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 1,
-                      mainAxisSpacing: 1,
-                    ),
-                    itemBuilder: (ctx, i) {
-                      final r = _userReels[i];
-                      final thumbRaw = r.thumbnailUrl?.trim();
-                      final thumb = (thumbRaw != null && thumbRaw.isNotEmpty)
-                          ? _absoluteReelUrl(thumbRaw)
-                          : null;
-                      return GestureDetector(
-                        onTap: () => _showPostDetail(r.id),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Container(color: Colors.black),
-                            if (thumb != null)
-                              CachedNetworkImage(
-                                imageUrl: thumb,
-                                httpHeaders: _reelImageHeaders,
-                                cacheKey:
-                                    '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
-                                fit: BoxFit.cover,
-                                placeholder: (ctx, url) =>
-                                    Container(color: Colors.grey[900]),
-                                errorWidget: (ctx, url, err) =>
-                                    Container(color: Colors.grey[900]),
-                              ),
-                            const Positioned(
-                              top: 6,
-                              right: 6,
-                              child: Icon(
-                                LucideIcons.video,
-                                color: Colors.white,
-                                size: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-          if (isVendor)
-            (adPosts.isEmpty
-                ? SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 48),
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 64,
-                            height: 64,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: theme.dividerColor,
-                                width: 2,
-                              ),
-                            ),
-                            child: Icon(
-                              LucideIcons.megaphone,
-                              size: 28,
-                              color: theme.colorScheme.onSurface
-                                  .withValues(alpha: 0.5),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No Ads Yet',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: fgColor,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Published ads will appear here.',
-                            style: TextStyle(
-                              color: theme.textTheme.bodyMedium?.color ??
-                                  Colors.grey.shade600,
-                              fontSize: 14,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          if (isMe) ...[
-                            const SizedBox(height: 16),
-                            TextButton(
-                              onPressed: () => _openCreateUpload(
-                                mode: UploadMode.post,
-                                isAdFlow: true,
-                              ),
-                              child: const Text(
-                                'Create your first ad',
-                                style: TextStyle(
-                                  color: DesignTokens.instaPink,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+              ]
+            : <Widget>[
+                _posts.isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child:
+                            PostsGrid(posts: _posts, onTap: (p) => _onPostTap(p)),
                       ),
-                    ),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: PostsGrid(
-                      posts: adPosts,
-                      onTap: (p) => _onPostTap(p),
-                    ),
-                  )),
-          if (isMe)
-            (_saved.isEmpty
-                ? ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Center(
-                            child: Text('No saved posts',
-                                style: TextStyle(color: fgColor))),
+                _userReels.isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _userReels.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 1,
+                            mainAxisSpacing: 1,
+                          ),
+                          itemBuilder: (ctx, i) {
+                            final r = _userReels[i];
+                            final thumbRaw = r.thumbnailUrl?.trim();
+                            final thumb =
+                                (thumbRaw != null && thumbRaw.isNotEmpty)
+                                    ? _absoluteReelUrl(thumbRaw)
+                                    : null;
+                            return GestureDetector(
+                              onTap: () => _showPostDetail(r.id),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Container(color: Colors.black),
+                                  if (thumb != null)
+                                    CachedNetworkImage(
+                                      imageUrl: thumb,
+                                      httpHeaders: _reelImageHeaders,
+                                      cacheKey:
+                                          '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
+                                      fit: BoxFit.cover,
+                                      placeholder: (ctx, url) =>
+                                          Container(color: Colors.grey[900]),
+                                      errorWidget: (ctx, url, err) =>
+                                          Container(color: Colors.grey[900]),
+                                    ),
+                                  const Positioned(
+                                    top: 6,
+                                    right: 6,
+                                    child: Icon(
+                                      LucideIcons.video,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ],
-                  )
-                : Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child:
-                        PostsGrid(posts: _saved, onTap: (p) => _onPostTap(p)),
-                  )),
-          _tagged.isEmpty
-              ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Center(
-                          child: Text('No tagged posts',
-                              style: TextStyle(color: fgColor))),
-                    ),
-                  ],
-                )
-              : Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: PostsGrid(posts: _tagged, onTap: (p) => _onPostTap(p)),
-                ),
-        ];
+                if (isMe)
+                  (_saved.isEmpty
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: PostsGrid(
+                            posts: _saved,
+                            onTap: (p) => _onPostTap(p),
+                          ),
+                        )),
+                _tagged.isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: PostsGrid(
+                          posts: _tagged,
+                          onTap: (p) => _onPostTap(p),
+                        ),
+                      ),
+              ];
 
         return DefaultTabController(
           key: ValueKey('profile-tabs-${tabs.length}'),
           length: tabViews.length,
           child: Scaffold(
             backgroundColor: theme.scaffoldBackgroundColor,
-            appBar: AppBar(
-              automaticallyImplyLeading: !isMe,
-              backgroundColor: theme.appBarTheme.backgroundColor,
-              foregroundColor: theme.appBarTheme.foregroundColor,
-              title: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(username, style: TextStyle(color: fgColor)),
-                  const SizedBox(width: 4),
-                  SvgPicture.string(
-                    _verifiedBadgeSvg,
-                    width: 20,
-                    height: 20,
-                    colorFilter: const ColorFilter.mode(
-                        Color(0xFF3B82F6), BlendMode.srcIn),
-                  ),
-                  if (isVendor) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFEDD5),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Text(
-                        'Vendor',
-                        style: TextStyle(
-                          color: Color(0xFFEA580C),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+              appBar: AppBar(
+                automaticallyImplyLeading: !isMe,
+                backgroundColor: theme.appBarTheme.backgroundColor,
+                foregroundColor: theme.appBarTheme.foregroundColor,
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(username, style: TextStyle(color: fgColor)),
+                    const SizedBox(width: 4),
+                    SvgPicture.string(
+                      _verifiedBadgeSvg,
+                      width: 20,
+                      height: 20,
+                      colorFilter: const ColorFilter.mode(
+                          Color(0xFF3B82F6), BlendMode.srcIn),
                     ),
                   ],
-                ],
-              ),
+                ),
               actions: [
                 if (isMe) ...[
                   IconButton(
@@ -1456,9 +1503,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   IconButton(
-                      icon: Icon(LucideIcons.menu, color: fgColor),
-                      onPressed: () =>
-                          Navigator.of(context).pushNamed('/settings')),
+                    icon: Icon(LucideIcons.menu, color: fgColor),
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed('/settings'),
+                  ),
+                ] else ...[
+                  IconButton(
+                    icon: Icon(Icons.share_outlined, color: fgColor),
+                    onPressed: () => _shareProfile(displayProfile),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      _isFavoriteProfile
+                          ? Icons.favorite
+                          : Icons.favorite_border,
+                      color: _isFavoriteProfile
+                          ? Colors.redAccent
+                          : fgColor,
+                    ),
+                    onPressed: () => _toggleFavoriteProfile(username),
+                  ),
+                  IconButton(
+                    icon: Icon(LucideIcons.ellipsis, color: fgColor),
+                    onPressed: () => _showProfileMoreActions(displayProfile),
+                  ),
                 ],
               ],
             ),
@@ -1476,20 +1544,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       posts: postsCount,
                       followers: followers,
                       following: following,
+                      ads: _vendorAds.length,
                       isMe: isMe,
                       isVendor: isVendor,
                       isFollowing:
                           (displayProfile?['is_followed_by_me'] as bool?) ??
                               false,
+                      hasStory: _hasStory,
                       onEdit: isMe ? _onEdit : null,
                       onFollow: isMe ? null : _onFollow,
                       onAvatarTap: _openStoriesFromProfile,
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _buildHighlights(),
                     ),
                   ),
                   SliverPersistentHeader(

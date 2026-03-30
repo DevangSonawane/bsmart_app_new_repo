@@ -904,6 +904,73 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     }
   }
 
+  Future<int> _probeVideoRotation(String path) async {
+    try {
+      final cmd =
+          'ffprobe -v error -select_streams v:0 -show_entries stream_tags=rotate -of default=nw=1:nk=1 "$path"';
+      final session = await FFmpegKit.execute(cmd);
+      final returnCode = await session.getReturnCode();
+      final output = await session.getOutput();
+      final logs = await session.getAllLogsAsString();
+      final buffer = [
+        if (output != null) output,
+        if (logs?.isNotEmpty ?? false) logs,
+      ].join('\n');
+      if (!ReturnCode.isSuccess(returnCode)) {
+        debugPrint('ffprobe failed: $returnCode');
+        return 0;
+      }
+      final match = RegExp(r'(-?\d+)').firstMatch(buffer);
+      if (match == null) return 0;
+      final raw = int.tryParse(match.group(1) ?? '') ?? 0;
+      final normalized = ((raw % 360) + 360) % 360;
+      if (normalized == 90 || normalized == 180 || normalized == 270) {
+        return normalized;
+      }
+      return 0;
+    } catch (e) {
+      debugPrint('ffprobe error: $e');
+      return 0;
+    }
+  }
+
+  Future<File> _fixVideoRotation(String inputPath) async {
+    final rotation = await _probeVideoRotation(inputPath);
+    final outputDir = await Directory.systemTemp.createTemp('story_video_');
+    final outputPath = '${outputDir.path}/story_${DateTime.now().millisecondsSinceEpoch}.mp4';
+    late final String cmd;
+    if (rotation == 90) {
+      cmd =
+          '-y -i "$inputPath" -vf "transpose=1" -c:a copy -metadata:s:v rotate=0 -movflags +faststart "$outputPath"';
+    } else if (rotation == 270) {
+      cmd =
+          '-y -i "$inputPath" -vf "transpose=2" -c:a copy -metadata:s:v rotate=0 -movflags +faststart "$outputPath"';
+    } else if (rotation == 180) {
+      cmd =
+          '-y -i "$inputPath" -vf "transpose=2,transpose=2" -c:a copy -metadata:s:v rotate=0 -movflags +faststart "$outputPath"';
+    } else {
+      cmd =
+          '-y -i "$inputPath" -c copy -metadata:s:v rotate=0 -movflags +faststart "$outputPath"';
+    }
+
+    final session = await FFmpegKit.execute(cmd);
+    final returnCode = await session.getReturnCode();
+    if (ReturnCode.isSuccess(returnCode)) {
+      return File(outputPath);
+    }
+    debugPrint('Rotation fix failed: $returnCode');
+    return File(inputPath);
+  }
+
+  Size _effectiveVideoSize(VideoPlayerController controller) {
+    final size = controller.value.size;
+    final rotation = controller.value.rotationCorrection;
+    if (rotation == 90 || rotation == 270) {
+      return Size(size.height, size.width);
+    }
+    return size;
+  }
+
   Future<void> _onRecordEnd() async {
     if (_controller == null || !_controller!.value.isRecordingVideo) {
       if (_recording) {
@@ -926,17 +993,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       File videoFile = File(xfile.path);
       try {
         await Future.delayed(const Duration(milliseconds: 200));
-        final outputDir = await Directory.systemTemp.createTemp('story_video_');
-        final outputPath = '${outputDir.path}/story_${DateTime.now().millisecondsSinceEpoch}.mp4';
-        final cmd = '-y -i "${xfile.path}" -vf "transpose=cclock" -c:a copy -movflags +faststart "$outputPath"';
-        final session = await FFmpegKit.execute(cmd);
-        final returnCode = await session.getReturnCode();
-        if (ReturnCode.isSuccess(returnCode)) {
-          videoFile = File(outputPath);
-          debugPrint('✅ Video transposed successfully');
-        } else {
-          debugPrint('⚠️ FFmpeg transpose failed, using original');
-        }
+        videoFile = await _fixVideoRotation(xfile.path);
       } catch (e) {
         debugPrint('FFmpeg error: $e');
       }
@@ -980,17 +1037,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
       File videoFile = File(xfile.path);
       try {
         await Future.delayed(const Duration(milliseconds: 200));
-        final outputDir = await Directory.systemTemp.createTemp('story_video_');
-        final outputPath = '${outputDir.path}/story_${DateTime.now().millisecondsSinceEpoch}.mp4';
-        final cmd = '-y -i "${xfile.path}" -vf "transpose=cclock" -c:a copy -movflags +faststart "$outputPath"';
-        final session = await FFmpegKit.execute(cmd);
-        final returnCode = await session.getReturnCode();
-        if (ReturnCode.isSuccess(returnCode)) {
-          videoFile = File(outputPath);
-          debugPrint('✅ Video transposed successfully');
-        } else {
-          debugPrint('⚠️ FFmpeg transpose failed, using original');
-        }
+        videoFile = await _fixVideoRotation(xfile.path);
       } catch (e) {
         debugPrint('FFmpeg error: $e');
       }
@@ -1120,8 +1167,14 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     final session = await FFmpegKit.execute(cmd);
     final returnCode = await session.getReturnCode();
     if (ReturnCode.isSuccess(returnCode)) {
+      File outputFile = File(outputPath);
+      try {
+        outputFile = await _fixVideoRotation(outputPath);
+      } catch (e) {
+        debugPrint('Boomerang rotation fix failed: $e');
+      }
       await _navigateToEditor(
-        File(outputPath),
+        outputFile,
         MediaType.video,
         flipHorizontal: _isFrontCamera,
         loopPreview: true,
@@ -2356,15 +2409,20 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                                                       ColorFilter.matrix(_storyFilterMatrixFor(_storyCurrentFilter)),
                                                   child: Builder(
                                                     builder: (context) {
-                                                      final double w = videoController.value.size.width;
-                                                      final double h = videoController.value.size.height;
+                                                      final Size size = _effectiveVideoSize(videoController);
+                                                      final double w = size.width;
+                                                      final double h = size.height;
                                                       return FittedBox(
                                                         fit: BoxFit.cover,
+                                                        alignment: Alignment.center,
                                                         clipBehavior: Clip.hardEdge,
-                                                        child: SizedBox(
-                                                          width: w,
-                                                          height: h,
-                                                          child: VideoPlayer(videoController),
+                                                        child: Transform.scale(
+                                                          scale: 0.60,
+                                                          child: SizedBox(
+                                                            width: w,
+                                                            height: h,
+                                                            child: VideoPlayer(videoController),
+                                                          ),
                                                         ),
                                                       );
                                                     },

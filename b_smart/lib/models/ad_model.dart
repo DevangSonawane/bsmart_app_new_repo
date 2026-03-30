@@ -98,6 +98,8 @@ class Ad {
       }
     }
 
+    imageUrl ??= _resolveThumbnailFromMedia(media);
+
     imageUrl ??= _normalizeUrl(
       raw['image'] ?? raw['imageUrl'] ?? raw['image_url'] ?? raw['thumbnail'] ?? raw['thumbnailUrl'],
     );
@@ -230,6 +232,33 @@ class Ad {
     final name = media['fileName']?.toString().trim();
     if (name != null && name.isNotEmpty && !_isPlaceholderToken(name)) {
       return '${_apiOrigin()}/uploads/$name';
+    }
+    return null;
+  }
+
+  static String? _resolveThumbnailFromMedia(List<dynamic> media) {
+    String? pickFromMap(Map<String, dynamic> m) {
+      final thumb = _normalizeUrl(
+        m['thumbnail'] ?? m['thumbnail_url'] ?? m['thumbnailUrl'],
+      );
+      if (thumb != null && thumb.isNotEmpty) return thumb;
+      final thumbs = m['thumbnails'];
+      if (thumbs is List) {
+        for (final t in thumbs) {
+          final tm = t is Map ? Map<String, dynamic>.from(t) : <String, dynamic>{};
+          final url = _normalizeUrl(
+            tm['fileUrl'] ?? tm['file_url'] ?? tm['url'] ?? tm['path'],
+          );
+          if (url != null && url.isNotEmpty) return url;
+        }
+      }
+      return null;
+    }
+
+    for (final item in media) {
+      final m = item is Map ? Map<String, dynamic>.from(item) : <String, dynamic>{};
+      final url = pickFromMap(m);
+      if (url != null && url.isNotEmpty) return url;
     }
     return null;
   }

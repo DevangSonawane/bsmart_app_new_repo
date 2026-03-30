@@ -297,10 +297,18 @@ List<double> _buildSepiaMatrix({double amount = 0.2, double brightness = 1.0, do
 
 class CreatePostScreen extends StatefulWidget {
   final MediaItem? initialMedia;
+  final List<MediaItem>? initialMediaList;
   final double? initialAspect;
   final String? initialFilterName;
   final Map<String, int>? initialAdjustments;
-  const CreatePostScreen({super.key, this.initialMedia, this.initialAspect, this.initialFilterName, this.initialAdjustments});
+  const CreatePostScreen({
+    super.key,
+    this.initialMedia,
+    this.initialMediaList,
+    this.initialAspect,
+    this.initialFilterName,
+    this.initialAdjustments,
+  });
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -315,18 +323,44 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String _step = 'select'; // select | crop | edit | share
   List<_CreatePostMediaItem> _media = [];
   int _currentIndex = 0;
+  PageController? _previewPageController;
+  PageController? _overlayPageController;
 
   // Share step
   final String _location = '';
   bool _hideLikes = false;
   bool _turnOffCommenting = false;
   bool _hideShares = false;
-  final List<_PostTag> _tags = [];
+  final Map<int, List<_PostTag>> _tagsByIndex = {};
   bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
+    final list = widget.initialMediaList;
+    if (list != null && list.isNotEmpty) {
+      _media = list
+          .where((m) => m.filePath != null)
+          .map((m) {
+            final baseName = m.filePath!.split('/').last;
+            final alreadyCropped = baseName.startsWith('bsmart_crop_') || baseName.startsWith('bsmart_post_');
+            final alreadyProcessed = baseName.startsWith('bsmart_post_');
+            return _CreatePostMediaItem(
+              sourcePath: m.filePath!,
+              isVideo: m.type == MediaType.video,
+              alreadyCropped: alreadyCropped,
+              alreadyProcessed: alreadyProcessed,
+              aspect: widget.initialAspect ?? 1.0,
+              adjustments: widget.initialAdjustments,
+            );
+          })
+          .toList();
+      _currentIndex = 0;
+      _ensurePreviewControllers();
+      _step = 'share';
+      return;
+    }
+
     final m = widget.initialMedia;
     if (m != null && m.filePath != null) {
       final baseName = m.filePath!.split('/').last;
@@ -347,6 +381,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
       _media = [item];
       _currentIndex = 0;
+      _ensurePreviewControllers();
       _step = 'share';
     }
   }
@@ -354,7 +389,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   @override
   void dispose() {
     _captionCtl.dispose();
+    _previewPageController?.dispose();
+    _overlayPageController?.dispose();
     super.dispose();
+  }
+
+  void _ensurePreviewControllers() {
+    if (_media.length > 1) {
+      _previewPageController ??= PageController(initialPage: _currentIndex);
+      _overlayPageController ??= PageController(initialPage: _currentIndex);
+    }
   }
 
   _CreatePostMediaItem? get _currentMedia =>
@@ -377,10 +421,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           if (_step == 'select') {
             _media = newItems;
             _currentIndex = 0;
+            _ensurePreviewControllers();
             _step = 'share';
           } else {
             _media.addAll(newItems);
             _currentIndex = _media.length - 1;
+            _ensurePreviewControllers();
           }
         });
       }
@@ -403,10 +449,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           if (_step == 'select') {
             _media = [item];
             _currentIndex = 0;
+            _ensurePreviewControllers();
             _step = 'share';
           } else {
             _media.add(item);
             _currentIndex = _media.length - 1;
+            _ensurePreviewControllers();
           }
         });
       }
@@ -429,10 +477,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           if (_step == 'select') {
             _media = [item];
             _currentIndex = 0;
+            _ensurePreviewControllers();
             _step = 'share';
           } else {
             _media.add(item);
             _currentIndex = _media.length - 1;
+            _ensurePreviewControllers();
           }
         });
       }
@@ -507,41 +557,49 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _showPreviewOverlay = false;
 
   Future<void> _openTagPeople() async {
-    final item = _currentMedia;
-    if (item == null) return;
-    final initial = _tags.map((t) => {
-          'id': t.id,
-          'x': t.x,
-          'y': t.y,
-          'user': t.user,
-        }).toList();
+    if (_media.isEmpty) return;
+    final initialByIndex = <int, List<Map<String, dynamic>>>{};
+    for (final entry in _tagsByIndex.entries) {
+      if (entry.value.isEmpty) continue;
+      initialByIndex[entry.key] = entry.value
+          .map((t) => {
+                'id': t.id,
+                'x': t.x,
+                'y': t.y,
+                'user': t.user,
+                'mediaIndex': entry.key,
+              })
+          .toList();
+    }
     final result = await Navigator.of(context).push<List<Map<String, dynamic>>>(
       MaterialPageRoute(
         builder: (_) => TagPeopleScreen(
-          mediaPath: item.displayPath,
-          isVideo: item.isVideo,
-          filterName: item.filter,
-          adjustments: item.adjustments,
-          alreadyProcessed: item.alreadyProcessed,
-          initialTags: initial,
+          mediaPaths: _media.map((m) => m.displayPath).toList(),
+          isVideos: _media.map((m) => m.isVideo).toList(),
+          filterNames: _media.map((m) => m.filter).toList(),
+          adjustments: _media.map((m) => m.adjustments).toList(),
+          alreadyProcessed: _media.map((m) => m.alreadyProcessed).toList(),
+          initialTagsByIndex: initialByIndex,
+          initialIndex: _currentIndex,
         ),
       ),
     );
     if (!mounted) return;
     if (result == null) return;
     setState(() {
-      _tags
-        ..clear()
-        ..addAll(
-          result.map(
-            (m) => _PostTag(
-              id: (m['id'] ?? '').toString(),
-              x: (m['x'] as num?)?.toDouble() ?? 0.5,
-              y: (m['y'] as num?)?.toDouble() ?? 0.5,
-              user: Map<String, dynamic>.from(m['user'] as Map),
-            ),
+      _tagsByIndex.clear();
+      for (final m in result) {
+        final mediaIndex = (m['mediaIndex'] as num?)?.toInt() ?? _currentIndex;
+        final list = _tagsByIndex.putIfAbsent(mediaIndex, () => []);
+        list.add(
+          _PostTag(
+            id: (m['id'] ?? '').toString(),
+            x: (m['x'] as num?)?.toDouble() ?? 0.5,
+            y: (m['y'] as num?)?.toDouble() ?? 0.5,
+            user: Map<String, dynamic>.from(m['user'] as Map),
           ),
         );
+      }
     });
   }
 
@@ -652,12 +710,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
       if (processedMedia.isEmpty) throw Exception('No media to upload');
 
-      final peopleTags = _tags.map((t) => {
-        'user_id': t.user['id'] ?? t.user['_id'],
-        'username': t.user['username'],
-        'x': t.x,
-        'y': t.y,
-      }).toList();
+      final peopleTags = _tagsByIndex.values.expand((list) => list).map((t) => {
+            'user_id': t.user['id'] ?? t.user['_id'],
+            'username': t.user['username'],
+            'x': t.x,
+            'y': t.y,
+          }).toList();
 
       final hashtagMatches = RegExp(r'#[a-zA-Z0-9_]+').allMatches(_captionCtl.text.trim()).map((m) => m.group(0)!).toList();
 
@@ -957,6 +1015,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     Widget optionRow({
       required IconData icon,
       required String label,
+      String? subtitle,
       VoidCallback? onTap,
     }) {
       return InkWell(
@@ -968,9 +1027,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               Icon(icon, color: fg, size: 20),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(color: fg, fontSize: 16, fontWeight: FontWeight.w500),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(color: fg, fontSize: 16, fontWeight: FontWeight.w500),
+                    ),
+                    if (subtitle != null && subtitle.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          subtitle,
+                          style: TextStyle(color: muted, fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               Icon(LucideIcons.chevronRight, color: muted, size: 18),
@@ -1023,19 +1095,52 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   children: [
                     Center(
                       child: GestureDetector(
-                        onTap: () => setState(() => _showPreviewOverlay = true),
+                        onTap: () {
+                          _overlayPageController?.jumpToPage(_currentIndex);
+                          setState(() => _showPreviewOverlay = true);
+                        },
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(18),
                           child: Container(
                             color: theme.colorScheme.surface,
                             child: SizedBox(
                               width: 160,
-                              child: AspectRatio(
-                                aspectRatio: aspect,
-                                child: item.isVideo
-                                    ? Icon(LucideIcons.video, size: 64, color: muted)
-                                    : _applyFilterToImage(File(item.displayPath), item),
-                              ),
+                              child: _media.length <= 1
+                                  ? AspectRatio(
+                                      aspectRatio: aspect,
+                                      child: item.isVideo
+                                          ? Icon(LucideIcons.video,
+                                              size: 64, color: muted)
+                                          : _applyFilterToImage(
+                                              File(item.displayPath), item),
+                                    )
+                                  : AspectRatio(
+                                      aspectRatio: (_media[_currentIndex].aspect == 0.0)
+                                          ? 1.0
+                                          : _media[_currentIndex].aspect,
+                                      child: PageView.builder(
+                                        controller: _previewPageController,
+                                        itemCount: _media.length,
+                                        onPageChanged: (i) {
+                                          setState(() {
+                                            _currentIndex = i;
+                                          });
+                                          _overlayPageController?.jumpToPage(i);
+                                        },
+                                        itemBuilder: (context, i) {
+                                          final m = _media[i];
+                                          final a = (m.aspect == 0.0) ? 1.0 : m.aspect;
+                                          return AspectRatio(
+                                            aspectRatio: a,
+                                            child: m.isVideo
+                                                ? Icon(LucideIcons.video,
+                                                    size: 64, color: muted)
+                                                : _applyFilterToImage(
+                                                    File(m.displayPath), m),
+                                          );
+                                        },
+                                      ),
+                                    ),
                             ),
                           ),
                         ),
@@ -1065,7 +1170,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     const SizedBox(height: 22),
                     optionRow(icon: LucideIcons.music2, label: 'Add audio'),
                     const SizedBox(height: 8),
-                    optionRow(icon: LucideIcons.userPlus, label: 'Tag people', onTap: _openTagPeople),
+                    optionRow(
+                      icon: LucideIcons.userPlus,
+                      label: 'Tag people',
+                      subtitle: (() {
+                        final usernames = _tagsByIndex.values
+                            .expand((list) => list)
+                            .map((t) => (t.user['username'] ?? '').toString())
+                            .where((u) => u.isNotEmpty)
+                            .toList();
+                        if (usernames.isEmpty) return '';
+                        if (usernames.length <= 2) {
+                          return usernames.join(', ');
+                        }
+                        return '${usernames.take(2).join(', ')} +${usernames.length - 2} more';
+                      })(),
+                      onTap: _openTagPeople,
+                    ),
                     optionRow(icon: LucideIcons.mapPin, label: 'Add location'),
                     const SizedBox(height: 8),
                     Divider(
@@ -1142,15 +1263,46 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 elevation: 16,
                 borderRadius: BorderRadius.circular(16),
                 clipBehavior: Clip.antiAlias,
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width * 0.9,
-                  child: AspectRatio(
-                    aspectRatio: aspect,
-                    child: item.isVideo
-                        ? Icon(LucideIcons.video, size: 100, color: Colors.grey[600])
-                        : _applyFilterToImage(File(item.displayPath), item),
+                  child: SizedBox(
+                    width: MediaQuery.of(context).size.width * 0.9,
+                    child: _media.length <= 1
+                        ? AspectRatio(
+                            aspectRatio: aspect,
+                            child: item.isVideo
+                                ? Icon(LucideIcons.video,
+                                    size: 100, color: Colors.grey[600])
+                                : _applyFilterToImage(
+                                    File(item.displayPath), item),
+                          )
+                        : AspectRatio(
+                            aspectRatio: (_media[_currentIndex].aspect == 0.0)
+                                ? 1.0
+                                : _media[_currentIndex].aspect,
+                            child: PageView.builder(
+                              controller: _overlayPageController,
+                              itemCount: _media.length,
+                              onPageChanged: (i) {
+                                setState(() {
+                                  _currentIndex = i;
+                                });
+                                _previewPageController?.jumpToPage(i);
+                              },
+                              itemBuilder: (context, i) {
+                                final m = _media[i];
+                                final a = (m.aspect == 0.0) ? 1.0 : m.aspect;
+                                return AspectRatio(
+                                  aspectRatio: a,
+                                  child: m.isVideo
+                                      ? Icon(LucideIcons.video,
+                                          size: 100,
+                                          color: Colors.grey[600])
+                                      : _applyFilterToImage(
+                                          File(m.displayPath), m),
+                                );
+                              },
+                            ),
+                          ),
                   ),
-                ),
               ),
             ),
           ),

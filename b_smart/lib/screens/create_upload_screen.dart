@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'dart:typed_data';
 import 'package:photo_manager/photo_manager.dart';
 import '../services/create_service.dart';
 import 'create_edit_preview_screen.dart';
+import 'create_post_screen.dart';
 import 'story_camera_screen.dart';
 import '../models/media_model.dart';
 import 'advertiser_create_ad_screen.dart';
@@ -35,6 +37,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   final List<AssetEntity> _recentAssets = [];
   final List<AssetEntity> _allAlbumAssets = [];
   final Set<String> _selectedIds = {};
+  final List<String> _selectedOrder = [];
   AssetEntity? _currentAsset;
   bool _multiSelect = false;
   bool _galleryPermissionDenied = false;
@@ -75,6 +78,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           _galleryPermissionDenied = true;
           _assets.clear();
           _selectedIds.clear();
+          _selectedOrder.clear();
           _currentAsset = null;
         });
       }
@@ -101,6 +105,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           _recentAssets.clear();
           _allAlbumAssets.clear();
           _selectedIds.clear();
+          _selectedOrder.clear();
           _currentAsset = null;
         });
       }
@@ -172,11 +177,14 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       if (_mode == UploadMode.reel) {
         _currentAsset = null;
         _selectedIds.clear();
+        _selectedOrder.clear();
       } else {
         _currentAsset = newCurrent;
         _selectedIds.clear();
+        _selectedOrder.clear();
         if (_currentAsset != null) {
           _selectedIds.add(_currentAsset!.id);
+          _selectedOrder.add(_currentAsset!.id);
         }
       }
     });
@@ -215,6 +223,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     setState(() {
       _mode = mode;
       _selectedIds.clear();
+      _selectedOrder.clear();
       _currentAsset = null;
     });
     _loadGalleryMedia();
@@ -248,11 +257,16 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       if (_multiSelect) {
         if (_selectedIds.contains(asset.id)) {
           _selectedIds.remove(asset.id);
+          _selectedOrder.remove(asset.id);
         } else {
           _selectedIds.add(asset.id);
+          _selectedOrder.add(asset.id);
         }
       } else {
         _selectedIds
+          ..clear()
+          ..add(asset.id);
+        _selectedOrder
           ..clear()
           ..add(asset.id);
       }
@@ -261,40 +275,51 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
 
   Future<void> _handleNext() async {
     if (_assets.isEmpty && _currentAsset == null) return;
-    AssetEntity? asset;
-    if (_selectedIds.isNotEmpty) {
-      asset = _assets.firstWhere(
-        (a) => _selectedIds.contains(a.id),
-        orElse: () => _currentAsset ?? _assets.first,
+    final selectedAssets = _selectedOrder.isNotEmpty
+        ? _selectedOrder
+            .map((id) => _assets.where((a) => a.id == id).toList())
+            .expand((e) => e)
+            .toList()
+        : (_selectedIds.isNotEmpty
+            ? _assets.where((a) => _selectedIds.contains(a.id)).toList()
+            : <AssetEntity>[]);
+    final primaryAsset = _currentAsset ?? (_assets.isNotEmpty ? _assets.first : null);
+    if (selectedAssets.isEmpty && primaryAsset != null) {
+      selectedAssets.add(primaryAsset);
+    }
+    if (selectedAssets.isEmpty) return;
+
+    final mediaList = <MediaItem>[];
+    for (final asset in selectedAssets) {
+      final file = await asset.originFile;
+      if (file == null) continue;
+      final media = MediaItem(
+        id: asset.id,
+        type: asset.type == AssetType.video ? MediaType.video : MediaType.image,
+        filePath: file.path,
+        createdAt: asset.createDateTime,
+        duration: asset.type == AssetType.video ? Duration(seconds: asset.duration) : null,
       );
-    } else {
-      asset = _currentAsset ?? _assets.first;
-    }
-    if (asset == null) return;
-    final file = await asset.originFile;
-    if (file == null) return;
-    final media = MediaItem(
-      id: asset.id,
-      type: asset.type == AssetType.video ? MediaType.video : MediaType.image,
-      filePath: file.path,
-      createdAt: asset.createDateTime,
-      duration: asset.type == AssetType.video ? Duration(seconds: asset.duration) : null,
-    );
-    if (!_createService.validateMedia(media)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Video must be 60 seconds or less')),
-        );
+      if (!_createService.validateMedia(media)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Video must be 60 seconds or less')),
+          );
+        }
+        return;
       }
-      return;
+      mediaList.add(media);
     }
+    if (mediaList.isEmpty) return;
+
+    final media = mediaList.first;
     if (!mounted) return;
     if (widget.isAdFlow) {
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => AdvertiserCreateAdScreen(
             initialContentType: _mode == UploadMode.reel ? 'reel' : 'post',
-            initialMediaPath: file.path,
+            initialMediaPath: media.filePath!,
             initialMediaIsVideo: media.type == MediaType.video,
           ),
         ),
@@ -316,7 +341,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       final created = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (context) => CreateEditPreviewScreen(
-            media: media,
+            media: mediaList.first,
+            mediaList: mediaList,
             isPostFlow: true,
           ),
         ),
@@ -426,6 +452,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                   assets: _assets,
                   currentAsset: _currentAsset,
                   selectedIds: _selectedIds,
+                  selectedOrder: _selectedOrder,
                   multiSelect: _multiSelect,
                   hasSelection: _hasSelection,
                   sourceLabel: _sourceLabel,
@@ -434,7 +461,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                     final box = _sourceBarKey.currentContext?.findRenderObject();
                     if (box is RenderBox) {
                       final pos = box.localToGlobal(Offset.zero);
-                      _sourceMenuPosition = Offset(pos.dx, pos.dy + box.size.height);
+                      _sourceMenuPosition = Offset(pos.dx, pos.dy + box.size.height + 6);
                     }
                     setState(() {
                       _showSourceMenu = !_showSourceMenu;
@@ -442,6 +469,15 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                   },
                   onMultiSelectToggle: () => setState(() {
                     _multiSelect = !_multiSelect;
+                    if (!_multiSelect) {
+                      _selectedIds
+                        ..clear();
+                      _selectedOrder.clear();
+                      if (_currentAsset != null) {
+                        _selectedIds.add(_currentAsset!.id);
+                        _selectedOrder.add(_currentAsset!.id);
+                      }
+                    }
                   }),
                   onLoadGalleryMedia: _loadGalleryMedia,
                   onAssetTap: _onAssetTap,
@@ -479,34 +515,41 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
               child: Container(
                 width: 220,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF262626),
+                  color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildSourceItem(
-                      gallerySource: _GallerySource.recents,
-                      icon: Icons.photo_library_outlined,
-                      label: 'Recents',
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSourceItem(
+                          gallerySource: _GallerySource.recents,
+                          icon: Icons.photo_library_outlined,
+                          label: 'Recents',
+                        ),
+                        _buildSourceItem(
+                          gallerySource: _GallerySource.videos,
+                          icon: Icons.play_arrow_rounded,
+                          label: 'Videos',
+                        ),
+                        _buildSourceItem(
+                          gallerySource: _GallerySource.favourites,
+                          icon: Icons.favorite_border,
+                          label: 'Favourites',
+                        ),
+                        _buildSourceItem(
+                          gallerySource: _GallerySource.allAlbums,
+                          icon: Icons.grid_view_rounded,
+                          label: 'All albums',
+                        ),
+                      ],
                     ),
-                    _buildSourceItem(
-                      gallerySource: _GallerySource.videos,
-                      icon: Icons.play_arrow_rounded,
-                      label: 'Videos',
-                    ),
-                    _buildSourceItem(
-                      gallerySource: _GallerySource.favourites,
-                      icon: Icons.favorite_border,
-                      label: 'Favourites',
-                    ),
-                    _buildSourceItem(
-                      gallerySource: _GallerySource.allAlbums,
-                      icon: Icons.grid_view_rounded,
-                      label: 'All albums',
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -568,6 +611,7 @@ class _UploadPage extends StatelessWidget {
   final List<AssetEntity> assets;
   final AssetEntity? currentAsset;
   final Set<String> selectedIds;
+  final List<String> selectedOrder;
   final bool multiSelect;
   final bool hasSelection;
   final String sourceLabel;
@@ -586,6 +630,7 @@ class _UploadPage extends StatelessWidget {
     required this.assets,
     required this.currentAsset,
     required this.selectedIds,
+    required this.selectedOrder,
     required this.multiSelect,
     required this.hasSelection,
     required this.sourceLabel,
@@ -685,7 +730,7 @@ class _UploadPage extends StatelessWidget {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                               ),
                               child: Text(
-                                multiSelect ? 'Deselect' : 'Select',
+                                multiSelect ? 'Cancel' : 'Select',
                                 style: TextStyle(
                                   color: multiSelect ? Colors.black : Colors.white,
                                   fontWeight: FontWeight.w600,
@@ -796,6 +841,9 @@ class _UploadPage extends StatelessWidget {
 
                             final asset = assets[index - 1];
                             final isSelected = selectedIds.contains(asset.id);
+                            final orderIndex = isSelected
+                                ? selectedOrder.indexOf(asset.id)
+                                : -1;
                             return GestureDetector(
                               onTap: () => onAssetTap(asset),
                               child: Stack(
@@ -837,25 +885,34 @@ class _UploadPage extends StatelessWidget {
                                         ),
                                       ),
                                     ),
-                                  if (isSelected)
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        border: Border.all(color: const Color(0xFF0095F6), width: 2),
-                                      ),
-                                      child: Align(
-                                        alignment: Alignment.topRight,
-                                        child: Container(
-                                          margin: const EdgeInsets.all(4),
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: const BoxDecoration(
-                                            color: Color(0xFF0095F6),
-                                            shape: BoxShape.circle,
+                                  if (multiSelect)
+                                    Align(
+                                      alignment: Alignment.topRight,
+                                      child: Container(
+                                        margin: const EdgeInsets.all(6),
+                                        width: 20,
+                                        height: 20,
+                                        decoration: BoxDecoration(
+                                          color: isSelected
+                                              ? Colors.white.withValues(alpha: 0.9)
+                                              : Colors.black.withValues(alpha: 0.25),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: Colors.white.withValues(alpha: 0.8),
+                                            width: 1,
                                           ),
-                                          child: const Icon(
-                                            Icons.check,
-                                            size: 14,
-                                            color: Colors.white,
-                                          ),
+                                        ),
+                                        child: Center(
+                                          child: isSelected
+                                              ? Text(
+                                                  '${orderIndex + 1}',
+                                                  style: const TextStyle(
+                                                    color: Colors.black,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                )
+                                              : const SizedBox.shrink(),
                                         ),
                                       ),
                                     ),

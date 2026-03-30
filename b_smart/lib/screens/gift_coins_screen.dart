@@ -133,7 +133,7 @@ class _GiftCoinsScreenState extends State<GiftCoinsScreen> {
         _notificationService.addNotification(
           NotificationItem(
             id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-            type: NotificationType.activity,
+            typeKey: 'reward',
             title: 'Gift Sent',
             message: 'You sent $amount coins to ${_selectedUser!['full_name'] ?? _selectedUser!['username']}',
             timestamp: DateTime.now(),

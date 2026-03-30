@@ -91,7 +91,10 @@ class WalletService {
   Future<int> getCoinBalance() async {
     try {
       final data = await fetchMemberWalletHistoryForCurrentUser();
-      final wallet = data['wallet'];
+      dynamic wallet = data['wallet'];
+      if (wallet == null && data['data'] is Map) {
+        wallet = (data['data'] as Map)['wallet'];
+      }
       if (wallet is Map) {
         final balance = wallet['balance'];
         if (balance is int) return balance;

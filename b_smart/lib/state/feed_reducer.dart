@@ -29,8 +29,6 @@ FeedState _appendPosts(FeedState state, AppendFeedPosts action) {
       existingIds.add(p.id);
     }
   }
-  // Keep newest posts on top in case backend pagination returns out-of-order items.
-  next.sort((a, b) => b.createdAt.compareTo(a.createdAt));
   return state.copyWith(posts: next, isLoading: false);
 }
 
@@ -48,9 +46,10 @@ FeedState _setLoading(FeedState state, SetFeedLoading action) {
 }
 
 FeedState _setPosts(FeedState state, SetFeedPosts action) {
-  final next = List<FeedPost>.from(action.posts)
-    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  return state.copyWith(posts: next, isLoading: false);
+  return state.copyWith(
+    posts: List<FeedPost>.from(action.posts),
+    isLoading: false,
+  );
 }
 
 FeedState _updatePostLiked(FeedState state, UpdatePostLiked action) {

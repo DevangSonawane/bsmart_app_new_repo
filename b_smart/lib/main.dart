@@ -19,6 +19,7 @@ import 'theme/design_tokens.dart';
 import 'routes.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/ad_detail_screen.dart';
 import 'widgets/profile_setup_gate.dart';
 
 void main() async {
@@ -227,6 +228,16 @@ class _BSmartAppState extends State<BSmartApp> {
         final name = settings.name ?? '';
         final uri = Uri.parse(name);
         final segments = uri.pathSegments;
+
+        // /ad/:adId
+        if (segments.length == 2 && segments[0] == 'ad') {
+          final adId = segments[1];
+          debugPrint('[Router] → AdDetailScreen adId=$adId');
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (ctx) => AdDetailScreen(adId: adId),
+          );
+        }
 
         // /profile/:userId
         if (segments.length == 2 && segments[0] == 'profile') {

@@ -148,37 +148,34 @@ class _PromoteScreenState extends State<PromoteScreen> {
                   ),
                 ),
               ),
-              // Top right: mute/unmute only
+              // Top left: mute/unmute
               Positioned(
                 top: MediaQuery.of(context).padding.top + 8,
-                right: 12,
-                child: Material(
-                  color: Colors.transparent,
-                  child: IconButton(
-                    icon: Icon(_isMuted ? LucideIcons.volumeX : LucideIcons.volume2, color: Colors.white, size: 28),
-                    onPressed: () {
-                      setState(() {
-                        _isMuted = !_isMuted;
-                        final c = _controllers[_currentIndex];
-                        if (c != null) c.setVolume(_isMuted ? 0.0 : 1.0);
-                      });
-                    },
-                  ),
+                left: 12,
+                child: _ActionIcon(
+                  icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                  onTap: () {
+                    setState(() {
+                      _isMuted = !_isMuted;
+                      final c = _controllers[_currentIndex];
+                      if (c != null) c.setVolume(_isMuted ? 0.0 : 1.0);
+                    });
+                  },
                 ),
               ),
-              // Right side: like, comment, share, three dots — with clear gap below mute, positioned lower
+              // Right side actions (aligned with Ads layout)
               Positioned(
                 right: 8,
-                top: MediaQuery.of(context).padding.top + 8 + 48 + 44,
+                bottom: 160,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _RightAction(icon: LucideIcons.heart, label: (item['likes'] as String?) ?? '0', onTap: () {}),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 16),
                     _RightAction(icon: LucideIcons.messageCircle, label: (item['comments'] as String?) ?? '0', onTap: () {}),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 16),
                     _RightAction(icon: LucideIcons.send, label: null, onTap: () {}),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 16),
                     _RightAction(icon: LucideIcons.ellipsis, label: null, onTap: () {}),
                   ],
                 ),
@@ -276,21 +273,7 @@ _showFeaturedProductsSheet(context, products);
                           ),
                         ),
                         const SizedBox(height: 10),
-                        // Install button (dark grey/black)
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: () {},
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.grey[900],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              elevation: 0,
-                            ),
-                            child: const Text('Install', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
+                        // (Install button removed)
                       ],
                     ),
                   ),
@@ -395,15 +378,30 @@ class _RightAction extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-          icon: Icon(icon, color: Colors.white, size: 28),
-          onPressed: onTap,
-        ),
+        _ActionIcon(icon: icon, onTap: onTap),
         if (label != null)
           Text(label!, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
       ],
+    );
+  }
+}
+
+class _ActionIcon extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _ActionIcon({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        alignment: Alignment.center,
+        child: Icon(icon, color: Colors.white, size: 22),
+      ),
     );
   }
 }

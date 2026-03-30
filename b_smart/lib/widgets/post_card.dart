@@ -49,6 +49,8 @@ class _PostCardState extends State<PostCard> {
   Timer? _doubleTapLikeTimer;
   bool _isMuted = VideoPool.instance.isMuted;
   bool _showPeopleTags = false;
+  final PageController _pageController = PageController();
+  int _mediaIndex = 0;
 
   bool get _isVideo =>
       widget.post.mediaType == PostMediaType.video ||
@@ -57,7 +59,26 @@ class _PostCardState extends State<PostCard> {
   @override
   void dispose() {
     _doubleTapLikeTimer?.cancel();
+    _pageController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.id != widget.post.id) {
+      _mediaIndex = 0;
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(0);
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_pageController.hasClients) {
+            _pageController.jumpToPage(0);
+          }
+        });
+      }
+    }
   }
 
   void _handleDoubleTap() {
@@ -92,6 +113,14 @@ class _PostCardState extends State<PostCard> {
     return '';
   }
 
+  String _formatTargetList(List<String> items) {
+    final clean = items.where((e) => e.trim().isNotEmpty).toList();
+    if (clean.isEmpty) return '';
+    final shown = clean.take(3).toList();
+    final more = clean.length > 3 ? '…' : '';
+    return '${shown.join(', ')}$more';
+  }
+
   Offset? _tagOffset(Map<String, dynamic> t, Size size) {
     if (size.width <= 0 || size.height <= 0) return null;
     final xAny = t['x'] ?? t['pos_x'] ?? t['position_x'];
@@ -102,11 +131,28 @@ class _PostCardState extends State<PostCard> {
     return Offset(x * size.width, y * size.height);
   }
 
+  List<Map<String, dynamic>> _tagsForMediaIndex(int index) {
+    final raw = widget.post.peopleTags ?? const [];
+    final withIndex = raw.where((t) {
+      final map = Map<String, dynamic>.from(t);
+      final idxAny = map['mediaIndex'] ?? map['media_index'] ?? map['index'];
+      if (idxAny is num) {
+        return idxAny.toInt() == index;
+      }
+      return false;
+    }).toList();
+    if (withIndex.isNotEmpty) return withIndex;
+    return raw.map((t) => Map<String, dynamic>.from(t)).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final mediaUrls = post.mediaUrls;
+    final isCarousel = mediaUrls.length > 1 && !_isVideo;
+    final aspect = post.aspectRatio ?? 4 / 5;
 
     return RepaintBoundary(
       child: Column(
@@ -116,22 +162,116 @@ class _PostCardState extends State<PostCard> {
           RepaintBoundary(
             child: Stack(
               children: [
-                DynamicMediaWidget(
-                  id: post.id,
-                  url: post.mediaUrls.first,
-                  thumbnailUrl: post.thumbnailUrl,
-                  isVideo: _isVideo,
-                  isActive: widget.isActive && widget.isTabActive,
-                  initialAspectRatio: post.aspectRatio,
-                ),
+                if (mediaUrls.isEmpty)
+                  AspectRatio(
+                    aspectRatio: aspect,
+                    child: const ColoredBox(
+                      color: Colors.black12,
+                      child: Center(
+                        child: Icon(Icons.broken_image, color: Colors.white70),
+                      ),
+                    ),
+                  )
+                else if (!isCarousel)
+                  DynamicMediaWidget(
+                    id: post.id,
+                    url: mediaUrls.first,
+                    thumbnailUrl: post.thumbnailUrl,
+                    isVideo: _isVideo,
+                    isActive: widget.isActive && widget.isTabActive,
+                    initialAspectRatio: post.aspectRatio,
+                  )
+                else
+                  AspectRatio(
+                    aspectRatio: aspect,
+                    child: PageView.builder(
+                      controller: _pageController,
+                      itemCount: mediaUrls.length,
+                      onPageChanged: (i) {
+                        setState(() => _mediaIndex = i);
+                      },
+                      itemBuilder: (context, i) {
+                        final url = mediaUrls[i];
+                        return GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onDoubleTap: _handleDoubleTap,
+                          onTap: () {
+                            if (_showPeopleTags) {
+                              setState(() => _showPeopleTags = false);
+                              return;
+                            }
+                            widget.onComment?.call();
+                          },
+                          onLongPress: _togglePeopleTags,
+                          child: DynamicMediaWidget(
+                            id: '${post.id}_$i',
+                            url: url,
+                            thumbnailUrl: post.thumbnailUrl,
+                            isVideo: false,
+                            isActive: widget.isActive && widget.isTabActive && _mediaIndex == i,
+                            initialAspectRatio: post.aspectRatio,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                if (isCarousel)
+                  Positioned(
+                    bottom: 10,
+                    left: 0,
+                    right: 0,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        mediaUrls.length,
+                        (i) {
+                          final active = i == _mediaIndex;
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: active ? 10 : 6,
+                            height: 6,
+                            margin: const EdgeInsets.symmetric(horizontal: 3),
+                            decoration: BoxDecoration(
+                              color: active
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.4),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                if (post.isAd)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        'AD',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ),
+                  ),
                 if (_showPeopleTags && (post.peopleTags?.isNotEmpty ?? false))
                   Positioned.fill(
                     child: IgnorePointer(
-                      ignoring: false,
+                      ignoring: true,
                       child: LayoutBuilder(
                         builder: (context, constraints) {
                           final size = constraints.biggest;
-                          final tags = post.peopleTags ?? const [];
+                          final tags = _tagsForMediaIndex(_mediaIndex);
                           return Stack(
                             children: [
                               for (final raw in tags)
@@ -168,24 +308,25 @@ class _PostCardState extends State<PostCard> {
                       ),
                     ),
                   ),
-                Positioned.fill(
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onDoubleTap: _handleDoubleTap,
-                      onTap: _isVideo
-                          ? null
-                          : () {
-                              if (_showPeopleTags) {
-                                setState(() => _showPeopleTags = false);
-                                return;
-                              }
-                              widget.onComment?.call();
-                            },
-                      onLongPress: _isVideo ? null : _togglePeopleTags,
+                if (!isCarousel)
+                  Positioned.fill(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onDoubleTap: _handleDoubleTap,
+                        onTap: _isVideo
+                            ? null
+                            : () {
+                                if (_showPeopleTags) {
+                                  setState(() => _showPeopleTags = false);
+                                  return;
+                                }
+                                widget.onComment?.call();
+                              },
+                        onLongPress: _isVideo ? null : _togglePeopleTags,
+                      ),
                     ),
                   ),
-                ),
                 if (post.peopleTags?.isNotEmpty ?? false)
                   Positioned(
                     bottom: 10,
@@ -266,6 +407,21 @@ class _PostCardState extends State<PostCard> {
   Widget _buildHeader(FeedPost post, bool isDark, ThemeData theme) {
     final avatarUrl =
         post.userAvatar != null ? UrlHelper.absoluteUrl(post.userAvatar!) : '';
+    final fullName = (post.fullName ?? '').trim();
+    final adCompany = (post.adCompanyName ?? '').trim();
+    final subtitleName = fullName.isNotEmpty
+        ? fullName
+        : (post.isAd && adCompany.isNotEmpty && adCompany != post.userName
+            ? adCompany
+            : '');
+    final location = (post.location ?? '').trim();
+    final primaryText = theme.brightness == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+    final secondaryText =
+        theme.brightness == Brightness.dark
+            ? const Color(0xFF9CA3AF)
+            : const Color(0xFF6B7280);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
@@ -319,31 +475,68 @@ class _PostCardState extends State<PostCard> {
                 children: [
                   Text(
                     post.userName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 13.5),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: primaryText,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (post.isAd)
-                    Text(
-                      'Sponsored',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color:
-                            theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  if (!post.isAd &&
-                      post.fullName != null &&
-                      post.fullName!.trim().isNotEmpty)
-                    Text(
-                      post.fullName!,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color:
-                            theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                  if (subtitleName.isNotEmpty ||
+                      location.isNotEmpty ||
+                      post.isAd)
+                    Row(
+                      children: [
+                        if (subtitleName.isNotEmpty)
+                          Flexible(
+                            child: Text(
+                              subtitleName,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: secondaryText,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (post.isAd) ...[
+                          if (subtitleName.isNotEmpty)
+                            Text(
+                              ' · ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: secondaryText,
+                              ),
+                            ),
+                          Text(
+                            'Sponsored',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: secondaryText,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                        if (!post.isAd && location.isNotEmpty) ...[
+                          if (subtitleName.isNotEmpty)
+                            Text(
+                              ' · ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: secondaryText,
+                              ),
+                            ),
+                          Flexible(
+                            child: Text(
+                              location,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: secondaryText,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                 ],
               ),
@@ -353,9 +546,13 @@ class _PostCardState extends State<PostCard> {
             _formatTimestamp(post.createdAt),
             style: TextStyle(
               fontSize: 11,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+              color: secondaryText,
             ),
           ),
+          if (post.isAd && post.totalBudgetCoins > 0) ...[
+            const SizedBox(width: 8),
+            _BudgetBadge(amount: post.totalBudgetCoins),
+          ],
           const SizedBox(width: 4),
           if (widget.onMore != null)
             GestureDetector(
@@ -435,6 +632,16 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _buildPostDetails(FeedPost post, ThemeData theme) {
+    final primaryText = theme.brightness == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+    final secondaryText =
+        theme.brightness == Brightness.dark
+            ? const Color(0xFF9CA3AF)
+            : const Color(0xFF6B7280);
+    final accentBlue = theme.brightness == Brightness.dark
+        ? const Color(0xFF60A5FA)
+        : const Color(0xFF2563EB);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
       child: Column(
@@ -443,16 +650,96 @@ class _PostCardState extends State<PostCard> {
           if (!post.hideLikesCount || widget.isOwnPost)
             Text(
               '${post.likes} likes',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: primaryText,
+              ),
             ),
-          if (post.isAd && post.adTitle != null && post.adTitle!.trim().isNotEmpty) ...[
+          if (post.isAd) ...[
+            if ((post.adCategory ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: accentBlue.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                      color: accentBlue.withValues(alpha: 0.35)),
+                ),
+                child: Text(
+                  (post.adCategory ?? '').trim(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: accentBlue,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 6),
+            if ((post.adCompanyName ?? '').trim().isNotEmpty ||
+                (post.caption ?? '').trim().isNotEmpty)
+              Wrap(
+                children: [
+                  if ((post.adCompanyName ?? '').trim().isNotEmpty)
+                    Text(
+                      '${post.adCompanyName!.trim()} ',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: primaryText,
+                      ),
+                    ),
+                  if ((post.caption ?? '').trim().isNotEmpty)
+                    Text(
+                      post.caption!.trim(),
+                      style: TextStyle(fontSize: 13, color: primaryText),
+                    ),
+                ],
+              ),
             const SizedBox(height: 4),
-            Text(
-              post.adTitle!.trim(),
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-            ),
+            if ((post.location ?? '').trim().isNotEmpty)
+              Text(
+                post.location!.trim(),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: secondaryText,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            if ((post.targetLocations ?? const <String>[]).isNotEmpty ||
+                (post.targetLanguages ?? const <String>[]).isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 2,
+                  children: [
+                    if ((post.targetLocations ?? const <String>[]).isNotEmpty)
+                      Text(
+                        '📍 ${_formatTargetList(post.targetLocations ?? const <String>[])}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: secondaryText,
+                        ),
+                      ),
+                    if ((post.targetLanguages ?? const <String>[]).isNotEmpty)
+                      Text(
+                        '🌐 ${_formatTargetList(post.targetLanguages ?? const <String>[])}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: secondaryText,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
           ],
-          if (post.caption != null && post.caption!.isNotEmpty) ...[
+          if (!post.isAd &&
+              post.caption != null &&
+              post.caption!.isNotEmpty) ...[
             const SizedBox(height: 4),
             Wrap(
               children: [
@@ -460,18 +747,21 @@ class _PostCardState extends State<PostCard> {
                   onTap: widget.onUserTap,
                   child: Text(
                     '${post.userName} ',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: primaryText,
+                    ),
                   ),
                 ),
                 Text(
                   post.caption!,
-                  style: const TextStyle(fontSize: 13),
+                  style: TextStyle(fontSize: 13, color: primaryText),
                 ),
               ],
             ),
           ],
-          if (!post.commentsDisabled && post.comments > 1) ...[
+          if (!post.isAd && !post.commentsDisabled && post.comments > 1) ...[
             const SizedBox(height: 4),
             GestureDetector(
               onTap: widget.onComment,
@@ -479,12 +769,13 @@ class _PostCardState extends State<PostCard> {
                 'View all ${post.comments >= 1000 ? '${(post.comments / 1000).toStringAsFixed(1)}K' : post.comments} comments',
                 style: TextStyle(
                   fontSize: 13,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                  color: secondaryText,
                 ),
               ),
             ),
           ],
-          if (!post.commentsDisabled &&
+          if (!post.isAd &&
+              !post.commentsDisabled &&
               post.latestCommentText != null &&
               post.latestCommentText!.trim().isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -502,10 +793,20 @@ class _PostCardState extends State<PostCard> {
                   TextSpan(
                     text: post.latestCommentText!.trim(),
                     style: TextStyle(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+                      color: secondaryText,
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+          if (post.isAd && post.views > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              '${post.views >= 1000000 ? '${(post.views / 1000000).toStringAsFixed(1)}M' : post.views >= 1000 ? '${(post.views / 1000).toStringAsFixed(1)}K' : post.views} views',
+              style: TextStyle(
+                fontSize: 11,
+                color: secondaryText,
               ),
             ),
           ],
@@ -513,7 +814,7 @@ class _PostCardState extends State<PostCard> {
           Text(
             _formatTimestamp(post.createdAt).toUpperCase(),
             style: const TextStyle(
-              color: Colors.grey,
+              color: Color(0xFF8A8A8A),
               fontSize: 10.5,
               letterSpacing: 0.4,
             ),
@@ -533,5 +834,46 @@ class _PostCardState extends State<PostCard> {
     if (difference.inDays < 7) return '${difference.inDays}d';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${months[date.month - 1]} ${date.day}';
+  }
+}
+
+class _BudgetBadge extends StatelessWidget {
+  final int amount;
+
+  const _BudgetBadge({required this.amount});
+
+  String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return n.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent =
+        theme.brightness == Brightness.dark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: [
+          Icon(LucideIcons.coins, size: 12, color: accent),
+          const SizedBox(width: 4),
+          Text(
+            _fmt(amount),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: accent,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

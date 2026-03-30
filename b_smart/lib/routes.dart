@@ -16,6 +16,7 @@ import 'screens/notifications_screen.dart';
 import 'screens/auth_callback_screen.dart';
 import 'screens/story_camera_screen.dart';
 import 'screens/own_story_viewer_screen.dart';
+import 'screens/search_screen.dart';
 import '../models/media_model.dart';
 import 'screens/edit_video_screen.dart';
 
@@ -46,12 +47,18 @@ final Map<String, WidgetBuilder> appRoutes = {
       ),
   '/create': (ctx) => const CreateScreen(),
   // '/profile' is intentionally removed — handled by onGenerateRoute
-  '/reels': (ctx) => const ReelsScreen(),
+  '/reels': (ctx) {
+    final args = ModalRoute.of(ctx)?.settings.arguments;
+    final initialId =
+        (args is Map ? args['initialReelId'] : null)?.toString();
+    return ReelsScreen(initialReelId: initialId);
+  },
   '/ads': (ctx) => const AdsPageScreen(),
   '/promote': (ctx) => const PromoteScreen(),
   '/settings': (ctx) => const SettingsScreen(),
   '/wallet': (ctx) => const WalletScreen(),
   '/notifications': (ctx) => const NotificationsScreen(),
+  '/search': (ctx) => const SearchScreen(),
   '/auth/google/success': (ctx) => const AuthCallbackScreen(),
   '/edit-profile': (ctx) => const EditProfileScreen(userId: ''),
   '/story-camera': (ctx) => const StoryCameraScreen(),

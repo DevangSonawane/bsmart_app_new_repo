@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/design_tokens.dart';
 
@@ -8,6 +9,7 @@ class StoriesRow extends StatelessWidget {
   /// Called when a user story is tapped. Index 0 = first user in [users].
   final void Function(int userIndex)? onUserStoryTap;
   final bool yourStoryHasActive;
+  final String? yourAvatarUrl;
   final Map<String, Map<String, bool>>? userStatuses;
   final double? yourStoryUploadProgress;
   final VoidCallback? onYourStoryAddTap;
@@ -19,6 +21,7 @@ class StoriesRow extends StatelessWidget {
     this.onYourStoryTap,
     this.onUserStoryTap,
     this.yourStoryHasActive = false,
+    this.yourAvatarUrl,
     this.userStatuses,
     this.yourStoryUploadProgress,
     this.onYourStoryAddTap,
@@ -41,7 +44,7 @@ class StoriesRow extends StatelessWidget {
           if (showYourStory && index == 0) {
             return _StoryItem(
               label: 'Your Story',
-              avatarUrl: null,
+              avatarUrl: yourAvatarUrl,
               ringGradient: yourStoryHasActive
                   ? DesignTokens.instaGradient
                   : const LinearGradient(
@@ -52,6 +55,7 @@ class StoriesRow extends StatelessWidget {
                         Color(0xFF60A5FA),
                       ],
                     ),
+              useDottedRing: !yourStoryHasActive,
               onTap: onYourStoryTap,
               showAddBadge: true,
               segmentsCount: 1,
@@ -104,13 +108,24 @@ class _StoryItem extends StatelessWidget {
   final String label;
   final String? avatarUrl;
   final Gradient ringGradient;
+  final bool useDottedRing;
   final VoidCallback? onTap;
   final bool showAddBadge;
   final int segmentsCount;
   final double? uploadProgress;
   final VoidCallback? onAddTap;
 
-  const _StoryItem({required this.label, this.avatarUrl, required this.ringGradient, this.onTap, this.showAddBadge = false, this.segmentsCount = 1, this.uploadProgress, this.onAddTap});
+  const _StoryItem({
+    required this.label,
+    this.avatarUrl,
+    required this.ringGradient,
+    this.useDottedRing = false,
+    this.onTap,
+    this.showAddBadge = false,
+    this.segmentsCount = 1,
+    this.uploadProgress,
+    this.onAddTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -123,20 +138,19 @@ class _StoryItem extends StatelessWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: ringGradient,
-            ),
-            padding: EdgeInsets.all(segmentsCount > 1 ? 2 : 3),
-            child: CircleAvatar(
-              radius: 28,
-              backgroundColor: isDark ? Colors.black : Colors.white,
-              backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
-              child: avatarUrl == null ? const Icon(LucideIcons.user, color: Colors.grey) : null,
-            ),
+              _StoryRing(
+                gradient: ringGradient,
+                useDottedRing: useDottedRing,
+                padding: segmentsCount > 1 ? 2 : 3,
+                child: CircleAvatar(
+                  radius: 28,
+                  backgroundColor: isDark ? Colors.black : Colors.white,
+                  backgroundImage:
+                      avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+                  child: avatarUrl == null
+                      ? const Icon(LucideIcons.user, color: Colors.grey)
+                      : null,
+                ),
               ),
               if (uploadProgress != null && (uploadProgress! > 0 && uploadProgress! < 1))
                 Positioned.fill(
@@ -187,5 +201,105 @@ class _StoryItem extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _StoryRing extends StatelessWidget {
+  final Gradient gradient;
+  final bool useDottedRing;
+  final Widget child;
+  final double padding;
+
+  const _StoryRing({
+    required this.gradient,
+    required this.useDottedRing,
+    required this.child,
+    required this.padding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ringColor = theme.brightness == Brightness.dark
+        ? Colors.white24
+        : Colors.grey.shade400;
+    final inner = Padding(
+      padding: EdgeInsets.all(padding),
+      child: child,
+    );
+    if (!useDottedRing) {
+      return Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: gradient,
+        ),
+        padding: const EdgeInsets.all(3),
+        child: inner,
+      );
+    }
+    return Container(
+      width: 64,
+      height: 64,
+      padding: const EdgeInsets.all(3),
+      decoration: const BoxDecoration(shape: BoxShape.circle),
+      child: CustomPaint(
+        painter: _DottedCirclePainter(
+          color: ringColor,
+          strokeWidth: 2,
+          dashLength: 4,
+          gap: 3,
+        ),
+        child: inner,
+      ),
+    );
+  }
+}
+
+class _DottedCirclePainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+  final double dashLength;
+  final double gap;
+
+  const _DottedCirclePainter({
+    required this.color,
+    required this.strokeWidth,
+    required this.dashLength,
+    required this.gap,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final radius = size.width / 2;
+    final rect = Rect.fromCircle(
+      center: Offset(radius, radius),
+      radius: radius - strokeWidth / 2,
+    );
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+    final circumference = 2 * pi * rect.width / 2;
+    final dashCount =
+        (circumference / (dashLength + gap)).floor().clamp(6, 200);
+    final r = rect.width / 2;
+    final dashAngle = dashLength / r;
+    final gapAngle = gap / r;
+    double start = -pi / 2;
+    for (int i = 0; i < dashCount; i++) {
+      canvas.drawArc(rect, start, dashAngle, false, paint);
+      start += dashAngle + gapAngle;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DottedCirclePainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.dashLength != dashLength ||
+        oldDelegate.gap != gap;
   }
 }
