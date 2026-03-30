@@ -40,6 +40,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   VideoPlayerController? _videoCtl;
   Future<void>? _initVideo;
   Map<String, String>? _videoHeaders;
+  String? _endedStoryId;
 
   @override
   void initState() {
@@ -99,7 +100,15 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   void _startAutoPlayTimer(Story currentStory) {
     _autoPlayTimer?.cancel();
     final isImage = currentStory.mediaType == StoryMediaType.image;
-    final durationMs = isImage ? 5000 : ((currentStory.durationSec ?? 5) * 1000);
+    int durationMs;
+    if (!isImage &&
+        _videoCtl != null &&
+        _videoCtl!.value.isInitialized &&
+        _videoCtl!.value.duration.inMilliseconds > 0) {
+      durationMs = _videoCtl!.value.duration.inMilliseconds;
+    } else {
+      durationMs = isImage ? 5000 : ((currentStory.durationSec ?? 5) * 1000);
+    }
     const tickMs = 50;
     final ticks = (durationMs / tickMs).clamp(1, 100000).toInt();
     _autoPlayTimer = Timer.periodic(const Duration(milliseconds: tickMs), (timer) {
@@ -755,9 +764,20 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         final uri = Uri.parse(story.mediaUrl);
         _videoCtl = VideoPlayerController.networkUrl(uri, httpHeaders: headers);
         _initVideo = _videoCtl!.initialize().then((_) {
-          _videoCtl!.setLooping(true);
+          _videoCtl!.setLooping(false);
           _videoCtl!.setVolume(0);
           _videoCtl!.play();
+          _videoCtl!.addListener(() {
+            if (!mounted) return;
+            final v = _videoCtl!.value;
+            if (!v.isInitialized) return;
+            if (v.duration.inMilliseconds <= 0) return;
+            if (v.position >= v.duration && _endedStoryId != story.id) {
+              _endedStoryId = story.id;
+              _autoPlayTimer?.cancel();
+              _nextStory();
+            }
+          });
           if (!mounted) return;
           setState(() {});
           if (_waitingForMedia && _pendingStoryId == story.id) {

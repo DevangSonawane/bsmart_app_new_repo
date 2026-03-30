@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// Global cache for media aspect ratios to avoid layout shifts and repeat work.
 class MediaAspectCache {
@@ -22,7 +23,7 @@ class MediaAspectCache {
     if (_cache.containsKey(url)) return _cache[url]!;
 
     final completer = Completer<double>();
-    final ImageStream stream = NetworkImage(
+    final ImageStream stream = CachedNetworkImageProvider(
       url,
       headers: _authHeaders,
     ).resolve(const ImageConfiguration());

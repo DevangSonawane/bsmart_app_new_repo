@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/feed_post_model.dart';
 import '../services/video_pool.dart';
@@ -14,6 +16,7 @@ class PostCard extends StatefulWidget {
   final FeedPost post;
   final bool isTabActive;
   final bool isActive; // supplied by parent center detection
+  final ValueListenable<String?>? activeIdListenable;
   final bool isOwnPost;
   final VoidCallback? onLike;
   final VoidCallback? onComment;
@@ -29,6 +32,7 @@ class PostCard extends StatefulWidget {
     required this.post,
     this.isTabActive = true,
     this.isActive = true,
+    this.activeIdListenable,
     this.isOwnPost = false,
     this.onLike,
     this.onComment,
@@ -153,254 +157,291 @@ class _PostCardState extends State<PostCard> {
     final mediaUrls = post.mediaUrls;
     final isCarousel = mediaUrls.length > 1 && !_isVideo;
     final aspect = post.aspectRatio ?? 4 / 5;
+    final activeListenable = widget.activeIdListenable;
+    final tabActive = widget.isTabActive;
 
-    return RepaintBoundary(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(post, isDark, theme),
-          RepaintBoundary(
-            child: Stack(
-              children: [
-                if (mediaUrls.isEmpty)
-                  AspectRatio(
-                    aspectRatio: aspect,
-                    child: const ColoredBox(
-                      color: Colors.black12,
-                      child: Center(
-                        child: Icon(Icons.broken_image, color: Colors.white70),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildHeader(post, isDark, theme),
+        Stack(
+          children: [
+            if (mediaUrls.isEmpty)
+              AspectRatio(
+                aspectRatio: aspect,
+                child: const ColoredBox(
+                  color: Colors.black12,
+                  child: Center(
+                    child: Icon(Icons.broken_image, color: Colors.white70),
+                  ),
+                ),
+              )
+            else if (!isCarousel)
+              activeListenable == null
+                  ? RepaintBoundary(
+                      child: DynamicMediaWidget(
+                        id: post.id,
+                        url: mediaUrls.first,
+                        thumbnailUrl: post.thumbnailUrl,
+                        isVideo: _isVideo,
+                        isActive: widget.isActive && tabActive,
+                        initialAspectRatio: post.aspectRatio,
                       ),
-                    ),
-                  )
-                else if (!isCarousel)
-                  DynamicMediaWidget(
-                    id: post.id,
-                    url: mediaUrls.first,
-                    thumbnailUrl: post.thumbnailUrl,
-                    isVideo: _isVideo,
-                    isActive: widget.isActive && widget.isTabActive,
-                    initialAspectRatio: post.aspectRatio,
-                  )
-                else
-                  AspectRatio(
-                    aspectRatio: aspect,
-                    child: PageView.builder(
-                      controller: _pageController,
-                      itemCount: mediaUrls.length,
-                      onPageChanged: (i) {
-                        setState(() => _mediaIndex = i);
+                    )
+                  : ValueListenableBuilder<String?>(
+                      valueListenable: activeListenable,
+                      builder: (context, activeId, _) {
+                        final isActive = activeId == post.id && tabActive;
+                        return RepaintBoundary(
+                          child: DynamicMediaWidget(
+                            id: post.id,
+                            url: mediaUrls.first,
+                            thumbnailUrl: post.thumbnailUrl,
+                            isVideo: _isVideo,
+                            isActive: isActive,
+                            initialAspectRatio: post.aspectRatio,
+                          ),
+                        );
                       },
-                      itemBuilder: (context, i) {
-                        final url = mediaUrls[i];
-                        return GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onDoubleTap: _handleDoubleTap,
-                          onTap: () {
+                    )
+            else
+              AspectRatio(
+                aspectRatio: aspect,
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: mediaUrls.length,
+                  onPageChanged: (i) {
+                    setState(() => _mediaIndex = i);
+                  },
+                  itemBuilder: (context, i) {
+                    final url = mediaUrls[i];
+                    return GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onDoubleTap: _handleDoubleTap,
+                      onTap: () {
+                        if (_showPeopleTags) {
+                          setState(() => _showPeopleTags = false);
+                          return;
+                        }
+                        widget.onComment?.call();
+                      },
+                    onLongPress: _togglePeopleTags,
+                    child: activeListenable == null
+                        ? RepaintBoundary(
+                            child: DynamicMediaWidget(
+                              id: '${post.id}_$i',
+                              url: url,
+                              thumbnailUrl: post.thumbnailUrl,
+                              isVideo: false,
+                              isActive:
+                                  widget.isActive && tabActive && _mediaIndex == i,
+                              initialAspectRatio: post.aspectRatio,
+                            ),
+                          )
+                        : ValueListenableBuilder<String?>(
+                            valueListenable: activeListenable,
+                            builder: (context, activeId, _) {
+                              final isActive =
+                                  activeId == post.id && tabActive && _mediaIndex == i;
+                              return RepaintBoundary(
+                                child: DynamicMediaWidget(
+                                  id: '${post.id}_$i',
+                                  url: url,
+                                  thumbnailUrl: post.thumbnailUrl,
+                                  isVideo: false,
+                                  isActive: isActive,
+                                  initialAspectRatio: post.aspectRatio,
+                                ),
+                              );
+                            },
+                          ),
+                  );
+                },
+              ),
+            ),
+            if (isCarousel)
+              Positioned(
+                bottom: 10,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    mediaUrls.length,
+                    (i) {
+                      final active = i == _mediaIndex;
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: active ? 10 : 6,
+                        height: 6,
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
+                          color: active
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            if (post.isAd)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'AD',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+              ),
+            if (_showPeopleTags && (post.peopleTags?.isNotEmpty ?? false))
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: true,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final size = constraints.biggest;
+                      final tags = _tagsForMediaIndex(_mediaIndex);
+                      return Stack(
+                        children: [
+                          for (final raw in tags)
+                            () {
+                              final t = Map<String, dynamic>.from(raw);
+                              final name = _tagUsername(t);
+                              final pos = _tagOffset(t, size);
+                              if (name.isEmpty || pos == null) {
+                                return const SizedBox.shrink();
+                              }
+                              return Positioned(
+                                left: pos.dx - 8,
+                                top: pos.dy - 34,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.65),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Text(
+                                    name,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }(),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            if (!isCarousel)
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onDoubleTap: _handleDoubleTap,
+                    onTap: _isVideo
+                        ? null
+                        : () {
                             if (_showPeopleTags) {
                               setState(() => _showPeopleTags = false);
                               return;
                             }
                             widget.onComment?.call();
                           },
-                          onLongPress: _togglePeopleTags,
-                          child: DynamicMediaWidget(
-                            id: '${post.id}_$i',
-                            url: url,
-                            thumbnailUrl: post.thumbnailUrl,
-                            isVideo: false,
-                            isActive: widget.isActive && widget.isTabActive && _mediaIndex == i,
-                            initialAspectRatio: post.aspectRatio,
+                    onLongPress: _isVideo ? null : _togglePeopleTags,
+                  ),
+                ),
+              ),
+            if (post.peopleTags?.isNotEmpty ?? false)
+              Positioned(
+                bottom: 10,
+                left: 10,
+                child: GestureDetector(
+                  onTap: _togglePeopleTags,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.person_outline,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                ),
+              ),
+            if (_isVideo)
+              Positioned(
+                bottom: 10,
+                right: 10,
+                child: GestureDetector(
+                  onTap: _toggleMuted,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                ),
+              ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    opacity: _showDoubleTapLike ? 1 : 0,
+                    child: AnimatedScale(
+                      duration: const Duration(milliseconds: 260),
+                      scale: _showDoubleTapLike ? 1 : 0.6,
+                      curve: Curves.easeOutBack,
+                      child: const Icon(
+                        Icons.favorite,
+                        size: 90,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black54,
+                            blurRadius: 14,
+                            offset: Offset(0, 3),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                if (isCarousel)
-                  Positioned(
-                    bottom: 10,
-                    left: 0,
-                    right: 0,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(
-                        mediaUrls.length,
-                        (i) {
-                          final active = i == _mediaIndex;
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: active ? 10 : 6,
-                            height: 6,
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            decoration: BoxDecoration(
-                              color: active
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.4),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                if (post.isAd)
-                  Positioned(
-                    top: 8,
-                    left: 8,
-                    child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Text(
-                        'AD',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (_showPeopleTags && (post.peopleTags?.isNotEmpty ?? false))
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      ignoring: true,
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final size = constraints.biggest;
-                          final tags = _tagsForMediaIndex(_mediaIndex);
-                          return Stack(
-                            children: [
-                              for (final raw in tags)
-                                () {
-                                  final t = Map<String, dynamic>.from(raw);
-                                  final name = _tagUsername(t);
-                                  final pos = _tagOffset(t, size);
-                                  if (name.isEmpty || pos == null) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return Positioned(
-                                    left: pos.dx - 8,
-                                    top: pos.dy - 34,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.65),
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      child: Text(
-                                        name,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }(),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                if (!isCarousel)
-                  Positioned.fill(
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onDoubleTap: _handleDoubleTap,
-                        onTap: _isVideo
-                            ? null
-                            : () {
-                                if (_showPeopleTags) {
-                                  setState(() => _showPeopleTags = false);
-                                  return;
-                                }
-                                widget.onComment?.call();
-                              },
-                        onLongPress: _isVideo ? null : _togglePeopleTags,
-                      ),
-                    ),
-                  ),
-                if (post.peopleTags?.isNotEmpty ?? false)
-                  Positioned(
-                    bottom: 10,
-                    left: 10,
-                    child: GestureDetector(
-                      onTap: _togglePeopleTags,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.person_outline,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (_isVideo)
-                  Positioned(
-                    bottom: 10,
-                    right: 10,
-                    child: GestureDetector(
-                      onTap: _toggleMuted,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Center(
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 180),
-                        opacity: _showDoubleTapLike ? 1 : 0,
-                        child: AnimatedScale(
-                          duration: const Duration(milliseconds: 260),
-                          scale: _showDoubleTapLike ? 1 : 0.6,
-                          curve: Curves.easeOutBack,
-                          child: const Icon(
-                            Icons.favorite,
-                            size: 90,
-                            color: Colors.white,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black54,
-                                blurRadius: 14,
-                                offset: Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
-          _buildActionBar(post, theme),
-          _buildPostDetails(post, theme),
-        ],
-      ),
+          ],
+        ),
+        _buildActionBar(post, theme),
+        _buildPostDetails(post, theme),
+      ],
     );
   }
 
@@ -449,8 +490,9 @@ class _PostCardState extends State<PostCard> {
                 ),
                 padding: const EdgeInsets.all(1),
                 child: CircleAvatar(
-                  backgroundImage:
-                      avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                  backgroundImage: avatarUrl.isNotEmpty
+                      ? CachedNetworkImageProvider(avatarUrl)
+                      : null,
                   backgroundColor:
                       isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
                   child: avatarUrl.isEmpty

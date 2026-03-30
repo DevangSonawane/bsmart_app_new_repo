@@ -1,102 +1,207 @@
-import 'dart:async';
 import 'package:video_player/video_player.dart';
-import '../utils/url_helper.dart';
 import '../api/api_client.dart';
 
-/// Keeps only one VideoPlayerController alive to avoid memory churn.
 class VideoPool {
   VideoPool._();
   static final VideoPool instance = VideoPool._();
 
-  VideoPlayerController? _active;
+  // Keep up to 3 controllers: active + 2 neighbors
+  final Map<String, VideoPlayerController> _pool = {};
+  final Set<String> _inFlight = {};
+  final List<String> _warmOrder = <String>[];
+  static const int _maxSlots = 3;
   String? _activeId;
   bool _muted = true;
+  String? _cachedToken;
+  DateTime? _tokenFetchedAt;
 
   bool get isMuted => _muted;
+  bool contains(String id) => _pool.containsKey(id) || _inFlight.contains(id);
 
-  // Simple serialisation for attach operations to avoid concurrent
-  // VideoPlayerController initializations which may overload native player
-  // and cause ExoPlaybackExceptions on Android.
-  Completer<void>? _attachCompleter;
+  VideoPlayerController? peek(String id) {
+    final ctl = _pool[id];
+    if (ctl == null) return null;
+    if (!_isControllerUsable(ctl)) {
+      _pool.remove(id);
+      _warmOrder.remove(id);
+      return null;
+    }
+    return ctl;
+  }
 
   Future<void> setMuted(bool muted) async {
     _muted = muted;
-    final ctl = _active;
-    if (ctl == null) return;
-    try {
-      await ctl.setVolume(_muted ? 0 : 1);
-    } catch (_) {}
+    for (final ctl in _pool.values) {
+      try {
+        await ctl.setVolume(_muted ? 0 : 1);
+      } catch (_) {}
+    }
   }
 
   Future<void> toggleMuted() => setMuted(!_muted);
 
-  Future<VideoPlayerController> attach(String id, String url) async {
-    if (_activeId == id && _active != null) return _active!;
-    await disposeActive();
+  Future<String?> _getToken() async {
+    final now = DateTime.now();
+    if (_cachedToken != null &&
+        _tokenFetchedAt != null &&
+        now.difference(_tokenFetchedAt!) < const Duration(minutes: 55)) {
+      return _cachedToken;
+    }
+    try {
+      _cachedToken = await ApiClient().getToken();
+      _tokenFetchedAt = now;
+    } catch (_) {
+      _cachedToken = null;
+    }
+    return _cachedToken;
+  }
+
+  /// Pre-warm a video controller without playing it.
+  /// Call this for the item JUST below the active one.
+  Future<void> preWarm(String id, String url) async {
+    if (contains(id)) return; // already warmed or in-flight
+    _inFlight.add(id);
+    _evictIfNeeded(keep: _activeId);
     try {
       final headers = await _headersFor(url);
       final ctl = VideoPlayerController.networkUrl(Uri.parse(url), httpHeaders: headers);
-      // Initialize inside try so platform exceptions are caught here.
       await ctl.initialize();
-
-      // Listen for controller-side errors and handle gracefully.
-      ctl.addListener(() {
-        try {
-          if (ctl.value.hasError) {
-            print('VideoPool: controller reported error for id=$id url=$url error=${ctl.value.errorDescription}');
-            // Dispose the faulty controller asynchronously.
-            (() async {
-              try {
-                await ctl.pause();
-                await ctl.dispose();
-              } catch (_) {}
-            }());
-            if (_activeId == id) {
-              _active = null;
-              _activeId = null;
-            }
-          }
-        } catch (_) {}
-      });
-
       await ctl.setLooping(true);
+      await ctl.setVolume(0); // silent while pre-warming
+      _pool[id] = ctl;
+      _touchWarmOrder(id);
+    } catch (_) {}
+    finally {
+      _inFlight.remove(id);
+    }
+  }
+
+  Future<VideoPlayerController> attach(String id, String url) async {
+    if (_activeId == id && _pool.containsKey(id)) {
+      final ctl = _pool[id]!;
       await ctl.setVolume(_muted ? 0 : 1);
-      _active = ctl;
-      _activeId = id;
+      if (!ctl.value.isPlaying) await ctl.play();
       return ctl;
-    } catch (e) {
+    }
+
+    // Pause old active
+    if (_activeId != null && _pool.containsKey(_activeId)) {
       try {
-        print('VideoPool.attach failed for id=$id url=$url error=$e');
+        await _pool[_activeId]!.pause();
       } catch (_) {}
-      _active = null;
-      _activeId = null;
-      rethrow;
+    }
+
+    _activeId = id;
+
+    // Reuse pre-warmed controller if we have it
+    if (_pool.containsKey(id)) {
+      final ctl = _pool[id]!;
+      await ctl.setVolume(_muted ? 0 : 1);
+      await ctl.play();
+      _evictIfNeeded(keep: id);
+      _touchWarmOrder(id);
+      return ctl;
+    }
+
+    // Not pre-warmed — initialize fresh
+    _evictIfNeeded(keep: id);
+    final headers = await _headersFor(url);
+    final ctl = VideoPlayerController.networkUrl(Uri.parse(url), httpHeaders: headers);
+    _pool[id] = ctl;
+    await ctl.initialize();
+    await ctl.setLooping(true);
+    await ctl.setVolume(_muted ? 0 : 1);
+    await ctl.play();
+    _touchWarmOrder(id);
+    return ctl;
+  }
+
+  void _touchWarmOrder(String id) {
+    _warmOrder.remove(id);
+    _warmOrder.add(id);
+    if (_warmOrder.length > 10) {
+      _warmOrder.removeRange(0, _warmOrder.length - 10);
+    }
+  }
+
+  bool _isControllerUsable(VideoPlayerController ctl) {
+    try {
+      // Accessing value will throw if disposed
+      ctl.value;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _evictIfNeeded({String? keep}) {
+    if (_pool.length <= _maxSlots) return;
+    final protected = <String>{
+      if (_activeId != null) _activeId!,
+      if (keep != null) keep,
+      ..._warmOrder.reversed.take(2),
+    };
+    final candidates = _warmOrder.where((id) => _pool.containsKey(id)).toList();
+    for (final id in candidates) {
+      if (_pool.length <= _maxSlots) break;
+      if (protected.contains(id)) continue;
+      final ctl = _pool.remove(id);
+      ctl?.pause().then((_) => ctl.dispose()).catchError((_) {});
+    }
+    if (_pool.length > _maxSlots) {
+      final leftovers = _pool.keys.where((k) => !protected.contains(k)).toList();
+      for (final id in leftovers) {
+        if (_pool.length <= _maxSlots) break;
+        final ctl = _pool.remove(id);
+        ctl?.pause().then((_) => ctl.dispose()).catchError((_) {});
+      }
     }
   }
 
   Future<Map<String, String>> _headersFor(String url) async {
-    final token = await ApiClient().getToken();
+    final token = await _getToken();
     if (token == null || token.isEmpty) return const {};
-    // Try with auth; higher layers can retry without if needed.
     return {'Authorization': 'Bearer $token'};
   }
 
   Future<void> disposeActive() async {
-    if (_active != null) {
+    // Only pause the active controller — preserve pre-warmed ones
+    if (_activeId != null && _pool.containsKey(_activeId)) {
       try {
-        await _active!.pause();
-      } catch (_) {}
-      try {
-        await _active!.dispose();
+        await _pool[_activeId]!.pause();
       } catch (_) {}
     }
-    _active = null;
     _activeId = null;
   }
 
+  Future<void> disposeAll() async {
+    for (final ctl in _pool.values) {
+      try {
+        await ctl.pause();
+      } catch (_) {}
+      try {
+        await ctl.dispose();
+      } catch (_) {}
+    }
+    _pool.clear();
+    _inFlight.clear();
+    _warmOrder.clear();
+    _activeId = null;
+  }
+
+  Future<void> pauseActive() async {
+    if (_activeId != null && _pool.containsKey(_activeId)) {
+      try {
+        await _pool[_activeId]!.pause();
+      } catch (_) {}
+    }
+  }
+
   Future<void> pauseIf(String id) async {
-    if (_activeId == id && _active != null) {
-      await _active!.pause();
+    if (_pool.containsKey(id)) {
+      try {
+        await _pool[id]!.pause();
+      } catch (_) {}
     }
   }
 }

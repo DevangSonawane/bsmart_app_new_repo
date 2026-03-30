@@ -89,7 +89,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         _videoCtl?.dispose();
         _videoCtl = VideoPlayerController.networkUrl(Uri.parse(story.mediaUrl));
         await _videoCtl!.initialize();
-        await _videoCtl!.setLooping(true);
+        await _videoCtl!.setLooping(false);
         await _videoCtl!.play();
         if (!mounted) return;
         setState(() {});
@@ -140,8 +140,20 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       }
     }
     _waitingForMedia = false;
-    _timer = Timer.periodic(const Duration(milliseconds: 50), (t) {
-      setState(() => _progress += 0.01);
+    final story = _stories.isNotEmpty ? _stories[_index] : null;
+    int durationMs = 5000;
+    if (story != null && story.mediaType == StoryMediaType.video) {
+      final dur = _videoCtl?.value.duration.inMilliseconds ?? 0;
+      if (dur > 0) {
+        durationMs = dur;
+      } else {
+        durationMs = (story.durationSec ?? 5) * 1000;
+      }
+    }
+    const tickMs = 50;
+    final ticks = (durationMs / tickMs).clamp(1, 100000).toInt();
+    _timer = Timer.periodic(const Duration(milliseconds: tickMs), (t) {
+      setState(() => _progress += 1.0 / ticks);
       if (_progress >= 1.0) {
         t.cancel();
         _next();

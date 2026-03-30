@@ -44,6 +44,115 @@ import 'profile_screen.dart';
 import '../routes.dart';
 import 'messaging_screen.dart';
 
+class _FeedHeader extends StatelessWidget {
+  final List<Map<String, dynamic>> storyUsers;
+  final List<StoryGroup> storyGroups;
+  final Map<String, Map<String, bool>> storyStatuses;
+  final bool yourStoryHasActive;
+  final String? yourAvatarUrl;
+  final String? currentLocation;
+  final bool locationLoading;
+  final bool isDark;
+  final VoidCallback onYourStoryTap;
+  final VoidCallback onYourStoryAddTap;
+  final Function(int)? onUserStoryTap;
+  final VoidCallback onLocationTap;
+
+  const _FeedHeader({
+    required this.storyUsers,
+    required this.storyGroups,
+    required this.storyStatuses,
+    required this.yourStoryHasActive,
+    required this.yourAvatarUrl,
+    required this.currentLocation,
+    required this.locationLoading,
+    required this.isDark,
+    required this.onYourStoryTap,
+    required this.onYourStoryAddTap,
+    required this.onUserStoryTap,
+    required this.onLocationTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: onLocationTap,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade200,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.house,
+                  size: 16,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'HOME ',
+                          style: TextStyle(
+                            color: isDark ? Colors.white : Colors.black87,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        TextSpan(
+                          text: currentLocation == null
+                              ? (locationLoading
+                                  ? 'Detecting current location...'
+                                  : 'Tap to detect location')
+                              : currentLocation!,
+                          style: TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black54,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  LucideIcons.chevronDown,
+                  size: 16,
+                  color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                ),
+              ],
+            ),
+          ),
+        ),
+        StoriesRow(
+          users: storyUsers,
+          onYourStoryTap: onYourStoryTap,
+          onYourStoryAddTap: onYourStoryAddTap,
+          onUserStoryTap: storyGroups.isEmpty ? null : onUserStoryTap,
+          yourStoryHasActive: yourStoryHasActive,
+          yourAvatarUrl: yourAvatarUrl,
+          showYourStory: true,
+          userStatuses: storyStatuses,
+        ),
+      ],
+    );
+  }
+}
+
 class HomeDashboard extends StatefulWidget {
   final int? initialIndex;
 
@@ -74,8 +183,14 @@ class _HomeDashboardState extends State<HomeDashboard>
   int _balance = 0;
   bool _reelsPrefetched = false;
   String? _activeFeedPostId;
+  final ValueNotifier<String?> _activeFeedPostIdListenable =
+      ValueNotifier<String?>(null);
   Timer? _activeFeedDebounce;
   bool _isCommentsOpen = false;
+  final Set<String> _prewarmedFeedIds = {};
+  bool _isFeedScrolling = false;
+  Timer? _scrollIdleTimer;
+  String? _pendingActivePostId;
 
   final ScrollController _feedScrollController = ScrollController();
   final int _pageSize = 25;
@@ -216,6 +331,8 @@ class _HomeDashboardState extends State<HomeDashboard>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    VisibilityDetectorController.instance.updateInterval =
+        const Duration(milliseconds: 100);
     if (widget.initialIndex != null) {
       _currentIndex = widget.initialIndex!;
     }
@@ -251,7 +368,9 @@ class _HomeDashboardState extends State<HomeDashboard>
   void didPushNext() {
     if (!_isRouteActive) return;
     _isRouteActive = false;
-    unawaited(VideoPool.instance.disposeActive());
+    _activeFeedPostId = null;
+    _activeFeedPostIdListenable.value = null;
+    unawaited(VideoPool.instance.pauseActive());
     if (mounted) setState(() {});
   }
 
@@ -268,8 +387,12 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   @override
   void dispose() {
+    VisibilityDetectorController.instance.updateInterval =
+        const Duration(milliseconds: 500);
     _activeFeedDebounce?.cancel();
     _autoRefreshDebounce?.cancel();
+    _scrollIdleTimer?.cancel();
+    _activeFeedPostIdListenable.dispose();
     _feedScrollController.removeListener(_onFeedScroll);
     _feedScrollController.dispose();
     _tabPageController?.dispose();
@@ -286,6 +409,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (state != AppLifecycleState.resumed) return;
     if (!mounted) return;
     if (_currentIndex != 0) return;
+    unawaited(VideoPool.instance.disposeAll());
     // When app resumes, jump to top and refresh to show latest posts.
     if (_feedScrollController.hasClients) {
       _feedScrollController.jumpTo(0);
@@ -448,6 +572,9 @@ class _HomeDashboardState extends State<HomeDashboard>
     await primeMediaAuthHeaders(); // ensure auth headers ready before any image loads
     final store = StoreProvider.of<AppState>(context);
     final isFirstLoad = store.state.feedState.posts.isEmpty || forceNetwork;
+    if (isFirstLoad) {
+      _prewarmedFeedIds.clear();
+    }
 
     // Only show full-screen spinner on genuine first load
     if (isFirstLoad) {
@@ -529,6 +656,7 @@ class _HomeDashboardState extends State<HomeDashboard>
       if (isFirstLoad || forceNetwork) {
         // First load only: start from top, reset everything
         _activeFeedPostId = items.isNotEmpty ? items.first.id : null;
+        _activeFeedPostIdListenable.value = _activeFeedPostId;
         // Show ALL items from backend on first load, not just _pageSize
         _visibleCount = items.length;
       } else {
@@ -676,6 +804,17 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   void _onFeedScroll() {
     if (!_feedScrollController.hasClients) return;
+    _isFeedScrolling = true;
+    _scrollIdleTimer?.cancel();
+    _scrollIdleTimer = Timer(const Duration(milliseconds: 120), () {
+      _isFeedScrolling = false;
+      final pending = _pendingActivePostId;
+      if (pending != null && pending != _activeFeedPostId) {
+        _activeFeedPostId = pending;
+        _activeFeedPostIdListenable.value = pending;
+      }
+      _pendingActivePostId = null;
+    });
     final store = StoreProvider.of<AppState>(context);
     final total = store.state.feedState.posts.length;
     final position = _feedScrollController.position;
@@ -687,9 +826,10 @@ class _HomeDashboardState extends State<HomeDashboard>
         position.pixels >= position.maxScrollExtent - 50;
 
     if (nearBottom || listIsShort) {
-      setState(() {
-        _visibleCount = math.min(total, _visibleCount + _pageSize);
-      });
+      final newVisible = math.min(total, _visibleCount + _pageSize);
+      if (newVisible != _visibleCount) {
+        setState(() => _visibleCount = newVisible);
+      }
       _maybeFetchNextPage(total);
     }
   }
@@ -752,15 +892,79 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   void _onFeedItemVisibilityChanged(String postId, double visibleFraction) {
     if (_currentIndex != 0) return;
-    if (visibleFraction < 0.65) return;
+    final store = StoreProvider.of<AppState>(context);
+    final allPosts = store.state.feedState.posts;
+    final post = allPosts.cast<FeedPost?>().firstWhere(
+          (p) => p?.id == postId,
+          orElse: () => null,
+        );
+    if (visibleFraction >= 0.15) {
+      _preWarmVisibleVideo(postId);
+    }
+    if (visibleFraction < 0.1) return;
     if (_activeFeedPostId == postId) return;
+    if (_isFeedScrolling) {
+      if (post != null) {
+        final isVideo = post.mediaType == PostMediaType.video ||
+            post.mediaType == PostMediaType.reel;
+        final hasThumb =
+            (post.thumbnailUrl ?? '').toString().trim().isNotEmpty;
+        if (isVideo && !hasThumb && visibleFraction >= 0.35) {
+          _activeFeedPostId = postId;
+          _activeFeedPostIdListenable.value = postId;
+          return;
+        }
+      }
+      if (visibleFraction >= 0.65) {
+        _pendingActivePostId = postId;
+      }
+      return;
+    }
     _activeFeedDebounce?.cancel();
-    _activeFeedDebounce = Timer(const Duration(milliseconds: 120), () {
+    _activeFeedDebounce = Timer(const Duration(milliseconds: 80), () {
       if (!mounted) return;
       if (_currentIndex != 0) return;
       if (_activeFeedPostId == postId) return;
-      setState(() => _activeFeedPostId = postId);
+      _activeFeedPostId = postId;
+      _activeFeedPostIdListenable.value = postId;
+      _preWarmNextVideo(postId);
     });
+  }
+
+  void _preWarmVisibleVideo(String postId) {
+    if (_prewarmedFeedIds.contains(postId)) return;
+    final store = StoreProvider.of<AppState>(context);
+    final allPosts = store.state.feedState.posts;
+    final post = allPosts.cast<FeedPost?>().firstWhere(
+          (p) => p?.id == postId,
+          orElse: () => null,
+        );
+    if (post == null) return;
+    final isVideo = post.mediaType == PostMediaType.video ||
+        post.mediaType == PostMediaType.reel;
+    if (!isVideo || post.mediaUrls.isEmpty) return;
+    _prewarmedFeedIds.add(postId);
+    VideoPool.instance.preWarm(post.id, post.mediaUrls.first);
+  }
+
+  void _preWarmNextVideo(String activePostId) {
+    final store = StoreProvider.of<AppState>(context);
+    final allPosts = store.state.feedState.posts;
+    final activeIdx = allPosts.indexWhere((p) => p.id == activePostId);
+    if (activeIdx < 0) return;
+    // Look ahead up to 3 posts for the next video
+    for (var i = activeIdx + 1;
+        i < math.min(activeIdx + 4, allPosts.length);
+        i++) {
+      final next = allPosts[i];
+      if (next.mediaType == PostMediaType.video ||
+          next.mediaType == PostMediaType.reel) {
+        if (next.mediaUrls.isNotEmpty) {
+          VideoPool.instance.preWarm(next.id, next.mediaUrls.first);
+        }
+        break;
+      }
+    }
   }
 
   Future<void> _fetchCurrentLocation() async {
@@ -1475,8 +1679,10 @@ class _HomeDashboardState extends State<HomeDashboard>
         }());
       }
       // Pause any in-feed video audio while switching away from Home.
-      if (wasOnHome) {
-        unawaited(VideoPool.instance.disposeActive());
+    if (wasOnHome) {
+        _activeFeedPostId = null;
+        _activeFeedPostIdListenable.value = null;
+        unawaited(VideoPool.instance.pauseActive());
       }
       setState(() {
         _currentIndex = idx;
@@ -1853,49 +2059,47 @@ class _HomeDashboardState extends State<HomeDashboard>
                         maintainSize: true,
                         child: CustomScrollView(
                           controller: _feedScrollController,
-                          cacheExtent: 180,
+                        cacheExtent: 400,
                           physics: const AlwaysScrollableScrollPhysics(),
                           slivers: [
                             SliverToBoxAdapter(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildLocationSelector(isDark: isDark),
-                                  StoriesRow(
-                                    users: _storyUsers,
-                                    onYourStoryTap: () {
-                                      if (_yourStoryHasActive) {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => OwnStoryViewerScreen(
-                                              stories: _myStories,
-                                              storyId: _myStoryId,
-                                              userName:
-                                                  (_currentUserProfile?['username'] ??
-                                                          _currentUserProfile?[
-                                                              'full_name'] ??
-                                                          'You')
-                                                      .toString(),
-                                            ),
-                                          ),
-                                        );
-                                      } else {
-                                        _openStoryCamera();
-                                      }
-                                    },
-                                    onYourStoryAddTap: _openStoryCamera,
-                                    onUserStoryTap:
-                                        _storyGroups.isEmpty ? null : _onStoryTap,
-                                    yourStoryHasActive: _yourStoryHasActive,
-                                    yourAvatarUrl:
-                                        (_currentUserProfile?['avatar_url'] ??
-                                                _currentUserProfile?['avatar'] ??
-                                                _currentUserProfile?['profile_image'])
-                                            ?.toString(),
-                                    showYourStory: true,
-                                    userStatuses: _storyStatuses,
-                                  ),
-                                ],
+                              child: _FeedHeader(
+                                storyUsers: _storyUsers,
+                                storyGroups: _storyGroups,
+                                storyStatuses: _storyStatuses,
+                                yourStoryHasActive: _yourStoryHasActive,
+                                yourAvatarUrl:
+                                    (_currentUserProfile?['avatar_url'] ??
+                                            _currentUserProfile?['avatar'] ??
+                                            _currentUserProfile?['profile_image'])
+                                        ?.toString(),
+                                currentLocation: _currentLocation,
+                                locationLoading: _locationLoading,
+                                isDark: isDark,
+                                onYourStoryTap: () {
+                                  if (_yourStoryHasActive) {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => OwnStoryViewerScreen(
+                                          stories: _myStories,
+                                          storyId: _myStoryId,
+                                          userName:
+                                              (_currentUserProfile?['username'] ??
+                                                      _currentUserProfile?[
+                                                          'full_name'] ??
+                                                      'You')
+                                                  .toString(),
+                                        ),
+                                      ),
+                                    );
+                                  } else {
+                                    _openStoryCamera();
+                                  }
+                                },
+                                onYourStoryAddTap: _openStoryCamera,
+                                onUserStoryTap:
+                                    _storyGroups.isEmpty ? null : _onStoryTap,
+                                onLocationTap: _fetchCurrentLocation,
                               ),
                             ),
                             if (posts.isEmpty)
@@ -1963,7 +2167,9 @@ class _HomeDashboardState extends State<HomeDashboard>
                                             post: p,
                                             isTabActive:
                                                 _currentIndex == 0 && _isRouteActive,
-                                            isActive: _activeFeedPostId == p.id,
+                                            isActive: false,
+                                            activeIdListenable:
+                                                _activeFeedPostIdListenable,
                                             isOwnPost: isOwnPost,
                                             onUserTap: p.userId.isNotEmpty
                                                 ? () => Navigator.of(context)

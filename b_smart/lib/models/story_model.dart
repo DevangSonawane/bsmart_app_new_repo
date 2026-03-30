@@ -4,6 +4,7 @@ class Story {
   final String userName;
   final String? userAvatar;
   final String mediaUrl;
+  final String? thumbnailUrl;
   final StoryMediaType mediaType;
   final DateTime createdAt;
   final int views;
@@ -25,6 +26,7 @@ class Story {
     required this.userName,
     this.userAvatar,
     required this.mediaUrl,
+    this.thumbnailUrl,
     required this.mediaType,
     required this.createdAt,
     this.views = 0,

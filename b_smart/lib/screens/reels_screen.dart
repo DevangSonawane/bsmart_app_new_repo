@@ -79,8 +79,8 @@ class _ReelsScreenState extends State<ReelsScreen>
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _reels.isEmpty || !widget.isActive) return;
+        unawaited(_initializePoolAt(_currentIndex));
         _poolOps = _poolOps.then<void>((_) async {
-          await _initializePoolAt(_currentIndex);
           if (!mounted) return;
           await _activateCurrentReelPlayback();
           if (mounted) setState(() {});
@@ -107,10 +107,10 @@ class _ReelsScreenState extends State<ReelsScreen>
       return;
     }
     if (widget.isActive) {
+      if (_controllerForIndex(_currentIndex) == null) {
+        unawaited(_initializePoolAt(_currentIndex));
+      }
       _poolOps = _poolOps.then<void>((_) async {
-        if (_controllerForIndex(_currentIndex) == null) {
-          await _initializePoolAt(_currentIndex);
-        }
         await _activateCurrentReelPlayback();
       }).catchError((_) {});
     } else {
@@ -151,8 +151,8 @@ class _ReelsScreenState extends State<ReelsScreen>
       if (_reels.isNotEmpty) {
         unawaited(_reelsService.incrementViews(_reels[_currentIndex].id));
         if (!widget.isActive) return;
+        unawaited(_initializePoolAt(_currentIndex));
         _poolOps = _poolOps.then<void>((_) async {
-          await _initializePoolAt(_currentIndex);
           if (!mounted) return;
           await _activateCurrentReelPlayback();
           if (mounted) setState(() {});
@@ -246,15 +246,6 @@ class _ReelsScreenState extends State<ReelsScreen>
           } catch (e) {
             lastError = e;
             debugPrint('[Reels] load failed index=$index id=${reel.id} url=$url headersAuth=${headers.containsKey('Authorization')} error=$e');
-            if (mounted) {
-              // Surface the failing URL on device to collect it for debugging.
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  duration: const Duration(seconds: 4),
-                  content: Text('Reel load failed (403): $url'),
-                ),
-              );
-            }
             try {
               await controller?.dispose();
             } catch (_) {}
@@ -421,6 +412,9 @@ class _ReelsScreenState extends State<ReelsScreen>
     _poolOps = _poolOps
         .then<void>((_) => _rotatePoolToIndex(index))
         .catchError((_) {});
+    if (index + 1 < _reels.length) {
+      unawaited(_createControllerForIndex(index + 1, generation: _poolGeneration));
+    }
     _maybeLoadMore(index);
   }
 
@@ -682,8 +676,9 @@ class _ReelsScreenState extends State<ReelsScreen>
       final controller = _controllerForIndex(_currentIndex);
       if (controller == null || !controller.value.isInitialized) {
         if (_controllerSetupInProgress.contains(_currentIndex)) return;
+        unawaited(_initializePoolAt(_currentIndex));
         _poolOps = _poolOps
-            .then<void>((_) => _rotatePoolToIndex(_currentIndex))
+            .then<void>((_) => _activateCurrentReelPlayback())
             .catchError((_) {});
         return;
       }

@@ -60,6 +60,23 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   bool _loadingVideo = false;
   bool _videoFailed = false;
 
+  void _precacheThumbnail() {
+    final thumb = widget.thumbnailUrl?.trim();
+    if (thumb == null || thumb.isEmpty) return;
+    final headers = UrlHelper.shouldAttachAuthHeader(thumb)
+        ? _cachedAuthHeaders
+        : const <String, String>{};
+    final provider = CachedNetworkImageProvider(
+      thumb,
+      headers: headers,
+      cacheKey: thumb,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      precacheImage(provider, context);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -71,29 +88,52 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     _primeRatio();
     if (_cachedAuthHeaders.isEmpty) {
       ensureAuthHeaders().then((_) {
-        if (mounted) setState(() {});
+        if (mounted && _cachedAuthHeaders.isNotEmpty) {
+          setState(() {});
+          _precacheThumbnail();
+        }
       });
+    } else {
+      _precacheThumbnail();
     }
   }
 
   @override
   void didUpdateWidget(covariant DynamicMediaWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url ||
+    final urlChanged = oldWidget.url != widget.url ||
         oldWidget.thumbnailUrl != widget.thumbnailUrl ||
-        oldWidget.initialAspectRatio != widget.initialAspectRatio) {
+        oldWidget.initialAspectRatio != widget.initialAspectRatio;
+
+    if (urlChanged) {
       _ratio = MediaAspectCache.instance.get(widget.url) ??
           (widget.thumbnailUrl != null
               ? MediaAspectCache.instance.get(widget.thumbnailUrl!)
               : null);
       _ratio ??= widget.initialAspectRatio;
+      // Synchronously null _videoCtl before any async work
+      _videoCtl = null;
+      _loadingVideo = false;
+      _videoFailed = false;
+      VideoPool.instance.pauseIf(oldWidget.id);
       _primeRatio();
-      _disposeVideo();
+      _precacheThumbnail();
     }
-    if (widget.isVideo && widget.isActive) {
-      _ensureVideo();
-    } else {
-      _disposeVideo();
+
+    if (widget.isVideo) {
+      if (widget.isActive && !oldWidget.isActive) {
+        // Became active — start loading
+        if (_videoCtl == null) {
+          _ensureVideo();
+        } else {
+          _resumeVideoIfNeeded();
+        }
+      } else if (!widget.isActive && oldWidget.isActive) {
+        // Became inactive — pause and release reference
+        _loadingVideo = false;
+        VideoPool.instance.pauseIf(widget.id);
+        if (mounted) setState(() {});
+      }
     }
   }
 
@@ -105,20 +145,22 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     }
     if (!widget.isVideo) {
       final r = await MediaAspectCache.instance.resolveImageRatio(widget.url);
-      if (mounted) setState(() => _ratio = r);
+      if (mounted && _ratio != r) setState(() => _ratio = r);
     } else {
       final thumb = widget.thumbnailUrl;
       if (thumb != null && thumb.trim().isNotEmpty) {
         final cachedThumb = MediaAspectCache.instance.get(thumb);
         if (cachedThumb != null) {
-          if (mounted) setState(() => _ratio = cachedThumb);
+          if (mounted && _ratio != cachedThumb) {
+            setState(() => _ratio = cachedThumb);
+          }
           return;
         }
         final r = await MediaAspectCache.instance.resolveImageRatio(thumb);
-        if (mounted) setState(() => _ratio = r);
+        if (mounted && _ratio != r) setState(() => _ratio = r);
         return;
       }
-      if (mounted) setState(() => _ratio = 9 / 16);
+      if (mounted && _ratio != 9 / 16) setState(() => _ratio = 9 / 16);
     }
   }
 
@@ -132,18 +174,9 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     }
     
     _loadingVideo = true;
+    if (mounted) setState(() {});
     try {
       final ctl = await VideoPool.instance.attach(widget.id, url);
-      if (!mounted) {
-        _loadingVideo = false;
-        return;
-      }
-      if (!ctl.value.isInitialized) {
-        await ctl.initialize().timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => throw TimeoutException('Video init timed out'),
-        );
-      }
       if (!mounted) {
         _loadingVideo = false;
         return;
@@ -152,26 +185,52 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
         _videoCtl = ctl;
         _ratio = ctl.value.isInitialized ? ctl.value.aspectRatio : (_ratio ?? 9 / 16);
         _videoFailed = false;
+        _loadingVideo = false;
       });
-      await ctl.play();
     } on PlatformException catch (e) {
       debugPrint('DynamicMediaWidget: PlatformException for ${widget.id}: ${e.message}');
-      if (mounted) setState(() => _videoFailed = true);
+      if (mounted) setState(() { _videoFailed = true; _loadingVideo = false; });
     } on TimeoutException catch (e) {
       debugPrint('DynamicMediaWidget: Timeout for ${widget.id}: $e');
-      if (mounted) setState(() => _videoFailed = true);
+      if (mounted) setState(() { _videoFailed = true; _loadingVideo = false; });
     } catch (e) {
       debugPrint('DynamicMediaWidget: Unknown error for ${widget.id}: $e');
-      if (mounted) setState(() => _videoFailed = true);
-    } finally {
-      _loadingVideo = false;
+      if (mounted) setState(() { _videoFailed = true; _loadingVideo = false; });
+    }
+  }
+
+  Future<void> _resumeVideoIfNeeded() async {
+    if (_loadingVideo || _videoFailed) return;
+    final url = widget.url.trim();
+    if (url.isEmpty) return;
+    try {
+      final ctl = await VideoPool.instance.attach(widget.id, url);
+      if (!mounted) return;
+      setState(() {
+        _videoCtl = ctl;
+        _ratio = ctl.value.isInitialized ? ctl.value.aspectRatio : (_ratio ?? 9 / 16);
+        _videoFailed = false;
+        _loadingVideo = false;
+      });
+    } catch (_) {}
+  }
+
+  bool _isControllerUsable(VideoPlayerController? ctl) {
+    if (ctl == null) return false;
+    try {
+      return ctl.value.isInitialized;
+    } catch (_) {
+      return false;
     }
   }
 
   Future<void> _disposeVideo() async {
-    if (_videoCtl != null) {
+    final ctl = _videoCtl;
+    _videoCtl = null;
+    _loadingVideo = false;
+    _videoFailed = false;
+    if (ctl != null) {
       await VideoPool.instance.pauseIf(widget.id);
-      _videoCtl = null;
     }
   }
 
@@ -183,14 +242,11 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final aspect = _ratio ?? (widget.isVideo ? 4 / 5 : 4 / 5);
+    final aspect = _ratio ?? (widget.isVideo ? 9 / 16 : 4 / 5);
     return RepaintBoundary(
-      child: ColoredBox(
-        color: const Color(0xFF1A1A1A),
-        child: AspectRatio(
-          aspectRatio: aspect,
-          child: widget.isVideo ? _buildVideo() : _buildImage(),
-        ),
+      child: AspectRatio(
+        aspectRatio: aspect,
+        child: widget.isVideo ? _buildVideo() : _buildImage(),
       ),
     );
   }
@@ -208,20 +264,34 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
       fadeOutDuration: Duration.zero,
       placeholderFadeInDuration: Duration.zero,
       useOldImageOnUrlChange: true,
-      placeholder: (_, __) => const ColoredBox(color: Color(0xFF1A1A1A)),
-      errorWidget: (_, __, ___) =>
-          const ColoredBox(color: Color(0xFF1A1A1A)),
+      placeholder: (_, __) => const SizedBox.expand(),
+      errorWidget: (_, __, ___) => const SizedBox.expand(),
     );
   }
 
   Widget _buildVideo() {
-    if (widget.isActive && _videoCtl == null && !_videoFailed) {
+    // Start loading as soon as widget is active, don't wait for build
+    if (widget.isActive && _videoCtl == null && !_videoFailed && !_loadingVideo) {
       _ensureVideo();
     }
+    if (!widget.isActive && _videoCtl == null) {
+      final prewarmed = VideoPool.instance.peek(widget.id);
+      if (prewarmed != null &&
+          prewarmed.value.isInitialized) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_videoCtl == null) setState(() => _videoCtl = prewarmed);
+        });
+      }
+    }
     final thumb = _buildVideoPlaceholder();
-    final canPlay =
-        widget.isActive && _videoCtl != null && _videoCtl!.value.isInitialized;
-    if (!canPlay) {
+    final ctl = _videoCtl;
+    final canShowVideo = _isControllerUsable(ctl);
+    if (ctl != null && !canShowVideo) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_videoCtl == ctl) setState(() => _videoCtl = null);
+      });
       return thumb;
     }
     try {
@@ -229,14 +299,36 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
         fit: StackFit.expand,
         children: [
           thumb,
-          FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _videoCtl!.value.size.width,
-              height: _videoCtl!.value.size.height,
-              child: VideoPlayer(_videoCtl!),
+          if (ctl != null)
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              opacity: canShowVideo ? 1 : 0,
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: ctl.value.size.width,
+                  height: ctl.value.size.height,
+                  child: VideoPlayer(ctl),
+                ),
+              ),
             ),
-          ),
+          if (_loadingVideo && widget.isActive)
+            const Positioned(
+              bottom: 12,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white54,
+                  ),
+                ),
+              ),
+            ),
         ],
       );
     } catch (e) {
@@ -258,17 +350,25 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
             ? _cachedAuthHeaders
             : const {},
         fit: BoxFit.cover,
-        filterQuality: FilterQuality.low,
+        filterQuality: FilterQuality.medium,
         fadeInDuration: Duration.zero,
         fadeOutDuration: Duration.zero,
         placeholderFadeInDuration: Duration.zero,
         useOldImageOnUrlChange: true,
-        placeholder: (_, __) => const ColoredBox(color: Color(0xFF1A1A1A)),
-        errorWidget: (_, __, ___) =>
-            const ColoredBox(color: Color(0xFF1A1A1A)),
+        placeholder: (_, __) => const _VideoPlaceholder(),
+        errorWidget: (_, __, ___) => const _VideoPlaceholder(),
       );
     }
-    return const ColoredBox(color: Color(0xFF1A1A1A));
+    return const _VideoPlaceholder();
+  }
+}
+
+class _VideoPlaceholder extends StatelessWidget {
+  const _VideoPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(color: Colors.black);
   }
 }
 
