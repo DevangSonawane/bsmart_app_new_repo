@@ -201,6 +201,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (existing != null) return existing;
     if (_controllerSetupInProgress.contains(index)) return null;
     _controllerSetupInProgress.add(index);
+    _failedControllerIndexes.remove(index);
     final reel = _reels[index];
     final urlCandidates = _urlCandidates(reel.videoUrl);
     if (urlCandidates.isEmpty) {
@@ -223,6 +224,7 @@ class _ReelsScreenState extends State<ReelsScreen>
             controller = VideoPlayerController.networkUrl(
               Uri.parse(url),
               httpHeaders: headers,
+              formatHint: _videoFormatHintForUrl(url),
             );
             await controller.initialize();
             if (!mounted || generation != _poolGeneration) {
@@ -253,10 +255,10 @@ class _ReelsScreenState extends State<ReelsScreen>
         }
         debugPrint('[Reels] tried url=$url for index=$index id=${reel.id} lastError=$lastError');
       }
-      _failedControllerIndexes.add(index);
       debugPrint(
         '[Reels] controller create failed index=$index id=${reel.id} lastUrl=${urlCandidates.isNotEmpty ? urlCandidates.last : ''} error=$lastError',
       );
+      _scheduleControllerRetry(index);
       return null;
     } finally {
       _controllerSetupInProgress.remove(index);
@@ -289,7 +291,9 @@ class _ReelsScreenState extends State<ReelsScreen>
       }
     } catch (_) {}
 
-    return seen.toList();
+    final list = seen.toList();
+    debugPrint('[Reels] url candidates resolved=$list');
+    return list;
   }
 
   Future<void> _ensureMediaHeaders() async {
@@ -302,22 +306,40 @@ class _ReelsScreenState extends State<ReelsScreen>
     _mediaHeaders = headers;
   }
 
+  Map<String, String> _baseMediaHeaders() {
+    final headers = Map<String, String>.from(_mediaHeaders ?? const {});
+    headers.remove('Authorization');
+    return headers;
+  }
+
   Map<String, String> _headersForUrl(String url) {
     // Attach auth only when the media host matches the API host (CDNs often reject auth).
+    final base = _baseMediaHeaders();
     if (_mediaHeaders != null && UrlHelper.shouldAttachAuthHeader(url)) {
       return _mediaHeaders!;
     }
-    return const {};
+    return base;
   }
 
   List<Map<String, String>> _playbackHeaderCandidates(String url) {
-    // Try without auth first, then with auth (some CDNs need auth, some reject it).
-    final candidates = <Map<String, String>>[const <String, String>{}];
+    // Try without auth first (but keep User-Agent), then with auth if allowed.
+    final candidates = <Map<String, String>>[];
+    final base = _baseMediaHeaders();
+    candidates.add(base.isEmpty ? const <String, String>{} : base);
     final authHeaders = _mediaHeaders;
-    if (authHeaders != null && authHeaders.containsKey('Authorization')) {
+    if (authHeaders != null &&
+        authHeaders.containsKey('Authorization') &&
+        UrlHelper.shouldAttachAuthHeader(url)) {
       candidates.add(Map<String, String>.from(authHeaders));
     }
     return candidates;
+  }
+
+  VideoFormat? _videoFormatHintForUrl(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('.m3u8')) return VideoFormat.hls;
+    if (lower.contains('.mpd')) return VideoFormat.dash;
+    return null;
   }
 
   Future<void> _initializePoolAt(int index) async {
@@ -447,13 +469,10 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   void _scheduleControllerRetry(int index) {
     final attempts = _controllerRetryAttempts[index] ?? 0;
-    if (attempts >= 3) {
-      _failedControllerIndexes.add(index);
-      if (mounted) setState(() {});
-      return;
-    }
     _controllerRetryAttempts[index] = attempts + 1;
-    final delayMs = switch (attempts) { 0 => 800, 1 => 1500, _ => 2500 };
+    _failedControllerIndexes.remove(index);
+    final delayMs =
+        switch (attempts) { 0 => 800, 1 => 1500, 2 => 2500, _ => 3500 };
     Future<void>.delayed(Duration(milliseconds: delayMs), () {
       if (!mounted) return;
       if (index != _currentIndex) return;
@@ -672,7 +691,6 @@ class _ReelsScreenState extends State<ReelsScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoplayKickScheduled = false;
       if (!mounted || !widget.isActive || _reels.isEmpty) return;
-      if (_failedControllerIndexes.contains(_currentIndex)) return;
       final controller = _controllerForIndex(_currentIndex);
       if (controller == null || !controller.value.isInitialized) {
         if (_controllerSetupInProgress.contains(_currentIndex)) return;
@@ -957,8 +975,8 @@ class _ReelsScreenState extends State<ReelsScreen>
       thumbnailUrl: thumb,
       headers:
           thumb == null || thumb.isEmpty ? const {} : _headersForUrl(thumb),
-      isFailed: _failedControllerIndexes.contains(index),
-      onRetry: index == _currentIndex ? _retryCurrentReel : null,
+      isFailed: false,
+      onRetry: null,
     );
   }
 

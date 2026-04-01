@@ -193,15 +193,32 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
 
     try {
       final normalizedSearch = _searchQuery.trim();
-      final result = await _adsService.searchAds(
+      Map<String, dynamic> result = await _adsService.searchAds(
         q: normalizedSearch.isEmpty ? null : normalizedSearch,
         category: _selectedCategoryId == 'All' ? null : _selectedCategoryId,
+        status: 'active',
+        contentType: 'ad',
         page: _page,
         limit: _pageSize,
       );
 
-      final ads = (result['ads'] as List<Ad>? ?? const <Ad>[]);
-      final totalPages = (result['totalPages'] as int?) ?? _page;
+      List<Ad> ads = (result['ads'] as List<Ad>? ?? const <Ad>[]);
+      int totalPages = (result['totalPages'] as int?) ?? _page;
+      if (reset && ads.isEmpty) {
+        final fallback = await _adsService.searchAds(
+          q: normalizedSearch.isEmpty ? null : normalizedSearch,
+          category: _selectedCategoryId == 'All' ? null : _selectedCategoryId,
+          status: 'active',
+          page: _page,
+          limit: _pageSize,
+        );
+        final fallbackAds = (fallback['ads'] as List<Ad>? ?? const <Ad>[]);
+        if (fallbackAds.isNotEmpty) {
+          result = fallback;
+          ads = fallbackAds;
+          totalPages = (fallback['totalPages'] as int?) ?? _page;
+        }
+      }
 
       if (!mounted) return;
       setState(() {
@@ -1247,43 +1264,9 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   }
 
   Widget _buildSearchAdThumb(Ad ad) {
-    final url = ad.imageUrl;
-    if (url != null && url.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: CachedNetworkImage(
-          imageUrl: url,
-          httpHeaders: UrlHelper.shouldAttachAuthHeader(url)
-              ? (_mediaHeaders ?? const {})
-              : null,
-          width: 44,
-          height: 44,
-          fit: BoxFit.cover,
-          placeholder: (context, _) => Container(
-            color: Colors.white.withValues(alpha: 0.08),
-            alignment: Alignment.center,
-            child: const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-          errorWidget: (context, _, __) => Container(
-            color: Colors.white.withValues(alpha: 0.08),
-            alignment: Alignment.center,
-            child: const Icon(Icons.image, color: Colors.white54, size: 16),
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Icon(Icons.shopping_bag, color: Colors.white54, size: 18),
+    return _SearchAdThumb(
+      ad: ad,
+      mediaHeaders: _mediaHeaders,
     );
   }
 
@@ -1378,7 +1361,8 @@ class _AdVideoItemState extends State<AdVideoItem>
   bool _userPaused = false;
   bool _resumeAttemptInFlight = false;
   double _progress = 0;
-  Timer? _imageProgressTimer;
+  Timer? _watchTimer;
+  int _watchedMs = 0;
   bool _captionExpanded = false;
   Map<String, String>? _mediaHeaders;
   bool _viewMarked = false;
@@ -1415,6 +1399,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     _isLiked = widget.ad.isLikedByMe;
     _isSaved = widget.ad.isSavedByMe;
     _likesCount = widget.ad.likesCount;
+    _watchedMs = 0;
     _loadMediaHeaders();
     unawaited(_loadFollowState());
     _initializeVideo();
@@ -1433,6 +1418,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       _userPaused = false;
       _progress = 0;
       _viewMarked = false;
+      _watchedMs = 0;
       _controller?.removeListener(_onVideoTick);
       unawaited(_controller?.dispose());
       _controller = null;
@@ -1458,7 +1444,7 @@ class _AdVideoItemState extends State<AdVideoItem>
   void dispose() {
     _controller?.removeListener(_onVideoTick);
     _controller?.dispose();
-    _imageProgressTimer?.cancel();
+    _watchTimer?.cancel();
     _likeRewardTimer?.cancel();
     super.dispose();
   }
@@ -1494,7 +1480,11 @@ class _AdVideoItemState extends State<AdVideoItem>
       _controller?.removeListener(_onVideoTick);
       await _controller?.dispose();
       final headers = await _videoHeadersFor(url);
-      _controller = VideoPlayerController.networkUrl(Uri.parse(url), httpHeaders: headers);
+      _controller = VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        httpHeaders: headers,
+        formatHint: _videoFormatHintForUrl(url),
+      );
       try {
         await _controller!.initialize();
         await _controller!.setLooping(true);
@@ -1522,6 +1512,13 @@ class _AdVideoItemState extends State<AdVideoItem>
     return _mediaHeaders ?? const {};
   }
 
+  VideoFormat? _videoFormatHintForUrl(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('.m3u8')) return VideoFormat.hls;
+    if (lower.contains('.mpd')) return VideoFormat.dash;
+    return null;
+  }
+
   Future<void> _loadMediaHeaders() async {
     if (_mediaHeaders != null) return;
     final token = await ApiClient().getToken();
@@ -1541,33 +1538,15 @@ class _AdVideoItemState extends State<AdVideoItem>
     final value = controller.value;
     if (!value.isInitialized || value.hasError) return;
     if (value.duration > Duration.zero) {
-      final pct =
-          (value.position.inMilliseconds / value.duration.inMilliseconds)
-              .clamp(0.0, 1.0);
-      if ((_progress - pct).abs() > 0.004 && mounted) {
-        setState(() {
-          _progress = pct;
-        });
+      final duration = value.duration;
+      if (duration > Duration.zero &&
+          value.position >= duration - const Duration(milliseconds: 180)) {
+        unawaited(controller.seekTo(Duration.zero).catchError((_) {}));
+        if (!value.isPlaying) {
+          unawaited(controller.play().catchError((_) {}));
+        }
+        return;
       }
-    }
-
-    final duration = value.duration;
-    if (duration > Duration.zero &&
-        value.position >= duration - const Duration(milliseconds: 180)) {
-      if (!_viewMarked) {
-        _viewMarked = true;
-        unawaited(widget.onCompletedView());
-      }
-      unawaited(controller.seekTo(Duration.zero).catchError((_) {}));
-      if (mounted) {
-        setState(() {
-          _progress = 0;
-        });
-      }
-      if (!value.isPlaying) {
-        unawaited(controller.play().catchError((_) {}));
-      }
-      return;
     }
 
     if (!value.isPlaying && !value.isBuffering && !_resumeAttemptInFlight) {
@@ -1587,34 +1566,54 @@ class _AdVideoItemState extends State<AdVideoItem>
   bool get _isVideoAd => (widget.ad.videoUrl ?? '').trim().isNotEmpty;
 
   void _startOrStopProgress() {
-    _imageProgressTimer?.cancel();
+    _watchTimer?.cancel();
     if (!widget.isActive) return;
-    if (_isVideoAd) return;
 
-    final start = DateTime.now();
-    const total = Duration(seconds: 15);
-    setState(() {
-      _progress = 0;
-    });
-    _imageProgressTimer =
-        Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (!mounted || !widget.isActive) {
-        timer.cancel();
-        return;
+    final totalSeconds =
+        widget.ad.watchDurationSeconds > 0 ? widget.ad.watchDurationSeconds : 15;
+    final totalMs = totalSeconds * 1000;
+    if (_watchedMs >= totalMs) {
+      _watchedMs = 0;
+    }
+
+    void tick(bool allowAdvance) {
+      if (!mounted || !widget.isActive) return;
+      if (!allowAdvance) return;
+      _watchedMs += 200;
+      final pct = (_watchedMs / totalMs).clamp(0.0, 1.0);
+      if ((_progress - pct).abs() > 0.004) {
+        setState(() {
+          _progress = pct;
+        });
       }
-      final elapsed = DateTime.now().difference(start);
-      final pct =
-          (elapsed.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
-      setState(() {
-        _progress = pct;
-      });
       if (pct >= 1) {
-        timer.cancel();
         if (!_viewMarked) {
           _viewMarked = true;
           unawaited(widget.onCompletedView());
         }
-        widget.onAutoNext();
+        if (!_isVideoAd) {
+          widget.onAutoNext();
+        }
+      }
+    }
+
+    _watchTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
+      if (!mounted || !widget.isActive) {
+        timer.cancel();
+        return;
+      }
+      if (_isVideoAd) {
+        final controller = _controller;
+        final value = controller?.value;
+        final allowAdvance = controller != null &&
+            value != null &&
+            value.isInitialized &&
+            value.isPlaying &&
+            !value.isBuffering &&
+            !_userPaused;
+        tick(allowAdvance);
+      } else {
+        tick(true);
       }
     });
   }
@@ -2791,6 +2790,152 @@ class _SearchUser {
     final name = displayName.trim();
     if (name.isEmpty) return 'U';
     return name.substring(0, 1).toUpperCase();
+  }
+}
+
+class _SearchAdThumb extends StatefulWidget {
+  final Ad ad;
+  final Map<String, String>? mediaHeaders;
+
+  const _SearchAdThumb({
+    required this.ad,
+    required this.mediaHeaders,
+  });
+
+  @override
+  State<_SearchAdThumb> createState() => _SearchAdThumbState();
+}
+
+class _SearchAdThumbState extends State<_SearchAdThumb> {
+  VideoPlayerController? _controller;
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SearchAdThumb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ad.id != widget.ad.id ||
+        oldWidget.ad.videoUrl != widget.ad.videoUrl) {
+      _disposeController();
+      _ready = false;
+      _failed = false;
+      _init();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposeController();
+    super.dispose();
+  }
+
+  void _disposeController() {
+    final c = _controller;
+    _controller = null;
+    if (c != null) {
+      unawaited(c.dispose());
+    }
+  }
+
+  VideoFormat? _videoFormatHintForUrl(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('.m3u8')) return VideoFormat.hls;
+    if (lower.contains('.mpd')) return VideoFormat.dash;
+    return null;
+  }
+
+  Future<void> _init() async {
+    final url = widget.ad.videoUrl?.trim() ?? '';
+    if (url.isEmpty) return;
+    try {
+      final headers = UrlHelper.shouldAttachAuthHeader(url)
+          ? (widget.mediaHeaders ?? const <String, String>{})
+          : const <String, String>{};
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        httpHeaders: headers,
+        formatHint: _videoFormatHintForUrl(url),
+      );
+      _controller = controller;
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.setVolume(0);
+      await controller.play();
+      if (!mounted) return;
+      setState(() {
+        _ready = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final thumbUrl = widget.ad.imageUrl?.trim();
+    if (_ready && _controller != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _controller!.value.size.width,
+              height: _controller!.value.size.height,
+              child: VideoPlayer(_controller!),
+            ),
+          ),
+        ),
+      );
+    }
+    if (!_failed && thumbUrl != null && thumbUrl.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: CachedNetworkImage(
+          imageUrl: thumbUrl,
+          httpHeaders: UrlHelper.shouldAttachAuthHeader(thumbUrl)
+              ? (widget.mediaHeaders ?? const {})
+              : null,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          placeholder: (context, _) => Container(
+            color: Colors.white.withValues(alpha: 0.08),
+            alignment: Alignment.center,
+            child: const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+          errorWidget: (context, _, __) => Container(
+            color: Colors.white.withValues(alpha: 0.08),
+            alignment: Alignment.center,
+            child: const Icon(Icons.image, color: Colors.white54, size: 16),
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.shopping_bag, color: Colors.white54, size: 18),
+    );
   }
 }
 

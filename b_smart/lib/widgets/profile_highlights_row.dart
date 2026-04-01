@@ -244,9 +244,10 @@ class _ProfileHighlightsRowState extends State<ProfileHighlightsRow> {
 
   @override
   Widget build(BuildContext context) {
-    // Hide row entirely when not owner and no highlights
-    if (!_loading && _highlights.isEmpty && !_isOwner) {
-      return const SizedBox.shrink();
+    // Avoid shimmer flash on other users' profiles
+    if (!_isOwner) {
+      if (_loading) return const SizedBox.shrink();
+      if (_highlights.isEmpty) return const SizedBox.shrink();
     }
 
     return SizedBox(
