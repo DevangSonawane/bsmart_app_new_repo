@@ -28,11 +28,13 @@ import '../services/story_cache.dart';
 class StoryCameraScreen extends StatefulWidget {
   final UploadMode initialMode;
   final bool lockMode;
+  final bool showModeTabs;
 
   const StoryCameraScreen({
     super.key,
     this.initialMode = UploadMode.story,
     this.lockMode = false,
+    this.showModeTabs = true,
   });
 
   @override
@@ -563,7 +565,8 @@ List<double> _storyFilterMatrixFor(String name) {
   }
 }
 
-class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindingObserver {
+class _StoryCameraScreenState extends State<StoryCameraScreen>
+    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   FlashMode _flashMode = FlashMode.off;
   bool _recording = false;
   UploadMode _mode = UploadMode.story;
@@ -650,6 +653,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
     _initCamera();
     _loadRecentMedia();
   }
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void dispose() {
@@ -4569,6 +4575,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     if (_isStoryEditing) {
       return _buildStoryEditingUi(context);
     }
@@ -4724,7 +4731,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen> with WidgetsBindi
                   children: [
                     _buildGalleryShortcut(),
                     const Spacer(),
-                    _buildModeTabs(),
+                    widget.showModeTabs ? _buildModeTabs() : const SizedBox.shrink(),
                     const Spacer(),
                     _buildReverseIcon(),
                   ],

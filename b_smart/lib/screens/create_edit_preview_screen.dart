@@ -155,10 +155,13 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   ImageProvider? _cachedTextEditorBackground;
   double? _imageAspectRatio;
   Size? _imagePixelSize;
+  double? _postFixedAspect;
+  double? _autoPostAspect;
   ImageStream? _imageStream;
   ImageStreamListener? _imageStreamListener;
   final GlobalKey<ExtendedImageGestureState> _postGestureKey = GlobalKey<ExtendedImageGestureState>();
   final GlobalKey _previewRepaintKey = GlobalKey();
+  Key _imageKey = const ValueKey('img_0_0');
   Size? _postViewportSize;
   Map<String, int> _imageAdjustments = <String, int>{
     'brightness': 0,
@@ -178,22 +181,55 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   }
 
   double _postFrameAspect() {
+    bool hasAspect = true;
+    double aspect = 1.0;
     if (widget.media.type == app_models.MediaType.video) {
       final controller = _videoController;
-      final a = (controller != null && controller.value.isInitialized)
-          ? controller.value.aspectRatio
-          : 1.0;
-      return _clampInstagramPostAspect(a);
+      if (controller != null && controller.value.isInitialized) {
+        aspect = controller.value.aspectRatio;
+      } else {
+        hasAspect = false;
+      }
+    } else {
+      if (_imageAspectRatio != null) {
+        aspect = _imageAspectRatio!;
+      } else {
+        hasAspect = false;
+      }
     }
+
     if (widget.isPostFlow) {
-      final aspect = _imageAspectRatio ?? 1.0;
-      if ((aspect - 1.0).abs() <= 0.05) {
+      if (!hasAspect) {
         return 1.0;
       }
-      return 4 / 5;
+      if (_postFixedAspect != null) return _postFixedAspect!;
+      final next = _autoPostAspectFor(aspect);
+      _autoPostAspect = next;
+      _postFixedAspect = next;
+      return next;
     }
-    return _clampInstagramPostAspect(_imageAspectRatio ?? 1.0);
+    return _clampInstagramPostAspect(aspect);
   }
+
+  double _autoPostAspectFor(double aspect) {
+    const double minPortrait = 4.0 / 5.0;
+    const double maxLandscape = 1.91;
+    if (aspect.isNaN || aspect.isInfinite || aspect <= 0) return 1.0;
+    if (aspect < minPortrait) return minPortrait;
+    if (aspect >= minPortrait && aspect < 0.95) return minPortrait;
+    if (aspect >= 0.95 && aspect <= 1.05) return 1.0;
+    if (aspect > 1.05 && aspect <= maxLandscape) return aspect;
+    return maxLandscape;
+  }
+
+  void _maybeInitPostAspect(double aspect) {
+    if (!widget.isPostFlow) return;
+    if (_postFixedAspect != null || _autoPostAspect != null) return;
+    final next = _autoPostAspectFor(aspect);
+    _autoPostAspect = next;
+    _postFixedAspect = next;
+  }
+
 
   List<double> _buildFilterMatrixBase({double brightness = 1, double contrast = 1, double saturation = 1}) {
     final b = brightness;
@@ -397,6 +433,52 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     return out;
   }
 
+  bool _isVideoMedia(app_models.MediaItem media) {
+    if (media.type == app_models.MediaType.video) return true;
+    final path = media.filePath;
+    if (path == null) return false;
+    final lower = path.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.3gp') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.mkv');
+  }
+
+  Widget _buildVideoThumbnail(
+    String filePath, {
+    BoxFit fit = BoxFit.cover,
+    double? width,
+    double? height,
+  }) {
+    return FutureBuilder<Uint8List?>(
+      future: VideoThumbnail.thumbnailData(
+        video: filePath,
+        imageFormat: ImageFormat.JPEG,
+        quality: 70,
+      ),
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done || snap.data == null) {
+          return Container(
+            width: width,
+            height: height,
+            color: Colors.black,
+            child: const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          );
+        }
+        return Image.memory(
+          snap.data!,
+          fit: fit,
+          width: width,
+          height: height,
+        );
+      },
+    );
+  }
+
   List<_PreviewTextOverlay> _effectiveTextOverlays(app_models.MediaItem media) {
     return _mediaTextOverlays[media.id] ?? const [];
   }
@@ -413,7 +495,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         : [widget.media];
     _currentIndex = 0;
     _currentMedia = _mediaList[_currentIndex];
-    if (_mediaList.length > 1 && widget.media.type != app_models.MediaType.video) {
+    if (_mediaList.length > 1) {
       _postPageController = PageController();
     }
     _selectedFilter = widget.selectedFilter;
@@ -425,16 +507,19 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         _selectedFilterName = match.first.name;
       }
     }
-    if (_currentMedia.type == app_models.MediaType.video && _currentMedia.filePath != null) {
+    if (_isVideoMedia(_currentMedia) && _currentMedia.filePath != null) {
       final controller = VideoPlayerController.file(File(_currentMedia.filePath!));
       _videoController = controller;
       _videoInit = controller.initialize().then((_) {
         if (!mounted) return;
         controller.setLooping(false);
         controller.addListener(_handlePreviewVideoTick);
+        if (widget.isPostFlow) {
+          _maybeInitPostAspect(controller.value.aspectRatio);
+        }
         setState(() => _isPlaying = false);
       });
-    } else if (_currentMedia.type == app_models.MediaType.image && _currentMedia.filePath != null) {
+    } else if (!_isVideoMedia(_currentMedia) && _currentMedia.filePath != null) {
       final provider = FileImage(File(_currentMedia.filePath!));
       final stream = provider.resolve(const ImageConfiguration());
       _imageStream = stream;
@@ -445,6 +530,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         setState(() {
           _imageAspectRatio = w / h;
           _imagePixelSize = Size(w, h);
+          _imageKey = ValueKey('img_${w}_${h}');
+          if (widget.isPostFlow) {
+            _maybeInitPostAspect(_imageAspectRatio ?? 1.0);
+          }
         });
       });
       stream.addListener(_imageStreamListener!);
@@ -469,6 +558,58 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       stream.removeListener(listener);
     }
     super.dispose();
+  }
+
+  Future<void> _setCurrentMedia(app_models.MediaItem media, int index) async {
+    if (_currentMedia.id == media.id && _currentIndex == index) return;
+    _videoController?.removeListener(_handlePreviewVideoTick);
+    await _videoController?.dispose();
+    _videoController = null;
+    _videoInit = null;
+    _isPlaying = false;
+
+    final stream = _imageStream;
+    final listener = _imageStreamListener;
+    if (stream != null && listener != null) {
+      stream.removeListener(listener);
+    }
+    _imageStream = null;
+    _imageStreamListener = null;
+    _imageAspectRatio = null;
+    _imagePixelSize = null;
+
+    setState(() {
+      _currentIndex = index;
+      _currentMedia = media;
+      _cachedTextEditorBackground = null;
+    });
+    _primeTextEditorBackground();
+
+    if (_isVideoMedia(media) && media.filePath != null) {
+      final controller = VideoPlayerController.file(File(media.filePath!));
+      _videoController = controller;
+      _videoInit = controller.initialize().then((_) {
+        if (!mounted) return;
+        controller.setLooping(false);
+        controller.addListener(_handlePreviewVideoTick);
+        setState(() => _isPlaying = false);
+      });
+    } else if (!_isVideoMedia(media) && media.filePath != null) {
+      final provider = FileImage(File(media.filePath!));
+      final stream2 = provider.resolve(const ImageConfiguration());
+      _imageStream = stream2;
+      _imageStreamListener = ImageStreamListener((info, _) {
+        final w = info.image.width.toDouble();
+        final h = info.image.height.toDouble();
+        if (!mounted || h == 0) return;
+        setState(() {
+          _imageAspectRatio = w / h;
+          _imagePixelSize = Size(w, h);
+          _imageKey = ValueKey('img_${w}_${h}');
+        });
+      });
+      stream2.addListener(_imageStreamListener!);
+    }
   }
 
   @override
@@ -566,6 +707,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   Future<void> _openFilterPicker() async {
     if (_currentMedia.filePath == null) return;
+    if (_isVideoMedia(_currentMedia)) return;
     final filters = _createService.getFilters();
     final initialFilterId = _selectedFilter ?? 'none';
     final initialFilterName = _selectedFilterName;
@@ -984,6 +1126,18 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (media.filePath == null) {
       return const Icon(Icons.image, size: 100, color: Colors.white54);
     }
+    if (_isVideoMedia(media)) {
+      return SizedBox(
+        width: viewport.maxWidth,
+        height: viewport.maxHeight,
+        child: _buildVideoThumbnail(
+          media.filePath!,
+          fit: BoxFit.cover,
+          width: viewport.maxWidth,
+          height: viewport.maxHeight,
+        ),
+      );
+    }
     _postViewportSize = viewport.biggest;
     if (!enableGesture) {
       final preview = _applyImageAdjustments(
@@ -1007,49 +1161,55 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final imageAspect = _imageAspectRatio ?? 1.0;
     final viewportAspect =
         (viewport.maxHeight <= 0) ? 1.0 : (viewport.maxWidth / viewport.maxHeight);
-    final ratio =
-        math.max(imageAspect / viewportAspect, viewportAspect / imageAspect)
-            .clamp(1.0, 5.0);
-    final initialScale = ratio;
+    final fillScale = (imageAspect / viewportAspect) > 1.0
+        ? viewportAspect / imageAspect
+        : imageAspect / viewportAspect;
+    final minFillScale = math.max(1.0, fillScale);
+    final initialScale = minFillScale;
     final preview = _applyImageAdjustments(
       _applySelectedFilter(
-      ExtendedImage.file(
-        key: ValueKey('postZoom-${media.id}-$_currentIndex'),
-        extendedImageGestureKey: _postGestureKey,
-        File(media.filePath!),
-        width: viewport.maxWidth,
-        height: viewport.maxHeight,
-        fit: BoxFit.cover,
-        borderRadius: BorderRadius.circular(24),
-        clipBehavior: Clip.antiAlias,
-        mode: ExtendedImageMode.gesture,
-        initGestureConfigHandler: (state) {
-          return GestureConfig(
-            minScale: initialScale,
-            maxScale: math.max(4.0, initialScale * 2.0),
-            initialScale: initialScale,
-            speed: 1.0,
-            inertialSpeed: 100.0,
-            cacheGesture: true,
-            inPageView: false,
-          );
-        },
-        onDoubleTap: (ExtendedImageGestureState s) {
-          final begin = s.gestureDetails?.totalScale ?? 1.0;
-          final end = begin < (initialScale * 1.5)
-              ? math.max(initialScale * 2.0, 2.0)
-              : initialScale;
-          s.handleDoubleTap(scale: end);
-        },
-      ),
-      filterIds: _effectiveFilterIds(media),
+        ExtendedImage.file(
+          key: _imageKey,
+          extendedImageGestureKey: _postGestureKey,
+          File(media.filePath!),
+          width: viewport.maxWidth,
+          height: viewport.maxHeight,
+          fit: BoxFit.cover,
+          borderRadius: BorderRadius.circular(24),
+          clipBehavior: Clip.antiAlias,
+          mode: ExtendedImageMode.gesture,
+          initGestureConfigHandler: (state) {
+            return GestureConfig(
+              minScale: minFillScale,
+              maxScale: math.max(4.0, minFillScale * 3.0),
+              initialScale: minFillScale,
+              speed: 1.0,
+              inertialSpeed: 100.0,
+              cacheGesture: true,
+              inPageView: false,
+            );
+          },
+          onDoubleTap: (ExtendedImageGestureState s) {
+            final begin = s.gestureDetails?.totalScale ?? minFillScale;
+            final end = begin < (minFillScale * 1.5)
+                ? (minFillScale * 2.0)
+                : minFillScale;
+            s.handleDoubleTap(scale: end);
+          },
+        ),
+        filterIds: _effectiveFilterIds(media),
       ),
       adjustments: _effectiveAdjustments(media),
     );
     return SizedBox(
       width: viewport.maxWidth,
       height: viewport.maxHeight,
-      child: preview,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRect(child: preview),
+        ],
+      ),
     );
   }
 
@@ -1695,7 +1855,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (path == null || path.isEmpty) {
       return const AssetImage('assets/images/dashboard_sample.png');
     }
-    if (_currentMedia.type == app_models.MediaType.video) {
+    if (_isVideoMedia(_currentMedia)) {
       final bytes = await VideoThumbnail.thumbnailData(
         video: path,
         imageFormat: ImageFormat.JPEG,
@@ -2254,34 +2414,37 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                     child: Stack(
                                       alignment: Alignment.center,
                                       children: [
-                                        if (_currentMedia.type ==
-                                            app_models.MediaType.video)
-                                          _buildVideoPreview()
-                                        else if (_mediaList.length > 1)
+                                        if (_mediaList.length > 1)
                                           PageView.builder(
                                             controller: _postPageController,
                                             itemCount: _mediaList.length,
                                             onPageChanged: (i) {
-                                              setState(() {
-                                                _currentIndex = i;
-                                                _currentMedia =
-                                                    _mediaList[_currentIndex];
-                                              });
+                                              _setCurrentMedia(_mediaList[i], i);
                                             },
                                             itemBuilder: (context, i) {
                                               final item = _mediaList[i];
+                                              final isActive = i == _currentIndex;
+                                              if (_isVideoMedia(item)) {
+                                                if (isActive) {
+                                                  return _buildVideoPreview();
+                                                }
+                                                if (item.filePath == null) {
+                                                  return Container(color: Colors.black);
+                                                }
+                                                return _buildVideoThumbnail(
+                                                  item.filePath!,
+                                                  fit: BoxFit.cover,
+                                                );
+                                              }
                                               return GestureDetector(
-                                                  onTap: () {
-                                                  setState(() {
-                                                    _currentIndex = i;
-                                                    _currentMedia =
-                                                        _mediaList[i];
-                                                  });
-                                                  _openPerImageEditor(_mediaList[i]);
-                                                  },
+                                                onTap: () {
+                                                  if (!isActive) {
+                                                    _setCurrentMedia(item, i);
+                                                  }
+                                                  _openPerImageEditor(item);
+                                                },
                                                 child: LayoutBuilder(
-                                                  builder:
-                                                      (context, viewport) {
+                                                  builder: (context, viewport) {
                                                     return _buildPostZoomableImagePreviewFor(
                                                       item,
                                                       viewport,
@@ -2292,18 +2455,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                               );
                                             },
                                           )
+                                        else if (_isVideoMedia(_currentMedia))
+                                          _buildVideoPreview()
                                         else
                                           LayoutBuilder(
                                             builder: (context, viewport) {
-                                              return GestureDetector(
-                                                  onTap: () {
-                                                  _openPerImageEditor(_currentMedia);
-                                                  },
-                                                child:
-                                                    _buildPostZoomableImagePreview(
-                                                  viewport,
-                                                  enableGesture: false,
-                                                ),
+                                              return _buildPostZoomableImagePreview(
+                                                viewport,
+                                                enableGesture: true,
                                               );
                                             },
                                           ),
@@ -2656,15 +2815,21 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               ),
               if (_showInlineImageEditor)
                 Positioned.fill(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _showInlineImageEditor = false;
-                      });
-                    },
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      child: Align(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _showInlineImageEditor = false;
+                            });
+                          },
+                          child: Container(
+                            color: Colors.black.withValues(alpha: 0.35),
+                          ),
+                        ),
+                      ),
+                      Align(
                         alignment: Alignment.bottomCenter,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 220),
@@ -2796,7 +2961,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
             ],
@@ -3337,6 +3502,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   Widget _buildImagePreview() {
     if (widget.media.filePath != null) {
+      if (_isVideoMedia(widget.media)) {
+        return Container(
+          color: Colors.black,
+          child: Center(
+            child: _buildVideoThumbnail(widget.media.filePath!, fit: BoxFit.contain),
+          ),
+        );
+      }
       return Container(
         color: Colors.red,
         child: Center(
@@ -3547,6 +3720,10 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
   final GlobalKey<ExtendedImageGestureState> _gestureKey =
       GlobalKey<ExtendedImageGestureState>();
   final GlobalKey _previewKey = GlobalKey();
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageStreamListener;
+  double? _imageAspect;
+  Key _imageKey = const ValueKey('img_0_0');
   late String? _selectedFilter;
   late Map<String, int> _adjustments;
   late List<_PreviewTextOverlay> _textOverlays;
@@ -3568,6 +3745,32 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
     _textOverlays = List<_PreviewTextOverlay>.from(widget.initialTextOverlays);
     _stickerOverlays =
         List<OverlaySticker>.from(widget.initialStickerOverlays);
+    final path = widget.media.filePath;
+    if (path != null && path.isNotEmpty) {
+      final provider = FileImage(File(path));
+      final stream = provider.resolve(const ImageConfiguration());
+      _imageStream = stream;
+      _imageStreamListener = ImageStreamListener((info, _) {
+        final w = info.image.width.toDouble();
+        final h = info.image.height.toDouble();
+        if (!mounted || h == 0) return;
+        setState(() {
+          _imageAspect = w / h;
+          _imageKey = ValueKey('img_${w}_${h}');
+        });
+      });
+      stream.addListener(_imageStreamListener!);
+    }
+  }
+
+  @override
+  void dispose() {
+    final stream = _imageStream;
+    final listener = _imageStreamListener;
+    if (stream != null && listener != null) {
+      stream.removeListener(listener);
+    }
+    super.dispose();
   }
 
   Widget _applySelectedFilter(Widget child) {
@@ -3675,6 +3878,71 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
       out[entry.key] ??= clampValue(entry.key, entry.value);
     }
     return out;
+  }
+
+  bool _isVideoMedia(app_models.MediaItem media) {
+    if (media.type == app_models.MediaType.video) return true;
+    final path = media.filePath;
+    if (path == null) return false;
+    final lower = path.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.3gp') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.mkv');
+  }
+
+  Widget _buildVideoThumbnail(
+    String filePath, {
+    BoxFit fit = BoxFit.cover,
+    double? width,
+    double? height,
+  }) {
+    return FutureBuilder<Uint8List?>(
+      future: VideoThumbnail.thumbnailData(
+        video: filePath,
+        imageFormat: ImageFormat.JPEG,
+        quality: 70,
+      ),
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done || snap.data == null) {
+          return Container(
+            width: width,
+            height: height,
+            color: Colors.black,
+            child: const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          );
+        }
+        return Image.memory(
+          snap.data!,
+          fit: fit,
+          width: width,
+          height: height,
+        );
+      },
+    );
+  }
+
+  Future<ImageProvider<Object>> _baseTextEditorBackgroundFromMedia() async {
+    final path = widget.media.filePath;
+    if (path == null || path.isEmpty) {
+      return const AssetImage('assets/images/dashboard_sample.png');
+    }
+    if (_isVideoMedia(widget.media)) {
+      final bytes = await VideoThumbnail.thumbnailData(
+        video: path,
+        imageFormat: ImageFormat.JPEG,
+        quality: 70,
+      );
+      if (bytes != null) {
+        return MemoryImage(bytes);
+      }
+      return const AssetImage('assets/images/dashboard_sample.png');
+    }
+    return FileImage(File(path));
   }
 
   Widget _buildOverlayStyledText(_PreviewTextOverlay overlay) {
@@ -3835,7 +4103,9 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
         : null;
     final filePath = widget.media.filePath;
     final ImageProvider<Object> background = filePath != null
-        ? FileImage(File(filePath)) as ImageProvider<Object>
+        ? (_isVideoMedia(widget.media)
+            ? await _baseTextEditorBackgroundFromMedia()
+            : FileImage(File(filePath)) as ImageProvider<Object>)
         : const AssetImage('assets/images/dashboard_sample.png');
     final normalizedInitialPosition =
         existing != null ? _normalizePosition(existing.position) : null;
@@ -3936,8 +4206,9 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                         itemBuilder: (context, i) {
                           final f = widget.filters[i];
                           final isActive = (_selectedFilter ?? 'none') == f.id;
-                          final file = File(widget.media.filePath!);
-                          final base = Image.file(file, fit: BoxFit.cover);
+                          final base = _isVideoMedia(widget.media)
+                              ? _buildVideoThumbnail(widget.media.filePath!, fit: BoxFit.cover)
+                              : Image.file(File(widget.media.filePath!), fit: BoxFit.cover);
                           final preview = (f.id == 'none')
                               ? base
                               : ColorFiltered(
@@ -4264,8 +4535,17 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                           return const Icon(Icons.image,
                               size: 100, color: Colors.white54);
                         }
+                        if (_isVideoMedia(widget.media)) {
+                          return _buildVideoThumbnail(
+                            filePath,
+                            fit: BoxFit.cover,
+                            width: viewport.maxWidth,
+                            height: viewport.maxHeight,
+                          );
+                        }
                         final preview = _applyAdjustments(_applySelectedFilter(
                           ExtendedImage.file(
+                            key: _imageKey,
                             File(filePath),
                             width: viewport.maxWidth,
                             height: viewport.maxHeight,
@@ -4274,11 +4554,17 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                             clipBehavior: Clip.antiAlias,
                             mode: ExtendedImageMode.gesture,
                             extendedImageGestureKey: _gestureKey,
-                            initGestureConfigHandler: (_) {
+                            initGestureConfigHandler: (state) {
+                              final imageAspect = _imageAspect ?? 1.0;
+                              final viewportAspect = viewport.maxWidth / viewport.maxHeight;
+                              final fillScale = (imageAspect / viewportAspect) > 1.0
+                                  ? viewportAspect / imageAspect
+                                  : imageAspect / viewportAspect;
+                              final minFillScale = math.max(1.0, fillScale);
                               return GestureConfig(
-                                minScale: 1.0,
-                                maxScale: 4.0,
-                                initialScale: 1.0,
+                                minScale: minFillScale,
+                                maxScale: math.max(4.0, minFillScale * 3.0),
+                                initialScale: minFillScale,
                                 speed: 1.0,
                                 inertialSpeed: 100.0,
                                 cacheGesture: true,
@@ -4294,7 +4580,7 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              preview,
+                              ClipRect(child: preview),
                               ..._textOverlays.asMap().entries.map((entry) {
                                 final i = entry.key;
                                 final overlay = entry.value;

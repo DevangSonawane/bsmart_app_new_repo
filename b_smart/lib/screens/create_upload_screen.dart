@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import 'dart:ui';
 import 'dart:typed_data';
 import 'package:photo_manager/photo_manager.dart';
@@ -41,6 +42,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   AssetEntity? _currentAsset;
   bool _multiSelect = false;
   bool _galleryPermissionDenied = false;
+  bool _galleryPermissionLimited = false;
   late UploadMode _mode;
   _GallerySource _source = _GallerySource.recents;
   bool _showSourceMenu = false;
@@ -71,11 +73,20 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
 
   Future<void> _loadGalleryMedia() async {
     // Let photo_manager handle permission requests on both iOS and Android
-    final PermissionState ps = await PhotoManager.requestPermissionExtend();
-    if (!ps.isAuth) {
+    final PermissionState ps = await PhotoManager.requestPermissionExtend(
+      requestOption: const PermissionRequestOption(
+        iosAccessLevel: IosAccessLevel.readWrite,
+        androidPermission: AndroidPermission(
+          type: RequestType.all,
+          mediaLocation: false,
+        ),
+      ),
+    );
+    if (!ps.hasAccess) {
       if (mounted) {
         setState(() {
           _galleryPermissionDenied = true;
+          _galleryPermissionLimited = false;
           _assets.clear();
           _selectedIds.clear();
           _selectedOrder.clear();
@@ -85,13 +96,14 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       return;
     }
  
-    if (mounted && _galleryPermissionDenied) {
+    if (mounted) {
       setState(() {
         _galleryPermissionDenied = false;
+        _galleryPermissionLimited = ps.isLimited;
       });
     }
     final RequestType requestType =
-        _mode == UploadMode.reel ? RequestType.video : RequestType.common;
+        _mode == UploadMode.reel ? RequestType.video : RequestType.all;
     final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
       type: requestType,
       filterOption: FilterOptionGroup(
@@ -111,11 +123,14 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       }
       return;
     }
-    final AssetPathEntity recent = paths.first;
+    final AssetPathEntity recent = paths.firstWhere(
+      (p) => p.isAll,
+      orElse: () => paths.first,
+    );
     final int recentSize = _mode == UploadMode.reel ? 1000 : 120;
     final int albumSize = _mode == UploadMode.reel ? 300 : 60;
     final int albumCap = _mode == UploadMode.reel ? 1000 : 120;
-    final List<AssetEntity> recentAssets =
+    List<AssetEntity> recentAssets =
         await recent.getAssetListPaged(page: 0, size: recentSize);
     final List<AssetEntity> allAlbumAssets = [];
     for (final path in paths) {
@@ -126,11 +141,70 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         break;
       }
     }
+    List<AssetEntity> normalizedRecent = List<AssetEntity>.from(recentAssets);
+    if (_mode != UploadMode.reel) {
+      // Always merge image+video recents to ensure videos appear in post flow.
+      final imagePaths = await PhotoManager.getAssetPathList(
+        type: RequestType.image,
+        filterOption: FilterOptionGroup(
+          orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+        ),
+      );
+      final videoPaths = await PhotoManager.getAssetPathList(
+        type: RequestType.video,
+        filterOption: FilterOptionGroup(
+          orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+        ),
+      );
+      final AssetPathEntity imageRecent = imagePaths.firstWhere(
+        (p) => p.isAll,
+        orElse: () => imagePaths.isNotEmpty ? imagePaths.first : recent,
+      );
+      final AssetPathEntity videoRecent = videoPaths.firstWhere(
+        (p) => p.isAll,
+        orElse: () => videoPaths.isNotEmpty ? videoPaths.first : recent,
+      );
+      final images = await imageRecent.getAssetListPaged(page: 0, size: recentSize);
+      final videos = await videoRecent.getAssetListPaged(page: 0, size: recentSize);
+      final byId = <String, AssetEntity>{};
+      for (final a in images) {
+        byId[a.id] = a;
+      }
+      for (final v in videos) {
+        byId[v.id] = v;
+      }
+      final merged = byId.values.toList();
+      merged.sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
+      normalizedRecent = List<AssetEntity>.from(merged);
+
+      // Ensure a minimum number of videos are visible in the grid.
+      const minVideoCount = 6;
+      int videoCount = normalizedRecent.where((a) => a.type == AssetType.video).length;
+      if (videoCount < minVideoCount) {
+        for (final v in videos) {
+          if (byId.containsKey(v.id)) continue;
+          normalizedRecent.add(v);
+          videoCount++;
+          if (videoCount >= minVideoCount) break;
+        }
+      }
+
+      // Trim to recentSize but preserve videos when possible.
+      while (normalizedRecent.length > recentSize) {
+        final idx = normalizedRecent.lastIndexWhere((a) => a.type != AssetType.video);
+        if (idx == -1) {
+          normalizedRecent.removeLast();
+        } else {
+          normalizedRecent.removeAt(idx);
+        }
+      }
+      recentAssets = normalizedRecent;
+    }
     if (mounted) {
       setState(() {
         _recentAssets
           ..clear()
-          ..addAll(recentAssets);
+          ..addAll(normalizedRecent);
         _allAlbumAssets
           ..clear()
           ..addAll(allAlbumAssets.isEmpty ? recentAssets : allAlbumAssets);
@@ -208,25 +282,15 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       return;
     }
 
-    if (mode == UploadMode.story || mode == UploadMode.live) {
-      setState(() {
-        _mode = mode;
-      });
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => StoryCameraScreen(initialMode: mode),
-        ),
-      );
-      return;
-    }
-
     setState(() {
       _mode = mode;
+    });
+    if (mode == UploadMode.post || mode == UploadMode.reel) {
       _selectedIds.clear();
       _selectedOrder.clear();
       _currentAsset = null;
-    });
-    _loadGalleryMedia();
+      _loadGalleryMedia();
+    }
   }
 
   void _onAssetTap(AssetEntity asset) {
@@ -293,12 +357,21 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     for (final asset in selectedAssets) {
       final file = await asset.originFile;
       if (file == null) continue;
+      final pathLower = file.path.toLowerCase();
+      final isVideo = asset.type == AssetType.video ||
+          (asset.mimeType?.toLowerCase().startsWith('video/') ?? false) ||
+          pathLower.endsWith('.mp4') ||
+          pathLower.endsWith('.mov') ||
+          pathLower.endsWith('.m4v') ||
+          pathLower.endsWith('.3gp') ||
+          pathLower.endsWith('.webm') ||
+          pathLower.endsWith('.mkv');
       final media = MediaItem(
         id: asset.id,
-        type: asset.type == AssetType.video ? MediaType.video : MediaType.image,
+        type: isVideo ? MediaType.video : MediaType.image,
         filePath: file.path,
         createdAt: asset.createDateTime,
-        duration: asset.type == AssetType.video ? Duration(seconds: asset.duration) : null,
+        duration: isVideo ? Duration(seconds: asset.duration) : null,
       );
       if (!_createService.validateMedia(media)) {
         if (mounted) {
@@ -326,7 +399,12 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       );
       return;
     }
-    if (_mode == UploadMode.reel) {
+    final shouldGoReelFlow = _mode == UploadMode.reel ||
+        (!widget.isAdFlow &&
+            _mode == UploadMode.post &&
+            mediaList.length == 1 &&
+            media.type == MediaType.video);
+    if (shouldGoReelFlow) {
       final created = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (context) => CreateEditPreviewScreen(
@@ -411,88 +489,112 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isStoryOrLive = _mode == UploadMode.story || _mode == UploadMode.live;
+    final modeIndex = _indexForMode(_mode);
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-        ),
-        centerTitle: true,
-        title: Text(
-          _titleForMode(),
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-        actions: [
-          TextButton(
-            onPressed: _hasSelection ? _handleNext : null,
-            child: Text(
-              'Next',
-              style: TextStyle(
-                color: _hasSelection ? const Color(0xFF0095F6) : Colors.white30,
-                fontWeight: FontWeight.w600,
+      appBar: isStoryOrLive
+          ? null
+          : AppBar(
+              backgroundColor: Colors.black,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
               ),
+              centerTitle: true,
+              title: Text(
+                _titleForMode(),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _hasSelection ? _handleNext : null,
+                  child: Text(
+                    'Next',
+                    style: TextStyle(
+                      color: _hasSelection ? const Color(0xFF0095F6) : Colors.white30,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
       body: Stack(
         children: [
           Positioned.fill(
             child: InstagramTabScaffold(
               initialIndex: _indexForMode(_mode),
               onTabChanged: (index) => _onModeTap(_modeForIndex(index)),
+              bottomPaddingForIndex: (index) => 20,
+              pillBackgroundColorForIndex: (index) =>
+                  (index == 1 || index == 3) ? Colors.transparent : Colors.black.withValues(alpha: 0.6),
               pages: List.generate(
                 4,
-                (index) => _UploadPage(
-                  isReelMode: _mode == UploadMode.reel,
-                  galleryPermissionDenied: _galleryPermissionDenied,
-                  assets: _assets,
-                  currentAsset: _currentAsset,
-                  selectedIds: _selectedIds,
-                  selectedOrder: _selectedOrder,
-                  multiSelect: _multiSelect,
-                  hasSelection: _hasSelection,
-                  sourceLabel: _sourceLabel,
-                  sourceBarKey: index == _indexForMode(_mode) ? _sourceBarKey : GlobalKey(),
-                  onSourceBarTap: () {
-                    final box = _sourceBarKey.currentContext?.findRenderObject();
-                    if (box is RenderBox) {
-                      final pos = box.localToGlobal(Offset.zero);
-                      _sourceMenuPosition = Offset(pos.dx, pos.dy + box.size.height + 6);
-                    }
-                    setState(() {
-                      _showSourceMenu = !_showSourceMenu;
-                    });
-                  },
-                  onMultiSelectToggle: () => setState(() {
-                    _multiSelect = !_multiSelect;
-                    if (!_multiSelect) {
-                      _selectedIds
-                        ..clear();
-                      _selectedOrder.clear();
-                      if (_currentAsset != null) {
-                        _selectedIds.add(_currentAsset!.id);
-                        _selectedOrder.add(_currentAsset!.id);
+                (index) {
+                  if (index == 1) {
+                    return const StoryCameraScreen(
+                      initialMode: UploadMode.story,
+                      lockMode: true,
+                      showModeTabs: false,
+                    );
+                  }
+                  if (index == 3) {
+                    return const StoryCameraScreen(
+                      initialMode: UploadMode.live,
+                      lockMode: true,
+                      showModeTabs: false,
+                    );
+                  }
+                  return _UploadPage(
+                    isReelMode: _mode == UploadMode.reel,
+                    galleryPermissionDenied: _galleryPermissionDenied,
+                    assets: _assets,
+                    currentAsset: _currentAsset,
+                    selectedIds: _selectedIds,
+                    selectedOrder: _selectedOrder,
+                    multiSelect: _multiSelect,
+                    hasSelection: _hasSelection,
+                    galleryPermissionLimited: _galleryPermissionLimited,
+                    sourceLabel: _sourceLabel,
+                    sourceBarKey: index == modeIndex ? _sourceBarKey : GlobalKey(),
+                    onSourceBarTap: () {
+                      final box = _sourceBarKey.currentContext?.findRenderObject();
+                      if (box is RenderBox) {
+                        final pos = box.localToGlobal(Offset.zero);
+                        _sourceMenuPosition = Offset(pos.dx, pos.dy + box.size.height + 6);
                       }
-                    }
-                  }),
-                  onLoadGalleryMedia: _loadGalleryMedia,
-                  onAssetTap: _onAssetTap,
-                  onCameraTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const StoryCameraScreen(
-                        initialMode: UploadMode.post,
-                        lockMode: true,
+                      setState(() {
+                        _showSourceMenu = !_showSourceMenu;
+                      });
+                    },
+                    onMultiSelectToggle: () => setState(() {
+                      _multiSelect = !_multiSelect;
+                      if (!_multiSelect) {
+                        _selectedIds
+                          ..clear();
+                        _selectedOrder.clear();
+                        if (_currentAsset != null) {
+                          _selectedIds.add(_currentAsset!.id);
+                          _selectedOrder.add(_currentAsset!.id);
+                        }
+                      }
+                    }),
+                    onLoadGalleryMedia: _loadGalleryMedia,
+                    onAssetTap: _onAssetTap,
+                    onCameraTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const StoryCameraScreen(
+                          initialMode: UploadMode.post,
+                          lockMode: true,
+                        ),
                       ),
                     ),
-                  ),
-                  onNext: _hasSelection ? _handleNext : null,
-                  firstSelectedAsset: _firstSelectedAsset(),
-                ),
+                    onNext: _hasSelection ? _handleNext : null,
+                    firstSelectedAsset: _firstSelectedAsset(),
+                  );
+                },
               ),
             ),
           ),
@@ -614,6 +716,7 @@ class _UploadPage extends StatelessWidget {
   final List<String> selectedOrder;
   final bool multiSelect;
   final bool hasSelection;
+  final bool galleryPermissionLimited;
   final String sourceLabel;
   final GlobalKey sourceBarKey;
   final VoidCallback onSourceBarTap;
@@ -633,6 +736,7 @@ class _UploadPage extends StatelessWidget {
     required this.selectedOrder,
     required this.multiSelect,
     required this.hasSelection,
+    required this.galleryPermissionLimited,
     required this.sourceLabel,
     required this.sourceBarKey,
     required this.onSourceBarTap,
@@ -789,6 +893,38 @@ class _UploadPage extends StatelessWidget {
                               child: Text(
                                 'Open Settings',
                                 style: TextStyle(color: Colors.white70),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else if (galleryPermissionLimited)
+                    SliverToBoxAdapter(
+                      child: Container(
+                        color: Colors.black,
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: Colors.white70, size: 18),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Limited photo access. Videos may be hidden.',
+                                style: TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                if (Platform.isIOS) {
+                                  PhotoManager.presentLimited(type: RequestType.all);
+                                } else {
+                                  PhotoManager.openSetting();
+                                }
+                              },
+                              child: Text(
+                                Platform.isIOS ? 'Manage' : 'Settings',
+                                style: const TextStyle(color: Color(0xFF0095F6)),
                               ),
                             ),
                           ],

@@ -7,6 +7,8 @@ class InstagramTabScaffold extends StatefulWidget {
   final List<String> labels;
   final ValueChanged<int>? onTabChanged;
   final int initialIndex;
+  final double Function(int index)? bottomPaddingForIndex;
+  final Color Function(int index)? pillBackgroundColorForIndex;
 
   const InstagramTabScaffold({
     super.key,
@@ -14,6 +16,8 @@ class InstagramTabScaffold extends StatefulWidget {
     this.labels = const ['POST', 'STORY', 'REEL', 'LIVE'],
     this.onTabChanged,
     this.initialIndex = 0,
+    this.bottomPaddingForIndex,
+    this.pillBackgroundColorForIndex,
   }) : assert(pages.length == 4, 'InstagramTabScaffold requires exactly 4 pages.'),
        assert(labels.length == 4, 'InstagramTabScaffold requires exactly 4 labels.'),
        assert(initialIndex >= 0 && initialIndex < 4, 'initialIndex must be between 0 and 3.');
@@ -26,6 +30,16 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
   static const double _minOpacity = 0.5;
   static const double _maxOpacity = 1.0;
   static const Duration _tapDuration = Duration(milliseconds: 200);
+  static const Duration _pillAnimDuration = Duration(milliseconds: 420);
+  static const double _pillOuterPadH = 8;
+  static const double _pillOuterPadV = 6;
+  static const double _pillItemPadH = 4;
+  static const double _pillItemPadV = 2;
+  static const double _pillItemMarginH = 1;
+  static const double _pillBorderWidth = 1;
+  static const double _pillFontSize = 14;
+  static const double _pillLetterSpacing = 1.2;
+  static const double _pillHeight = 36;
 
   late final PageController _controller;
   double _pageValue = 0.0;
@@ -38,24 +52,12 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
     _controller = PageController(initialPage: widget.initialIndex);
     _pageValue = widget.initialIndex.toDouble();
     _currentIndex = widget.initialIndex;
-    _controller.addListener(_handlePageScroll);
   }
 
   @override
   void dispose() {
-    _controller.removeListener(_handlePageScroll);
     _controller.dispose();
     super.dispose();
-  }
-
-  void _handlePageScroll() {
-    if (_isDragging) return;
-    final page = _controller.page;
-    if (page == null) return;
-    setState(() {
-      _pageValue = page;
-      _currentIndex = page.round().clamp(0, widget.labels.length - 1);
-    });
   }
 
   void _onTap(int index) {
@@ -67,10 +69,19 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
     );
   }
 
-  double _opacityForIndex(int index) {
-    final distance = (_pageValue - index).abs().clamp(0.0, 1.0);
+  double _opacityForIndex(double pagePos, int index) {
+    final distance = (pagePos - index).abs().clamp(0.0, 1.0);
     final t = 1.0 - distance;
     return _minOpacity + (_maxOpacity - _minOpacity) * t;
+  }
+
+  double _measureTextWidth(String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return painter.width;
   }
 
   @override
@@ -86,9 +97,7 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
           (_controller.offset - details.delta.dx)
               .clamp(0.0, _controller.position.maxScrollExtent),
         );
-        setState(() {
-          _pageValue = _controller.page ?? _currentIndex.toDouble();
-        });
+        _pageValue = _controller.page ?? _currentIndex.toDouble();
       },
       onHorizontalDragEnd: (details) {
         if (!_controller.hasClients) return;
@@ -117,6 +126,10 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
             physics: const NeverScrollableScrollPhysics(),
             scrollDirection: Axis.horizontal,
             onPageChanged: (index) {
+              setState(() {
+                _currentIndex = index;
+                _pageValue = index.toDouble();
+              });
               widget.onTabChanged?.call(index);
             },
             itemBuilder: (context, index) => widget.pages[index],
@@ -128,43 +141,131 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(30),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                      child: Container(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: List.generate(widget.labels.length, (index) {
-                            final isSelected = index == _currentIndex;
-                            return GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onTap: () => _onTap(index),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                child: Opacity(
-                                  opacity: _opacityForIndex(index),
-                                  child: Text(
-                                    widget.labels[index],
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                      letterSpacing: 1.2,
-                                    ),
-                                  ),
+                padding: EdgeInsets.only(
+                  bottom: widget.bottomPaddingForIndex?.call(_currentIndex) ?? 8,
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final labels = widget.labels;
+                    final centers = <double>[];
+                    final textWidths = <double>[];
+                    double totalWidth = 0;
+                    for (var i = 0; i < labels.length; i++) {
+                      final textStyle = TextStyle(
+                        fontSize: _pillFontSize,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: _pillLetterSpacing,
+                      );
+                      final textWidth = _measureTextWidth(labels[i], textStyle);
+                      textWidths.add(textWidth);
+                      final itemWidth = textWidth +
+                          (_pillItemPadH * 2) +
+                          (_pillItemMarginH * 2) +
+                          (_pillBorderWidth * 2);
+                      centers.add(totalWidth + (itemWidth / 2));
+                      totalWidth += itemWidth;
+                    }
+                    totalWidth += _pillOuterPadH * 2;
+                    for (var i = 0; i < centers.length; i++) {
+                      centers[i] += _pillOuterPadH;
+                    }
+
+                    return SizedBox(
+                      height: _pillHeight,
+                      child: Stack(
+                        children: [
+                          AnimatedBuilder(
+                            animation: _controller,
+                            builder: (context, _) {
+                              final pagePos = (_controller.hasClients
+                                      ? (_controller.page ?? _currentIndex.toDouble())
+                                      : _pageValue)
+                                  .clamp(0.0, (labels.length - 1).toDouble());
+                              final lower = pagePos.floor().clamp(0, labels.length - 1);
+                              final upper = pagePos.ceil().clamp(0, labels.length - 1);
+                              final t = pagePos - lower;
+                              final activeCenter =
+                                  lerpDouble(centers[lower], centers[upper], t) ?? centers[lower];
+                              final selectedIndex = pagePos.round().clamp(0, labels.length - 1);
+
+                              final maxWidth = constraints.maxWidth;
+                              double left = (maxWidth / 2) - activeCenter;
+                              final minLeft = 0.0;
+                              final maxLeft = (maxWidth - totalWidth).clamp(0.0, double.infinity);
+                              left = left.clamp(minLeft, maxLeft);
+
+                              final bgColor = widget.pillBackgroundColorForIndex?.call(_currentIndex) ??
+                                  Colors.black.withValues(alpha: 0.6);
+                              final hasBackground = bgColor.alpha > 0;
+
+                              final pill = Container(
+                                color: bgColor,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: _pillOuterPadH,
+                                  vertical: _pillOuterPadV,
                                 ),
-                              ),
-                            );
-                          }),
-                        ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: List.generate(labels.length, (index) {
+                                    final isSelected = index == selectedIndex;
+                                    return GestureDetector(
+                                      behavior: HitTestBehavior.translucent,
+                                      onTap: () => _onTap(index),
+                                      child: AnimatedContainer(
+                                        duration: _pillAnimDuration,
+                                        curve: Curves.easeInOutCubic,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: _pillItemPadH,
+                                          vertical: _pillItemPadV,
+                                        ),
+                                        margin: const EdgeInsets.symmetric(horizontal: _pillItemMarginH),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: Opacity(
+                                          opacity: _opacityForIndex(pagePos, index),
+                                          child: SizedBox(
+                                            width: textWidths[index],
+                                            child: Center(
+                                              child: Text(
+                                                labels[index],
+                                                style: TextStyle(
+                                                  color: isSelected ? Colors.white : Colors.white70,
+                                                  fontSize: _pillFontSize,
+                                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                                  letterSpacing: _pillLetterSpacing,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                ),
+                              );
+
+                              final pillChild = ClipRRect(
+                                borderRadius: BorderRadius.circular(30),
+                                child: hasBackground
+                                    ? BackdropFilter(
+                                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                                        child: pill,
+                                      )
+                                    : pill,
+                              );
+
+                              return Positioned(
+                                left: left,
+                                bottom: 0,
+                                child: pillChild,
+                              );
+                            },
+                          ),
+                        ],
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ),
             ),

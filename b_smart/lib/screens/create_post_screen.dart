@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import '../utils/current_user.dart';
 import '../config/api_config.dart';
 import '../api/upload_api.dart';
@@ -333,6 +334,32 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _hideShares = false;
   final Map<int, List<_PostTag>> _tagsByIndex = {};
   bool _isSubmitting = false;
+
+  Widget _buildVideoThumbnail(String path, {BoxFit fit = BoxFit.cover}) {
+    return FutureBuilder<Uint8List?>(
+      future: VideoThumbnail.thumbnailData(
+        video: path,
+        imageFormat: ImageFormat.JPEG,
+        quality: 70,
+      ),
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done || snap.data == null) {
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(snap.data!, fit: fit),
+            const Center(
+              child: Icon(LucideIcons.play, size: 36, color: Colors.white),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -1096,7 +1123,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     Center(
                       child: GestureDetector(
                         onTap: () {
-                          _overlayPageController?.jumpToPage(_currentIndex);
+                          final ctrl = _overlayPageController;
+                          if (ctrl != null) {
+                            if (ctrl.hasClients) {
+                              ctrl.jumpToPage(_currentIndex);
+                            } else {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (ctrl.hasClients) {
+                                  ctrl.jumpToPage(_currentIndex);
+                                }
+                              });
+                            }
+                          }
                           setState(() => _showPreviewOverlay = true);
                         },
                         child: ClipRRect(
@@ -1109,8 +1147,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                   ? AspectRatio(
                                       aspectRatio: aspect,
                                       child: item.isVideo
-                                          ? Icon(LucideIcons.video,
-                                              size: 64, color: muted)
+                                          ? _buildVideoThumbnail(item.sourcePath)
                                           : _applyFilterToImage(
                                               File(item.displayPath), item),
                                     )
@@ -1125,7 +1162,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                           setState(() {
                                             _currentIndex = i;
                                           });
-                                          _overlayPageController?.jumpToPage(i);
+                                          final ctrl = _overlayPageController;
+                                          if (ctrl != null) {
+                                            if (ctrl.hasClients) {
+                                              ctrl.jumpToPage(i);
+                                            } else {
+                                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                if (ctrl.hasClients) {
+                                                  ctrl.jumpToPage(i);
+                                                }
+                                              });
+                                            }
+                                          }
                                         },
                                         itemBuilder: (context, i) {
                                           final m = _media[i];
@@ -1133,8 +1181,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                           return AspectRatio(
                                             aspectRatio: a,
                                             child: m.isVideo
-                                                ? Icon(LucideIcons.video,
-                                                    size: 64, color: muted)
+                                                ? _buildVideoThumbnail(m.sourcePath)
                                                 : _applyFilterToImage(
                                                     File(m.displayPath), m),
                                           );
@@ -1269,8 +1316,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ? AspectRatio(
                             aspectRatio: aspect,
                             child: item.isVideo
-                                ? Icon(LucideIcons.video,
-                                    size: 100, color: Colors.grey[600])
+                                ? _buildVideoThumbnail(item.sourcePath)
                                 : _applyFilterToImage(
                                     File(item.displayPath), item),
                           )
@@ -1285,7 +1331,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 setState(() {
                                   _currentIndex = i;
                                 });
-                                _previewPageController?.jumpToPage(i);
+                                final ctrl = _previewPageController;
+                                if (ctrl != null) {
+                                  if (ctrl.hasClients) {
+                                    ctrl.jumpToPage(i);
+                                  } else {
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      if (ctrl.hasClients) {
+                                        ctrl.jumpToPage(i);
+                                      }
+                                    });
+                                  }
+                                }
                               },
                               itemBuilder: (context, i) {
                                 final m = _media[i];
@@ -1293,9 +1350,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 return AspectRatio(
                                   aspectRatio: a,
                                   child: m.isVideo
-                                      ? Icon(LucideIcons.video,
-                                          size: 100,
-                                          color: Colors.grey[600])
+                                      ? _buildVideoThumbnail(m.sourcePath)
                                       : _applyFilterToImage(
                                           File(m.displayPath), m),
                                 );
