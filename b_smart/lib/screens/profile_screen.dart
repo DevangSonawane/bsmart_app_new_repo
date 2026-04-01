@@ -32,10 +32,8 @@ import 'story_viewer_screen.dart';
 import '../models/media_model.dart';
 import 'create_upload_screen.dart';
 import 'messaging_screen.dart';
-import '../api/highlights_api.dart';
-import '../services/highlight_service.dart';
 import '../utils/url_helper.dart';
-import 'highlight_story_picker_screen.dart';
+import '../widgets/profile_highlights_row.dart';
 import '../services/ads_service.dart';
 
 /// Heroicons badge-check (same as React web app verified badge)
@@ -71,11 +69,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final FeedService _feedService = FeedService();
   List<StoryGroup> _storyGroups = const [];
   bool _hasStory = false;
-  final HighlightService _highlightService = HighlightService();
-  List<Map<String, dynamic>> _highlights = const [];
-  final Map<String, List<Map<String, dynamic>>> _highlightItemsById = {};
-  bool _highlightsLoading = false;
-  bool _highlightsError = false;
   Map<String, String>? _reelImageHeaders;
   Map<String, String>? _adsMediaHeaders;
   bool _isOwnProfile = false;
@@ -810,129 +803,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _loadHighlightsForUser(String userId) async {
-    if (userId.isEmpty) return;
-    if (mounted) {
-      setState(() {
-        _highlightsLoading = true;
-        _highlightsError = false;
-      });
-    }
-    try {
-      final res = await HighlightsApi().userHighlightsWithStories(userId);
-      final highlights =
-          List<Map<String, dynamic>>.from((res['highlights'] as List?) ?? const []);
-      highlights.sort((a, b) {
-        final ao = (a['order'] as num?)?.toInt() ?? 0;
-        final bo = (b['order'] as num?)?.toInt() ?? 0;
-        return ao.compareTo(bo);
-      });
-      _highlightItemsById.clear();
-      for (final h in highlights) {
-        final id = (h['_id'] as String?) ?? (h['id'] as String?) ?? '';
-        if (id.isEmpty) continue;
-        final rawItems = h['items'];
-        if (rawItems is List && rawItems.isNotEmpty) {
-          _highlightItemsById[id] = rawItems
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
-        } else {
-          _highlightItemsById[id] = const [];
-        }
-      }
-      if (!mounted) return;
-      setState(() {
-        _highlights = highlights;
-        _highlightsLoading = false;
-        _highlightsError = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _highlightsLoading = false;
-        _highlightsError = true;
-      });
-    }
-  }
-
-  Future<void> _createHighlight() async {
-    final profile = _profile;
-    if (profile == null) return;
-    final userId = (profile['id'] as String?) ?? (profile['_id'] as String?) ?? '';
-    if (userId.isEmpty) return;
-    final userName =
-        (profile['username'] as String?) ?? (profile['full_name'] as String?) ?? 'You';
-    final userAvatar = (profile['avatar_url'] as String?) ?? (profile['avatar'] as String?);
-    final updated = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => HighlightStoryPickerScreen(
-          userId: userId,
-          userName: userName,
-          userAvatar: userAvatar,
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (updated == true) {
-      await _loadHighlightsForUser(userId);
-    }
-  }
-
-  Future<void> _openHighlight(Map<String, dynamic> highlight) async {
-    final id = (highlight['_id'] as String?) ?? (highlight['id'] as String?) ?? '';
-    if (id.isEmpty) return;
-    final profile = _profile;
-    final ownerName =
-        (profile?['username'] as String?) ?? (profile?['full_name'] as String?) ?? '';
-    final ownerAvatar =
-        (profile?['avatar_url'] as String?) ?? (profile?['avatar'] as String?);
-    try {
-      final cachedItems = _highlightItemsById[id];
-      final itemsCount = (highlight['items_count'] as num?)?.toInt() ?? 0;
-      final items = (cachedItems != null && cachedItems.isNotEmpty)
-          ? _highlightService.mapHighlightItems(
-              cachedItems,
-              ownerUserName: ownerName,
-              ownerAvatar: ownerAvatar,
-            )
-          : (itemsCount == 0)
-              ? const <Story>[]
-              : await _highlightService.fetchHighlightItems(
-                  id,
-                  ownerUserName: ownerName,
-                  ownerAvatar: ownerAvatar,
-                );
-      if (!mounted) return;
-      if (items.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No items in this highlight')),
-        );
-        return;
-      }
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => StoryViewerScreen(
-            storyGroups: [
-              StoryGroup(
-                userId: (profile?['id'] as String?) ?? (profile?['_id'] as String?) ?? '',
-                userName: ownerName,
-                userAvatar: ownerAvatar,
-                storyId: null,
-                stories: items,
-              ),
-            ],
-            initialIndex: 0,
-          ),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to open highlight')),
-      );
-    }
-  }
 
   void _onEdit() async {
     final targetId = widget.userId ?? await CurrentUser.id;
@@ -1165,111 +1035,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildHighlights() {
-    final showNew = _isOwnProfile || widget.userId == null;
-    if (_highlightsLoading && _highlights.isEmpty) {
-      return const SizedBox(
-        height: 110,
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (_highlights.isEmpty && !showNew) {
-      return const SizedBox(
-        height: 110,
-        child: Center(child: Text('No highlights yet')),
-      );
-    }
-    final items = List<Map<String, dynamic>>.from(_highlights);
-    final itemCount = items.length + (showNew ? 1 : 0);
-    bool isImageUrl(String url) {
-      final u = url.toLowerCase();
-      return u.endsWith('.jpg') ||
-          u.endsWith('.jpeg') ||
-          u.endsWith('.png') ||
-          u.endsWith('.webp') ||
-          u.endsWith('.gif');
-    }
-    return SizedBox(
-      height: 110,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        scrollDirection: Axis.horizontal,
-        itemCount: itemCount,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (ctx, i) {
-          if (showNew && i == items.length) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GestureDetector(
-                  onTap: _createHighlight,
-                  child: Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.grey.shade300),
-                      color: Colors.white,
-                    ),
-                    child: Icon(LucideIcons.plus, color: Colors.grey.shade800),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text('New', style: TextStyle(fontSize: 12)),
-              ],
-            );
-          }
-          final h = items[i];
-          final title = (h['title'] as String?) ?? '';
-          final cover =
-              UrlHelper.absoluteUrl((h['cover_url'] as String?) ?? '');
-          final fallbackAvatar = UrlHelper.absoluteUrl(
-              (_profile?['avatar_url'] as String?) ?? '');
-          final showImage = (cover.isNotEmpty && isImageUrl(cover)) ||
-              (fallbackAvatar.isNotEmpty && isImageUrl(fallbackAvatar));
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              GestureDetector(
-                onTap: () => _openHighlight(h),
-                child: Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                    color: Theme.of(context).cardColor,
-                  ),
-                  padding: const EdgeInsets.all(2),
-                  child: ClipOval(
-                    child: showImage
-                        ? Image.network(
-                            cover.isNotEmpty ? cover : fallbackAvatar,
-                            width: 60,
-                            height: 60,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                Container(color: Colors.black12),
-                          )
-                        : Container(color: Colors.black12),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              SizedBox(
-                  width: 72,
-                  child: Text(title,
-                      textAlign: TextAlign.center,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurface))),
-            ],
-          );
-        },
-      ),
-    );
-  }
 
   Widget _buildAdsGrid() {
     if (_vendorAds.isEmpty) return const SizedBox.shrink();
@@ -1367,6 +1132,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final fullName = displayProfile?['full_name'] as String?;
         final bio = displayProfile?['bio'] as String?;
         final avatar = displayProfile?['avatar_url'] as String?;
+        final profileUserId =
+            (displayProfile?['id'] as String?) ??
+            (displayProfile?['_id'] as String?) ??
+            '';
         final postsCount =
             (displayProfile?['posts_count'] as int?) ?? _posts.length;
         final followers = (displayProfile?['followers_count'] as int?) ?? 0;
@@ -1547,6 +1316,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onMessage: _openMessaging,
                       onAvatarTap: _openStoriesFromProfile,
                     ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: profileUserId.isEmpty || isVendor
+                        ? const SizedBox.shrink()
+                        : ProfileHighlightsRow(
+                            userId: profileUserId,
+                            userName: username,
+                            userAvatar: avatar,
+                          ),
                   ),
                   SliverPersistentHeader(
                     pinned: true,

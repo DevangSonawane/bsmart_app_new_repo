@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../api/highlights_api.dart';
 import '../api/stories_api.dart';
 import '../models/story_model.dart';
 import '../services/feed_service.dart';
 import '../services/highlight_service.dart';
 import '../utils/current_user.dart';
+import 'highlight_name_screen.dart';
 
+const _kBlue = Color(0xFF3897F0);
+const _kBg = Color(0xFF000000);
+const _kField = Color(0xFF1C1C1E);
+
+/// Instagram-style story picker: select stories → create new highlight or add
+/// to an existing one. Loads both active and archived stories.
 class HighlightStoryPickerScreen extends StatefulWidget {
   final String userId;
   final String userName;
@@ -20,10 +26,12 @@ class HighlightStoryPickerScreen extends StatefulWidget {
   });
 
   @override
-  State<HighlightStoryPickerScreen> createState() => _HighlightStoryPickerScreenState();
+  State<HighlightStoryPickerScreen> createState() =>
+      _HighlightStoryPickerScreenState();
 }
 
-class _HighlightStoryPickerScreenState extends State<HighlightStoryPickerScreen> {
+class _HighlightStoryPickerScreenState
+    extends State<HighlightStoryPickerScreen> {
   final FeedService _feedService = FeedService();
   final StoriesApi _storiesApi = StoriesApi();
   final HighlightService _highlightService = HighlightService();
@@ -32,13 +40,14 @@ class _HighlightStoryPickerScreenState extends State<HighlightStoryPickerScreen>
   List<Story> _stories = const [];
   bool _loading = true;
   bool _error = false;
-  bool _actionLoading = false;
 
   @override
   void initState() {
     super.initState();
     _loadStories();
   }
+
+  // ── Data loading ────────────────────────────────────────────────────────
 
   Future<void> _loadStories() async {
     setState(() {
@@ -52,18 +61,19 @@ class _HighlightStoryPickerScreenState extends State<HighlightStoryPickerScreen>
       }
       final activeItems = await _loadActiveStoryItems(meId);
       final archivedItems = await _loadArchivedStoryItems();
+
+      // Merge, deduplicate by id, sort newest first
       final byId = <String, Story>{};
       for (final s in [...activeItems, ...archivedItems]) {
-        if (s.id.isEmpty) continue;
-        byId[s.id] = s;
+        if (s.id.isNotEmpty) byId[s.id] = s;
       }
-      final merged = byId.values.toList();
-      merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final merged = byId.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
       if (!mounted) return;
       setState(() {
         _stories = merged;
         _loading = false;
-        _error = false;
       });
     } catch (_) {
       if (!mounted) return;
@@ -108,7 +118,7 @@ class _HighlightStoryPickerScreenState extends State<HighlightStoryPickerScreen>
         items.add(Map<String, dynamic>.from(raw));
       }
     }
-    if (items.isEmpty) return const <Story>[];
+    if (items.isEmpty) return const [];
     return _highlightService.mapHighlightItems(
       items,
       ownerUserName: widget.userName,
@@ -116,256 +126,200 @@ class _HighlightStoryPickerScreenState extends State<HighlightStoryPickerScreen>
     );
   }
 
-  Future<void> _createNewHighlight() async {
-    if (_selectedIds.isEmpty || _actionLoading) return;
-    final controller = TextEditingController();
-    final title = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Highlight'),
-        content: TextField(
-          controller: controller,
-          maxLength: 30,
-          decoration: const InputDecoration(
-            labelText: 'Title',
-            hintText: 'e.g. Travel',
-          ),
+  Future<void> _goNext() async {
+    if (_selectedIds.isEmpty) return;
+    final selectedStories =
+        _stories.where((s) => _selectedIds.contains(s.id)).toList();
+    if (selectedStories.isEmpty) return;
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => HighlightNameScreen(
+          selectedStories: selectedStories,
+          userId: widget.userId,
+          userName: widget.userName,
+          userAvatar: widget.userAvatar,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Create'),
-          ),
-        ],
       ),
     );
-    if (title == null || title.isEmpty) return;
-
-    setState(() => _actionLoading = true);
-    try {
-      final coverUrl = _stories
-          .firstWhere((s) => _selectedIds.contains(s.id), orElse: () => _stories.first)
-          .mediaUrl;
-      final created = await HighlightsApi().create(title: title, coverUrl: coverUrl);
-      final highlightId = (created['_id'] as String?) ?? (created['id'] as String?) ?? '';
-      if (highlightId.isEmpty) {
-        throw Exception('Missing highlight id');
-      }
-      await HighlightsApi().addItems(highlightId, _selectedIds.toList());
-      if (!mounted) return;
+    if (updated == true && mounted) {
       Navigator.of(context).pop(true);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to create highlight')),
-      );
-    } finally {
-      if (mounted) setState(() => _actionLoading = false);
     }
   }
 
-  Future<void> _addToExistingHighlight() async {
-    if (_selectedIds.isEmpty || _actionLoading) return;
-    final highlights = await HighlightsApi().userHighlights(widget.userId);
-    highlights.sort((a, b) {
-      final ao = (a['order'] as num?)?.toInt() ?? 0;
-      final bo = (b['order'] as num?)?.toInt() ?? 0;
-      return ao.compareTo(bo);
-    });
-    if (!mounted) return;
-    if (highlights.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No highlights to add into')),
-      );
-      return;
-    }
-    final selectedHighlightId = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFF2A2D33),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              itemCount: highlights.length + 1,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white12),
-              itemBuilder: (ctx, i) {
-                if (i == 0) {
-                  return ListTile(
-                    title: const Text('Select a highlight',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                    trailing: IconButton(
-                      onPressed: () => Navigator.of(ctx).pop(),
-                      icon: const Icon(Icons.close, color: Colors.white70),
-                    ),
-                  );
-                }
-                final h = highlights[i - 1];
-                final title = (h['title'] ?? 'Highlight').toString();
-                final id = (h['_id'] as String?) ?? (h['id'] as String?) ?? '';
-                return ListTile(
-                  title: Text(title, style: const TextStyle(color: Colors.white)),
-                  onTap: id.isEmpty ? null : () => Navigator.of(ctx).pop(id),
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-    if (selectedHighlightId == null || selectedHighlightId.isEmpty) return;
-
-    setState(() => _actionLoading = true);
-    try {
-      await HighlightsApi().addItems(selectedHighlightId, _selectedIds.toList());
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to add to highlight')),
-      );
-    } finally {
-      if (mounted) setState(() => _actionLoading = false);
-    }
-  }
+  // ── UI ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _kBg,
       appBar: AppBar(
-        title: const Text('Select Stories'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          'Select',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _selectedIds.isEmpty ? null : _goNext,
+            child: const Text('Next',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error
-              ? const Center(child: Text('Failed to load stories'))
-              : _stories.isEmpty
-                  ? const Center(child: Text('No stories found'))
-                  : GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        childAspectRatio: 0.65,
-                      ),
-                      itemCount: _stories.length,
-                      itemBuilder: (ctx, i) {
-                        final story = _stories[i];
-                        final selected = _selectedIds.contains(story.id);
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              if (selected) {
-                                _selectedIds.remove(story.id);
-                              } else {
-                                _selectedIds.add(story.id);
-                              }
-                            });
-                          },
-                          child: Stack(
-                            children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: selected
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Colors.white24,
-                                    width: selected ? 2 : 1,
-                                  ),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: CachedNetworkImage(
-                                  imageUrl: story.mediaUrl,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => Container(color: Colors.black12),
-                                ),
-                              ),
-                              if (story.mediaType == StoryMediaType.video)
-                                const Positioned(
-                                  right: 6,
-                                  bottom: 6,
-                                  child: Icon(Icons.play_circle_fill, color: Colors.white70),
-                                ),
-                              if (selected)
-                                Positioned(
-                                  right: 6,
-                                  top: 6,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.primary,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.check, size: 14, color: Colors.white),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '${_selectedIds.length} selected',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: _selectedIds.isEmpty || _actionLoading
-                          ? null
-                          : _addToExistingHighlight,
-                      child: _actionLoading
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Add to Existing'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed:
-                          _selectedIds.isEmpty || _actionLoading ? null : _createNewHighlight,
-                      child: _actionLoading
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('New Highlight'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+      body: _buildBody(),
+      bottomNavigationBar: _buildBottomBar(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+    if (_error) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline,
+                color: Colors.white54, size: 48),
+            const SizedBox(height: 12),
+            const Text('Failed to load stories',
+                style: TextStyle(color: Colors.white54)),
+            const SizedBox(height: 16),
+            OutlinedButton(
+              onPressed: _loadStories,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_stories.isEmpty) {
+      return const Center(
+        child: Text('No stories found',
+            style: TextStyle(color: Colors.white54)),
+      );
+    }
+
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 2,
+        mainAxisSpacing: 2,
+        childAspectRatio: 9 / 16,
+      ),
+      itemCount: _stories.length,
+      itemBuilder: (_, i) {
+        final story = _stories[i];
+        final selected = _selectedIds.contains(story.id);
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              if (selected) {
+                _selectedIds.remove(story.id);
+              } else {
+                _selectedIds.add(story.id);
+              }
+            });
+          },
+          child: _StoryThumbnail(
+            story: story,
+            selected: selected,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return SafeArea(
+      child: Container(
+        color: _kBg,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+        child: SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: FilledButton(
+            onPressed: _selectedIds.isEmpty ? null : _goNext,
+            style: FilledButton.styleFrom(
+              backgroundColor: _kBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4)),
+            ),
+            child: const Text(
+              'Next',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Story thumbnail grid cell
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StoryThumbnail extends StatelessWidget {
+  final Story story;
+  final bool selected;
+
+  const _StoryThumbnail({required this.story, required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        CachedNetworkImage(
+          imageUrl: story.thumbnailUrl ?? story.mediaUrl,
+          fit: BoxFit.cover,
+          errorWidget: (_, __, ___) => Container(color: _kField),
+        ),
+        if (selected) Container(color: Colors.black.withValues(alpha: 0.6)),
+        if (selected)
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 3),
+              ),
+            ),
+          ),
+        if (story.mediaType == StoryMediaType.video)
+          const Positioned(
+            left: 6,
+            bottom: 6,
+            child: Icon(Icons.play_arrow, color: Colors.white, size: 16),
+          ),
+        if (selected)
+          Positioned(
+            top: 6,
+            right: 6,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: const BoxDecoration(
+                color: _kBlue,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check, size: 16, color: Colors.white),
+            ),
+          ),
+      ],
     );
   }
 }
