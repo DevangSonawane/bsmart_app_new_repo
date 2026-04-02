@@ -326,6 +326,20 @@ class AuthService {
     await _authApi.logout();
   }
 
+  /// Returns the current Google profile photo URL if the user is signed in
+  /// with Google. Attempts a silent sign-in if needed.
+  Future<String?> getGoogleProfilePhotoUrl({bool trySilent = true}) async {
+    try {
+      var user = _googleSignIn.currentUser;
+      if (user == null && trySilent) {
+        user = await _googleSignIn.signInSilently();
+      }
+      return user?.photoUrl;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Whether we currently have a stored token.
   Future<bool> get isAuthenticated => _apiClient.hasToken;
 

@@ -27,6 +27,13 @@ class UploadApi {
     return endsWithApi ? '/upload/thumbnail' : '/api/upload/thumbnail';
   }
 
+  String get _avatarPath {
+    final base =
+        ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
+    final endsWithApi = base.endsWith('/api');
+    return endsWithApi ? '/upload/avatar' : '/api/upload/avatar';
+  }
+
   /// Upload a file from a local path.
   ///
   /// Returns `{ fileName: String, fileUrl: String }`.
@@ -65,6 +72,23 @@ class UploadApi {
   }) async {
     final res = await _client.multipartPostBytes(
       _thumbnailPath,
+      bytes: bytes,
+      filename: filename,
+      fileField: 'file',
+    );
+    return res as Map<String, dynamic>;
+  }
+
+  /// Upload a cropped avatar image.
+  ///
+  /// Mirrors the web client's `/api/upload/avatar` usage.
+  /// Returns `{ avatar_url: String }` or `{ url: String }` depending on backend.
+  Future<Map<String, dynamic>> uploadAvatarBytes({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final res = await _client.multipartPostBytes(
+      _avatarPath,
       bytes: bytes,
       filename: filename,
       fileField: 'file',

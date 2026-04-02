@@ -572,6 +572,17 @@ class SupabaseService {
     return result;
   }
 
+  Future<Map<String, dynamic>> uploadAvatarBytes({
+    required Uint8List bytes,
+    String filename = 'avatar.jpg',
+  }) async {
+    final result = await _uploadApi.uploadAvatarBytes(
+      bytes: bytes,
+      filename: filename,
+    );
+    return result;
+  }
+
   // ── Comments ───────────────────────────────────────────────────────────────
 
   List<dynamic> _extractCommentsList(dynamic data) {

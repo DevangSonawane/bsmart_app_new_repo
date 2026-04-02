@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:math' as math;
 import 'package:extended_image/extended_image.dart';
 import 'package:vector_math/vector_math_64.dart' as vector_math;
+import 'package:photo_manager/photo_manager.dart';
 import '../models/media_model.dart' as app_models;
 import '../services/create_service.dart';
 import 'create_post_screen.dart';
@@ -20,6 +21,8 @@ import '../instagram_text_editor/instagram_text_result.dart';
 import '../instagram_overlay/overlay_shape.dart';
 import '../instagram_overlay/overlay_sticker.dart';
 import '../instagram_overlay/overlay_sticker_widget.dart';
+import '../features/reel_timeline/reel_timeline_models.dart';
+import '../features/reel_timeline/reel_timeline_renderer.dart';
 
 class _PreviewTextOverlay {
   final String text;
@@ -371,6 +374,7 @@ class CreateEditPreviewScreen extends StatefulWidget {
   final List<app_models.MediaItem>? mediaList;
   final String? selectedFilter;
   final bool isPostFlow;
+  final bool isReelFlow;
 
   const CreateEditPreviewScreen({
     super.key,
@@ -378,6 +382,7 @@ class CreateEditPreviewScreen extends StatefulWidget {
     this.mediaList,
     this.selectedFilter,
     this.isPostFlow = false,
+    this.isReelFlow = false,
   });
 
   @override
@@ -511,7 +516,22 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       _postFixedAspect = next;
       return next;
     }
+    if (widget.isReelFlow) {
+      // Reel flow: lock the edit frame to 9:16 and letterbox when needed.
+      return 9.0 / 16.0;
+    }
     return _clampInstagramPostAspect(aspect);
+  }
+
+  BoxFit _videoPreviewFit(double videoAspect, double frameAspect) {
+    if (videoAspect.isNaN || videoAspect.isInfinite || videoAspect <= 0) {
+      return BoxFit.contain;
+    }
+    const tolerance = 0.04;
+    if (videoAspect <= frameAspect + tolerance) {
+      return BoxFit.cover;
+    }
+    return BoxFit.contain;
   }
 
   double _autoPostAspectFor(double aspect) {
@@ -726,6 +746,107 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       if (f.id == id) return f.name;
     }
     return null;
+  }
+
+  List<double> _buildReelColorMatrixForMedia(app_models.MediaItem media) {
+    final adjustments = _effectiveAdjustments(media);
+    final lux = ((adjustments['lux'] ?? 0).clamp(0, 100) / 100.0);
+    final luxBC = 1.0 + (lux * 0.35);
+    final luxS = 1.0 + (lux * 0.2);
+    final b = ((adjustments['brightness'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final c = ((adjustments['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final s = ((adjustments['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
+    final opacity = 1.0 - (adjustments['opacity'] ?? 0) / 100.0;
+    final sepiaAmount =
+        ((adjustments['sepia'] ?? 0).abs().clamp(0, 100) / 100.0) * 0.35;
+
+    final identity = _buildAdjustmentMatrix(
+      brightness: 1.0,
+      contrast: 1.0,
+      saturation: 1.0,
+    );
+    var preset = identity;
+    for (final id in _effectiveFilterIds(media).where((e) => e != 'none')) {
+      preset = _combineColorMatrices(_reelFilterMatrixFor(id), preset);
+    }
+    final sepiaMatrix = (sepiaAmount <= 0)
+        ? _buildAdjustmentMatrix(brightness: 1.0, contrast: 1.0, saturation: 1.0)
+        : _buildSepiaMatrix(
+            amount: sepiaAmount,
+            brightness: 1.0,
+            contrast: 1.0,
+            saturation: 1.0,
+          );
+    final adjust = _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
+    final combined = _combineColorMatrices(adjust, _combineColorMatrices(sepiaMatrix, preset));
+
+    // Apply opacity as final alpha multiplier (via color matrix A column)
+    combined[18] = 1.0;
+    combined[19] = 0.0;
+    combined[15] = 0.0;
+    combined[16] = 0.0;
+    combined[17] = 0.0;
+
+    if (opacity < 1.0) {
+      combined[15] = 0.0;
+      combined[16] = 0.0;
+      combined[17] = 0.0;
+      combined[18] = opacity.clamp(0.0, 1.0);
+      combined[19] = 0.0;
+    }
+    return combined;
+  }
+
+  List<ReelTextOverlay> _buildReelTextOverlaysFor(app_models.MediaItem media) {
+    final preview = _previewSize() ?? const Size(1080, 1920);
+    final scaleFactor = 1080 / preview.width;
+    return _effectiveTextOverlays(media).map((t) {
+      final norm = _normalizePreviewPosition(t.position);
+      return ReelTextOverlay(
+        text: t.text,
+        style: t.style,
+        alignment: t.alignment,
+        textColor: t.textColor,
+        backgroundStyle: t.backgroundStyle,
+        normalizedPosition: norm,
+        scale: t.scale,
+        rotation: t.rotation,
+        fontSize: t.fontSize * scaleFactor,
+      );
+    }).toList();
+  }
+
+  List<ReelStickerOverlay> _buildReelStickerOverlaysFor(app_models.MediaItem media) {
+    final preview = _previewSize() ?? const Size(1080, 1920);
+    final scaleFactor = 1080 / preview.width;
+    return _effectiveStickerOverlays(media).map((s) {
+      final norm = _normalizePreviewPosition(s.position);
+      return ReelStickerOverlay(
+        imagePath: s.imageFile.path,
+        shape: s.shape,
+        normalizedPosition: norm,
+        scale: s.scale,
+        rotation: s.rotation,
+        baseSize: 120 * scaleFactor,
+      );
+    }).toList();
+  }
+
+  void _cycleReelFilter(int direction) {
+    final filters = _createService.getFilters();
+    final ids = <String>['none', ...filters.map((f) => f.id)];
+    if (ids.isEmpty) return;
+    final currentId = _selectedFilter ?? 'none';
+    var index = ids.indexOf(currentId);
+    if (index < 0) index = 0;
+    var next = index + direction;
+    if (next < 0) next = ids.length - 1;
+    if (next >= ids.length) next = 0;
+    final nextId = ids[next];
+    setState(() {
+      _selectedFilter = nextId;
+      _selectedFilterName = _filterNameForId(nextId);
+    });
   }
 
   Map<String, int> _mergeAdjustments(
@@ -2035,6 +2156,41 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       '[CreateEditPreview] globalFilterId=$_selectedFilter '
       'globalFilterName=$globalFilterName',
     );
+    if (!widget.isPostFlow && _mediaList.length > 1) {
+      final renderer = ReelTimelineRenderer(
+        outputSize: const Size(1080, 1920),
+      );
+      final clips = _mediaList.map<ReelClip>((m) {
+        final isVideo = _isVideoMedia(m);
+        return ReelClip(
+          id: m.id,
+          type: isVideo ? ReelClipType.video : ReelClipType.image,
+          path: m.filePath ?? '',
+          duration: isVideo
+              ? (m.duration ?? const Duration(seconds: 1))
+              : const Duration(seconds: 3),
+          trimStart: _trimStartFor(m),
+          trimEnd: _trimEndFor(m),
+          colorMatrix: _buildReelColorMatrixForMedia(m),
+          textOverlays: _buildReelTextOverlaysFor(m),
+          stickerOverlays: _buildReelStickerOverlaysFor(m),
+        );
+      }).where((c) => c.path.isNotEmpty).toList();
+      final stitchedPath = await renderer.renderTimeline(clips);
+      if (stitchedPath != null && stitchedPath.isNotEmpty) {
+        nextMedia = app_models.MediaItem(
+          id: 'timeline_${DateTime.now().millisecondsSinceEpoch}',
+          type: app_models.MediaType.video,
+          filePath: stitchedPath,
+          createdAt: DateTime.now(),
+          duration: clips.fold<Duration>(
+            Duration.zero,
+            (sum, c) => sum + c.duration,
+          ),
+        );
+      }
+    }
+
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => widget.isPostFlow
@@ -2065,7 +2221,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                 }(),
               )
             : CreateReelDetailsScreen(
-                media: _currentMedia,
+                media: nextMedia,
                 selectedFilter: _selectedFilter,
                 selectedMusic: _selectedMusic,
                 musicVolume: _musicVolume,
@@ -2460,6 +2616,95 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   void _onTapText() {
     _openPreviewTextEditor();
+  }
+
+  Future<void> _openAddClips() async {
+    final ps = await PhotoManager.requestPermissionExtend();
+    if (!ps.isAuth) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Allow photo access to add clips.'),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: PhotoManager.openSetting,
+          ),
+        ),
+      );
+      return;
+    }
+    final paths = await PhotoManager.getAssetPathList(
+      type: RequestType.all,
+      filterOption: FilterOptionGroup(
+        orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+      ),
+    );
+    if (paths.isEmpty || !mounted) return;
+    final selected = await showModalBottomSheet<List<AssetEntity>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black,
+      builder: (ctx) => _ClipPickerSheet(
+        assetsPath: paths.first,
+        isLimited: ps.isLimited,
+      ),
+    );
+    if (selected == null || selected.isEmpty || !mounted) return;
+
+    final existingIds = _mediaList.map((m) => m.id).toSet();
+    final newMedia = <app_models.MediaItem>[];
+    for (final asset in selected) {
+      if (existingIds.contains(asset.id)) continue;
+      final file = await asset.originFile;
+      if (file == null) continue;
+      final pathLower = file.path.toLowerCase();
+      final isVideo = asset.type == AssetType.video ||
+          (asset.mimeType?.toLowerCase().startsWith('video/') ?? false) ||
+          pathLower.endsWith('.mp4') ||
+          pathLower.endsWith('.mov') ||
+          pathLower.endsWith('.m4v') ||
+          pathLower.endsWith('.3gp') ||
+          pathLower.endsWith('.webm') ||
+          pathLower.endsWith('.mkv');
+      final media = app_models.MediaItem(
+        id: asset.id,
+        type: isVideo ? app_models.MediaType.video : app_models.MediaType.image,
+        filePath: file.path,
+        createdAt: asset.createDateTime,
+        duration: isVideo ? Duration(seconds: asset.duration) : null,
+      );
+      if (isVideo && !_createService.validateMedia(media)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Video must be 60 seconds or less')),
+          );
+        }
+        continue;
+      }
+      newMedia.add(media);
+    }
+    if (newMedia.isEmpty) return;
+
+    final startIndex = _mediaList.length;
+    setState(() {
+      _mediaList.addAll(newMedia);
+      if (_mediaList.length > 1 && _postPageController == null) {
+        _postPageController = PageController(initialPage: _currentIndex);
+      }
+      if (startIndex < _mediaList.length) {
+        _currentIndex = startIndex;
+        _currentMedia = _mediaList[_currentIndex];
+      }
+    });
+    if (startIndex < _mediaList.length) {
+      await _setCurrentMedia(_mediaList[startIndex], startIndex);
+    }
+    if (_postPageController != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _postPageController?.jumpToPage(_currentIndex);
+      });
+    }
   }
 
   Future<void> _openOverlayPicker() async {
@@ -2880,12 +3125,21 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                     child: IgnorePointer(
                       ignoring: _isStickerDeleteMode || _isTextDeleteMode,
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                        padding: const EdgeInsets.fromLTRB(4, 4, 8, 0),
                         child: Row(
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white),
-                              onPressed: () => Navigator.of(context).pop(),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () => Navigator.of(context).pop(),
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2E2E2E),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Icon(Icons.close, color: Colors.white, size: 22),
+                              ),
                             ),
                           ],
                         ),
@@ -2894,6 +3148,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                   ),
                   Expanded(
                     child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Spacer(),
                         SizedBox(
@@ -3496,7 +3751,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       );
     }
     return Scaffold(
-      backgroundColor: const Color(0xFF07121E),
+      backgroundColor: Colors.black,
       body: SafeArea(
           child: Stack(
             children: [
@@ -3510,8 +3765,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                     child: RepaintBoundary(
                       key: _previewRepaintKey,
                       child: ClipRRect(
-                        borderRadius: (_captureWithoutRadius ||
-                                widget.media.type == app_models.MediaType.video)
+                        borderRadius: _captureWithoutRadius
                             ? BorderRadius.zero
                             : BorderRadius.circular(24),
                         child: Builder(
@@ -3533,18 +3787,66 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                               onScaleStart: _handleTextScaleStart,
                               onScaleUpdate: _handleTextScaleUpdate,
                               onScaleEnd: (_) => _handleTextScaleEnd(),
+                              onHorizontalDragEnd: (details) {
+                                if (_isStickerDeleteMode || _isTextDeleteMode) return;
+                                if (_mediaList.length > 1) return;
+                                final v = details.primaryVelocity ?? 0;
+                                if (v.abs() < 250) return;
+                                _cycleReelFilter(v < 0 ? 1 : -1);
+                              },
                               child: Stack(
                                 fit: StackFit.expand,
                                 alignment: Alignment.center,
                                 children: [
-                                  if (widget.media.type ==
-                                      app_models.MediaType.video)
+                                  if (_mediaList.length > 1)
+                                    PageView.builder(
+                                      controller: _postPageController,
+                                      itemCount: _mediaList.length,
+                                      onPageChanged: (i) {
+                                        _setCurrentMedia(_mediaList[i], i);
+                                      },
+                                      itemBuilder: (context, i) {
+                                        final item = _mediaList[i];
+                                        final isActive = i == _currentIndex;
+                                        if (_isVideoMedia(item)) {
+                                          if (isActive) {
+                                            return GestureDetector(
+                                              onTap: _openVideoEditorForCurrent,
+                                              child: _buildVideoPreview(),
+                                            );
+                                          }
+                                          if (item.filePath == null) {
+                                            return Container(color: Colors.black);
+                                          }
+                                          return _buildVideoThumbnail(
+                                            item.filePath!,
+                                            coverPath: _coverPathFor(item),
+                                            fit: BoxFit.cover,
+                                          );
+                                        }
+                                        if (item.filePath == null) {
+                                          return Container(color: Colors.black);
+                                        }
+                                        return Image.file(
+                                          File(item.filePath!),
+                                          fit: BoxFit.cover,
+                                        );
+                                      },
+                                    )
+                                  else if (_isVideoMedia(_currentMedia))
                                     GestureDetector(
                                       onTap: _openVideoEditorForCurrent,
                                       child: _buildVideoPreview(),
                                     )
                                   else
                                     _buildImagePreview(),
+                                  if (_isVideoMedia(_currentMedia))
+                                    Positioned(
+                                      left: 12,
+                                      right: 12,
+                                      bottom: 2,
+                                      child: _buildVideoProgressBar(),
+                                    ),
                                   if (!_isStickerDeleteMode &&
                                       trimStart != null &&
                                       trimEnd != null)
@@ -3900,34 +4202,97 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                               ),
                             SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   _buildEditOption(
-                                    icon: Icons.text_fields,
+                                    iconWidget: const Text(
+                                      'Aa',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
                                     label: 'Text',
                                     onTap: _onTapText,
                                   ),
                                   const SizedBox(width: 8),
-                                  if (widget.media.type ==
-                                      app_models.MediaType.video)
-                                    _buildEditOption(
-                                      icon: Icons.content_cut,
-                                      label: 'Trim',
-                                      onTap: _openVideoEditor,
-                                      isActive: _trimStartFor(_currentMedia) != null,
-                                    ),
+                                  _buildEditOption(
+                                    icon: Icons.emoji_emotions_outlined,
+                                    label: 'Sticker',
+                                    onTap: _openOverlayPicker,
+                                  ),
                                   const SizedBox(width: 8),
                                   _buildEditOption(
-                                    icon: Icons.music_note,
-                                    label: 'Music',
+                                    icon: Icons.graphic_eq,
+                                    label: 'Audio',
                                     onTap: () {
                                       setState(() {
                                         _showMusicControls = !_showMusicControls;
                                       });
                                     },
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.video_call_outlined,
+                                    label: 'Add clips',
+                                    onTap: _openAddClips,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.layers_outlined,
+                                    label: 'Overlay',
+                                    onTap: _openOverlayPicker,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.auto_awesome,
+                                    label: 'Effects',
+                                    onTap: () {},
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.tune,
+                                    label: 'Edit',
+                                    onTap: _openVideoEditor,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.volume_up_outlined,
+                                    label: 'Volume',
+                                    onTap: () {},
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.photo_outlined,
+                                    label: 'Photo',
+                                    onTap: () {},
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.closed_caption_outlined,
+                                    label: 'Captions',
+                                    onTap: () {},
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.mic_none,
+                                    label: 'Voice',
+                                    onTap: () {},
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.filter_alt_outlined,
+                                    label: 'Filters',
+                                    onTap: _openFilterPicker,
+                                    isActive: (_selectedFilter ?? 'none') != 'none',
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildEditOption(
+                                    icon: Icons.save_alt,
+                                    label: 'Save',
+                                    onTap: () {},
                                   ),
                                 ],
                               ),
@@ -3938,16 +4303,25 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               ),
             ),
             Positioned(
-              top: 16,
-              left: 16,
+              top: 8,
+              left: 8,
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 160),
                 opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
                 child: IgnorePointer(
                   ignoring: _isStickerDeleteMode || _isTextDeleteMode,
-                  child: IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.of(context).pop(),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E2E2E),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(Icons.close, color: Colors.white, size: 22),
+                    ),
                   ),
                 ),
               ),
@@ -4037,14 +4411,19 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           controller.play();
           _isPlaying = true;
         }
+        final frameAspect = _postFrameAspect();
+        final videoAspect = controller.value.aspectRatio;
+        final fit = widget.isReelFlow
+            ? _videoPreviewFit(videoAspect, frameAspect)
+            : BoxFit.cover;
         return _applyImageAdjustments(_applySelectedFilter(
           Stack(
             alignment: Alignment.center,
             children: [
-              Container(color: Colors.blue),
+              Container(color: Colors.black),
               SizedBox.expand(
                 child: FittedBox(
-                  fit: BoxFit.cover,
+                  fit: fit,
                   clipBehavior: Clip.hardEdge,
                   child: SizedBox(
                     width: controller.value.size.width,
@@ -4062,12 +4441,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   }
 
   Widget _buildImagePreview() {
-    if (widget.media.filePath != null) {
-      if (_isVideoMedia(widget.media)) {
+    if (_currentMedia.filePath != null) {
+      if (_isVideoMedia(_currentMedia)) {
         return Container(
           color: Colors.black,
           child: Center(
-            child: _buildVideoThumbnail(widget.media.filePath!, fit: BoxFit.contain),
+            child: _buildVideoThumbnail(_currentMedia.filePath!, fit: BoxFit.contain),
           ),
         );
       }
@@ -4077,7 +4456,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           child: RotatedBox(
             quarterTurns: 1,
             child: Image.file(
-              File(widget.media.filePath!),
+              File(_currentMedia.filePath!),
               fit: BoxFit.contain,
             ),
           ),
@@ -4186,11 +4565,13 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   }
 
   Widget _buildEditOption({
-    required IconData icon,
+    IconData? icon,
+    Widget? iconWidget,
     required String label,
     required VoidCallback onTap,
     bool isActive = false,
   }) {
+    assert(icon != null || iconWidget != null);
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -4201,14 +4582,17 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               color: isActive
                   ? const Color(0xFF0095F6).withValues(alpha: 0.25)
                   : Colors.grey[800],
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(10),
               border: isActive
                   ? Border.all(color: const Color(0xFF0095F6), width: 1.5)
                   : null,
             ),
-            child: Icon(icon,
-                color: isActive ? const Color(0xFF0095F6) : Colors.white,
-                size: 20),
+            child: iconWidget ??
+                Icon(
+                  icon,
+                  color: isActive ? const Color(0xFF0095F6) : Colors.white,
+                  size: 20,
+                ),
           ),
           const SizedBox(height: 3),
           Text(label,
@@ -4222,9 +4606,230 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     );
   }
 
+  Widget _buildVideoProgressBar() {
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) {
+      return Container(
+        height: 3,
+        decoration: BoxDecoration(
+          color: Colors.white24,
+          borderRadius: BorderRadius.circular(999),
+        ),
+      );
+    }
+    return ValueListenableBuilder<VideoPlayerValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final durationMs = value.duration.inMilliseconds;
+        final positionMs = value.position.inMilliseconds;
+        final progress = durationMs > 0
+            ? (positionMs / durationMs).clamp(0.0, 1.0)
+            : 0.0;
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.0, end: progress),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          builder: (context, animated, __) {
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                minHeight: 3,
+                value: animated,
+                backgroundColor: Colors.white24,
+                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
 
 }
 
+class _ClipPickerSheet extends StatefulWidget {
+  final AssetPathEntity assetsPath;
+  final bool isLimited;
+  const _ClipPickerSheet({
+    required this.assetsPath,
+    required this.isLimited,
+  });
+
+  @override
+  State<_ClipPickerSheet> createState() => _ClipPickerSheetState();
+}
+
+class _ClipPickerSheetState extends State<_ClipPickerSheet> {
+  final List<AssetEntity> _assets = [];
+  final List<AssetEntity> _selected = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAssets();
+  }
+
+  Future<void> _loadAssets() async {
+    final list = await widget.assetsPath.getAssetListPaged(page: 0, size: 120);
+    if (mounted) {
+      setState(() {
+        _assets.addAll(list);
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes;
+    final seconds = d.inSeconds % 60;
+    if (minutes <= 0) return '${seconds}s';
+    return '${minutes}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final height = MediaQuery.of(context).size.height * 0.75;
+    return Container(
+      height: height,
+      color: Colors.black,
+      child: Column(
+        children: [
+          AppBar(
+            backgroundColor: Colors.black,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: const Text(
+              'Add clips',
+              style: TextStyle(color: Colors.white),
+            ),
+            actions: [
+              TextButton(
+                onPressed: _selected.isEmpty
+                    ? null
+                    : () => Navigator.pop(
+                          context,
+                          List<AssetEntity>.from(_selected),
+                        ),
+                child: Text(
+                  'Done',
+                  style: TextStyle(
+                    color: _selected.isEmpty ? Colors.white38 : Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (widget.isLimited)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.white70, size: 16),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Limited photo access. Some items may be hidden.',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: PhotoManager.openSetting,
+                    child: const Text(
+                      'Settings',
+                      style: TextStyle(color: Color(0xFF0095F6)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                : GridView.builder(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 1,
+                      mainAxisSpacing: 1,
+                    ),
+                    itemCount: _assets.length,
+                    itemBuilder: (context, index) {
+                      final asset = _assets[index];
+                      final isSelected = _selected.any((a) => a.id == asset.id);
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            if (isSelected) {
+                              _selected.removeWhere((a) => a.id == asset.id);
+                            } else {
+                              _selected.add(asset);
+                            }
+                          });
+                        },
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            FutureBuilder<Uint8List?>(
+                              future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
+                              builder: (context, snap) {
+                                if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                  return Container(color: Colors.grey[850]);
+                                }
+                                return Image.memory(snap.data!, fit: BoxFit.cover);
+                              },
+                            ),
+                            if (asset.type == AssetType.video)
+                              Positioned(
+                                bottom: 4,
+                                right: 4,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    _formatDuration(Duration(seconds: asset.duration)),
+                                    style: const TextStyle(color: Colors.white, fontSize: 10),
+                                  ),
+                                ),
+                              ),
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? Colors.white.withValues(alpha: 0.9)
+                                      : Colors.black.withValues(alpha: 0.35),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white70, width: 1),
+                                ),
+                                child: isSelected
+                                    ? const Center(
+                                        child: Icon(Icons.check, size: 12, color: Colors.black),
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _PerImageEditResult {
   final String? filterId;
@@ -5442,6 +6047,7 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                           child: const Text('Done',
                               style: TextStyle(color: Colors.white)),
                         ),
+                        const Spacer(),
                       ],
                     ),
                     const SizedBox(height: 6),

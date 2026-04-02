@@ -5,6 +5,7 @@ import 'package:flutter_redux/flutter_redux.dart';
 import 'dart:async';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/reels_service.dart';
 import '../models/reel_model.dart';
@@ -27,6 +28,7 @@ import '../api/auth_api.dart';
 import '../api/api_client.dart';
 import '../config/api_config.dart';
 import '../services/feed_service.dart';
+import '../services/auth/auth_service.dart';
 import '../models/story_model.dart';
 import 'story_viewer_screen.dart';
 import '../models/media_model.dart';
@@ -73,6 +75,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, String>? _adsMediaHeaders;
   bool _isOwnProfile = false;
   bool _isFavoriteProfile = false;
+  bool _avatarUploading = false;
   StreamSubscription<AppState>? _storeSub;
 
   @override
@@ -780,6 +783,218 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Future<void> _changeAvatarFromProfile() async {
+    if (_avatarUploading) return;
+    final picker = ImagePicker();
+    final xfile = await picker.pickImage(source: ImageSource.gallery);
+    if (xfile == null) return;
+
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: xfile.path,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Adjust Photo',
+          toolbarColor: DesignTokens.instaPink,
+          toolbarWidgetColor: Colors.white,
+          activeControlsWidgetColor: DesignTokens.instaPink,
+          statusBarColor: DesignTokens.instaPink,
+          cropStyle: CropStyle.circle,
+          aspectRatioPresets: const [CropAspectRatioPreset.square],
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+          hideBottomControls: false,
+        ),
+        IOSUiSettings(
+          title: 'Adjust Photo',
+          cropStyle: CropStyle.circle,
+          aspectRatioPresets: const [CropAspectRatioPreset.square],
+          aspectRatioLockEnabled: true,
+          resetAspectRatioEnabled: false,
+        ),
+        WebUiSettings(
+          context: context,
+          presentStyle: WebPresentStyle.dialog,
+          size: const CropperSize(width: 320, height: 320),
+          viewwMode: WebViewMode.mode_1,
+          dragMode: WebDragMode.move,
+          zoomable: true,
+          zoomOnWheel: true,
+          cropBoxMovable: true,
+          cropBoxResizable: true,
+        ),
+      ],
+    );
+
+    if (cropped == null) return;
+
+    setState(() => _avatarUploading = true);
+    try {
+      final bytes = await cropped.readAsBytes();
+      final res = await _svc.uploadAvatarBytes(bytes: bytes);
+      final newUrl = _extractAvatarUrl(res);
+      if (newUrl == null || newUrl.isEmpty) {
+        throw 'Avatar upload succeeded but no URL was returned.';
+      }
+      await _refreshProfileAfterAvatarChange(newUrl);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile photo updated')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _avatarUploading = false);
+      }
+    }
+  }
+
+  void _showAvatarOptionsSheet() {
+    if (_avatarUploading) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('New profile photo'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _changeAvatarFromProfile();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text('Remove profile photo'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _removeAvatarToGooglePhoto();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _removeAvatarToGooglePhoto() async {
+    if (_avatarUploading) return;
+    setState(() => _avatarUploading = true);
+    try {
+      final googleUrl = await _resolveGoogleAvatarUrl(_profile);
+      if (googleUrl == null || googleUrl.isEmpty) {
+        throw 'Google profile photo not available.';
+      }
+      final uid = (await CurrentUser.id) ?? '';
+      if (uid.isEmpty) throw 'User not found.';
+      await _svc.updateUserProfile(uid, {'avatar_url': googleUrl});
+      await _refreshProfileAfterAvatarChange(googleUrl);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile photo removed')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Remove failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _avatarUploading = false);
+    }
+  }
+
+  Future<String?> _resolveGoogleAvatarUrl(Map<String, dynamic>? profile) async {
+    final candidates = [
+      profile?['google_avatar_url'],
+      profile?['google_avatar'],
+      profile?['photo_url'],
+      profile?['photoUrl'],
+      profile?['picture'],
+      profile?['profile_picture'],
+    ];
+    for (final c in candidates) {
+      if (c is String && c.trim().isNotEmpty) return c;
+    }
+    return AuthService().getGoogleProfilePhotoUrl();
+  }
+
+  String? _extractAvatarUrl(Map<String, dynamic> res) {
+    dynamic url = res['avatar_url'] ??
+        res['url'] ??
+        res['fileUrl'] ??
+        res['file_url'];
+    if (url is String && url.isNotEmpty) return url;
+    final data = res['data'];
+    if (data is Map) {
+      url = data['avatar_url'] ?? data['url'] ?? data['fileUrl'] ?? data['file_url'];
+      if (url is String && url.isNotEmpty) return url;
+    }
+    return null;
+  }
+
+  Future<void> _refreshProfileAfterAvatarChange(String fallbackUrl) async {
+    final current = _profile;
+    if (mounted) {
+      setState(() {
+        _profile = {
+          ...?current,
+          'avatar_url': fallbackUrl,
+        };
+      });
+    }
+    if (_isOwnProfile) {
+      StoreProvider.of<AppState>(context).dispatch(
+        SetProfile({
+          ...?current,
+          'avatar_url': fallbackUrl,
+        }),
+      );
+    }
+
+    final uid = (current?['id'] as String?) ??
+        (current?['_id'] as String?) ??
+        await CurrentUser.id;
+    if (uid == null || uid.isEmpty) return;
+    try {
+      final profile = await _svc.getUserById(uid);
+      if (!mounted || profile == null || profile.isEmpty) return;
+      setState(() {
+        _profile = profile;
+      });
+      if (_isOwnProfile) {
+        StoreProvider.of<AppState>(context).dispatch(SetProfile(profile));
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadStoryStatus(String userId) async {
     if (userId.isEmpty) return;
     try {
@@ -1315,6 +1530,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onMore: () => _showProfileMoreActions(displayProfile),
                       onMessage: _openMessaging,
                       onAvatarTap: _openStoriesFromProfile,
+                      onAvatarEdit:
+                          isMe && !_avatarUploading ? _showAvatarOptionsSheet : null,
                     ),
                   ),
                   SliverToBoxAdapter(
@@ -1439,25 +1656,198 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final picker = ImagePicker();
     final xfile = await picker.pickImage(source: ImageSource.gallery);
     if (xfile == null) return;
+
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: xfile.path,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Adjust Photo',
+          toolbarColor: DesignTokens.instaPink,
+          toolbarWidgetColor: Colors.white,
+          activeControlsWidgetColor: DesignTokens.instaPink,
+          statusBarColor: DesignTokens.instaPink,
+          cropStyle: CropStyle.circle,
+          aspectRatioPresets: const [CropAspectRatioPreset.square],
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+          hideBottomControls: false,
+        ),
+        IOSUiSettings(
+          title: 'Adjust Photo',
+          cropStyle: CropStyle.circle,
+          aspectRatioPresets: const [CropAspectRatioPreset.square],
+          aspectRatioLockEnabled: true,
+          resetAspectRatioEnabled: false,
+        ),
+        WebUiSettings(
+          context: context,
+          presentStyle: WebPresentStyle.dialog,
+          size: const CropperSize(width: 320, height: 320),
+          viewwMode: WebViewMode.mode_1,
+          dragMode: WebDragMode.move,
+          zoomable: true,
+          zoomOnWheel: true,
+          cropBoxMovable: true,
+          cropBoxResizable: true,
+        ),
+      ],
+    );
+
+    if (cropped == null) return;
+
     setState(() => _uploading = true);
     try {
-      final bytes = await xfile.readAsBytes();
-      final ext = xfile.path.split('.').last;
-      final path =
-          '$_effectiveUserId/${DateTime.now().millisecondsSinceEpoch}.$ext';
-      final res = await _svc.uploadFile('avatars', path, bytes);
+      final bytes = await cropped.readAsBytes();
+      final res = await _svc.uploadAvatarBytes(bytes: bytes);
+      final newUrl = _extractAvatarUrl(res);
+      if (newUrl == null || newUrl.isEmpty) {
+        throw 'Avatar upload succeeded but no URL was returned.';
+      }
       if (mounted) {
         setState(() {
-          _avatarUrl = res['fileUrl'] as String?;
-          _uploading = false;
+          _avatarUrl = newUrl;
         });
       }
+      await _refreshProfileAfterAvatarChange(newUrl);
     } catch (e) {
       if (mounted) {
         setState(() => _uploading = false);
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
       }
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _uploading = false);
+    }
+  }
+
+  void _showAvatarOptionsSheet() {
+    if (_uploading) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('New profile photo'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _uploadAvatar();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text('Remove profile photo'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _removeAvatarToGooglePhoto();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _removeAvatarToGooglePhoto() async {
+    if (_uploading) return;
+    setState(() => _uploading = true);
+    try {
+      final googleUrl = await _resolveGoogleAvatarUrl(_profile);
+      if (googleUrl == null || googleUrl.isEmpty) {
+        throw 'Google profile photo not available.';
+      }
+      if (_effectiveUserId == null || _effectiveUserId!.isEmpty) {
+        throw 'User not found.';
+      }
+      await _svc.updateUserProfile(_effectiveUserId!, {'avatar_url': googleUrl});
+      await _refreshProfileAfterAvatarChange(googleUrl);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile photo removed')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Remove failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<String?> _resolveGoogleAvatarUrl(Map<String, dynamic>? profile) async {
+    final candidates = [
+      profile?['google_avatar_url'],
+      profile?['google_avatar'],
+      profile?['photo_url'],
+      profile?['photoUrl'],
+      profile?['picture'],
+      profile?['profile_picture'],
+    ];
+    for (final c in candidates) {
+      if (c is String && c.trim().isNotEmpty) return c;
+    }
+    return AuthService().getGoogleProfilePhotoUrl();
+  }
+
+  String? _extractAvatarUrl(Map<String, dynamic> res) {
+    dynamic url = res['avatar_url'] ??
+        res['url'] ??
+        res['fileUrl'] ??
+        res['file_url'];
+    if (url is String && url.isNotEmpty) return url;
+    final data = res['data'];
+    if (data is Map) {
+      url = data['avatar_url'] ?? data['url'] ?? data['fileUrl'] ?? data['file_url'];
+      if (url is String && url.isNotEmpty) return url;
+    }
+    return null;
+  }
+
+  Future<void> _refreshProfileAfterAvatarChange(String fallbackUrl) async {
+    final uid = _effectiveUserId;
+    if (uid == null || uid.isEmpty) return;
+    try {
+      final profile = await _svc.getUserById(uid);
+      if (!mounted) return;
+      if (profile != null && profile.isNotEmpty) {
+        setState(() {
+          _profile = profile;
+          _avatarUrl = profile['avatar_url'] as String? ?? fallbackUrl;
+        });
+        return;
+      }
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _avatarUrl = fallbackUrl;
+      });
     }
   }
 
@@ -1523,7 +1913,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           children: [
             const SizedBox(height: 24),
             GestureDetector(
-              onTap: _uploading ? null : _uploadAvatar,
+              onTap: _uploading ? null : _showAvatarOptionsSheet,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -1574,7 +1964,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             const SizedBox(height: 8),
             TextButton(
-              onPressed: _uploading ? null : _uploadAvatar,
+              onPressed: _uploading ? null : _showAvatarOptionsSheet,
               child: Text(_uploading ? 'Uploading...' : 'Change Profile Photo',
                   style: const TextStyle(
                       fontSize: 14,

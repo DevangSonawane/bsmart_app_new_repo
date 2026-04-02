@@ -1319,6 +1319,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
             media: media,
             selectedFilter: _storyCurrentFilter,
             isPostFlow: false,
+            isReelFlow: true,
           ),
         ),
       );

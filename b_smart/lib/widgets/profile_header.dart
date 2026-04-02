@@ -21,6 +21,7 @@ class ProfileHeader extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback? onFollow;
   final VoidCallback? onAvatarTap;
+  final VoidCallback? onAvatarEdit;
   final VoidCallback? onMessage;
   final VoidCallback? onShare;
   final VoidCallback? onFavorite;
@@ -45,6 +46,7 @@ class ProfileHeader extends StatelessWidget {
     this.onEdit,
     this.onFollow,
     this.onAvatarTap,
+    this.onAvatarEdit,
     this.onMessage,
     this.onShare,
     this.onFavorite,
@@ -79,33 +81,44 @@ class ProfileHeader extends StatelessWidget {
             children: [
               GestureDetector(
                 onTap: onAvatarTap,
-                child: _StoryAvatarRing(
-                  hasStory: hasStory,
-                  child: Builder(
-                    builder: (context) {
-                      final hasAvatar =
-                          avatarUrl != null && avatarUrl!.trim().isNotEmpty;
-                      return CircleAvatar(
-                        radius: 38,
-                        backgroundImage: hasAvatar
-                            ? CachedNetworkImageProvider(avatarUrl!)
-                            : null,
-                        backgroundColor: theme.cardColor,
-                        child: !hasAvatar
-                            ? Text(
-                                username.isNotEmpty
-                                    ? username[0].toUpperCase()
-                                    : '',
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  color: fgColor,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              )
-                            : null,
-                      );
-                    },
-                  ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _StoryAvatarRing(
+                      hasStory: hasStory,
+                      child: Builder(
+                        builder: (context) {
+                          final hasAvatar =
+                              avatarUrl != null && avatarUrl!.trim().isNotEmpty;
+                          return CircleAvatar(
+                            radius: 38,
+                            backgroundImage: hasAvatar
+                                ? CachedNetworkImageProvider(avatarUrl!)
+                                : null,
+                            backgroundColor: theme.cardColor,
+                            child: !hasAvatar
+                                ? Text(
+                                    username.isNotEmpty
+                                        ? username[0].toUpperCase()
+                                        : '',
+                                    style: TextStyle(
+                                      fontSize: 22,
+                                      color: fgColor,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  )
+                                : null,
+                          );
+                        },
+                      ),
+                    ),
+                    if (isMe && onAvatarEdit != null)
+                      Positioned(
+                        bottom: -2,
+                        right: -2,
+                        child: _avatarEditButton(onAvatarEdit!),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(width: 18),
@@ -382,6 +395,33 @@ class ProfileHeader extends StatelessWidget {
             color: Colors.transparent,
           ),
           child: Icon(icon, size: 22, color: fgColor),
+        ),
+      ),
+    );
+  }
+
+  Widget _avatarEditButton(VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          color: const Color(0xFF3B82F6),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Icon(
+          LucideIcons.plus,
+          size: 14,
+          color: Colors.white,
         ),
       ),
     );

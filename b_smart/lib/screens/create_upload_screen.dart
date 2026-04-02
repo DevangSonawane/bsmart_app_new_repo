@@ -497,6 +497,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         MaterialPageRoute(
           builder: (context) => CreateEditPreviewScreen(
             media: media,
+            isReelFlow: true,
           ),
         ),
       );
@@ -596,16 +597,17 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
               ),
               actions: [
-                TextButton(
-                  onPressed: _hasSelection ? _handleNext : null,
-                  child: Text(
-                    'Next',
-                    style: TextStyle(
-                      color: _hasSelection ? const Color(0xFF0095F6) : Colors.white30,
-                      fontWeight: FontWeight.w600,
+                if (_mode != UploadMode.reel)
+                  TextButton(
+                    onPressed: _hasSelection ? _handleNext : null,
+                    child: Text(
+                      'Next',
+                      style: TextStyle(
+                        color: _hasSelection ? const Color(0xFF0095F6) : Colors.white30,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
       body: Stack(
@@ -617,6 +619,10 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
               bottomPaddingForIndex: (index) => 20,
               pillBackgroundColorForIndex: (index) =>
                   (index == 1 || index == 3) ? Colors.transparent : Colors.black.withValues(alpha: 0.6),
+              pillVisibleForIndex: (index) {
+                if (_mode == UploadMode.reel && _hasSelection) return false;
+                return true;
+              },
               pages: List.generate(
                 4,
                 (index) {
@@ -681,6 +687,14 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                       ),
                     ),
                     onNext: _hasSelection ? _handleNext : null,
+                    onClearSelection: () {
+                      setState(() {
+                        _selectedIds.clear();
+                        _selectedOrder.clear();
+                        _currentAsset = null;
+                      });
+                      _saveCache();
+                    },
                     firstSelectedAsset: _firstSelectedAsset(),
                   );
                 },
@@ -815,6 +829,7 @@ class _UploadPage extends StatelessWidget {
   final VoidCallback onCameraTap;
   final VoidCallback? onNext;
   final AssetEntity? firstSelectedAsset;
+  final VoidCallback? onClearSelection;
 
   const _UploadPage({
     required this.isReelMode,
@@ -835,6 +850,7 @@ class _UploadPage extends StatelessWidget {
     required this.onCameraTap,
     this.onNext,
     this.firstSelectedAsset,
+    this.onClearSelection,
   });
 
   @override
@@ -1154,72 +1170,114 @@ class _UploadPage extends StatelessWidget {
             ),
           ],
         ),
-        if (isReelMode && hasSelection)
+        if (isReelMode)
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: SafeArea(
-              top: false,
-              minimum: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(12, 8, 16, 16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0),
-                      Colors.black.withValues(alpha: 0.8),
-                    ],
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 72,
-                      height: 72,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Builder(
-                          builder: (context) {
-                            final asset = firstSelectedAsset;
-                            if (asset == null) {
-                              return Container(color: Colors.black);
-                            }
-                            return FutureBuilder<Uint8List?>(
-                              future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
-                              builder: (context, snap) {
-                                if (snap.connectionState != ConnectionState.done || snap.data == null) {
-                                  return Container(
-                                    color: Colors.grey[850],
-                                    child: const Center(
-                                      child: Icon(Icons.image, color: Colors.white38),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: AnimatedSlide(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                offset: hasSelection ? Offset.zero : const Offset(0, 0.25),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: hasSelection ? 1 : 0,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                      child: Container(
+                        padding: EdgeInsets.fromLTRB(
+                          12,
+                          10,
+                          12,
+                          10 + MediaQuery.of(context).padding.bottom,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.18),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 68,
+                              height: 68,
+                              child: Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Builder(
+                                      builder: (context) {
+                                        final asset = firstSelectedAsset;
+                                        if (asset == null) {
+                                          return Container(color: Colors.black);
+                                        }
+                                        return FutureBuilder<Uint8List?>(
+                                          future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
+                                          builder: (context, snap) {
+                                            if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                              return Container(
+                                                color: Colors.grey[850],
+                                                child: const Center(
+                                                  child: Icon(Icons.image, color: Colors.white38),
+                                                ),
+                                              );
+                                            }
+                                            return Image.memory(
+                                              snap.data!,
+                                              fit: BoxFit.cover,
+                                            );
+                                          },
+                                        );
+                                      },
                                     ),
-                                  );
-                                }
-                                return Image.memory(
-                                  snap.data!,
-                                  fit: BoxFit.cover,
-                                );
-                              },
-                            );
-                          },
+                                  ),
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: GestureDetector(
+                                      onTap: onClearSelection,
+                                      child: Container(
+                                        width: 18,
+                                        height: 18,
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.7),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(color: Colors.white24, width: 1),
+                                        ),
+                                        child: const Center(
+                                          child: Icon(Icons.close, size: 12, color: Colors.white),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Spacer(),
+                            ElevatedButton(
+                              onPressed: hasSelection ? onNext : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0095F6),
+                                foregroundColor: Colors.white,
+                                disabledBackgroundColor: Colors.white24,
+                                disabledForegroundColor: Colors.white60,
+                                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                              ),
+                              child: const Text('Next →'),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const Spacer(),
-                    ElevatedButton(
-                      onPressed: onNext,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0095F6),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                      ),
-                      child: const Text('Next →'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
