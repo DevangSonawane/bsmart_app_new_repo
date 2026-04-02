@@ -56,9 +56,22 @@ class _PostCardState extends State<PostCard> {
   final PageController _pageController = PageController();
   int _mediaIndex = 0;
 
-  bool get _isVideo =>
-      widget.post.mediaType == PostMediaType.video ||
-      widget.post.mediaType == PostMediaType.reel;
+  bool get _isCarousel => widget.post.mediaUrls.length > 1;
+
+  bool _isVideoUrl(String url) {
+    final lower = url.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m3u8') ||
+        lower.contains('.mp4?') ||
+        lower.contains('.mov?') ||
+        lower.contains('.m3u8?');
+  }
+
+  bool get _isSingleVideo =>
+      !_isCarousel &&
+      (widget.post.mediaType == PostMediaType.video ||
+          widget.post.mediaType == PostMediaType.reel);
 
   @override
   void dispose() {
@@ -155,10 +168,36 @@ class _PostCardState extends State<PostCard> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final mediaUrls = post.mediaUrls;
-    final isCarousel = mediaUrls.length > 1 && !_isVideo;
+    final isCarousel = _isCarousel;
     final aspect = post.aspectRatio ?? 4 / 5;
+    final mediaFilters = post.mediaFilters;
+    final mediaAdjustments = post.mediaAdjustments;
+    String? _filterForIndex(int index) {
+      if (mediaFilters == null || index < 0 || index >= mediaFilters.length) {
+        return null;
+      }
+      return mediaFilters[index];
+    }
+
+    Map<String, int>? _adjustmentsForIndex(int index) {
+      if (mediaAdjustments == null ||
+          index < 0 ||
+          index >= mediaAdjustments.length) {
+        return null;
+      }
+      return mediaAdjustments[index];
+    }
     final activeListenable = widget.activeIdListenable;
     final tabActive = widget.isTabActive;
+    final singleIsVideo = _isSingleVideo ||
+        (!_isCarousel &&
+            mediaUrls.isNotEmpty &&
+            _isVideoUrl(mediaUrls.first));
+    final activeIsVideo = isCarousel
+        ? (mediaUrls.isNotEmpty && _mediaIndex < mediaUrls.length
+            ? _isVideoUrl(mediaUrls[_mediaIndex])
+            : false)
+        : singleIsVideo;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -183,9 +222,11 @@ class _PostCardState extends State<PostCard> {
                         id: post.id,
                         url: mediaUrls.first,
                         thumbnailUrl: post.thumbnailUrl,
-                        isVideo: _isVideo,
+                        isVideo: singleIsVideo,
                         isActive: widget.isActive && tabActive,
                         initialAspectRatio: post.aspectRatio,
+                        filterName: _filterForIndex(0),
+                        adjustments: _adjustmentsForIndex(0),
                       ),
                     )
                   : ValueListenableBuilder<String?>(
@@ -197,9 +238,11 @@ class _PostCardState extends State<PostCard> {
                             id: post.id,
                             url: mediaUrls.first,
                             thumbnailUrl: post.thumbnailUrl,
-                            isVideo: _isVideo,
+                            isVideo: singleIsVideo,
                             isActive: isActive,
                             initialAspectRatio: post.aspectRatio,
+                            filterName: _filterForIndex(0),
+                            adjustments: _adjustmentsForIndex(0),
                           ),
                         );
                       },
@@ -215,6 +258,7 @@ class _PostCardState extends State<PostCard> {
                   },
                   itemBuilder: (context, i) {
                     final url = mediaUrls[i];
+                    final isVideo = _isVideoUrl(url);
                     return GestureDetector(
                       behavior: HitTestBehavior.translucent,
                       onDoubleTap: _handleDoubleTap,
@@ -232,10 +276,12 @@ class _PostCardState extends State<PostCard> {
                               id: '${post.id}_$i',
                               url: url,
                               thumbnailUrl: post.thumbnailUrl,
-                              isVideo: false,
+                              isVideo: isVideo,
                               isActive:
                                   widget.isActive && tabActive && _mediaIndex == i,
                               initialAspectRatio: post.aspectRatio,
+                              filterName: _filterForIndex(i),
+                              adjustments: _adjustmentsForIndex(i),
                             ),
                           )
                         : ValueListenableBuilder<String?>(
@@ -248,9 +294,11 @@ class _PostCardState extends State<PostCard> {
                                   id: '${post.id}_$i',
                                   url: url,
                                   thumbnailUrl: post.thumbnailUrl,
-                                  isVideo: false,
+                                  isVideo: isVideo,
                                   isActive: isActive,
                                   initialAspectRatio: post.aspectRatio,
+                                  filterName: _filterForIndex(i),
+                                  adjustments: _adjustmentsForIndex(i),
                                 ),
                               );
                             },
@@ -357,7 +405,7 @@ class _PostCardState extends State<PostCard> {
                   color: Colors.transparent,
                   child: InkWell(
                     onDoubleTap: _handleDoubleTap,
-                    onTap: _isVideo
+                    onTap: activeIsVideo
                         ? null
                         : () {
                             if (_showPeopleTags) {
@@ -366,7 +414,7 @@ class _PostCardState extends State<PostCard> {
                             }
                             widget.onComment?.call();
                           },
-                    onLongPress: _isVideo ? null : _togglePeopleTags,
+                    onLongPress: activeIsVideo ? null : _togglePeopleTags,
                   ),
                 ),
               ),
@@ -390,7 +438,7 @@ class _PostCardState extends State<PostCard> {
                   ),
                 ),
               ),
-            if (_isVideo)
+            if (activeIsVideo)
               Positioned(
                 bottom: 10,
                 right: 10,

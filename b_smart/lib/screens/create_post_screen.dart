@@ -18,6 +18,9 @@ import 'tag_people_screen.dart';
 class _CreatePostMediaItem {
   String sourcePath;
   String? croppedPath; // after crop step (images only)
+  String? thumbnailPath; // cover for videos
+  Duration? trimStart;
+  Duration? trimEnd;
   bool isVideo;
   bool alreadyCropped;
   bool alreadyProcessed;
@@ -28,6 +31,9 @@ class _CreatePostMediaItem {
   _CreatePostMediaItem({
     required this.sourcePath,
     this.croppedPath, // ignore: unused_element_parameter
+    this.thumbnailPath,
+    this.trimStart,
+    this.trimEnd,
     required this.isVideo,
     this.alreadyCropped = false,
     this.alreadyProcessed = false,
@@ -239,8 +245,10 @@ List<double> _buildFilterMatrixBase({double brightness = 1, double contrast = 1,
   ];
 }
 
-// Filter preset matrices (approximate React CSS: contrast, saturate, brightness, grayscale, sepia).
+// Filter preset matrices (supports both Instagram names and CreateService ids/names).
 List<double> _filterMatrixFor(String name) {
+  final lower = name.toLowerCase();
+  final key = lower.replaceAll('&', 'and').replaceAll(' ', '_');
   switch (name) {
     case 'Clarendon':
       return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.2, saturation: 1.25);
@@ -265,6 +273,31 @@ List<double> _filterMatrixFor(String name) {
     case 'Perpetua':
       return _buildFilterMatrixBase(brightness: 1.1, contrast: 1.1, saturation: 1.1);
     case 'Original':
+      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+    default:
+      break;
+  }
+  switch (key) {
+    case 'none':
+    case 'original':
+      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+    case 'vintage':
+      return _buildSepiaMatrix(amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
+    case 'black_white':
+    case 'black_and_white':
+      return _buildGrayscaleMatrix(contrast: 1.1, brightness: 1.0);
+    case 'warm':
+      return _buildSepiaMatrix(amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
+    case 'cool':
+      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 0.85);
+    case 'dramatic':
+      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.3, saturation: 1.2);
+    case 'beauty':
+      return _buildSepiaMatrix(amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
+    case 'ar_effect_1':
+      return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.05, saturation: 1.2);
+    case 'ar_effect_2':
+      return _buildFilterMatrixBase(brightness: 0.95, contrast: 1.1, saturation: 0.9);
     default:
       return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
   }
@@ -302,6 +335,9 @@ class CreatePostScreen extends StatefulWidget {
   final double? initialAspect;
   final String? initialFilterName;
   final Map<String, int>? initialAdjustments;
+  final Map<String, String>? initialMediaFilters;
+  final Map<String, Map<String, int>>? initialMediaTrims;
+  final Map<String, Map<String, int>>? initialMediaAdjustments;
   const CreatePostScreen({
     super.key,
     this.initialMedia,
@@ -309,6 +345,9 @@ class CreatePostScreen extends StatefulWidget {
     this.initialAspect,
     this.initialFilterName,
     this.initialAdjustments,
+    this.initialMediaFilters,
+    this.initialMediaTrims,
+    this.initialMediaAdjustments,
   });
 
   @override
@@ -320,6 +359,7 @@ const _shareBlue = Color(0xFF4F6EF7);
 class _CreatePostScreenState extends State<CreatePostScreen> {
   final ImagePicker _picker = ImagePicker();
   final TextEditingController _captionCtl = TextEditingController();
+  final Set<String> _loggedVideoPreviewKeys = {};
 
   String _step = 'select'; // select | crop | edit | share
   List<_CreatePostMediaItem> _media = [];
@@ -335,7 +375,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final Map<int, List<_PostTag>> _tagsByIndex = {};
   bool _isSubmitting = false;
 
-  Widget _buildVideoThumbnail(String path, {BoxFit fit = BoxFit.cover}) {
+  Widget _buildVideoThumbnail(
+    String path, {
+    String? coverPath,
+    BoxFit fit = BoxFit.cover,
+  }) {
+    if (coverPath != null) {
+      final file = File(coverPath);
+      if (file.existsSync()) {
+        return Image.file(file, fit: fit);
+      }
+    }
     return FutureBuilder<Uint8List?>(
       future: VideoThumbnail.thumbnailData(
         video: path,
@@ -361,25 +411,127 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
   }
 
+  Widget _buildVideoPreviewForItem(_CreatePostMediaItem item) {
+    final logKey =
+        '${item.sourcePath}|${item.thumbnailPath}|${item.filter}|${item.adjustments}|${item.alreadyProcessed}|${item.trimStart?.inMilliseconds}|${item.trimEnd?.inMilliseconds}';
+    if (!_loggedVideoPreviewKeys.contains(logKey)) {
+      _loggedVideoPreviewKeys.add(logKey);
+      debugPrint(
+        '[CreatePostScreen] video preview: source=${item.sourcePath} '
+        'cover=${item.thumbnailPath} filter=${item.filter} '
+        'adjustments=${item.adjustments} processed=${item.alreadyProcessed} '
+        'trimStart=${item.trimStart?.inMilliseconds} trimEnd=${item.trimEnd?.inMilliseconds}',
+      );
+    }
+    final cover = item.thumbnailPath;
+    if (cover != null && File(cover).existsSync()) {
+      debugPrint('[CreatePostScreen] using cover for video preview: $cover');
+      return _applyFilterToImage(File(cover), item);
+    }
+    debugPrint('[CreatePostScreen] using generated thumbnail for video preview');
+    return _buildVideoThumbnailFiltered(item);
+  }
+
+  Widget _applyFilterToWidget(Widget child, _CreatePostMediaItem item) {
+    if (item.alreadyProcessed) return child;
+    final adj = item.adjustments;
+    final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
+    final luxBC = 1.0 + (lux * 0.35);
+    final luxS = 1.0 + (lux * 0.2);
+    final b = ((adj['brightness'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final c = ((adj['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
+    final opacity = 1.0 - (adj['opacity'] ?? 0) / 100.0;
+    final presetMatrix = _filterMatrixFor(item.filter);
+    final adjustmentMatrix =
+        _buildFilterMatrix(brightness: b, contrast: c, saturation: s);
+    return Opacity(
+      opacity: opacity.clamp(0.0, 1.0),
+      child: ColorFiltered(
+        colorFilter: ColorFilter.matrix(presetMatrix),
+        child: ColorFiltered(
+          colorFilter: ColorFilter.matrix(adjustmentMatrix),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoThumbnailFiltered(_CreatePostMediaItem item) {
+    return FutureBuilder<Uint8List?>(
+      future: VideoThumbnail.thumbnailData(
+        video: item.sourcePath,
+        imageFormat: ImageFormat.JPEG,
+        quality: 70,
+      ),
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done || snap.data == null) {
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
+        debugPrint(
+          '[CreatePostScreen] thumbnailData ready: source=${item.sourcePath} '
+          'bytes=${snap.data?.length ?? 0} filter=${item.filter} adjustments=${item.adjustments}',
+        );
+        final base = Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(snap.data!, fit: BoxFit.cover),
+            const Center(
+              child: Icon(LucideIcons.play, size: 36, color: Colors.white),
+            ),
+          ],
+        );
+        return _applyFilterToWidget(base, item);
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     final list = widget.initialMediaList;
     if (list != null && list.isNotEmpty) {
+      final perFilters = widget.initialMediaFilters ?? const {};
+      final globalName = widget.initialFilterName;
+      final perTrims = widget.initialMediaTrims ?? const {};
+      final perAdjustments = widget.initialMediaAdjustments ?? const {};
       _media = list
           .where((m) => m.filePath != null)
           .map((m) {
             final baseName = m.filePath!.split('/').last;
             final alreadyCropped = baseName.startsWith('bsmart_crop_') || baseName.startsWith('bsmart_post_');
             final alreadyProcessed = baseName.startsWith('bsmart_post_');
-            return _CreatePostMediaItem(
+            final item = _CreatePostMediaItem(
               sourcePath: m.filePath!,
+              thumbnailPath: m.thumbnailPath,
               isVideo: m.type == MediaType.video,
               alreadyCropped: alreadyCropped,
               alreadyProcessed: alreadyProcessed,
               aspect: widget.initialAspect ?? 1.0,
               adjustments: widget.initialAdjustments,
             );
+            final perAdj = perAdjustments[m.id];
+            if (perAdj != null && perAdj.isNotEmpty) {
+              item.adjustments = Map<String, int>.from(perAdj);
+            }
+            final trim = perTrims[m.id];
+            if (trim != null) {
+              final startMs = trim['start_ms'];
+              final endMs = trim['end_ms'];
+              item.trimStart =
+                  startMs != null ? Duration(milliseconds: startMs) : null;
+              item.trimEnd =
+                  endMs != null ? Duration(milliseconds: endMs) : null;
+            }
+            final perName = perFilters[m.id];
+            if (perName != null && perName.isNotEmpty) {
+              item.filter = perName;
+            } else if (globalName != null && globalName.isNotEmpty) {
+              item.filter = globalName;
+            }
+            return item;
           })
           .toList();
       _currentIndex = 0;
@@ -395,16 +547,31 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final alreadyProcessed = baseName.startsWith('bsmart_post_');
       final item = _CreatePostMediaItem(
         sourcePath: m.filePath!,
+        thumbnailPath: m.thumbnailPath,
         isVideo: m.type == MediaType.video,
         alreadyCropped: alreadyCropped,
         alreadyProcessed: alreadyProcessed,
         aspect: widget.initialAspect ?? 1.0,
         adjustments: widget.initialAdjustments,
       );
-      if (widget.initialFilterName != null && widget.initialFilterName!.isNotEmpty) {
-        // Only apply if our filter list recognizes the name, otherwise keep Original
-        final name = widget.initialFilterName!;
-        item.filter = _filterNames.contains(name) ? name : 'Original';
+      final perAdjustments = widget.initialMediaAdjustments ?? const {};
+      final perAdj = perAdjustments[m.id];
+      if (perAdj != null && perAdj.isNotEmpty) {
+        item.adjustments = Map<String, int>.from(perAdj);
+      }
+      final perTrims = widget.initialMediaTrims ?? const {};
+      final trim = perTrims[m.id];
+      if (trim != null) {
+        final startMs = trim['start_ms'];
+        final endMs = trim['end_ms'];
+        item.trimStart =
+            startMs != null ? Duration(milliseconds: startMs) : null;
+        item.trimEnd =
+            endMs != null ? Duration(milliseconds: endMs) : null;
+      }
+      if (widget.initialFilterName != null &&
+          widget.initialFilterName!.isNotEmpty) {
+        item.filter = widget.initialFilterName!;
       }
       _media = [item];
       _currentIndex = 0;
@@ -603,6 +770,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         builder: (_) => TagPeopleScreen(
           mediaPaths: _media.map((m) => m.displayPath).toList(),
           isVideos: _media.map((m) => m.isVideo).toList(),
+          coverPaths: _media.map((m) => m.thumbnailPath).toList(),
           filterNames: _media.map((m) => m.filter).toList(),
           adjustments: _media.map((m) => m.adjustments).toList(),
           alreadyProcessed: _media.map((m) => m.alreadyProcessed).toList(),
@@ -709,16 +877,44 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         final adj = item.adjustments;
         final css = _cssFrom(item.filter, adj);
         final aspectLabel = _aspectRatioLabel(item.aspect);
+        String? thumbUrl;
+        String? thumbName;
+        if (item.isVideo && item.thumbnailPath != null) {
+          final thumbFile = File(item.thumbnailPath!);
+          if (await thumbFile.exists()) {
+            final thumbBytes = await thumbFile.readAsBytes();
+            final thumbExt = item.thumbnailPath!.split('.').last;
+            final thumbFilename =
+                '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode % 100000}_thumb.$thumbExt';
+            final thumbUploaded = await UploadApi()
+                .uploadFileBytes(bytes: thumbBytes, filename: thumbFilename);
+            thumbName = (thumbUploaded['fileName'] ??
+                    thumbUploaded['filename'] ??
+                    thumbFilename)
+                .toString();
+            thumbUrl = thumbUploaded['fileUrl']?.toString();
+          }
+        }
         processedMedia.add({
           'fileName': serverFileName,
           'fileUrl': fileUrl,
           'type': item.isVideo ? 'video' : 'image',
+          if (thumbUrl != null) ...{
+            'thumbnailUrl': thumbUrl,
+            'thumbnail': thumbUrl,
+          },
+          if (thumbName != null) 'thumbnailName': thumbName,
           'crop': {
             'mode': 'original',
             'zoom': 1,
             'x': 0,
             'y': 0,
             'aspect_ratio': aspectLabel,
+          },
+          if (item.trimStart != null || item.trimEnd != null) 'trim': {
+            if (item.trimStart != null)
+              'start_ms': item.trimStart!.inMilliseconds,
+            if (item.trimEnd != null) 'end_ms': item.trimEnd!.inMilliseconds,
           },
           'aspect_ratio': aspectLabel,
           'filter': {
@@ -1147,7 +1343,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                   ? AspectRatio(
                                       aspectRatio: aspect,
                                       child: item.isVideo
-                                          ? _buildVideoThumbnail(item.sourcePath)
+                                          ? _buildVideoPreviewForItem(item)
                                           : _applyFilterToImage(
                                               File(item.displayPath), item),
                                     )
@@ -1181,7 +1377,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                           return AspectRatio(
                                             aspectRatio: a,
                                             child: m.isVideo
-                                                ? _buildVideoThumbnail(m.sourcePath)
+                                                ? _buildVideoPreviewForItem(m)
                                                 : _applyFilterToImage(
                                                     File(m.displayPath), m),
                                           );
@@ -1316,7 +1512,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ? AspectRatio(
                             aspectRatio: aspect,
                             child: item.isVideo
-                                ? _buildVideoThumbnail(item.sourcePath)
+                                ? _buildVideoPreviewForItem(item)
                                 : _applyFilterToImage(
                                     File(item.displayPath), item),
                           )
@@ -1350,7 +1546,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 return AspectRatio(
                                   aspectRatio: a,
                                   child: m.isVideo
-                                      ? _buildVideoThumbnail(m.sourcePath)
+                                      ? _buildVideoPreviewForItem(m)
                                       : _applyFilterToImage(
                                           File(m.displayPath), m),
                                 );

@@ -73,6 +73,283 @@ class _PreviewTextOverlay {
   }
 }
 
+class _ZoomPanImageView extends StatefulWidget {
+  final Key imageKey;
+  final String filePath;
+  final double viewportW;
+  final double viewportH;
+  final double imagePxW;
+  final double imagePxH;
+  final double containScale;
+  final double coverScale;
+  final double maxScale;
+  final TransformationController transformController;
+  final List<String> filterIds;
+  final Map<String, int> adjustments;
+  final Widget Function(Widget, {List<String>? filterIds}) applyFilter;
+  final Widget Function(Widget, {Map<String, int>? adjustments}) applyAdjustments;
+
+  const _ZoomPanImageView({
+    super.key,
+    required this.imageKey,
+    required this.filePath,
+    required this.viewportW,
+    required this.viewportH,
+    required this.imagePxW,
+    required this.imagePxH,
+    required this.containScale,
+    required this.coverScale,
+    required this.maxScale,
+    required this.transformController,
+    required this.filterIds,
+    required this.adjustments,
+    required this.applyFilter,
+    required this.applyAdjustments,
+  });
+
+  @override
+  State<_ZoomPanImageView> createState() => _ZoomPanImageViewState();
+}
+
+class _ZoomPanImageViewState extends State<_ZoomPanImageView>
+    with SingleTickerProviderStateMixin {
+  late double _scale;
+  double _baseScale = 1.0;
+  Offset _offset = Offset.zero;
+  Offset _baseOffset = Offset.zero;
+  Offset _baseFocalPoint = Offset.zero;
+  AnimationController? _animController;
+  Animation<Offset>? _offsetAnim;
+  Animation<double>? _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _scale = (widget.coverScale.isFinite && widget.coverScale > 0)
+        ? widget.coverScale
+        : 1.0;
+    _offset = _centeredOffset(_scale);
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    )..addListener(_onAnimTick);
+  }
+
+  @override
+  void dispose() {
+    _animController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ZoomPanImageView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final mediaChanged = widget.filePath != oldWidget.filePath;
+    final geometryChanged =
+        widget.viewportW != oldWidget.viewportW ||
+        widget.viewportH != oldWidget.viewportH ||
+        widget.imagePxW != oldWidget.imagePxW ||
+        widget.imagePxH != oldWidget.imagePxH ||
+        widget.coverScale != oldWidget.coverScale;
+    if (mediaChanged || geometryChanged) {
+      _animController?.stop();
+      _scale = (widget.coverScale.isFinite && widget.coverScale > 0)
+          ? widget.coverScale
+          : 1.0;
+      _offset = _centeredOffset(_scale);
+      _baseScale = _scale;
+      _baseOffset = _offset;
+    }
+  }
+
+  Offset _centeredOffset(double scale) {
+    final sw = widget.imagePxW * scale;
+    final sh = widget.imagePxH * scale;
+    return Offset(
+      (widget.viewportW - sw) / 2.0,
+      (widget.viewportH - sh) / 2.0,
+    );
+  }
+
+  Offset _clampOffset(Offset offset, double scale) {
+    final sw = widget.imagePxW * scale;
+    final sh = widget.imagePxH * scale;
+
+    double clampAxis(double value, double drawn, double viewport) {
+      if (drawn <= viewport) {
+        return (viewport - drawn) / 2.0;
+      } else {
+        return value.clamp(viewport - drawn, 0.0);
+      }
+    }
+
+    return Offset(
+      clampAxis(offset.dx, sw, widget.viewportW),
+      clampAxis(offset.dy, sh, widget.viewportH),
+    );
+  }
+
+  void _onAnimTick() {
+    if (!mounted) return;
+    setState(() {
+      if (_scaleAnim != null) {
+        _scale = _scaleAnim!.value;
+      }
+      if (_offsetAnim != null) {
+        _offset = _offsetAnim!.value;
+      }
+      _offset = _clampOffset(_offset, _scale);
+    });
+  }
+
+  void _onScaleStart(ScaleStartDetails d) {
+    _animController?.stop();
+    _baseScale = _scale;
+    _baseOffset = _offset;
+    _baseFocalPoint = d.localFocalPoint;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    setState(() {
+      final newScale =
+          (_baseScale * d.scale).clamp(widget.containScale, widget.maxScale);
+
+      final imgX = (_baseFocalPoint.dx - _baseOffset.dx) / _baseScale;
+      final imgY = (_baseFocalPoint.dy - _baseOffset.dy) / _baseScale;
+
+      final ox = d.localFocalPoint.dx - imgX * newScale;
+      final oy = d.localFocalPoint.dy - imgY * newScale;
+
+      _scale = newScale;
+      _offset = _clampOffset(Offset(ox, oy), newScale);
+    });
+  }
+
+  void _onScaleEnd(ScaleEndDetails d) {
+    if (_scale < widget.containScale) {
+      _animateTo(
+        targetScale: widget.containScale,
+        targetOffset: _centeredOffset(widget.containScale),
+      );
+      return;
+    }
+
+    if (_scale < widget.coverScale &&
+        widget.coverScale > widget.containScale) {
+      _animateTo(
+        targetScale: widget.coverScale,
+        targetOffset: _clampOffset(_offset, widget.coverScale),
+      );
+      return;
+    }
+
+    final velocity = d.velocity.pixelsPerSecond;
+    if (velocity.distance > 150) {
+      final projected = _offset + velocity * 0.10;
+      final clamped = _clampOffset(projected, _scale);
+      _offsetAnim = Tween<Offset>(begin: _offset, end: clamped).animate(
+        CurvedAnimation(parent: _animController!, curve: Curves.easeOutCubic),
+      );
+      _scaleAnim = null;
+      _animController!.forward(from: 0);
+    }
+  }
+
+  void _animateTo({
+    required double targetScale,
+    required Offset targetOffset,
+  }) {
+    _scaleAnim = Tween<double>(begin: _scale, end: targetScale).animate(
+      CurvedAnimation(parent: _animController!, curve: Curves.easeOutCubic),
+    );
+    _offsetAnim = Tween<Offset>(begin: _offset, end: targetOffset).animate(
+      CurvedAnimation(parent: _animController!, curve: Curves.easeOutCubic),
+    );
+    _animController!.forward(from: 0);
+  }
+
+  void _onDoubleTapDown(TapDownDetails d) {
+    _animController?.stop();
+    if (_scale > widget.coverScale * 1.3) {
+      _animateTo(
+        targetScale: widget.coverScale,
+        targetOffset: _clampOffset(
+          _centeredOffset(widget.coverScale),
+          widget.coverScale,
+        ),
+      );
+      return;
+    }
+    if (_scale <= widget.containScale * 1.1) {
+      _animateTo(
+        targetScale: widget.coverScale,
+        targetOffset: _clampOffset(
+          _centeredOffset(widget.coverScale),
+          widget.coverScale,
+        ),
+      );
+      return;
+    }
+    final newScale =
+        (widget.coverScale * 2.5).clamp(widget.coverScale, widget.maxScale);
+    final imgX = (d.localPosition.dx - _offset.dx) / _scale;
+    final imgY = (d.localPosition.dy - _offset.dy) / _scale;
+    final ox = d.localPosition.dx - imgX * newScale;
+    final oy = d.localPosition.dy - imgY * newScale;
+    _animateTo(
+      targetScale: newScale,
+      targetOffset: _clampOffset(Offset(ox, oy), newScale),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_scale.isFinite || _scale <= 0) return const SizedBox.shrink();
+
+    final image = widget.applyAdjustments(
+      widget.applyFilter(
+        Image.file(
+          key: widget.imageKey,
+          File(widget.filePath),
+          width: widget.imagePxW,
+          height: widget.imagePxH,
+          fit: BoxFit.fill,
+          filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
+        ),
+        filterIds: widget.filterIds,
+      ),
+      adjustments: widget.adjustments,
+    );
+
+    return ClipRect(
+      child: GestureDetector(
+        onScaleStart: _onScaleStart,
+        onScaleUpdate: _onScaleUpdate,
+        onScaleEnd: _onScaleEnd,
+        onDoubleTapDown: _onDoubleTapDown,
+        child: SizedBox(
+          width: widget.viewportW,
+          height: widget.viewportH,
+          child: Stack(
+            children: [
+              Positioned(
+                left: _offset.dx,
+                top: _offset.dy,
+                child: Transform.scale(
+                  scale: _scale,
+                  alignment: Alignment.topLeft,
+                  child: image,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ImageToolSpec {
   final String key;
   final String label;
@@ -128,6 +405,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   bool _isPlaying = false;
   Duration? _trimStart;
   Duration? _trimEnd;
+  final Map<String, Duration?> _mediaTrimStart = {};
+  final Map<String, Duration?> _mediaTrimEnd = {};
+  final Map<String, String?> _mediaVideoCoverPath = {};
   final List<_PreviewTextOverlay> _textOverlays = [];
   int? _activeTextIndex;
   int _zCounter = 0;
@@ -159,7 +439,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   double? _autoPostAspect;
   ImageStream? _imageStream;
   ImageStreamListener? _imageStreamListener;
-  final GlobalKey<ExtendedImageGestureState> _postGestureKey = GlobalKey<ExtendedImageGestureState>();
+  final TransformationController _transformController = TransformationController();
+  final GlobalKey<_ZoomPanImageViewState> _zoomPanKey = GlobalKey<_ZoomPanImageViewState>();
   final GlobalKey _previewRepaintKey = GlobalKey();
   Key _imageKey = const ValueKey('img_0_0');
   Size? _postViewportSize;
@@ -172,6 +453,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     'opacity': 0,
     'vignette': 0,
   };
+
+  _ZoomPanImageViewState? get _zoomPanState => _zoomPanKey.currentState;
 
   double _clampInstagramPostAspect(double aspect) {
     if (aspect.isNaN || aspect.isInfinite || aspect <= 0) return 1.0;
@@ -199,6 +482,26 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     }
 
     if (widget.isPostFlow) {
+      // Special-case: if current item is a square video, keep 1:1.
+      if (_isVideoMedia(_currentMedia)) {
+        final controller = _videoController;
+        final vAspect = controller != null && controller.value.isInitialized
+            ? controller.value.aspectRatio
+            : aspect;
+        if ((vAspect - 1.0).abs() < 0.05) {
+          return 1.0;
+        }
+        // If we already have a fixed aspect from an image, honor it.
+        if (_postFixedAspect != null) {
+          return _postFixedAspect!;
+        }
+        // If there's any image in the carousel, default to 4:5 until image sets fixed aspect.
+        final hasImage =
+            _mediaList.any((m) => !_isVideoMedia(m));
+        if (hasImage) {
+          return 4.0 / 5.0;
+        }
+      }
       if (!hasAspect) {
         return 1.0;
       }
@@ -225,6 +528,11 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   void _maybeInitPostAspect(double aspect) {
     if (!widget.isPostFlow) return;
     if (_postFixedAspect != null || _autoPostAspect != null) return;
+    final hasImage =
+        _mediaList.any((m) => !_isVideoMedia(m));
+    if (hasImage && _isVideoMedia(_currentMedia)) {
+      return;
+    }
     final next = _autoPostAspectFor(aspect);
     _autoPostAspect = next;
     _postFixedAspect = next;
@@ -411,6 +719,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     return ids;
   }
 
+  String? _filterNameForId(String? id) {
+    if (id == null || id.isEmpty || id == 'none') return null;
+    final filters = _createService.getFilters();
+    for (final f in filters) {
+      if (f.id == id) return f.name;
+    }
+    return null;
+  }
+
   Map<String, int> _mergeAdjustments(
     Map<String, int> base,
     Map<String, int> delta,
@@ -446,12 +763,59 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         lower.endsWith('.mkv');
   }
 
+  bool get _isCarouselVideo =>
+      _mediaList.length > 1 && _isVideoMedia(_currentMedia);
+
+  void _openVideoEditorForCurrent() {
+    if (_mediaList.length > 1) {
+      _openPerVideoEditor(_currentMedia, _currentIndex);
+    } else {
+      _openVideoEditor();
+    }
+  }
+
+  Duration? _trimStartFor(app_models.MediaItem media) {
+    if (_mediaList.length > 1) return _mediaTrimStart[media.id];
+    return _trimStart;
+  }
+
+  Duration? _trimEndFor(app_models.MediaItem media) {
+    if (_mediaList.length > 1) return _mediaTrimEnd[media.id];
+    return _trimEnd;
+  }
+
+  void _setTrimFor(app_models.MediaItem media, Duration? start, Duration? end) {
+    if (_mediaList.length > 1) {
+      _mediaTrimStart[media.id] = start;
+      _mediaTrimEnd[media.id] = end;
+    } else {
+      _trimStart = start;
+      _trimEnd = end;
+    }
+  }
+
+  String? _coverPathFor(app_models.MediaItem media) {
+    return _mediaVideoCoverPath[media.id];
+  }
+
   Widget _buildVideoThumbnail(
     String filePath, {
+    String? coverPath,
     BoxFit fit = BoxFit.cover,
     double? width,
     double? height,
   }) {
+    if (coverPath != null) {
+      final coverFile = File(coverPath);
+      if (coverFile.existsSync()) {
+        return Image.file(
+          coverFile,
+          fit: fit,
+          width: width,
+          height: height,
+        );
+      }
+    }
     return FutureBuilder<Uint8List?>(
       future: VideoThumbnail.thumbnailData(
         video: filePath,
@@ -512,12 +876,13 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       _videoController = controller;
       _videoInit = controller.initialize().then((_) {
         if (!mounted) return;
-        controller.setLooping(false);
+        controller.setLooping(true);
         controller.addListener(_handlePreviewVideoTick);
         if (widget.isPostFlow) {
           _maybeInitPostAspect(controller.value.aspectRatio);
         }
-        setState(() => _isPlaying = false);
+        controller.play();
+        setState(() => _isPlaying = true);
       });
     } else if (!_isVideoMedia(_currentMedia) && _currentMedia.filePath != null) {
       final provider = FileImage(File(_currentMedia.filePath!));
@@ -550,6 +915,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     _postPageController?.dispose();
     _stickerHoldTimer?.cancel();
     _textHoldTimer?.cancel();
+    _transformController.dispose();
     _videoController?.removeListener(_handlePreviewVideoTick);
     _videoController?.dispose();
     final stream = _imageStream;
@@ -590,9 +956,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       _videoController = controller;
       _videoInit = controller.initialize().then((_) {
         if (!mounted) return;
-        controller.setLooping(false);
+        controller.setLooping(true);
         controller.addListener(_handlePreviewVideoTick);
-        setState(() => _isPlaying = false);
+        controller.play();
+        setState(() => _isPlaying = true);
       });
     } else if (!_isVideoMedia(media) && media.filePath != null) {
       final provider = FileImage(File(media.filePath!));
@@ -627,24 +994,24 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (controller == null || !controller.value.isInitialized) return;
     final pos = controller.value.position;
     final duration = controller.value.duration;
-    final start = _trimStart;
-    final end = _trimEnd;
+    final start = _trimStartFor(_currentMedia);
+    final end = _trimEndFor(_currentMedia);
     if (start != null && end != null && end > start) {
       if (pos < start) {
         controller.seekTo(start);
       }
       if (pos >= end) {
-        controller.pause();
-        if (mounted) {
-          setState(() => _isPlaying = false);
+        controller.seekTo(start);
+        if (!controller.value.isPlaying) {
+          controller.play();
         }
       }
       return;
     }
     if (duration != Duration.zero && pos >= duration) {
-      controller.pause();
-      if (mounted) {
-        setState(() => _isPlaying = false);
+      controller.seekTo(Duration.zero);
+      if (!controller.value.isPlaying) {
+        controller.play();
       }
     }
   }
@@ -665,8 +1032,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
     if (result != null) {
       setState(() {
-        _trimStart = result.trimStart;
-        _trimEnd = result.trimEnd;
+        _setTrimFor(_currentMedia, result.trimStart, result.trimEnd);
       });
 
       if (result.outputPath != null && result.outputPath!.isNotEmpty) {
@@ -686,22 +1052,30 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         _videoController = controller;
         _videoInit = controller.initialize().then((_) {
           if (!mounted) return;
-          controller.setLooping(false);
-          controller.addListener(_handlePreviewVideoTick);
-          setState(() => _isPlaying = false);
-        });
+        controller.setLooping(true);
+        controller.addListener(_handlePreviewVideoTick);
+        controller.play();
+        setState(() => _isPlaying = true);
+      });
         setState(() {}); // Trigger immediate rebuild to show loading for the NEW future
       } else {
-      // Seek preview to the new trim start (do not auto-play)
+      // Seek preview to the new trim start and resume playback
       final controller = _videoController;
       if (controller != null && controller.value.isInitialized) {
-        await controller.seekTo(_trimStart!);
-        setState(() => _isPlaying = false);
+        final seekTo = _trimStartFor(_currentMedia);
+        if (seekTo != null) {
+          await controller.seekTo(seekTo);
+        }
+        controller.play();
+        setState(() => _isPlaying = true);
       }
       }
     } else {
-      // User cancelled – do not auto-play
-      setState(() => _isPlaying = false);
+      // User cancelled – resume playback
+      if (_videoController?.value.isInitialized == true) {
+        await _videoController?.play();
+      }
+      setState(() => _isPlaying = true);
     }
   }
 
@@ -879,6 +1253,79 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           List<OverlaySticker>.from(result.stickerOverlays);
       _cachedTextEditorBackground = null;
     });
+  }
+
+  Future<void> _openPerVideoEditor(
+    app_models.MediaItem media,
+    int index,
+  ) async {
+    if (media.filePath == null) return;
+    final result = await Navigator.of(context).push<_PerVideoEditResult>(
+      MaterialPageRoute(
+        builder: (_) => _PerVideoEditPage(
+          media: media,
+          frameAspect: _postFrameAspect(),
+          initialFilter: _mediaFilters[media.id] ?? 'none',
+          globalFilter: _selectedFilter,
+          initialTrimStart: _trimStartFor(media),
+          initialTrimEnd: _trimEndFor(media),
+          initialCoverPath: _coverPathFor(media),
+          filters: _createService.getFilters(),
+          filterMatrixFor: _reelFilterMatrixFor,
+        ),
+      ),
+    );
+    if (!mounted || result == null) return;
+
+    setState(() {
+      _mediaFilters[media.id] = result.filterId;
+      _setTrimFor(media, result.trimStart, result.trimEnd);
+      if (result.coverPath != null && result.coverPath!.isNotEmpty) {
+        _mediaVideoCoverPath[media.id] = result.coverPath;
+        _mediaList[index] = app_models.MediaItem(
+          id: media.id,
+          type: media.type,
+          filePath: media.filePath,
+          thumbnailPath: result.coverPath,
+          duration: media.duration,
+          createdAt: media.createdAt,
+        );
+        if (_currentIndex == index) {
+          _currentMedia = _mediaList[index];
+        }
+      }
+    });
+
+    if (result.outputPath != null && result.outputPath!.isNotEmpty) {
+      final updated = app_models.MediaItem(
+        id: media.id,
+        type: media.type,
+        filePath: result.outputPath,
+        thumbnailPath: result.coverPath ?? media.thumbnailPath,
+        duration: media.duration,
+        createdAt: media.createdAt,
+      );
+      setState(() {
+        _mediaList[index] = updated;
+        if (_currentIndex == index) {
+          _currentMedia = updated;
+        }
+      });
+      if (_currentIndex == index && _isVideoMedia(updated)) {
+        _videoController?.removeListener(_handlePreviewVideoTick);
+        await _videoController?.dispose();
+        _videoController = null;
+        final controller = VideoPlayerController.file(File(updated.filePath!));
+        _videoController = controller;
+        _videoInit = controller.initialize().then((_) {
+          if (!mounted) return;
+          controller.setLooping(true);
+          controller.addListener(_handlePreviewVideoTick);
+          controller.play();
+          setState(() => _isPlaying = true);
+        });
+      }
+    }
   }
 
   void _openImageAdjustmentsEditor() {
@@ -1127,91 +1574,96 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       return const Icon(Icons.image, size: 100, color: Colors.white54);
     }
     if (_isVideoMedia(media)) {
-      return SizedBox(
-        width: viewport.maxWidth,
-        height: viewport.maxHeight,
-        child: _buildVideoThumbnail(
+      final thumb = _applySelectedFilter(
+        _buildVideoThumbnail(
           media.filePath!,
+          coverPath: _coverPathFor(media),
           fit: BoxFit.cover,
           width: viewport.maxWidth,
           height: viewport.maxHeight,
         ),
+        filterIds: _effectiveFilterIds(media),
+      );
+      return SizedBox(
+        width: viewport.maxWidth,
+        height: viewport.maxHeight,
+        child: thumb,
       );
     }
     _postViewportSize = viewport.biggest;
+
+    final imageAspect = _imageAspectRatio ?? 1.0;
+    final viewportW = viewport.maxWidth;
+    final viewportH = viewport.maxHeight;
+    final viewportAspect = viewportH > 0 ? viewportW / viewportH : 1.0;
+
+    if (viewportW <= 0 || viewportH <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final imgW = (_imagePixelSize?.width ?? viewportW).clamp(1.0, double.infinity);
+    final imgH = (_imagePixelSize?.height ?? viewportH).clamp(1.0, double.infinity);
+
+    double containScale;
+    if (imageAspect > viewportAspect) {
+      containScale = viewportW / imgW;
+    } else {
+      containScale = viewportH / imgH;
+    }
+
+    double coverScale;
+    if (imageAspect > viewportAspect) {
+      coverScale = viewportH / imgH;
+    } else {
+      coverScale = viewportW / imgW;
+    }
+    if (!coverScale.isFinite || coverScale <= 0) {
+      coverScale = 1.0;
+    }
+    if (!containScale.isFinite || containScale <= 0) {
+      containScale = 1.0;
+    }
+
+    final imagePxW = imgW;
+    final imagePxH = imgH;
+
     if (!enableGesture) {
-      final preview = _applyImageAdjustments(
-        _applySelectedFilter(
-          Image.file(
-            File(media.filePath!),
-            fit: BoxFit.cover,
-            width: viewport.maxWidth,
-            height: viewport.maxHeight,
-          ),
-          filterIds: _effectiveFilterIds(media),
-        ),
-        adjustments: _effectiveAdjustments(media),
-      );
       return SizedBox(
-        width: viewport.maxWidth,
-        height: viewport.maxHeight,
-        child: preview,
+        width: viewportW,
+        height: viewportH,
+        child: _applyImageAdjustments(
+          _applySelectedFilter(
+            Image.file(
+              File(media.filePath!),
+              fit: BoxFit.cover,
+              width: viewportW,
+              height: viewportH,
+            ),
+            filterIds: _effectiveFilterIds(media),
+          ),
+          adjustments: _effectiveAdjustments(media),
+        ),
       );
     }
-    final imageAspect = _imageAspectRatio ?? 1.0;
-    final viewportAspect =
-        (viewport.maxHeight <= 0) ? 1.0 : (viewport.maxWidth / viewport.maxHeight);
-    final fillScale = (imageAspect / viewportAspect) > 1.0
-        ? viewportAspect / imageAspect
-        : imageAspect / viewportAspect;
-    final minFillScale = math.max(1.0, fillScale);
-    final initialScale = minFillScale;
-    final preview = _applyImageAdjustments(
-      _applySelectedFilter(
-        ExtendedImage.file(
-          key: _imageKey,
-          extendedImageGestureKey: _postGestureKey,
-          File(media.filePath!),
-          width: viewport.maxWidth,
-          height: viewport.maxHeight,
-          fit: BoxFit.cover,
-          borderRadius: BorderRadius.circular(24),
-          clipBehavior: Clip.antiAlias,
-          mode: ExtendedImageMode.gesture,
-          initGestureConfigHandler: (state) {
-            return GestureConfig(
-              minScale: minFillScale,
-              maxScale: math.max(4.0, minFillScale * 3.0),
-              initialScale: minFillScale,
-              speed: 1.0,
-              inertialSpeed: 100.0,
-              cacheGesture: true,
-              inPageView: false,
-            );
-          },
-          onDoubleTap: (ExtendedImageGestureState s) {
-            final begin = s.gestureDetails?.totalScale ?? minFillScale;
-            final end = begin < (minFillScale * 1.5)
-                ? (minFillScale * 2.0)
-                : minFillScale;
-            s.handleDoubleTap(scale: end);
-          },
-        ),
-        filterIds: _effectiveFilterIds(media),
-      ),
+
+    return _ZoomPanImageView(
+      key: _zoomPanKey,
+      imageKey: _imageKey,
+      filePath: media.filePath!,
+      viewportW: viewportW,
+      viewportH: viewportH,
+      imagePxW: imagePxW,
+      imagePxH: imagePxH,
+      containScale: containScale,
+      coverScale: coverScale,
+      maxScale: coverScale * 6.0,
+      transformController: _transformController,
+      filterIds: _effectiveFilterIds(media),
       adjustments: _effectiveAdjustments(media),
+      applyFilter: _applySelectedFilter,
+      applyAdjustments: _applyImageAdjustments,
     );
-    return SizedBox(
-      width: viewport.maxWidth,
-      height: viewport.maxHeight,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ClipRect(child: preview),
-        ],
-      ),
-    );
-  }
+}
 
   Rect? _computeVisibleCropRect({
     required Size viewport,
@@ -1448,8 +1900,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   // ── Proceed to post details, passing trim values along
   Future<void> _proceedToPostDetails() async {
-    final fallbackViewport =
-        _postViewportSize ?? Size(MediaQuery.of(context).size.width, MediaQuery.of(context).size.width);
     final isVideo = _currentMedia.type == app_models.MediaType.video;
     final hasOverlays = _textOverlays.isNotEmpty || _stickerOverlays.isNotEmpty;
     if (_videoController?.value.isInitialized == true) {
@@ -1481,65 +1931,57 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         usedComposite = true;
       }
     }
-    if (!usedComposite && !isVideo && filePath != null) {
-      final viewport = _postViewportSize ?? fallbackViewport;
-      final imagePx = _imagePixelSize ?? await _readImagePixelSizeFromFile(filePath);
-      if (imagePx == null) {
-      } else {
-      final dynamic details = _postGestureKey.currentState?.gestureDetails;
-      Rect? cropRect;
-      if (details != null) {
-        cropRect = _computeVisibleCropRectFromGestureDetails(
-          viewport: viewport,
-          imagePx: imagePx,
-          details: details,
+    if (widget.isPostFlow && isVideo) {
+      final cover = _coverPathFor(_currentMedia);
+      if (cover != null && cover.isNotEmpty) {
+        nextMedia = app_models.MediaItem(
+          id: _currentMedia.id,
+          type: _currentMedia.type,
+          filePath: _currentMedia.filePath,
+          thumbnailPath: cover,
+          duration: _currentMedia.duration,
+          createdAt: _currentMedia.createdAt,
         );
       }
-      if (cropRect == null) {
-        double totalScale = 1.0;
-        if (details != null) {
-          try {
-            final v = details.totalScale;
-            if (v is num) totalScale = v.toDouble();
-          } catch (_) {}
+    }
+    if (!usedComposite && !isVideo && filePath != null) {
+      final imagePx = _imagePixelSize ?? await _readImagePixelSizeFromFile(filePath);
+      if (imagePx != null) {
+        Rect? cropRect;
+        final zoomState = _zoomPanState;
+        if (zoomState != null) {
+          final s = zoomState._scale;
+          final o = zoomState._offset;
+          final vW =
+              _postViewportSize?.width ?? MediaQuery.of(context).size.width;
+          final vH = _postViewportSize?.height ?? vW;
+
+          final left = (-o.dx / s).clamp(0.0, imagePx.width);
+          final top = (-o.dy / s).clamp(0.0, imagePx.height);
+          final right = ((vW - o.dx) / s).clamp(0.0, imagePx.width);
+          final bottom = ((vH - o.dy) / s).clamp(0.0, imagePx.height);
+
+          cropRect = Rect.fromLTRB(left, top, right, bottom);
         }
-        Offset totalOffset = Offset.zero;
-        if (details != null) {
-          try {
-            final v = details.userOffset;
-            if (v is Offset) totalOffset = v;
-          } catch (_) {}
-          if (totalOffset == Offset.zero) {
-            try {
-              final v = details.offset;
-              if (v is Offset) totalOffset = v;
-            } catch (_) {}
+
+        if (cropRect != null) {
+          nextAspect =
+              _clampInstagramPostAspect(cropRect.width / cropRect.height);
+          final croppedPath = await _writeCroppedImageFile(
+            sourcePath: filePath,
+            cropRect: cropRect,
+          );
+          if (croppedPath != null && croppedPath.isNotEmpty) {
+            nextMedia = app_models.MediaItem(
+              id: _currentMedia.id,
+              type: _currentMedia.type,
+              filePath: croppedPath,
+              thumbnailPath: _currentMedia.thumbnailPath,
+              duration: _currentMedia.duration,
+              createdAt: _currentMedia.createdAt,
+            );
           }
         }
-        cropRect = _computeVisibleCropRect(
-          viewport: viewport,
-          imagePx: imagePx,
-          totalScale: totalScale,
-          totalOffset: totalOffset,
-        );
-      }
-      if (cropRect != null) {
-        nextAspect = _clampInstagramPostAspect(cropRect.width / cropRect.height);
-        final croppedPath = await _writeCroppedImageFile(
-          sourcePath: filePath,
-          cropRect: cropRect,
-        );
-        if (croppedPath != null && croppedPath.isNotEmpty) {
-          nextMedia = app_models.MediaItem(
-            id: _currentMedia.id,
-            type: _currentMedia.type,
-            filePath: croppedPath,
-            thumbnailPath: _currentMedia.thumbnailPath,
-            duration: _currentMedia.duration,
-            createdAt: _currentMedia.createdAt,
-          );
-        }
-      }
       }
     }
 
@@ -1570,6 +2012,29 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (!mounted) return;
     final processedList =
         widget.isPostFlow ? await _buildProcessedMediaList() : null;
+    final globalFilterName = _filterNameForId(_selectedFilter);
+    final perMediaFilterNames = <String, String>{};
+    final listForFilters = _mediaList;
+    final perMediaAdjustments = <String, Map<String, int>>{};
+    for (final media in listForFilters) {
+      final perId = _mediaFilters[media.id];
+      final name = _filterNameForId(perId);
+      if (name != null && name.isNotEmpty) {
+        perMediaFilterNames[media.id] = name;
+      }
+      perMediaAdjustments[media.id] = Map<String, int>.from(
+        _effectiveAdjustments(media),
+      );
+      debugPrint(
+        '[CreateEditPreview] media id=${media.id} type=${media.type} '
+        'filterId=$perId filterName=$name '
+        'adjustments=${perMediaAdjustments[media.id]}',
+      );
+    }
+    debugPrint(
+      '[CreateEditPreview] globalFilterId=$_selectedFilter '
+      'globalFilterName=$globalFilterName',
+    );
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => widget.isPostFlow
@@ -1577,8 +2042,27 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                 initialMedia: nextMedia,
                 initialMediaList: processedList,
                 initialAspect: nextAspect,
-                initialFilterName: null,
+                initialFilterName: globalFilterName,
                 initialAdjustments: null,
+                initialMediaFilters:
+                    perMediaFilterNames.isEmpty ? null : perMediaFilterNames,
+                initialMediaAdjustments:
+                    perMediaAdjustments.isEmpty ? null : perMediaAdjustments,
+                initialMediaTrims: () {
+                  final out = <String, Map<String, int>>{};
+                  for (final media in listForFilters) {
+                    final start = _trimStartFor(media);
+                    final end = _trimEndFor(media);
+                    if (start != null || end != null) {
+                      out[media.id] = {
+                        if (start != null)
+                          'start_ms': start.inMilliseconds,
+                        if (end != null) 'end_ms': end.inMilliseconds,
+                      };
+                    }
+                  }
+                  return out.isEmpty ? null : out;
+                }(),
               )
             : CreateReelDetailsScreen(
                 media: _currentMedia,
@@ -1606,8 +2090,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   }
 
   Future<List<app_models.MediaItem>?> _buildProcessedMediaList() async {
-    final list = widget.mediaList;
-    if (list == null || list.length <= 1) return null;
+    final list = _mediaList;
+    if (list.length <= 1) return null;
 
     final prevIndex = _currentIndex;
     final prevMedia = _currentMedia;
@@ -1616,7 +2100,21 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     for (int i = 0; i < list.length; i++) {
       final media = list[i];
       if (media.type == app_models.MediaType.video || media.filePath == null) {
-        processed.add(media);
+        final cover = _coverPathFor(media);
+        if (cover != null && cover.isNotEmpty) {
+          processed.add(
+            app_models.MediaItem(
+              id: media.id,
+              type: media.type,
+              filePath: media.filePath,
+              thumbnailPath: cover,
+              duration: media.duration,
+              createdAt: media.createdAt,
+            ),
+          );
+        } else {
+          processed.add(media);
+        }
         continue;
       }
 
@@ -2424,39 +2922,61 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                             itemBuilder: (context, i) {
                                               final item = _mediaList[i];
                                               final isActive = i == _currentIndex;
-                                              if (_isVideoMedia(item)) {
-                                                if (isActive) {
-                                                  return _buildVideoPreview();
-                                                }
+                                        if (_isVideoMedia(item)) {
+                                          if (isActive) {
+                                            return GestureDetector(
+                                              onTap: () => _openPerVideoEditor(
+                                                item,
+                                                i,
+                                              ),
+                                              child: _buildVideoPreview(),
+                                            );
+                                          }
                                                 if (item.filePath == null) {
                                                   return Container(color: Colors.black);
                                                 }
-                                                return _buildVideoThumbnail(
-                                                  item.filePath!,
-                                                  fit: BoxFit.cover,
+                                                final thumb = _applySelectedFilter(
+                                                  _buildVideoThumbnail(
+                                                    item.filePath!,
+                                                    coverPath: _coverPathFor(item),
+                                                    fit: BoxFit.cover,
+                                                  ),
+                                                  filterIds: _effectiveFilterIds(item),
+                                                );
+                                                return GestureDetector(
+                                                  onTap: () {
+                                                    if (!isActive) {
+                                                      _setCurrentMedia(item, i);
+                                                    }
+                                                    _openPerVideoEditor(item, i);
+                                                  },
+                                                  child: thumb,
                                                 );
                                               }
-                                              return GestureDetector(
-                                                onTap: () {
-                                                  if (!isActive) {
-                                                    _setCurrentMedia(item, i);
-                                                  }
-                                                  _openPerImageEditor(item);
-                                                },
-                                                child: LayoutBuilder(
-                                                  builder: (context, viewport) {
-                                                    return _buildPostZoomableImagePreviewFor(
-                                                      item,
-                                                      viewport,
-                                                      enableGesture: false,
-                                                    );
+                                                return GestureDetector(
+                                                  onTap: () {
+                                                    if (!isActive) {
+                                                      _setCurrentMedia(item, i);
+                                                    }
+                                                    _openPerImageEditor(item);
                                                   },
-                                                ),
-                                              );
+                                                  child: LayoutBuilder(
+                                                    builder: (context, viewport) {
+                                                      return _buildPostZoomableImagePreviewFor(
+                                                        item,
+                                                        viewport,
+                                                        enableGesture: isActive,
+                                                      );
+                                                    },
+                                                  ),
+                                                );
                                             },
                                           )
                                         else if (_isVideoMedia(_currentMedia))
-                                          _buildVideoPreview()
+                                          GestureDetector(
+                                            onTap: _openVideoEditorForCurrent,
+                                            child: _buildVideoPreview(),
+                                          )
                                         else
                                           LayoutBuilder(
                                             builder: (context, viewport) {
@@ -2750,12 +3270,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                     icon: Icons.text_fields,
                                     label: 'Text',
                                     onTap: _onTapText,
+                                    enabled: !_isCarouselVideo,
                                   ),
                                   const SizedBox(width: 10),
                                   _buildPostBottomPill(
                                     icon: Icons.layers_outlined,
                                     label: 'Overlay',
                                     onTap: _openOverlayPicker,
+                                    enabled: !_isCarouselVideo,
                                   ),
                                   const SizedBox(width: 10),
                                   _buildPostBottomPill(
@@ -2772,6 +3294,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                         widget.media.type == app_models.MediaType.video
                                             ? _openVideoEditor
                                             : _openImageAdjustmentsEditor,
+                                    enabled: !_isCarouselVideo,
                                   ),
                                 ],
                               ),
@@ -2902,12 +3425,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                         icon: Icons.text_fields,
                                         label: 'Text',
                                         onTap: _onTapText,
+                                        enabled: !_isCarouselVideo,
                                       ),
                                       const SizedBox(width: 10),
                                       _buildPostBottomPill(
                                         icon: Icons.layers_outlined,
                                         label: 'Overlay',
                                         onTap: _openOverlayPicker,
+                                        enabled: !_isCarouselVideo,
                                       ),
                                       const SizedBox(width: 10),
                                       _buildPostBottomPill(
@@ -2925,6 +3450,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                         onTap: _openImageAdjustmentsEditor,
                                         isActive: _imageAdjustments.values
                                             .any((v) => v != 0),
+                                        enabled: !_isCarouselVideo,
                                       ),
                                     ],
                                   ),
@@ -2988,229 +3514,282 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                 widget.media.type == app_models.MediaType.video)
                             ? BorderRadius.zero
                             : BorderRadius.circular(24),
-                        child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTap: () {
-                          if (_activeStickerIndex != null) {
-                            setState(() => _activeStickerIndex = null);
-                          }
-                          if (_activeTextIndex != null) {
-                            setState(() => _activeTextIndex = null);
-                          }
-                          _exitStickerDeleteMode();
-                          _exitTextDeleteMode();
-                        },
-                        onScaleStart: _handleTextScaleStart,
-                        onScaleUpdate: _handleTextScaleUpdate,
-                        onScaleEnd: (_) => _handleTextScaleEnd(),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            alignment: Alignment.center,
-                            children: [
-                              if (widget.media.type == app_models.MediaType.video)
-                                _buildVideoPreview()
-                              else
-                                _buildImagePreview(),
-                              if (!_isStickerDeleteMode &&
-                                  _trimStart != null && _trimEnd != null)
-                                Positioned(
-                                  top: 16,
-                                  left: 16,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 5),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.content_cut,
-                                            color: Colors.white, size: 12),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          '${_formatDuration(_trimStart!)} – ${_formatDuration(_trimEnd!)}',
-                                          style: const TextStyle(
-                                              color: Colors.white, fontSize: 12),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                            if (!_hideTextOverlaysForCapture)
-                              ..._buildSortedLayers().map((layer) {
-                                if (layer['type'] == 'text') {
-                                  final index = layer['index'] as int;
-                                  if (index >= _textOverlays.length) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  final overlay = _textOverlays[index];
-                                  final isActive = _activeTextIndex == index;
-                                  return Positioned(
-                                    key: ValueKey('text_$index'),
-                                    left: overlay.position.dx,
-                                    top: overlay.position.dy,
-                                    child: GestureDetector(
-                                      onTapDown: (_) => _startTextHold(index),
-                                      onTapUp: (_) => _cancelTextHold(),
-                                      onTapCancel: _cancelTextHold,
-                                      onTap: () {
-                                        if (_suppressTextTap) {
-                                          _suppressTextTap = false;
-                                          return;
-                                        }
-                                        setState(() => _bringTextToFront(index));
-                                        _openPreviewTextEditor(index: index);
-                                      },
-                                      onScaleStart: (d) {
-                                        setState(() => _bringTextToFront(index));
-                                        _cancelTextHold();
-                                        _handleTextScaleStart(d);
-                                      },
-                                      onScaleUpdate: _handleTextScaleUpdate,
-                                      onScaleEnd: (_) => _handleTextScaleEnd(),
-                                      child: AnimatedOpacity(
-                                        duration: const Duration(milliseconds: 180),
-                                        opacity: _deletingTextIndexes.contains(index) ? 0.0 : 1.0,
-                                        child: AnimatedScale(
-                                          duration: const Duration(milliseconds: 180),
-                                          scale: _deletingTextIndexes.contains(index) ? 0.0 : 1.0,
-                                          child: Transform.rotate(
-                                            angle: overlay.rotation,
-                                            child: Transform.scale(
-                                              scale: overlay.scale * (_textDeleteScale[index] ?? 1.0),
-                                              child: _buildOverlayVisual(overlay, isActive),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                } else {
-                                  final i = layer['index'] as int;
-                                  if (i >= _stickerOverlays.length) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  final s = _stickerOverlays[i];
-                                  final isActive = _activeStickerIndex == i;
-                                  return Positioned(
-                                    key: ValueKey('sticker_${s.id}'),
-                                    left: s.position.dx,
-                                    top: s.position.dy,
-                                    child: GestureDetector(
-                                      onTapDown: (_) => _startStickerHold(i),
-                                      onTapUp: (_) => _cancelStickerHold(),
-                                      onTapCancel: () => _cancelStickerHold(),
-                                      onTap: () {
-                                        if (_suppressStickerTap) {
-                                          _suppressStickerTap = false;
-                                          return;
-                                        }
-                                        setState(() {
-                                          if (_activeStickerIndex == i) {
-                                            _stickerOverlays[i] = s.copyWith(
-                                              shape: _nextShape(s.shape),
-                                            );
-                                          }
-                                          _bringStickerToFront(i);
-                                        });
-                                      },
-                                      onScaleStart: (d) {
-                                        setState(() => _bringStickerToFront(i));
-                                        _cancelStickerHold();
-                                        _handleStickerScaleStart(d);
-                                      },
-                                      onScaleUpdate: (d) => _handleStickerScaleUpdate(d, context),
-                                      onScaleEnd: (_) => _handleStickerScaleEnd(context),
-                                      child: AnimatedOpacity(
-                                        duration: const Duration(milliseconds: 180),
-                                        opacity: _deletingStickerIds.contains(s.id) ? 0.0 : 1.0,
-                                        child: AnimatedScale(
-                                          duration: const Duration(milliseconds: 180),
-                                          scale: _deletingStickerIds.contains(s.id) ? 0.0 : 1.0,
-                                          child: Transform(
-                                            alignment: Alignment.center,
-                                            transform: Matrix4.identity()
-                                              ..rotateZ(s.rotation)
-                                              ..scaleByVector3(
-                                                vector_math.Vector3.all(
-                                                  s.scale * (_stickerDeleteScale[s.id] ?? 1.0),
-                                                ),
-                                              ),
-                                            child: OverlayStickerWidget(
-                                              sticker: s,
-                                              isActive: isActive,
-                                              onDelete: () {},
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
+                        child: Builder(
+                          builder: (context) {
+                            final trimStart = _trimStartFor(_currentMedia);
+                            final trimEnd = _trimEndFor(_currentMedia);
+                            return GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onTap: () {
+                                if (_activeStickerIndex != null) {
+                                  setState(() => _activeStickerIndex = null);
                                 }
-                              }),
-                                      if (_isStickerDeleteMode ||
-                                          _isTextDeleteMode)
-                                        Positioned.fill(
-                                          child: GestureDetector(
-                                            behavior: HitTestBehavior.translucent,
-                                            onTap: () {
-                                              _exitStickerDeleteMode();
-                                              _exitTextDeleteMode();
-                                            },
-                                          ),
+                                if (_activeTextIndex != null) {
+                                  setState(() => _activeTextIndex = null);
+                                }
+                                _exitStickerDeleteMode();
+                                _exitTextDeleteMode();
+                              },
+                              onScaleStart: _handleTextScaleStart,
+                              onScaleUpdate: _handleTextScaleUpdate,
+                              onScaleEnd: (_) => _handleTextScaleEnd(),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                alignment: Alignment.center,
+                                children: [
+                                  if (widget.media.type ==
+                                      app_models.MediaType.video)
+                                    GestureDetector(
+                                      onTap: _openVideoEditorForCurrent,
+                                      child: _buildVideoPreview(),
+                                    )
+                                  else
+                                    _buildImagePreview(),
+                                  if (!_isStickerDeleteMode &&
+                                      trimStart != null &&
+                                      trimEnd != null)
+                                    Positioned(
+                                      top: 16,
+                                      left: 16,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black54,
+                                          borderRadius:
+                                              BorderRadius.circular(20),
                                         ),
-                                      Positioned(
-                                        left: 0,
-                                        right: 0,
-                                        bottom: 24,
-                                        child: IgnorePointer(
-                                          ignoring: !(_isStickerDeleteMode ||
-                                              _isTextDeleteMode),
-                                          child: AnimatedOpacity(
-                                            duration:
-                                                const Duration(milliseconds: 160),
-                                            curve: Curves.easeOut,
-                                            opacity:
-                                                (_isStickerDeleteMode ||
-                                                        _isTextDeleteMode)
-                                                    ? 1
-                                                    : 0,
-                                            child: AnimatedScale(
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.content_cut,
+                                                color: Colors.white, size: 12),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '${_formatDuration(trimStart)} – ${_formatDuration(trimEnd)}',
+                                              style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  if (!_hideTextOverlaysForCapture)
+                                    ..._buildSortedLayers().map((layer) {
+                                      if (layer['type'] == 'text') {
+                                        final index = layer['index'] as int;
+                                        if (index >= _textOverlays.length) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        final overlay = _textOverlays[index];
+                                        final isActive =
+                                            _activeTextIndex == index;
+                                        return Positioned(
+                                          key: ValueKey('text_$index'),
+                                          left: overlay.position.dx,
+                                          top: overlay.position.dy,
+                                          child: GestureDetector(
+                                            onTapDown: (_) =>
+                                                _startTextHold(index),
+                                            onTapUp: (_) => _cancelTextHold(),
+                                            onTapCancel: _cancelTextHold,
+                                            onTap: () {
+                                              if (_suppressTextTap) {
+                                                _suppressTextTap = false;
+                                                return;
+                                              }
+                                              setState(() =>
+                                                  _bringTextToFront(index));
+                                              _openPreviewTextEditor(
+                                                  index: index);
+                                            },
+                                            onScaleStart: (d) {
+                                              setState(() =>
+                                                  _bringTextToFront(index));
+                                              _cancelTextHold();
+                                              _handleTextScaleStart(d);
+                                            },
+                                            onScaleUpdate:
+                                                _handleTextScaleUpdate,
+                                            onScaleEnd: (_) =>
+                                                _handleTextScaleEnd(),
+                                            child: AnimatedOpacity(
                                               duration: const Duration(
-                                                  milliseconds: 160),
-                                              curve: Curves.easeOut,
-                                              scale:
-                                                  (_isStickerDeleteMode ||
-                                                          _isTextDeleteMode)
-                                                      ? 1
-                                                      : 0.9,
-                                              child: Center(
-                                                child: GestureDetector(
-                                                  onTap: _deleteActiveSticker,
-                                                  child: Container(
-                                                    width: 56,
-                                                    height: 56,
-                                                    decoration:
-                                                        const BoxDecoration(
-                                                      color: Colors.black87,
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    child: const Icon(
-                                                        Icons.delete_outline,
-                                                        color: Colors.white,
-                                                        size: 28),
+                                                  milliseconds: 180),
+                                              opacity:
+                                                  _deletingTextIndexes.contains(
+                                                          index)
+                                                      ? 0.0
+                                                      : 1.0,
+                                              child: AnimatedScale(
+                                                duration: const Duration(
+                                                    milliseconds: 180),
+                                                scale: _deletingTextIndexes
+                                                        .contains(index)
+                                                    ? 0.0
+                                                    : 1.0,
+                                                child: Transform.rotate(
+                                                  angle: overlay.rotation,
+                                                  child: Transform.scale(
+                                                    scale: overlay.scale *
+                                                        (_textDeleteScale[
+                                                                index] ??
+                                                            1.0),
+                                                    child: _buildOverlayVisual(
+                                                        overlay, isActive),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
+                                        );
+                                      } else {
+                                        final i = layer['index'] as int;
+                                        if (i >= _stickerOverlays.length) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        final s = _stickerOverlays[i];
+                                        final isActive =
+                                            _activeStickerIndex == i;
+                                        return Positioned(
+                                          key: ValueKey('sticker_${s.id}'),
+                                          left: s.position.dx,
+                                          top: s.position.dy,
+                                          child: GestureDetector(
+                                            onTapDown: (_) =>
+                                                _startStickerHold(i),
+                                            onTapUp: (_) =>
+                                                _cancelStickerHold(),
+                                            onTapCancel: () =>
+                                                _cancelStickerHold(),
+                                            onTap: () {
+                                              if (_suppressStickerTap) {
+                                                _suppressStickerTap = false;
+                                                return;
+                                              }
+                                              setState(() {
+                                                if (_activeStickerIndex ==
+                                                    i) {
+                                                  _stickerOverlays[i] =
+                                                      s.copyWith(
+                                                    shape: _nextShape(s.shape),
+                                                  );
+                                                }
+                                                _bringStickerToFront(i);
+                                              });
+                                            },
+                                            onScaleStart: (d) {
+                                              setState(() =>
+                                                  _bringStickerToFront(i));
+                                              _cancelStickerHold();
+                                              _handleStickerScaleStart(d);
+                                            },
+                                            onScaleUpdate: (d) =>
+                                                _handleStickerScaleUpdate(
+                                                    d, context),
+                                            onScaleEnd: (_) =>
+                                                _handleStickerScaleEnd(context),
+                                            child: AnimatedOpacity(
+                                              duration: const Duration(
+                                                  milliseconds: 180),
+                                              opacity:
+                                                  _deletingStickerIds.contains(
+                                                          s.id)
+                                                      ? 0.0
+                                                      : 1.0,
+                                              child: AnimatedScale(
+                                                duration: const Duration(
+                                                    milliseconds: 180),
+                                                scale: _deletingStickerIds
+                                                        .contains(s.id)
+                                                    ? 0.0
+                                                    : 1.0,
+                                                child: Transform(
+                                                  alignment: Alignment.center,
+                                                  transform: Matrix4.identity()
+                                                    ..rotateZ(s.rotation)
+                                                    ..scaleByVector3(
+                                                      vector_math.Vector3.all(
+                                                        s.scale *
+                                                            (_stickerDeleteScale[
+                                                                    s.id] ??
+                                                                1.0),
+                                                      ),
+                                                    ),
+                                                  child: OverlayStickerWidget(
+                                                    sticker: s,
+                                                    isActive: isActive,
+                                                    onDelete: () {},
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    }),
+                                  if (_isStickerDeleteMode || _isTextDeleteMode)
+                                    Positioned.fill(
+                                      child: GestureDetector(
+                                        behavior:
+                                            HitTestBehavior.translucent,
+                                        onTap: () {
+                                          _exitStickerDeleteMode();
+                                          _exitTextDeleteMode();
+                                        },
+                                      ),
+                                    ),
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 24,
+                                    child: IgnorePointer(
+                                      ignoring: !(_isStickerDeleteMode ||
+                                          _isTextDeleteMode),
+                                      child: AnimatedOpacity(
+                                        duration:
+                                            const Duration(milliseconds: 160),
+                                        curve: Curves.easeOut,
+                                        opacity: (_isStickerDeleteMode ||
+                                                _isTextDeleteMode)
+                                            ? 1
+                                            : 0,
+                                        child: AnimatedScale(
+                                          duration: const Duration(
+                                              milliseconds: 160),
+                                          curve: Curves.easeOut,
+                                          scale: (_isStickerDeleteMode ||
+                                                  _isTextDeleteMode)
+                                              ? 1
+                                              : 0.9,
+                                          child: Center(
+                                            child: GestureDetector(
+                                              onTap: _deleteActiveSticker,
+                                              child: Container(
+                                                width: 56,
+                                                height: 56,
+                                                decoration:
+                                                    const BoxDecoration(
+                                                  color: Colors.black87,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                    Icons.delete_outline,
+                                                    color: Colors.white,
+                                                    size: 28),
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ],
+                                    ),
                                   ),
-                                ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
@@ -3238,6 +3817,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                           app_models.MediaType.video
                                       ? _openVideoEditor
                                       : _openImageAdjustmentsEditor,
+                                  enabled: !_isCarouselVideo,
                                 ),
                                 const SizedBox(width: 10),
                                 _buildPostBottomPill(
@@ -3266,7 +3846,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                               child: Row(
                                 children: [
                                   const Text('Edit video'),
-                                  if (_trimStart != null) ...[
+                                  if (_trimStartFor(_currentMedia) != null) ...[
                                     const SizedBox(width: 6),
                                     Container(
                                       width: 7,
@@ -3337,7 +3917,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                       icon: Icons.content_cut,
                                       label: 'Trim',
                                       onTap: _openVideoEditor,
-                                      isActive: _trimStart != null,
+                                      isActive: _trimStartFor(_currentMedia) != null,
                                     ),
                                   const SizedBox(width: 8),
                                   _buildEditOption(
@@ -3453,49 +4033,30 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           return const Center(
               child: CircularProgressIndicator(color: Colors.white));
         }
-        return GestureDetector(
-          onTap: () {
-            setState(() {
-              if (_isPlaying) {
-                controller.pause();
-              } else {
-                if (_trimStart != null) {
-                  controller.seekTo(_trimStart!);
-                }
-                controller.play();
-              }
-              _isPlaying = !_isPlaying;
-            });
-          },
-          child: _applyImageAdjustments(_applySelectedFilter(
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(color: Colors.blue),
-                SizedBox.expand(
-                  child: FittedBox(
-                    fit: BoxFit.cover,
-                    clipBehavior: Clip.hardEdge,
-                    child: SizedBox(
-                      width: controller.value.size.width,
-                      height: controller.value.size.height,
-                      child: VideoPlayer(controller),
-                    ),
+        if (!controller.value.isPlaying) {
+          controller.play();
+          _isPlaying = true;
+        }
+        return _applyImageAdjustments(_applySelectedFilter(
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(color: Colors.blue),
+              SizedBox.expand(
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  clipBehavior: Clip.hardEdge,
+                  child: SizedBox(
+                    width: controller.value.size.width,
+                    height: controller.value.size.height,
+                    child: VideoPlayer(controller),
                   ),
                 ),
-                if (!_isPlaying)
-                  Container(
-                    color: Colors.black45,
-                    child: const Icon(
-                      Icons.play_arrow,
-                      size: 72,
-                      color: Colors.white,
-                    ),
-                  ),
-              ],
-            ),
-          )),
-        );
+              ),
+            ],
+          ),
+          filterIds: _effectiveFilterIds(_currentMedia),
+        ));
       },
     );
   }
@@ -3586,29 +4147,34 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     required String label,
     required VoidCallback onTap,
     bool isActive = false,
+    bool enabled = true,
   }) {
+    final canTap = enabled;
+    final accent = const Color(0xFF0095F6);
+    final fg = enabled ? Colors.white : Colors.white54;
+    final activeColor = enabled ? accent : Colors.white54;
     return GestureDetector(
-      onTap: onTap,
+      onTap: canTap ? onTap : null,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
+          color: Colors.white.withValues(alpha: enabled ? 0.08 : 0.04),
           borderRadius: BorderRadius.circular(16),
-          border: isActive ? Border.all(color: const Color(0xFF0095F6)) : null,
+          border: isActive && enabled ? Border.all(color: accent) : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
-              color: isActive ? const Color(0xFF0095F6) : Colors.white,
+              color: isActive ? activeColor : fg,
               size: 16,
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                color: isActive ? const Color(0xFF0095F6) : Colors.white,
+                color: isActive ? activeColor : fg,
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
               ),
@@ -3672,6 +4238,496 @@ class _PerImageEditResult {
     required this.textOverlays,
     required this.stickerOverlays,
   });
+}
+
+class _PerVideoEditResult {
+  final String? filterId;
+  final Duration? trimStart;
+  final Duration? trimEnd;
+  final String? outputPath;
+  final String? coverPath;
+
+  const _PerVideoEditResult({
+    this.filterId,
+    this.trimStart,
+    this.trimEnd,
+    this.outputPath,
+    this.coverPath,
+  });
+}
+
+class _PerVideoEditPage extends StatefulWidget {
+  final app_models.MediaItem media;
+  final double frameAspect;
+  final String? initialFilter;
+  final String? globalFilter;
+  final Duration? initialTrimStart;
+  final Duration? initialTrimEnd;
+  final String? initialCoverPath;
+  final List<app_models.Filter> filters;
+  final List<double> Function(String id) filterMatrixFor;
+
+  const _PerVideoEditPage({
+    super.key,
+    required this.media,
+    required this.frameAspect,
+    required this.initialFilter,
+    required this.globalFilter,
+    required this.initialTrimStart,
+    required this.initialTrimEnd,
+    required this.initialCoverPath,
+    required this.filters,
+    required this.filterMatrixFor,
+  });
+
+  @override
+  State<_PerVideoEditPage> createState() => _PerVideoEditPageState();
+}
+
+class _PerVideoEditPageState extends State<_PerVideoEditPage> {
+  late String? _selectedFilter;
+  Duration? _trimStart;
+  Duration? _trimEnd;
+  String? _coverPath;
+  String? _outputPath;
+  List<Uint8List?> _thumbs = const [];
+  bool _loadingThumbs = false;
+  Duration _videoDuration = Duration.zero;
+
+  String get _activePath => _outputPath ?? widget.media.filePath ?? '';
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFilter = widget.initialFilter ?? 'none';
+    _trimStart = widget.initialTrimStart;
+    _trimEnd = widget.initialTrimEnd;
+    _coverPath = widget.initialCoverPath;
+    _loadThumbnails();
+  }
+
+  Future<void> _loadThumbnails() async {
+    final path = _activePath;
+    if (path.isEmpty) return;
+    setState(() => _loadingThumbs = true);
+    final controller = VideoPlayerController.file(File(path));
+    await controller.initialize();
+    _videoDuration = controller.value.duration;
+    await controller.dispose();
+
+    const count = 8;
+    final durationMs = _videoDuration.inMilliseconds;
+    final frames = <Uint8List?>[];
+    for (int i = 0; i < count; i++) {
+      final timeMs = durationMs == 0
+          ? 0
+          : (durationMs * i / (count - 1)).round();
+      final bytes = await VideoThumbnail.thumbnailData(
+        video: path,
+        imageFormat: ImageFormat.JPEG,
+        timeMs: timeMs,
+        quality: 75,
+      );
+      frames.add(bytes);
+    }
+    if (!mounted) return;
+    setState(() {
+      _thumbs = frames;
+      _loadingThumbs = false;
+    });
+  }
+
+  Widget _applyFilterToPreview(Widget child, {String? filterId}) {
+    final global = widget.globalFilter;
+    final per = filterId;
+    final ids = <String>[];
+    if (global != null && global != 'none') ids.add(global);
+    if (per != null && per != 'none') ids.add(per);
+    Widget out = child;
+    for (final id in ids) {
+      final matrix = widget.filterMatrixFor(id);
+      out = ColorFiltered(
+        colorFilter: ColorFilter.matrix(matrix),
+        child: out,
+      );
+    }
+    return out;
+  }
+
+  Future<String?> _writeCoverBytes(Uint8List bytes) async {
+    final filename =
+        'bsmart_cover_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final outPath = '${Directory.systemTemp.path}/$filename';
+    final outFile = File(outPath);
+    await outFile.writeAsBytes(bytes, flush: true);
+    return outPath;
+  }
+
+  Future<void> _openFilterPicker() async {
+    final initialFilterId = _selectedFilter ?? 'none';
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      isScrollControlled: true,
+      builder: (_) {
+        return SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 260,
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: widget.filters.length,
+                    itemBuilder: (context, i) {
+                      final f = widget.filters[i];
+                      final isActive = (_selectedFilter ?? 'none') == f.id;
+                      final preview = _buildPreviewImage(
+                        overrideFilterId: f.id,
+                      );
+                      return GestureDetector(
+                        onTap: () => setState(() => _selectedFilter = f.id),
+                        child: Container(
+                          width: 90,
+                          margin: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Column(
+                            children: [
+                              Container(
+                                width: 70,
+                                height: 70,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isActive
+                                        ? Colors.white
+                                        : Colors.white24,
+                                  ),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: preview,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                f.name,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color:
+                                      isActive ? Colors.white : Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() => _selectedFilter = initialFilterId);
+                          Navigator.of(context).pop();
+                        },
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const Spacer(),
+                      const Text(
+                        'Filter',
+                        style: TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w700),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text(
+                          'Done',
+                          style: TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openTrimEditor() async {
+    final path = _activePath;
+    if (path.isEmpty) return;
+    final media = app_models.MediaItem(
+      id: widget.media.id,
+      type: widget.media.type,
+      filePath: path,
+      thumbnailPath: widget.media.thumbnailPath,
+      duration: widget.media.duration,
+      createdAt: widget.media.createdAt,
+    );
+    final result = await showModalBottomSheet<VideoEditResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black,
+      builder: (context) {
+        final height = MediaQuery.of(context).size.height * 0.9;
+        return SizedBox(
+          height: height,
+          child: EditVideoScreen(media: media),
+        );
+      },
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _trimStart = result.trimStart;
+      _trimEnd = result.trimEnd;
+      if (result.outputPath != null && result.outputPath!.isNotEmpty) {
+        _outputPath = result.outputPath;
+      }
+    });
+    if (result.outputPath != null && result.outputPath!.isNotEmpty) {
+      await _loadThumbnails();
+    }
+  }
+
+  Future<void> _openCoverPicker() async {
+    if (_loadingThumbs) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      isScrollControlled: true,
+      builder: (_) {
+        return SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 220,
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _thumbs.length,
+                    itemBuilder: (context, i) {
+                      final bytes = _thumbs[i];
+                      final isActive = false;
+                      return GestureDetector(
+                        onTap: () async {
+                          if (bytes == null) return;
+                          final path = await _writeCoverBytes(bytes);
+                          if (!mounted) return;
+                          setState(() => _coverPath = path);
+                          Navigator.of(context).pop();
+                        },
+                        child: Container(
+                          width: 90,
+                          margin: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isActive
+                                  ? Colors.white
+                                  : Colors.white24,
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: bytes != null
+                              ? Image.memory(bytes, fit: BoxFit.cover)
+                              : Container(color: const Color(0xFF2A2A2A)),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+                  child: Row(
+                    children: const [
+                      Spacer(),
+                      Text(
+                        'Cover',
+                        style: TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w700),
+                      ),
+                      Spacer(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPreviewImage({String? overrideFilterId}) {
+    if (_coverPath != null) {
+      final coverFile = File(_coverPath!);
+      if (coverFile.existsSync()) {
+        return _applyFilterToPreview(
+          Image.file(coverFile, fit: BoxFit.cover),
+          filterId: overrideFilterId ?? _selectedFilter,
+        );
+      }
+    }
+    final bytes = _thumbs.isNotEmpty ? _thumbs.first : null;
+    if (bytes != null) {
+      return _applyFilterToPreview(
+        Image.memory(bytes, fit: BoxFit.cover),
+        filterId: overrideFilterId ?? _selectedFilter,
+      );
+    }
+    return Container(color: Colors.black12);
+  }
+
+  Widget _buildBottomPill({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isActive = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: isActive ? Border.all(color: const Color(0xFF0095F6)) : null,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isActive ? const Color(0xFF0095F6) : Colors.white,
+              size: 16,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive ? const Color(0xFF0095F6) : Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF07121E),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: widget.frameAspect,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: _buildPreviewImage(),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildBottomPill(
+                      icon: Icons.filter_alt_outlined,
+                      label: 'Filter',
+                      onTap: _openFilterPicker,
+                      isActive: (_selectedFilter ?? 'none') != 'none',
+                    ),
+                    const SizedBox(width: 10),
+                    _buildBottomPill(
+                      icon: Icons.content_cut,
+                      label: 'Trim',
+                      onTap: _openTrimEditor,
+                      isActive: _trimStart != null && _trimEnd != null,
+                    ),
+                    const SizedBox(width: 10),
+                    _buildBottomPill(
+                      icon: Icons.photo,
+                      label: 'Cover',
+                      onTap: _openCoverPicker,
+                      isActive: _coverPath != null,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              child: Center(
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(_PerVideoEditResult(
+                      filterId: _selectedFilter,
+                      trimStart: _trimStart,
+                      trimEnd: _trimEnd,
+                      outputPath: _outputPath,
+                      coverPath: _coverPath,
+                    ));
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 28, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                  child: const Text(
+                    'Done',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _PerImageEditPage extends StatefulWidget {

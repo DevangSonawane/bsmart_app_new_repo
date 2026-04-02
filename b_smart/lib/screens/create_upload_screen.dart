@@ -18,6 +18,34 @@ enum _GallerySource {
   allAlbums,
 }
 
+class _GalleryCache {
+  final UploadMode mode;
+  final _GallerySource source;
+  final List<AssetEntity> assets;
+  final List<AssetEntity> recentAssets;
+  final List<AssetEntity> allAlbumAssets;
+  final AssetEntity? currentAsset;
+  final Set<String> selectedIds;
+  final List<String> selectedOrder;
+  final bool multiSelect;
+  final bool galleryPermissionDenied;
+  final bool galleryPermissionLimited;
+
+  _GalleryCache({
+    required this.mode,
+    required this.source,
+    required this.assets,
+    required this.recentAssets,
+    required this.allAlbumAssets,
+    required this.currentAsset,
+    required this.selectedIds,
+    required this.selectedOrder,
+    required this.multiSelect,
+    required this.galleryPermissionDenied,
+    required this.galleryPermissionLimited,
+  });
+}
+
 class CreateUploadScreen extends StatefulWidget {
   final UploadMode initialMode;
   final bool isAdFlow;
@@ -48,6 +76,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   bool _showSourceMenu = false;
   final GlobalKey _sourceBarKey = GlobalKey();
   Offset _sourceMenuPosition = const Offset(16, 328);
+  final Map<UploadMode, _GalleryCache> _cache = {};
 
   static const Duration _modeAnimDuration = Duration(milliseconds: 90);
 
@@ -69,6 +98,56 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     super.initState();
     _mode = widget.initialMode;
     _loadGalleryMedia();
+  }
+
+  bool _shouldCacheMode(UploadMode mode) =>
+      mode == UploadMode.post || mode == UploadMode.reel;
+
+  void _saveCache() {
+    if (!_shouldCacheMode(_mode)) return;
+    _cache[_mode] = _GalleryCache(
+      mode: _mode,
+      source: _source,
+      assets: List<AssetEntity>.from(_assets),
+      recentAssets: List<AssetEntity>.from(_recentAssets),
+      allAlbumAssets: List<AssetEntity>.from(_allAlbumAssets),
+      currentAsset: _currentAsset,
+      selectedIds: Set<String>.from(_selectedIds),
+      selectedOrder: List<String>.from(_selectedOrder),
+      multiSelect: _multiSelect,
+      galleryPermissionDenied: _galleryPermissionDenied,
+      galleryPermissionLimited: _galleryPermissionLimited,
+    );
+  }
+
+  bool _restoreFromCache(UploadMode mode) {
+    if (!_shouldCacheMode(mode)) return false;
+    final cached = _cache[mode];
+    if (cached == null) return false;
+    setState(() {
+      _mode = mode;
+      _source = cached.source;
+      _galleryPermissionDenied = cached.galleryPermissionDenied;
+      _galleryPermissionLimited = cached.galleryPermissionLimited;
+      _assets
+        ..clear()
+        ..addAll(cached.assets);
+      _recentAssets
+        ..clear()
+        ..addAll(cached.recentAssets);
+      _allAlbumAssets
+        ..clear()
+        ..addAll(cached.allAlbumAssets);
+      _currentAsset = cached.currentAsset;
+      _selectedIds
+        ..clear()
+        ..addAll(cached.selectedIds);
+      _selectedOrder
+        ..clear()
+        ..addAll(cached.selectedOrder);
+      _multiSelect = cached.multiSelect;
+    });
+    return true;
   }
 
   Future<void> _loadGalleryMedia() async {
@@ -210,6 +289,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           ..addAll(allAlbumAssets.isEmpty ? recentAssets : allAlbumAssets);
       });
       _applySource(_source);
+      _saveCache();
     }
   }
 
@@ -262,6 +342,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         }
       }
     });
+    _saveCache();
   }
 
   void _onSourceSelected(_GallerySource source) {
@@ -275,13 +356,18 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     if (_mode == mode) return;
     if (widget.isAdFlow) {
       if (mode != UploadMode.post && mode != UploadMode.reel) return;
+      if (_restoreFromCache(mode)) return;
       setState(() {
         _mode = mode;
+        _selectedIds.clear();
+        _selectedOrder.clear();
+        _currentAsset = null;
       });
       _loadGalleryMedia();
       return;
     }
 
+    if (_restoreFromCache(mode)) return;
     setState(() {
       _mode = mode;
     });
@@ -313,6 +399,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           _currentAsset ??= asset;
         }
       });
+      _saveCache();
       return;
     }
 
@@ -335,6 +422,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           ..add(asset.id);
       }
     });
+    _saveCache();
   }
 
   Future<void> _handleNext() async {
@@ -579,6 +667,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                           _selectedOrder.add(_currentAsset!.id);
                         }
                       }
+                      _saveCache();
                     }),
                     onLoadGalleryMedia: _loadGalleryMedia,
                     onAssetTap: _onAssetTap,

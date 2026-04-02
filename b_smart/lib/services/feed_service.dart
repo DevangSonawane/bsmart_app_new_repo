@@ -413,38 +413,97 @@ class FeedService {
             }
           }
 
-          List<String> mediaUrls = media
-              .map((m) {
-                String? url;
-                if (m is String) {
-                  url = m;
-                } else if (m is Map) {
-                  if (m['file'] is Map) {
-                    final f = (m['file'] as Map);
-                    url =
-                        (f['fileUrl'] ?? f['file_url'] ?? f['url'] ?? f['path'])
-                            ?.toString();
-                  } else if (m['file'] is String) {
-                    url = (m['file'] as String);
-                  }
-                  url ??= (m['fileUrl'] ??
-                          m['file_url'] ??
-                          m['image'] ??
-                          m['imageUrl'] ??
-                          m['url'] ??
-                          m['file_path'])
-                      ?.toString();
-                  if ((url == null || url.isEmpty) && m['fileName'] != null) {
-                    final fn = m['fileName'].toString();
-                    url = '/uploads/$fn';
-                  }
-                }
-                final normalized = UrlHelper.normalizeUrl(url);
-                return normalized;
-              })
-              .where((u) => u.isNotEmpty)
-              .cast<String>()
-              .toList();
+          String? _parseFilterName(Map<String, dynamic> map) {
+            final raw = map['filter'];
+            if (raw is String) return raw;
+            if (raw is Map) {
+              final name = raw['name'] ?? raw['filter'] ?? raw['id'];
+              if (name != null) return name.toString();
+            }
+            final direct = map['filterName'] ?? map['filter_name'];
+            if (direct != null) return direct.toString();
+            return null;
+          }
+
+          Map<String, int> _parseAdjustments(Map<String, dynamic> map) {
+            final raw = map['adjustments'];
+            if (raw is! Map) return const {};
+            final adj = Map<String, dynamic>.from(raw);
+            int _toInt(dynamic v) {
+              if (v is int) return v;
+              if (v is num) return v.round();
+              return int.tryParse(v?.toString() ?? '') ?? 0;
+            }
+
+            final out = <String, int>{};
+            if (adj.containsKey('brightness')) {
+              out['brightness'] = _toInt(adj['brightness']);
+            }
+            if (adj.containsKey('contrast')) {
+              out['contrast'] = _toInt(adj['contrast']);
+            }
+            if (adj.containsKey('saturation')) {
+              out['saturate'] = _toInt(adj['saturation']);
+            }
+            if (adj.containsKey('temperature')) {
+              out['sepia'] = _toInt(adj['temperature']);
+            }
+            if (adj.containsKey('fade')) {
+              out['opacity'] = _toInt(adj['fade']);
+            }
+            if (adj.containsKey('opacity')) {
+              out['opacity'] = _toInt(adj['opacity']);
+            }
+            if (adj.containsKey('vignette')) {
+              out['vignette'] = _toInt(adj['vignette']);
+            }
+            if (adj.containsKey('lux')) {
+              out['lux'] = _toInt(adj['lux']);
+            }
+            return out;
+          }
+
+          final List<String> mediaUrls = [];
+          final List<String?> mediaFilters = [];
+          final List<Map<String, int>> mediaAdjustments = [];
+          for (final m in media) {
+            String? url;
+            Map<String, dynamic>? map;
+            if (m is String) {
+              url = m;
+            } else if (m is Map) {
+              map = Map<String, dynamic>.from(m);
+              if (map['file'] is Map) {
+                final f = (map['file'] as Map);
+                url =
+                    (f['fileUrl'] ?? f['file_url'] ?? f['url'] ?? f['path'])
+                        ?.toString();
+              } else if (map['file'] is String) {
+                url = (map['file'] as String);
+              }
+              url ??= (map['fileUrl'] ??
+                      map['file_url'] ??
+                      map['image'] ??
+                      map['imageUrl'] ??
+                      map['url'] ??
+                      map['file_path'])
+                  ?.toString();
+              if ((url == null || url.isEmpty) && map['fileName'] != null) {
+                final fn = map['fileName'].toString();
+                url = '/uploads/$fn';
+              }
+            }
+            final normalized = UrlHelper.normalizeUrl(url);
+            if (normalized.isEmpty) continue;
+            mediaUrls.add(normalized);
+            if (map != null) {
+              mediaFilters.add(_parseFilterName(map));
+              mediaAdjustments.add(_parseAdjustments(map));
+            } else {
+              mediaFilters.add(null);
+              mediaAdjustments.add(const {});
+            }
+          }
           if (mediaUrls.isEmpty) {
             final single = (item['imageUrl'] ??
                     item['image'] ??
@@ -455,7 +514,9 @@ class FeedService {
                 ?.toString();
             final normalized = UrlHelper.normalizeUrl(single);
             if (normalized.isNotEmpty) {
-              mediaUrls = [normalized];
+              mediaUrls.add(normalized);
+              mediaFilters.add(null);
+              mediaAdjustments.add(const {});
             }
           }
           if (mediaUrls.isEmpty) {
@@ -463,6 +524,8 @@ class FeedService {
                 (item['imageUrl'] ?? item['image'] ?? item['url'])?.toString();
             if (single != null && single.isNotEmpty) {
               mediaUrls.add(UrlHelper.normalizeUrl(single));
+              mediaFilters.add(null);
+              mediaAdjustments.add(const {});
             }
           }
 
@@ -749,6 +812,9 @@ class FeedService {
             mediaUrls: mediaUrls,
             thumbnailUrl: bustedThumb,
             aspectRatio: aspectRatio,
+            mediaFilters: mediaFilters.isEmpty ? null : mediaFilters,
+            mediaAdjustments:
+                mediaAdjustments.isEmpty ? null : mediaAdjustments,
             caption: item['caption'] as String?,
             hashtags: ((item['tags'] as List<dynamic>?) ?? [])
                 .map((e) => e.toString())

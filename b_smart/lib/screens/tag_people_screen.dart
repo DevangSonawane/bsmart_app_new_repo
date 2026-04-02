@@ -1,16 +1,19 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../api/users_api.dart';
 
 class TagPeopleScreen extends StatefulWidget {
   final List<String> mediaPaths;
   final List<bool> isVideos;
+  final List<String?>? coverPaths;
   final List<String> filterNames;
   final List<Map<String, int>> adjustments;
   final List<bool> alreadyProcessed;
@@ -21,6 +24,7 @@ class TagPeopleScreen extends StatefulWidget {
     super.key,
     required this.mediaPaths,
     required this.isVideos,
+    this.coverPaths,
     required this.filterNames,
     required this.adjustments,
     required this.alreadyProcessed,
@@ -35,6 +39,7 @@ class TagPeopleScreen extends StatefulWidget {
 class _TagPeopleScreenState extends State<TagPeopleScreen> {
   final TextEditingController _searchCtl = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+  final Set<int> _loggedPreviewIndexes = {};
 
   final Map<int, List<Map<String, dynamic>>> _tagsByIndex = {};
   int _currentIndex = 0;
@@ -253,6 +258,8 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
   }
 
   List<double> _filterMatrixFor(String name) {
+    final lower = name.toLowerCase();
+    final key = lower.replaceAll('&', 'and').replaceAll(' ', '_');
     switch (name) {
       case 'Clarendon':
         return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.2, saturation: 1.25);
@@ -277,6 +284,30 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
       case 'Perpetua':
         return _buildFilterMatrixBase(brightness: 1.1, contrast: 1.1, saturation: 1.1);
       case 'Original':
+      default:
+        break;
+    }
+    switch (key) {
+      case 'none':
+      case 'original':
+        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+      case 'vintage':
+        return _buildSepiaMatrix(amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
+      case 'black_white':
+      case 'black_and_white':
+        return _buildFilterMatrixBase(brightness: 1.1, contrast: 1.1, saturation: 0.0);
+      case 'warm':
+        return _buildSepiaMatrix(amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
+      case 'cool':
+        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 0.85);
+      case 'dramatic':
+        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.3, saturation: 1.2);
+      case 'beauty':
+        return _buildSepiaMatrix(amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
+      case 'ar_effect_1':
+        return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.05, saturation: 1.2);
+      case 'ar_effect_2':
+        return _buildFilterMatrixBase(brightness: 0.95, contrast: 1.1, saturation: 0.9);
       default:
         return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
     }
@@ -310,42 +341,88 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
       return const SizedBox();
     }
     if (widget.isVideos[index]) {
-      return Container(
-        color: theme.colorScheme.surface,
-        child: Center(
-          child: Icon(
-            LucideIcons.video,
-            color: theme.colorScheme.onSurfaceVariant,
-            size: 56,
-          ),
+      final coverPath = widget.coverPaths != null &&
+              index < (widget.coverPaths?.length ?? 0)
+          ? widget.coverPaths![index]
+          : null;
+      if (!_loggedPreviewIndexes.contains(index)) {
+        _loggedPreviewIndexes.add(index);
+        debugPrint(
+          '[TagPeopleScreen] preview index=$index video=true '
+          'source=${widget.mediaPaths[index]} cover=$coverPath '
+          'filter=${widget.filterNames[index]} adjustments=${widget.adjustments[index]} '
+          'processed=${widget.alreadyProcessed[index]}',
+        );
+      }
+      if (coverPath != null && File(coverPath).existsSync()) {
+        debugPrint('[TagPeopleScreen] using cover for index=$index: $coverPath');
+        return _applyFilteredImage(
+          Image.file(File(coverPath), fit: BoxFit.cover),
+          index,
+        );
+      }
+      return FutureBuilder<Uint8List?>(
+        future: VideoThumbnail.thumbnailData(
+          video: widget.mediaPaths[index],
+          imageFormat: ImageFormat.JPEG,
+          quality: 70,
         ),
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done || snap.data == null) {
+            return Container(
+              color: theme.colorScheme.surface,
+              child: Center(
+                child: Icon(
+                  LucideIcons.video,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  size: 56,
+                ),
+              ),
+            );
+          }
+          debugPrint(
+            '[TagPeopleScreen] thumbnailData ready index=$index '
+            'bytes=${snap.data?.length ?? 0}',
+          );
+          final base = Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.memory(snap.data!, fit: BoxFit.cover),
+              const Center(
+                child: Icon(LucideIcons.play, size: 36, color: Colors.white),
+              ),
+            ],
+          );
+          return _applyFilteredImage(base, index);
+        },
       );
     }
     final file = File(widget.mediaPaths[index]);
-    Widget image = Image.file(file, fit: BoxFit.cover);
-    if (!widget.alreadyProcessed[index]) {
-      final adj = widget.adjustments[index];
-      final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
-      final luxBC = 1.0 + (lux * 0.35);
-      final luxS = 1.0 + (lux * 0.2);
-      final b = ((adj['brightness'] ?? 0) / 100.0 + 1.0) * luxBC;
-      final c = ((adj['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
-      final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
-      final opacity = 1.0 - (adj['opacity'] ?? 0) / 100.0;
-      final presetMatrix = _filterMatrixFor(widget.filterNames[index]);
-      final adjustmentMatrix = _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
-      image = Opacity(
-        opacity: opacity.clamp(0.0, 1.0),
+    return _applyFilteredImage(Image.file(file, fit: BoxFit.cover), index);
+  }
+
+  Widget _applyFilteredImage(Widget image, int index) {
+    if (widget.alreadyProcessed[index]) return image;
+    final adj = widget.adjustments[index];
+    final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
+    final luxBC = 1.0 + (lux * 0.35);
+    final luxS = 1.0 + (lux * 0.2);
+    final b = ((adj['brightness'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final c = ((adj['contrast'] ?? 0) / 100.0 + 1.0) * luxBC;
+    final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
+    final opacity = 1.0 - (adj['opacity'] ?? 0) / 100.0;
+    final presetMatrix = _filterMatrixFor(widget.filterNames[index]);
+    final adjustmentMatrix = _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
+    return Opacity(
+      opacity: opacity.clamp(0.0, 1.0),
+      child: ColorFiltered(
+        colorFilter: ColorFilter.matrix(presetMatrix),
         child: ColorFiltered(
-          colorFilter: ColorFilter.matrix(presetMatrix),
-          child: ColorFiltered(
-            colorFilter: ColorFilter.matrix(adjustmentMatrix),
-            child: image,
-          ),
+          colorFilter: ColorFilter.matrix(adjustmentMatrix),
+          child: image,
         ),
-      );
-    }
-    return image;
+      ),
+    );
   }
 
   @override

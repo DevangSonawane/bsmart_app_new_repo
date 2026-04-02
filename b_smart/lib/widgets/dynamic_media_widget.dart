@@ -18,6 +18,8 @@ class DynamicMediaWidget extends StatefulWidget {
   final bool isVideo;
   final bool isActive;
   final double? initialAspectRatio;
+  final String? filterName;
+  final Map<String, int>? adjustments;
 
   const DynamicMediaWidget({
     super.key,
@@ -27,6 +29,8 @@ class DynamicMediaWidget extends StatefulWidget {
     required this.isVideo,
     required this.isActive,
     this.initialAspectRatio,
+    this.filterName,
+    this.adjustments,
   });
 
   @override
@@ -59,6 +63,175 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   VideoPlayerController? _videoCtl;
   bool _loadingVideo = false;
   bool _videoFailed = false;
+
+  bool get _hasVideoFilter {
+    if (!widget.isVideo) return false;
+    final name = widget.filterName?.trim().toLowerCase();
+    final hasName =
+        name != null && name.isNotEmpty && name != 'original' && name != 'none';
+    final adj = widget.adjustments ?? const <String, int>{};
+    final hasAdj = adj.values.any((v) => v != 0);
+    return hasName || hasAdj;
+  }
+
+  int _adjValue(String key) {
+    final adj = widget.adjustments;
+    if (adj == null) return 0;
+    final v = adj[key];
+    if (v != null) return v;
+    if (key == 'saturate') return adj['saturation'] ?? 0;
+    if (key == 'sepia') return adj['temperature'] ?? 0;
+    if (key == 'opacity') return adj['fade'] ?? 0;
+    return 0;
+  }
+
+  List<double> _buildFilterMatrixBase({
+    double brightness = 1.0,
+    double contrast = 1.0,
+    double saturation = 1.0,
+  }) {
+    final b = brightness;
+    final c = contrast;
+    final s = saturation;
+    final invSat = 1 - s;
+    const lr = 0.2126, lg = 0.7152, lb = 0.0722;
+    final scale = c * b;
+    return [
+      (invSat * lr + s) * scale, invSat * lg * scale, invSat * lb * scale, 0, 0,
+      invSat * lr * scale, (invSat * lg + s) * scale, invSat * lb * scale, 0, 0,
+      invSat * lr * scale, invSat * lg * scale, (invSat * lb + s) * scale, 0, 0,
+      0, 0, 0, 1, 0,
+    ];
+  }
+
+  List<double> _buildGrayscaleMatrix({
+    double contrast = 1.0,
+    double brightness = 1.0,
+  }) {
+    const r = 0.2126, g = 0.7152, b = 0.0722;
+    return [
+      r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
+      r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
+      r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
+      0, 0, 0, 1, 0,
+    ];
+  }
+
+  List<double> _buildSepiaMatrix({
+    double amount = 0.2,
+    double brightness = 1.0,
+    double contrast = 1.0,
+    double saturation = 1.0,
+  }) {
+    final t = 1 - amount;
+    final r = 0.393 + 0.607 * t;
+    final g = 0.769 - 0.769 * amount;
+    final b = 0.189 - 0.189 * amount;
+    final invSat = 1 - saturation;
+    const lr = 0.2126, lg = 0.7152, lb = 0.0722;
+    final c = contrast * brightness;
+    return [
+      (r * saturation + lr * invSat) * c, (g * saturation + lg * invSat) * c, (b * saturation + lb * invSat) * c, 0, 0,
+      (0.349 * t + 0.349 * amount) * saturation * c + lr * invSat * c, (0.686 + 0.314 * t) * saturation * c + lg * invSat * c, (0.168 * t) * saturation * c + lb * invSat * c, 0, 0,
+      (0.272 * t) * saturation * c + lr * invSat * c, (0.534 * t - 0.534 * amount) * saturation * c + lg * invSat * c, (0.131 + 0.869 * t) * saturation * c + lb * invSat * c, 0, 0,
+      0, 0, 0, 1, 0,
+    ];
+  }
+
+  List<double> _filterMatrixFor(String? name) {
+    final n = (name ?? '').trim();
+    if (n.isEmpty) return _buildFilterMatrixBase();
+    final lower = n.toLowerCase();
+    final key = lower.replaceAll('&', 'and').replaceAll(' ', '_');
+    switch (n) {
+      case 'Clarendon':
+        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.2, saturation: 1.25);
+      case 'Gingham':
+        return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.0, saturation: 1.0);
+      case 'Moon':
+        return _buildGrayscaleMatrix(contrast: 1.1, brightness: 1.1);
+      case 'Lark':
+        return _buildFilterMatrixBase(brightness: 1.0, contrast: 0.9, saturation: 1.0);
+      case 'Reyes':
+        return _buildSepiaMatrix(amount: 0.22, brightness: 1.1, contrast: 0.85, saturation: 0.75);
+      case 'Juno':
+        return _buildSepiaMatrix(amount: 0.2, brightness: 1.1, contrast: 1.2, saturation: 1.4);
+      case 'Slumber':
+        return _buildSepiaMatrix(amount: 0.2, brightness: 1.05, contrast: 1.0, saturation: 0.66);
+      case 'Crema':
+        return _buildSepiaMatrix(amount: 0.2, brightness: 1.0, contrast: 0.9, saturation: 0.9);
+      case 'Ludwig':
+        return _buildFilterMatrixBase(brightness: 1.1, contrast: 0.9, saturation: 0.9);
+      case 'Aden':
+        return _buildFilterMatrixBase(brightness: 1.2, contrast: 0.9, saturation: 0.85);
+      case 'Perpetua':
+        return _buildFilterMatrixBase(brightness: 1.1, contrast: 1.1, saturation: 1.1);
+      case 'Original':
+        return _buildFilterMatrixBase();
+      default:
+        break;
+    }
+    switch (key) {
+      case 'none':
+      case 'original':
+        return _buildFilterMatrixBase();
+      case 'vintage':
+        return _buildSepiaMatrix(amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
+      case 'black_white':
+      case 'black_and_white':
+        return _buildGrayscaleMatrix(contrast: 1.1, brightness: 1.0);
+      case 'warm':
+        return _buildSepiaMatrix(amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
+      case 'cool':
+        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 0.85);
+      case 'dramatic':
+        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.3, saturation: 1.2);
+      case 'beauty':
+        return _buildSepiaMatrix(amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
+      case 'ar_effect_1':
+        return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.05, saturation: 1.2);
+      case 'ar_effect_2':
+        return _buildFilterMatrixBase(brightness: 0.95, contrast: 1.1, saturation: 0.9);
+      default:
+        return _buildFilterMatrixBase();
+    }
+  }
+
+  List<double> _buildAdjustmentMatrix({
+    double brightness = 1.0,
+    double contrast = 1.0,
+    double saturation = 1.0,
+  }) {
+    return _buildFilterMatrixBase(
+      brightness: brightness,
+      contrast: contrast,
+      saturation: saturation,
+    );
+  }
+
+  Widget _applyFilterToWidget(Widget child) {
+    if (!_hasVideoFilter) return child;
+    final lux = ((_adjValue('lux')).clamp(0, 100) / 100.0);
+    final luxBC = 1.0 + (lux * 0.35);
+    final luxS = 1.0 + (lux * 0.2);
+    final b = ((_adjValue('brightness')) / 100.0 + 1.0) * luxBC;
+    final c = ((_adjValue('contrast')) / 100.0 + 1.0) * luxBC;
+    final s = ((_adjValue('saturate')) / 100.0 + 1.0) * luxS;
+    final opacity = 1.0 - (_adjValue('opacity') / 100.0);
+    final presetMatrix = _filterMatrixFor(widget.filterName);
+    final adjustmentMatrix =
+        _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
+    return Opacity(
+      opacity: opacity.clamp(0.0, 1.0),
+      child: ColorFiltered(
+        colorFilter: ColorFilter.matrix(presetMatrix),
+        child: ColorFiltered(
+          colorFilter: ColorFilter.matrix(adjustmentMatrix),
+          child: child,
+        ),
+      ),
+    );
+  }
 
   void _precacheThumbnail() {
     final thumb = widget.thumbnailUrl?.trim();
@@ -284,7 +457,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
         });
       }
     }
-    final thumb = _buildVideoPlaceholder();
+    final thumb = _applyFilterToWidget(_buildVideoPlaceholder());
     final ctl = _videoCtl;
     final canShowVideo = _isControllerUsable(ctl);
     if (ctl != null && !canShowVideo) {
@@ -304,12 +477,14 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOut,
               opacity: canShowVideo ? 1 : 0,
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: ctl.value.size.width,
-                  height: ctl.value.size.height,
-                  child: VideoPlayer(ctl),
+              child: _applyFilterToWidget(
+                FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: ctl.value.size.width,
+                    height: ctl.value.size.height,
+                    child: VideoPlayer(ctl),
+                  ),
                 ),
               ),
             ),

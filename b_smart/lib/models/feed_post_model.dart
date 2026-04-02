@@ -18,6 +18,8 @@ class FeedPost {
   final List<String> mediaUrls; 
   final String? thumbnailUrl; 
   final double? aspectRatio;
+  final List<String?>? mediaFilters;
+  final List<Map<String, int>>? mediaAdjustments;
   final String? caption;
   final List<String> hashtags;
   final DateTime createdAt;
@@ -58,6 +60,8 @@ class FeedPost {
     required this.mediaUrls,
     this.thumbnailUrl,
     this.aspectRatio,
+    this.mediaFilters,
+    this.mediaAdjustments,
     this.caption,
     this.hashtags = const [],
     required this.createdAt,
@@ -139,6 +143,69 @@ class FeedPost {
       }
     }
 
+    final mediaFilters = <String?>[];
+    final mediaAdjustments = <Map<String, int>>[];
+    final mediaListForFilters =
+        json['media'] as List? ?? json['mediaUrls'] as List?;
+    if (mediaListForFilters != null) {
+      for (final item in mediaListForFilters) {
+        if (item is Map) {
+          final rawFilter = item['filter'];
+          String? filterName;
+          if (rawFilter is String) {
+            filterName = rawFilter;
+          } else if (rawFilter is Map) {
+            final name = rawFilter['name'] ?? rawFilter['filter'] ?? rawFilter['id'];
+            if (name != null) filterName = name.toString();
+          }
+          filterName ??= item['filterName']?.toString();
+          if (filterName == null || filterName.isEmpty) {
+            filterName = null;
+          }
+          mediaFilters.add(filterName);
+
+          final rawAdj = item['adjustments'];
+          if (rawAdj is Map) {
+            final adj = Map<String, dynamic>.from(rawAdj);
+            int _toInt(dynamic v) {
+              if (v is int) return v;
+              if (v is num) return v.round();
+              return int.tryParse(v?.toString() ?? '') ?? 0;
+            }
+
+            final out = <String, int>{};
+            if (adj.containsKey('brightness')) {
+              out['brightness'] = _toInt(adj['brightness']);
+            }
+            if (adj.containsKey('contrast')) {
+              out['contrast'] = _toInt(adj['contrast']);
+            }
+            if (adj.containsKey('saturation')) {
+              out['saturate'] = _toInt(adj['saturation']);
+            }
+            if (adj.containsKey('temperature')) {
+              out['sepia'] = _toInt(adj['temperature']);
+            }
+            if (adj.containsKey('fade')) {
+              out['opacity'] = _toInt(adj['fade']);
+            }
+            if (adj.containsKey('opacity')) {
+              out['opacity'] = _toInt(adj['opacity']);
+            }
+            if (adj.containsKey('vignette')) {
+              out['vignette'] = _toInt(adj['vignette']);
+            }
+            mediaAdjustments.add(out);
+          } else {
+            mediaAdjustments.add(const {});
+          }
+        } else {
+          mediaFilters.add(null);
+          mediaAdjustments.add(const {});
+        }
+      }
+    }
+
     return FeedPost(
       id: json['_id'] ?? json['id'] ?? '',
       userId: json['user_id'] ?? json['userId'] ?? '',
@@ -150,6 +217,8 @@ class FeedPost {
       mediaUrls: extractedUrls.where((url) => url.isNotEmpty).toList(),
       thumbnailUrl: thumbUrl,
       aspectRatio: json['aspectRatio'] != null ? double.tryParse(json['aspectRatio'].toString()) : null,
+      mediaFilters: mediaFilters.isEmpty ? null : mediaFilters,
+      mediaAdjustments: mediaAdjustments.isEmpty ? null : mediaAdjustments,
       caption: json['caption'],
       hashtags: List<String>.from(json['hashtags'] ?? []),
       createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : DateTime.now(),
@@ -214,6 +283,8 @@ class FeedPost {
     List<String>? mediaUrls,
     String? thumbnailUrl,
     double? aspectRatio,
+    List<String?>? mediaFilters,
+    List<Map<String, int>>? mediaAdjustments,
     String? caption,
     List<String>? hashtags,
     DateTime? createdAt,
@@ -253,6 +324,8 @@ class FeedPost {
       mediaUrls: mediaUrls ?? this.mediaUrls,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
       aspectRatio: aspectRatio ?? this.aspectRatio,
+      mediaFilters: mediaFilters ?? this.mediaFilters,
+      mediaAdjustments: mediaAdjustments ?? this.mediaAdjustments,
       caption: caption ?? this.caption,
       hashtags: hashtags ?? this.hashtags,
       createdAt: createdAt ?? this.createdAt,
