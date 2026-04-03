@@ -408,6 +408,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   VideoPlayerController? _videoController;
   Future<void>? _videoInit;
   bool _isPlaying = false;
+  bool _autoPlayQueued = false;
   Duration? _trimStart;
   Duration? _trimEnd;
   final Map<String, Duration?> _mediaTrimStart = {};
@@ -2222,11 +2223,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               )
             : CreateReelDetailsScreen(
                 media: nextMedia,
-                selectedFilter: _selectedFilter,
-                selectedMusic: _selectedMusic,
-                musicVolume: _musicVolume,
-                trimStart: _trimStart,
-                trimEnd: _trimEnd,
+                trimStart:
+                    nextMedia.id == _currentMedia.id ? _trimStartFor(_currentMedia) : null,
+                trimEnd:
+                    nextMedia.id == _currentMedia.id ? _trimEndFor(_currentMedia) : null,
               ),
       ),
     );
@@ -4407,10 +4407,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           return const Center(
               child: CircularProgressIndicator(color: Colors.white));
         }
-        if (!controller.value.isPlaying) {
-          controller.play();
-          _isPlaying = true;
-        }
+        _ensureVideoPlaying(controller);
         final frameAspect = _postFrameAspect();
         final videoAspect = controller.value.aspectRatio;
         final fit = widget.isReelFlow
@@ -4438,6 +4435,20 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         ));
       },
     );
+  }
+
+  void _ensureVideoPlaying(VideoPlayerController controller) {
+    if (_autoPlayQueued) return;
+    _autoPlayQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoPlayQueued = false;
+      if (!mounted) return;
+      if (!controller.value.isInitialized) return;
+      if (!controller.value.isPlaying) {
+        controller.play();
+        setState(() => _isPlaying = true);
+      }
+    });
   }
 
   Widget _buildImagePreview() {

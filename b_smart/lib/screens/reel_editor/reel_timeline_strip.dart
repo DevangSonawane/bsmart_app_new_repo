@@ -16,6 +16,8 @@ class ReelTimelineStrip extends StatefulWidget {
   final double totalDurationMs;
   final double pxPerMs;
   final int? selectedClipIndex;
+  final bool trimMode;
+  final ValueChanged<double>? onScrollOffsetChanged;
   final ValueChanged<int> onClipSelected;
   final ValueChanged<int> onClipDoubleTap;
   final ValueChanged<int> onClipLongPress;
@@ -36,6 +38,8 @@ class ReelTimelineStrip extends StatefulWidget {
     required this.totalDurationMs,
     required this.pxPerMs,
     required this.selectedClipIndex,
+    required this.trimMode,
+    this.onScrollOffsetChanged,
     required this.onClipSelected,
     required this.onClipDoubleTap,
     required this.onClipLongPress,
@@ -59,7 +63,10 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
   static const double _dotSlot = 16;
   static const double _leftPad = 16;
   static const double _rightPad = 16;
-  static const double _handleWidth = 12;
+  static const double _handleWidth = 10;
+  static const double _rulerHeight = 20;
+  static const double _tileHeight = 60;
+  static const double _overlayHeight = 20;
 
   final GlobalKey _stripKey = GlobalKey();
   double _trackWidth = 0;
@@ -121,6 +128,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
       _trackWidth = w;
       _scrollOffset = _scrollOffset.clamp(0.0, _maxScroll);
     });
+    widget.onScrollOffsetChanged?.call(_scrollOffset);
   }
 
   double get _maxScroll {
@@ -217,20 +225,22 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
       widget.onScrubStart();
       return;
     }
-    final idx = widget.selectedClipIndex;
-    if (idx != null && idx >= 0 && idx < widget.clips.length) {
-      final clip = widget.clips[idx];
-      final clipStart = _clipStartDx(idx);
-      final clipEnd = clipStart + _clipWidth(clip);
-      if ((localDx - clipStart).abs() <= _handleWidth && clip.type == ReelClipType.video) {
-        _setMode(_TimelineMode.trim);
-        _beginTrim(idx);
-        return;
-      }
-      if ((localDx - clipEnd).abs() <= _handleWidth) {
-        _setMode(_TimelineMode.trim);
-        _beginTrim(idx);
-        return;
+    if (widget.trimMode) {
+      final idx = widget.selectedClipIndex;
+      if (idx != null && idx >= 0 && idx < widget.clips.length) {
+        final clip = widget.clips[idx];
+        final clipStart = _clipStartDx(idx);
+        final clipEnd = clipStart + _clipWidth(clip);
+        if ((localDx - clipStart).abs() <= _handleWidth && clip.type == ReelClipType.video) {
+          _setMode(_TimelineMode.trim);
+          _beginTrim(idx);
+          return;
+        }
+        if ((localDx - clipEnd).abs() <= _handleWidth) {
+          _setMode(_TimelineMode.trim);
+          _beginTrim(idx);
+          return;
+        }
       }
     }
     _setMode(_TimelineMode.scroll);
@@ -239,6 +249,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
   void _handlePanUpdate(DragUpdateDetails details) {
     if (_mode == _TimelineMode.scroll) {
       _scrollOffset = (_scrollOffset - details.delta.dx).clamp(0.0, _maxScroll);
+      widget.onScrollOffsetChanged?.call(_scrollOffset);
       setState(() {});
       return;
     }
@@ -265,7 +276,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
 
     return Container(
       key: _stripKey,
-      height: 88,
+      height: _rulerHeight + _tileHeight + _overlayHeight,
       color: Colors.black,
       child: RawGestureDetector(
         gestures: <Type, GestureRecognizerFactory>{
@@ -308,13 +319,21 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
               Column(
                 children: [
                   SizedBox(
-                    height: 52,
+                    height: _rulerHeight,
+                    child: Stack(
+                      children: [
+                        if (_trackWidth > 0) ..._buildRulerTicks(totalMs),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    height: _tileHeight,
                     child: Stack(
                       children: [
                         Transform.translate(
                           offset: Offset(-_scrollOffset, 0),
                           child: SizedBox(
-                            height: 52,
+                            height: _tileHeight,
                             width: _trackWidth + _leftPad + _rightPad,
                             child: Stack(
                               children: _buildTiles(),
@@ -325,7 +344,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                     ),
                   ),
                   SizedBox(
-                    height: 20,
+                    height: _overlayHeight,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: _leftPad),
                       child: Stack(
@@ -376,7 +395,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                     ),
                     Container(
                       width: 1.5,
-                      height: 66,
+                      height: _rulerHeight + _tileHeight + _overlayHeight - 6,
                       color: const Color(0xFFFF3B30),
                     ),
                   ],
@@ -418,7 +437,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
         left: cursor,
         top: 0,
         width: width,
-        height: 52,
+        height: _tileHeight,
         child: _buildClipTile(i, clip),
       ));
       cursor += width;
@@ -428,7 +447,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
           left: cursor,
           top: 0,
           width: _dotSlot,
-          height: 52,
+          height: _tileHeight,
           child: _buildTransitionDot(i + 1),
         ));
         cursor += _dotSlot + _tileGap;
@@ -439,7 +458,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
     tiles.add(
       Positioned(
         left: cursor,
-        top: 8,
+        top: 12,
         width: 36,
         height: 36,
         child: GestureDetector(
@@ -476,8 +495,32 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
     );
   }
 
+  List<Widget> _buildRulerTicks(double totalMs) {
+    final widgets = <Widget>[];
+    final totalSeconds = (totalMs / 1000).ceil();
+    for (int s = 1; s <= totalSeconds; s += 2) {
+      final left = _leftPad + (s * 1000 * widget.pxPerMs) - _scrollOffset;
+      widgets.add(Positioned(
+        left: left,
+        top: 2,
+        child: Row(
+          children: [
+            Text(
+              '${s}s',
+              style: const TextStyle(color: Colors.white54, fontSize: 10),
+            ),
+            const SizedBox(width: 6),
+            const Text('•', style: TextStyle(color: Colors.white38, fontSize: 10)),
+          ],
+        ),
+      ));
+    }
+    return widgets;
+  }
+
   Widget _buildClipTile(int index, ReelClip clip) {
     final isSelected = widget.selectedClipIndex == index;
+    final showTrimHandles = widget.trimMode && isSelected;
     final isGrouped = clip.groupId != null;
     final isFirstInGroup = isGrouped && (index == 0 || widget.clips[index - 1].groupId != clip.groupId);
     final opacity = _isDragging && _dragIndex != index ? 0.85 : 1.0;
@@ -522,15 +565,15 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: isSelected ? Colors.white : Colors.transparent,
-              width: 1.5,
+              color: showTrimHandles ? Colors.white : Colors.transparent,
+              width: 2,
             ),
           ),
           clipBehavior: Clip.antiAlias,
           child: Stack(
             fit: StackFit.expand,
             children: [
-              _ClipThumb(clip: clip),
+              _ClipThumb(clip: clip, width: _clipWidth(clip), height: _tileHeight),
               if (isGrouped)
                 Positioned(
                   left: 0,
@@ -567,7 +610,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                     ),
                   ),
                 ),
-              if (isSelected && clip.type == ReelClipType.video)
+              if (showTrimHandles && clip.type == ReelClipType.video)
                 Positioned(
                   left: 0,
                   top: 0,
@@ -586,10 +629,15 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                       setState(() {});
                     },
                     onHorizontalDragEnd: (_) => _commitTrim(index),
-                    child: Container(color: Colors.white),
+                    child: Container(
+                      color: Colors.white,
+                      child: Center(
+                        child: Container(width: 2, height: 24, color: Colors.black),
+                      ),
+                    ),
                   ),
                 ),
-              if (isSelected)
+              if (showTrimHandles)
                 Positioned(
                   right: 0,
                   top: 0,
@@ -614,7 +662,12 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                       setState(() {});
                     },
                     onHorizontalDragEnd: (_) => _commitTrim(index),
-                    child: Container(color: Colors.white),
+                    child: Container(
+                      color: Colors.white,
+                      child: Center(
+                        child: Container(width: 2, height: 24, color: Colors.black),
+                      ),
+                    ),
                   ),
                 ),
             ],
@@ -627,8 +680,14 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
 
 class _ClipThumb extends StatelessWidget {
   final ReelClip clip;
+  final double width;
+  final double height;
 
-  const _ClipThumb({required this.clip});
+  const _ClipThumb({
+    required this.clip,
+    required this.width,
+    required this.height,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -643,10 +702,30 @@ class _ClipThumb extends StatelessWidget {
               if (snap.connectionState != ConnectionState.done || snap.data == null) {
                 return Container(color: Colors.grey[850]);
               }
-              return Image.memory(snap.data!, fit: BoxFit.cover);
+              return Container(
+                width: width,
+                height: height,
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: MemoryImage(snap.data!),
+                    fit: BoxFit.cover,
+                    repeat: ImageRepeat.repeatX,
+                  ),
+                ),
+              );
             },
           )
-        : Image.file(File(clip.path), fit: BoxFit.cover);
+        : Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: FileImage(File(clip.path)),
+                fit: BoxFit.cover,
+                repeat: ImageRepeat.repeatX,
+              ),
+            ),
+          );
   }
 }
 
