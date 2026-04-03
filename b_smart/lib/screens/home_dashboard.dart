@@ -162,6 +162,134 @@ class HomeDashboard extends StatefulWidget {
   State<HomeDashboard> createState() => _HomeDashboardState();
 }
 
+class _LocationCard extends StatelessWidget {
+  final String name;
+  final String line1;
+  final String line2;
+  final String city;
+  final String tag;
+  final bool highlight;
+
+  const _LocationCard({
+    required this.name,
+    required this.line1,
+    required this.line2,
+    required this.city,
+    required this.tag,
+    this.highlight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final borderColor = highlight
+        ? const Color(0xFFEA8A4A)
+        : (isDark ? Colors.white24 : Colors.black12);
+    return Container(
+      width: 160,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF232323) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor, width: highlight ? 1.5 : 1),
+        boxShadow: [
+          if (!isDark)
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            line1,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: isDark ? Colors.white60 : Colors.black54,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            line2,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: isDark ? Colors.white60 : Colors.black54,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            city,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const Spacer(),
+          if (tag.trim().isNotEmpty)
+            Text(
+              tag,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: isDark ? Colors.white54 : Colors.black45,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SheetAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _SheetAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: theme.colorScheme.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _HomeDashboardState extends State<HomeDashboard>
     with RouteAware, WidgetsBindingObserver {
   final FeedService _feedService = FeedService();
@@ -191,6 +319,30 @@ class _HomeDashboardState extends State<HomeDashboard>
   bool _isFeedScrolling = false;
   Timer? _scrollIdleTimer;
   String? _pendingActivePostId;
+
+  final List<Map<String, String>> _mockLocations = const [
+    {
+      'name': 'Devang',
+      'line1': '701, I wing, Rashmi',
+      'line2': 'Tanmay, Mira Road...',
+      'city': 'MUMBAI 401107',
+      'tag': 'Default address',
+    },
+    {
+      'name': 'Aman Pandey',
+      'line1': '502, 2B, Om',
+      'line2': 'Shivaya, Near Cin...',
+      'city': 'THANE 401107',
+      'tag': '',
+    },
+    {
+      'name': 'Madh',
+      'line1': '21 Aarti Wada, D',
+      'line2': 'Behind factory',
+      'city': 'DHULE',
+      'tag': '',
+    },
+  ];
 
   final ScrollController _feedScrollController = ScrollController();
   final int _pageSize = 25;
@@ -965,6 +1117,92 @@ class _HomeDashboardState extends State<HomeDashboard>
         break;
       }
     }
+  }
+
+  void _showLocationSheet() {
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: false,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      isDismissible: true,
+      enableDrag: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final isDark = theme.brightness == Brightness.dark;
+        return SafeArea(
+          top: false,
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1B1B1B) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black12,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Choose your location',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 118,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _mockLocations.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (context, index) {
+                      final item = _mockLocations[index];
+                      return _LocationCard(
+                        name: item['name'] ?? '',
+                        line1: item['line1'] ?? '',
+                        line2: item['line2'] ?? '',
+                        city: item['city'] ?? '',
+                        tag: item['tag'] ?? '',
+                        highlight: index == 0,
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _SheetAction(
+                  icon: LucideIcons.mapPin,
+                  label: 'Enter an Indian pincode',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                  },
+                ),
+                const SizedBox(height: 4),
+                _SheetAction(
+                  icon: LucideIcons.locateFixed,
+                  label: 'Use my current location',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _fetchCurrentLocation();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _fetchCurrentLocation() async {
@@ -1845,437 +2083,433 @@ class _HomeDashboardState extends State<HomeDashboard>
     final hasMoreToShow = effectiveVisible < totalCount;
     final isLoading = feedState.isLoading;
     final isDesktop = MediaQuery.sizeOf(context).width >= 768;
-    final isFullScreen = _currentIndex == 1 ||
-        _currentIndex == 3 ||
-        _currentIndex == 4; // Ads, Promote, Reels
-
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final appBarBg =
         theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
     final appBarFg =
         theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
-    final content = Scaffold(
-      extendBody: _currentIndex != 4,
-      backgroundColor: isFullScreen
-          ? (isDark ? const Color(0xFF121212) : Colors.black)
-          : theme.scaffoldBackgroundColor,
-      appBar: isFullScreen
-          ? null
-          : AppBar(
-              title: ShaderMask(
-                blendMode: BlendMode.srcIn,
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [
-                    DesignTokens.instaPurple,
-                    DesignTokens.instaPink,
-                    DesignTokens.instaOrange
-                  ],
-                ).createShader(bounds),
-                child: Text('b_smart',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 22,
-                        fontFamily: 'cursive')),
-              ),
-              elevation: 0,
-              backgroundColor: appBarBg,
-              foregroundColor: appBarFg,
-              iconTheme: IconThemeData(color: appBarFg),
-              actions: [
-                if (!isDesktop)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          onPressed: () =>
-                              Navigator.of(context).pushNamed('/search'),
-                          icon: Icon(LucideIcons.search,
-                              size: 24, color: appBarFg),
-                        ),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () =>
-                              Navigator.of(context).pushNamed('/wallet'),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF2D2D2D)
-                                  : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                  color: isDark
-                                      ? const Color(0xFF3D3D3D)
-                                      : Colors.grey.shade200),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: const BoxDecoration(
-                                      gradient: DesignTokens.instaGradient,
-                                      shape: BoxShape.circle),
-                                  child: const Icon(LucideIcons.wallet,
-                                      size: 12, color: Colors.white),
-                                ),
-                                const SizedBox(width: 6),
-                                Text('$_balance',
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                        color: appBarFg)),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            IconButton(
-                                onPressed: () => Navigator.of(context)
-                                    .pushNamed('/notifications'),
-                                icon: Icon(LucideIcons.heart,
-                                    size: 24, color: appBarFg)),
-                            Positioned(
-                                right: 8,
-                                top: 8,
-                                child: Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                        color: DesignTokens.instaPink,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: isDark
-                                                ? const Color(0xFFE8E8E8)
-                                                : Colors.white,
-                                            width: 1.5)))),
-                          ],
-                        ),
-                        GestureDetector(
-                          onTap: _openProfile,
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 4, right: 12),
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              padding: const EdgeInsets.all(1.5),
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
+    PreferredSizeWidget? buildAppBar(int idx) {
+      final isFullScreen = idx == 1 || idx == 3 || idx == 4;
+      if (isFullScreen) return null;
+      return AppBar(
+        title: ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) => const LinearGradient(
+            colors: [
+              DesignTokens.instaPurple,
+              DesignTokens.instaPink,
+              DesignTokens.instaOrange
+            ],
+          ).createShader(bounds),
+          child: Text('b_smart',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                  fontFamily: 'cursive')),
+        ),
+        elevation: 0,
+        backgroundColor: appBarBg,
+        foregroundColor: appBarFg,
+        iconTheme: IconThemeData(color: appBarFg),
+        actions: [
+          if (!isDesktop)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pushNamed('/search'),
+                    icon: Icon(LucideIcons.search, size: 24, color: appBarFg),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pushNamed('/wallet'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color:
+                            isDark ? const Color(0xFF2D2D2D) : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF3D3D3D)
+                                : Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 20,
+                            height: 20,
+                            decoration: const BoxDecoration(
                                 gradient: DesignTokens.instaGradient,
-                              ),
-                              child: CircleAvatar(
-                                radius: 14,
-                                backgroundColor:
-                                    isDark ? Colors.black : Colors.white,
-                                child: CircleAvatar(
-                                  radius: 13,
-                                  backgroundColor: isDark
-                                      ? const Color(0xFF3D3D3D)
-                                      : Colors.grey.shade200,
-                                  backgroundImage: _currentUserProfile !=
-                                              null &&
-                                          _currentUserProfile!['avatar_url'] !=
-                                              null &&
-                                          (_currentUserProfile!['avatar_url']
-                                                  as String)
-                                              .isNotEmpty
-                                      ? NetworkImage(
-                                          _currentUserProfile!['avatar_url']
-                                              as String)
-                                      : null,
-                                  child: _currentUserProfile == null ||
-                                          _currentUserProfile!['avatar_url'] ==
-                                              null ||
-                                          (_currentUserProfile!['avatar_url']
-                                                  as String)
-                                              .isEmpty
-                                      ? Text(
-                                          _currentUserProfile != null
-                                              ? ((_currentUserProfile![
-                                                              'username'] ??
-                                                          _currentUserProfile![
-                                                              'full_name'] ??
-                                                          'U') as String)
-                                                      .isNotEmpty
-                                                  ? ((_currentUserProfile![
-                                                              'username'] ??
-                                                          _currentUserProfile![
-                                                              'full_name'] ??
-                                                          'U') as String)
-                                                      .substring(0, 1)
-                                                      .toUpperCase()
-                                                  : 'U'
-                                              : 'U',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color: appBarFg),
-                                        )
-                                      : null,
-                                ),
-                              ),
-                            ),
+                                shape: BoxShape.circle),
+                            child: const Icon(LucideIcons.wallet,
+                                size: 12, color: Colors.white),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 6),
+                          Text('$_balance',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: appBarFg)),
+                        ],
+                      ),
                     ),
                   ),
-              ],
-            ),
-      body: ColoredBox(
-        color: isFullScreen
-            ? (isDark ? const Color(0xFF121212) : Colors.black)
-            : theme.scaffoldBackgroundColor,
-        child: Stack(
-          children: [
-            ScrollConfiguration(
-              behavior: const _NoGlowScrollBehavior(),
-              child: PageView.builder(
-                controller: _tabPageController,
-                itemCount: _swipeTabs.length,
-                onPageChanged: (page) {
-                  final idx = _swipeTabs[page];
-                  _setTabIndex(idx, userInitiated: false, fromSwipe: true);
-                },
-                itemBuilder: (context, page) {
-              final idx = _swipeTabs[page];
-              if (idx == 0) {
-                return RefreshIndicator(
-                  onRefresh: _onRefresh,
-                  child: Stack(
+                  const SizedBox(width: 4),
+                  Stack(
+                    clipBehavior: Clip.none,
                     children: [
-                      Visibility(
-                        visible: !isLoading,
-                        maintainState: true,
-                        maintainAnimation: true,
-                        maintainSize: true,
-                        child: CustomScrollView(
-                          controller: _feedScrollController,
-                        cacheExtent: 400,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          slivers: [
-                            SliverToBoxAdapter(
-                              child: _FeedHeader(
-                                storyUsers: _storyUsers,
-                                storyGroups: _storyGroups,
-                                storyStatuses: _storyStatuses,
-                                yourStoryHasActive: _yourStoryHasActive,
-                                yourAvatarUrl:
-                                    (_currentUserProfile?['avatar_url'] ??
-                                            _currentUserProfile?['avatar'] ??
-                                            _currentUserProfile?['profile_image'])
-                                        ?.toString(),
-                                currentLocation: _currentLocation,
-                                locationLoading: _locationLoading,
-                                isDark: isDark,
-                                onYourStoryTap: () {
-                                  if (_yourStoryHasActive) {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => OwnStoryViewerScreen(
-                                          stories: _myStories,
-                                          storyId: _myStoryId,
-                                          userName:
-                                              (_currentUserProfile?['username'] ??
-                                                      _currentUserProfile?[
-                                                          'full_name'] ??
-                                                      'You')
-                                                  .toString(),
-                                        ),
-                                      ),
-                                    );
-                                  } else {
-                                    _openStoryCamera();
-                                  }
-                                },
-                                onYourStoryAddTap: _openStoryCamera,
-                                onUserStoryTap:
-                                    _storyGroups.isEmpty ? null : _onStoryTap,
-                                onLocationTap: _fetchCurrentLocation,
-                              ),
-                            ),
-                            if (posts.isEmpty)
-                              SliverFillRemaining(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 24),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(LucideIcons.image,
-                                          size: 48,
-                                          color: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium
-                                              ?.color),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        'No posts yet',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 16,
-                                          color:
-                                              Theme.of(context).colorScheme.onSurface,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        'Create your first post from the + button',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium
-                                              ?.color,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              )
-                            else
-                              SliverList(
-                                delegate: SliverChildBuilderDelegate(
-                                  (context, index) {
-                                    final p = posts[index];
-                                    final isOwnPost = _currentUserId != null &&
-                                        p.userId == _currentUserId;
-                                    Widget itemWidget;
-                                    try {
-                                      itemWidget = VisibilityDetector(
-                                        key: ValueKey('feed-vis-${p.id}'),
-                                        onVisibilityChanged: (info) {
-                                          _onFeedItemVisibilityChanged(
-                                            p.id,
-                                            info.visibleFraction,
-                                          );
-                                        },
-                                        child: RepaintBoundary(
-                                            child: PostCard(
-                                            key: ValueKey(
-                                                'card-${p.id}'), // Prevent unnecessary rebuilds
-                                            post: p,
-                                            isTabActive:
-                                                _currentIndex == 0 && _isRouteActive,
-                                            isActive: false,
-                                            activeIdListenable:
-                                                _activeFeedPostIdListenable,
-                                            isOwnPost: isOwnPost,
-                                            onUserTap: p.userId.isNotEmpty
-                                                ? () => Navigator.of(context)
-                                                    .pushNamed('/profile/${p.userId}')
-                                                : null,
-                                            onLike: () => _onLikePost(p),
-                                            onDoubleTapLike: () =>
-                                                _onDoubleTapLikePost(p),
-                                            onComment: () => _onCommentPost(p),
-                                            onShare: () => _onSharePost(p),
-                                            onSave: () => _onSavePost(p),
-                                            onFollow: isOwnPost ? null : () => _onFollowPost(p),
-                                            onMore: () => _onMorePost(context, p),
-                                          ),
-                                        ),
-                                      );
-                                    } catch (e, st) {
-                                      itemWidget = Padding(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: Column(
-                                          children: [
-                                            const Icon(Icons.broken_image, size: 40),
-                                            const SizedBox(height: 8),
-                                            Text('Failed to load post', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-                                          ],
-                                        ),
-                                      );
-                                    }
-                                    return itemWidget;
-                                  },
-                                  childCount: posts.length,
-                                ),
-                              ),
-                            if (hasMoreToShow)
-                              const SliverToBoxAdapter(child: SizedBox(height: 28)),
-                            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                          ],
-                        ),
-                      ),
-                      if (isLoading)
-                        const ColoredBox(
-                          color: Colors.transparent,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                                color: DesignTokens.instaPink),
-                          ),
-                        ),
+                      IconButton(
+                          onPressed: () =>
+                              Navigator.of(context).pushNamed('/notifications'),
+                          icon: Icon(LucideIcons.heart,
+                              size: 24, color: appBarFg)),
+                      Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                  color: DesignTokens.instaPink,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: isDark
+                                          ? const Color(0xFFE8E8E8)
+                                          : Colors.white,
+                                      width: 1.5)))),
                     ],
                   ),
-                );
-              }
-              if (idx == 1) {
-                return AdsPageScreen(isTabActive: _currentIndex == 1 && _isRouteActive);
-              }
-              if (idx == 3) {
-                return const PromoteScreen();
-              }
-              if (idx == 4) {
-                return Container(
-                  color: Colors.black,
-                  child: ReelsScreen(isActive: _currentIndex == 4 && _isRouteActive),
-                );
-              }
-              return const SizedBox.shrink();
-            },
-              ),
-            ),
-            if (!isDesktop &&
-                !_isCommentsOpen &&
-                (_currentIndex == 0 ||
-                    _currentIndex == 1 ||
-                    _currentIndex == 3 ||
-                    _currentIndex == 4))
-              Positioned.fill(
-                child: FloatingMessageOverlay(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const MessagingScreen(),
+                  GestureDetector(
+                    onTap: _openProfile,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 4, right: 12),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        padding: const EdgeInsets.all(1.5),
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: DesignTokens.instaGradient,
+                        ),
+                        child: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: isDark ? Colors.black : Colors.white,
+                          child: CircleAvatar(
+                            radius: 13,
+                            backgroundColor: isDark
+                                ? const Color(0xFF3D3D3D)
+                                : Colors.grey.shade200,
+                            backgroundImage: _currentUserProfile != null &&
+                                    _currentUserProfile!['avatar_url'] != null &&
+                                    (_currentUserProfile!['avatar_url'] as String)
+                                        .isNotEmpty
+                                ? NetworkImage(
+                                    _currentUserProfile!['avatar_url'] as String)
+                                : null,
+                            child: _currentUserProfile == null ||
+                                    _currentUserProfile!['avatar_url'] == null ||
+                                    (_currentUserProfile!['avatar_url'] as String)
+                                        .isEmpty
+                                ? Text(
+                                    _currentUserProfile != null
+                                        ? ((_currentUserProfile!['username'] ??
+                                                    _currentUserProfile![
+                                                        'full_name'] ??
+                                                    'U') as String)
+                                                .isNotEmpty
+                                            ? ((_currentUserProfile![
+                                                        'username'] ??
+                                                    _currentUserProfile![
+                                                        'full_name'] ??
+                                                    'U') as String)
+                                                .substring(0, 1)
+                                                .toUpperCase()
+                                            : 'U'
+                                        : 'U',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: appBarFg),
+                                  )
+                                : null,
+                          ),
+                        ),
                       ),
-                    );
-                  },
-                ),
-              ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: isDesktop || _currentIndex == 4
-          ? null
-          : AnimatedSlide(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              offset: _currentIndex == 0 ? Offset.zero : const Offset(0, 1),
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                opacity: _currentIndex == 0 ? 1 : 0,
-                child: BottomNav(
-                  currentIndex: _currentIndex,
-                  onTap: _onNavTap,
-                ),
+                    ),
+                  ),
+                ],
               ),
             ),
+        ],
+      );
+    }
+
+    Widget buildTabBody(int idx) {
+      if (idx == 0) {
+        return RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: Stack(
+            children: [
+              Visibility(
+                visible: !isLoading,
+                maintainState: true,
+                maintainAnimation: true,
+                maintainSize: true,
+                child: CustomScrollView(
+                  controller: _feedScrollController,
+                  cacheExtent: 400,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: _FeedHeader(
+                        storyUsers: _storyUsers,
+                        storyGroups: _storyGroups,
+                        storyStatuses: _storyStatuses,
+                        yourStoryHasActive: _yourStoryHasActive,
+                        yourAvatarUrl:
+                            (_currentUserProfile?['avatar_url'] ??
+                                    _currentUserProfile?['avatar'] ??
+                                    _currentUserProfile?['profile_image'])
+                                ?.toString(),
+                        currentLocation: _currentLocation,
+                        locationLoading: _locationLoading,
+                        isDark: isDark,
+                        onYourStoryTap: () {
+                          if (_yourStoryHasActive) {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => OwnStoryViewerScreen(
+                                  stories: _myStories,
+                                  storyId: _myStoryId,
+                                  userName:
+                                      (_currentUserProfile?['username'] ??
+                                              _currentUserProfile?[
+                                                  'full_name'] ??
+                                              'You')
+                                          .toString(),
+                                ),
+                              ),
+                            );
+                          } else {
+                            _openStoryCamera();
+                          }
+                        },
+                        onYourStoryAddTap: _openStoryCamera,
+                        onUserStoryTap:
+                            _storyGroups.isEmpty ? null : _onStoryTap,
+                        onLocationTap: _showLocationSheet,
+                      ),
+                    ),
+                    if (posts.isEmpty)
+                      SliverFillRemaining(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(LucideIcons.image,
+                                  size: 48,
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.color),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No posts yet',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Create your first post from the + button',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.color,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final p = posts[index];
+                            final isOwnPost =
+                                _currentUserId != null && p.userId == _currentUserId;
+                            Widget itemWidget;
+                            try {
+                              itemWidget = VisibilityDetector(
+                                key: ValueKey('feed-vis-${p.id}'),
+                                onVisibilityChanged: (info) {
+                                  _onFeedItemVisibilityChanged(
+                                    p.id,
+                                    info.visibleFraction,
+                                  );
+                                },
+                                child: RepaintBoundary(
+                                  child: PostCard(
+                                    key: ValueKey(
+                                        'card-${p.id}'), // Prevent unnecessary rebuilds
+                                    post: p,
+                                    isTabActive: _currentIndex == 0 && _isRouteActive,
+                                    isActive: false,
+                                    activeIdListenable:
+                                        _activeFeedPostIdListenable,
+                                    isOwnPost: isOwnPost,
+                                    onUserTap: p.userId.isNotEmpty
+                                        ? () => Navigator.of(context)
+                                            .pushNamed('/profile/${p.userId}')
+                                        : null,
+                                    onLike: () => _onLikePost(p),
+                                    onDoubleTapLike: () =>
+                                        _onDoubleTapLikePost(p),
+                                    onComment: () => _onCommentPost(p),
+                                    onShare: () => _onSharePost(p),
+                                    onSave: () => _onSavePost(p),
+                                    onFollow: isOwnPost ? null : () => _onFollowPost(p),
+                                    onMore: () => _onMorePost(context, p),
+                                  ),
+                                ),
+                              );
+                            } catch (e, st) {
+                              itemWidget = Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  children: [
+                                    const Icon(Icons.broken_image, size: 40),
+                                    const SizedBox(height: 8),
+                                    Text('Failed to load post',
+                                        style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface)),
+                                  ],
+                                ),
+                              );
+                            }
+                            return itemWidget;
+                          },
+                          childCount: posts.length,
+                        ),
+                      ),
+                    if (hasMoreToShow)
+                      const SliverToBoxAdapter(child: SizedBox(height: 28)),
+                    const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                  ],
+                ),
+              ),
+              if (isLoading)
+                const ColoredBox(
+                  color: Colors.transparent,
+                  child: Center(
+                    child:
+                        CircularProgressIndicator(color: DesignTokens.instaPink),
+                  ),
+                ),
+            ],
+          ),
+        );
+      }
+      if (idx == 1) {
+        return AdsPageScreen(isTabActive: _currentIndex == 1 && _isRouteActive);
+      }
+      if (idx == 3) {
+        return const PromoteScreen();
+      }
+      if (idx == 4) {
+        return Container(
+          color: Colors.black,
+          child: ReelsScreen(isActive: _currentIndex == 4 && _isRouteActive),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    Widget buildTabScaffold(int idx) {
+      final isFullScreen = idx == 1 || idx == 3 || idx == 4;
+      return Scaffold(
+        extendBody: idx != 4,
+        backgroundColor: isFullScreen
+            ? (isDark ? const Color(0xFF121212) : Colors.black)
+            : theme.scaffoldBackgroundColor,
+        appBar: buildAppBar(idx),
+        body: ColoredBox(
+          color: isFullScreen
+              ? (isDark ? const Color(0xFF121212) : Colors.black)
+              : theme.scaffoldBackgroundColor,
+          child: buildTabBody(idx),
+        ),
+        bottomNavigationBar: isDesktop || idx == 4
+            ? null
+            : (idx == 0
+                ? BottomNav(
+                    currentIndex: _currentIndex,
+                    onTap: _onNavTap,
+                  )
+                : const SizedBox.shrink()),
+      );
+    }
+
+    final content = Stack(
+      children: [
+        ScrollConfiguration(
+          behavior: const _NoGlowScrollBehavior(),
+          child: PageView.builder(
+            controller: _tabPageController,
+            itemCount: _swipeTabs.length,
+            onPageChanged: (page) {
+              final idx = _swipeTabs[page];
+              _setTabIndex(idx, userInitiated: false, fromSwipe: true);
+            },
+            itemBuilder: (context, page) {
+              final idx = _swipeTabs[page];
+              return buildTabScaffold(idx);
+            },
+          ),
+        ),
+        if (!isDesktop &&
+            !_isCommentsOpen &&
+            (_currentIndex == 0 ||
+                _currentIndex == 1 ||
+                _currentIndex == 3 ||
+                _currentIndex == 4))
+          Positioned.fill(
+            child: FloatingMessageOverlay(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const MessagingScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
     );
 
     if (isDesktop) {
+      final isFullScreen = _currentIndex == 1 ||
+          _currentIndex == 3 ||
+          _currentIndex == 4; // Ads, Promote, Reels
       return Row(
         children: [
           Sidebar(

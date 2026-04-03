@@ -495,6 +495,44 @@ class _PostDetailModalState extends State<PostDetailModal> {
         : (raw.startsWith('/') ? '$origin$raw' : '$origin/$raw');
   }
 
+  bool _isControllerUsable(VideoPlayerController? controller) {
+    if (controller == null) return false;
+    try {
+      controller.value;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isControllerInitialized(VideoPlayerController? controller) {
+    if (!_isControllerUsable(controller)) return false;
+    try {
+      return controller!.value.isInitialized;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isControllerPlaying(VideoPlayerController? controller) {
+    if (!_isControllerUsable(controller)) return false;
+    try {
+      return controller!.value.isPlaying;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  double _controllerAspectRatio(VideoPlayerController? controller) {
+    if (!_isControllerUsable(controller)) return 9 / 16;
+    try {
+      final ar = controller!.value.aspectRatio;
+      return ar <= 0 ? 9 / 16 : ar;
+    } catch (_) {
+      return 9 / 16;
+    }
+  }
+
   bool _isVideoMedia(dynamic item) {
     final url = _mediaUrl(item).toLowerCase();
     final type = (item is Map ? item['type'] as String? : null)?.toLowerCase();
@@ -697,22 +735,20 @@ class _PostDetailModalState extends State<PostDetailModal> {
                 child: Center(
                   child: isCurrent &&
                           _videoReady &&
-                          controller != null &&
-                          controller.value.isInitialized
+                          _isControllerInitialized(controller)
                       ? GestureDetector(
                           onTap: () {
-                            if (controller.value.isPlaying) {
-                              controller.pause();
+                            if (!_isControllerUsable(controller)) return;
+                            if (_isControllerPlaying(controller)) {
+                              controller!.pause();
                             } else {
-                              controller.play();
+                              controller!.play();
                             }
-                            setState(() {});
+                            if (mounted) setState(() {});
                           },
                           child: AspectRatio(
-                            aspectRatio: controller.value.aspectRatio <= 0
-                                ? 9 / 16
-                                : controller.value.aspectRatio,
-                            child: VideoPlayer(controller),
+                            aspectRatio: _controllerAspectRatio(controller),
+                            child: VideoPlayer(controller!),
                           ),
                         )
                       : _videoLoading && isCurrent

@@ -19,14 +19,7 @@ class VideoPool {
   bool contains(String id) => _pool.containsKey(id) || _inFlight.contains(id);
 
   VideoPlayerController? peek(String id) {
-    final ctl = _pool[id];
-    if (ctl == null) return null;
-    if (!_isControllerUsable(ctl)) {
-      _pool.remove(id);
-      _warmOrder.remove(id);
-      return null;
-    }
-    return ctl;
+    return _usableController(id);
   }
 
   Future<void> setMuted(bool muted) async {
@@ -77,8 +70,9 @@ class VideoPool {
   }
 
   Future<VideoPlayerController> attach(String id, String url) async {
-    if (_activeId == id && _pool.containsKey(id)) {
-      final ctl = _pool[id]!;
+    final existingActive = _activeId == id ? _usableController(id) : null;
+    if (existingActive != null) {
+      final ctl = existingActive;
       await ctl.setVolume(_muted ? 0 : 1);
       if (!ctl.value.isPlaying) await ctl.play();
       return ctl;
@@ -94,8 +88,9 @@ class VideoPool {
     _activeId = id;
 
     // Reuse pre-warmed controller if we have it
-    if (_pool.containsKey(id)) {
-      final ctl = _pool[id]!;
+    final prewarmed = _usableController(id);
+    if (prewarmed != null) {
+      final ctl = prewarmed;
       await ctl.setVolume(_muted ? 0 : 1);
       await ctl.play();
       _evictIfNeeded(keep: id);
@@ -134,6 +129,17 @@ class VideoPool {
     }
   }
 
+  VideoPlayerController? _usableController(String id) {
+    final ctl = _pool[id];
+    if (ctl == null) return null;
+    if (!_isControllerUsable(ctl)) {
+      _pool.remove(id);
+      _warmOrder.remove(id);
+      return null;
+    }
+    return ctl;
+  }
+
   void _evictIfNeeded({String? keep}) {
     if (_pool.length <= _maxSlots) return;
     final protected = <String>{
@@ -146,14 +152,16 @@ class VideoPool {
       if (_pool.length <= _maxSlots) break;
       if (protected.contains(id)) continue;
       final ctl = _pool.remove(id);
-      ctl?.pause().then((_) => ctl.dispose()).catchError((_) {});
+      if (ctl == null || !_isControllerUsable(ctl)) continue;
+      ctl.pause().then((_) => ctl.dispose()).catchError((_) {});
     }
     if (_pool.length > _maxSlots) {
       final leftovers = _pool.keys.where((k) => !protected.contains(k)).toList();
       for (final id in leftovers) {
         if (_pool.length <= _maxSlots) break;
         final ctl = _pool.remove(id);
-        ctl?.pause().then((_) => ctl.dispose()).catchError((_) {});
+        if (ctl == null || !_isControllerUsable(ctl)) continue;
+        ctl.pause().then((_) => ctl.dispose()).catchError((_) {});
       }
     }
   }

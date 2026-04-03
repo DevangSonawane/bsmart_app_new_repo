@@ -305,6 +305,9 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
         // Became inactive — pause and release reference
         _loadingVideo = false;
         VideoPool.instance.pauseIf(widget.id);
+        if (_videoCtl != null) {
+          _videoCtl = null;
+        }
         if (mounted) setState(() {});
       }
     }
@@ -447,19 +450,9 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     if (widget.isActive && _videoCtl == null && !_videoFailed && !_loadingVideo) {
       _ensureVideo();
     }
-    if (!widget.isActive && _videoCtl == null) {
-      final prewarmed = VideoPool.instance.peek(widget.id);
-      if (prewarmed != null &&
-          prewarmed.value.isInitialized) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          if (_videoCtl == null) setState(() => _videoCtl = prewarmed);
-        });
-      }
-    }
     final thumb = _applyFilterToWidget(_buildVideoPlaceholder());
     final ctl = _videoCtl;
-    final canShowVideo = _isControllerUsable(ctl);
+    final canShowVideo = widget.isActive && _isControllerUsable(ctl);
     if (ctl != null && !canShowVideo) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;

@@ -55,6 +55,34 @@ class _ReelsScreenState extends State<ReelsScreen>
   int _poolGeneration = 0;
   bool _autoplayKickScheduled = false;
 
+  bool _isControllerUsable(VideoPlayerController? controller) {
+    if (controller == null) return false;
+    try {
+      controller.value;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isControllerInitialized(VideoPlayerController? controller) {
+    if (!_isControllerUsable(controller)) return false;
+    try {
+      return controller!.value.isInitialized;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isControllerPlaying(VideoPlayerController? controller) {
+    if (!_isControllerUsable(controller)) return false;
+    try {
+      return controller!.value.isPlaying;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -692,7 +720,7 @@ class _ReelsScreenState extends State<ReelsScreen>
       _autoplayKickScheduled = false;
       if (!mounted || !widget.isActive || _reels.isEmpty) return;
       final controller = _controllerForIndex(_currentIndex);
-      if (controller == null || !controller.value.isInitialized) {
+      if (!_isControllerInitialized(controller)) {
         if (_controllerSetupInProgress.contains(_currentIndex)) return;
         unawaited(_initializePoolAt(_currentIndex));
         _poolOps = _poolOps
@@ -700,7 +728,7 @@ class _ReelsScreenState extends State<ReelsScreen>
             .catchError((_) {});
         return;
       }
-      if (!controller.value.isPlaying) {
+      if (!_isControllerPlaying(controller)) {
         _poolOps = _poolOps
             .then<void>((_) => _activateCurrentReelPlayback())
             .catchError((_) {});
@@ -965,13 +993,15 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Widget _buildReelPlayer(int index, Reel reel, {required bool isDesktop}) {
     final controller = _controllerForIndex(index);
+    final safeController =
+        _isControllerUsable(controller) ? controller : null;
     final thumb = reel.thumbnailUrl == null
         ? null
         : UrlHelper.absoluteUrl(reel.thumbnailUrl!);
 
     return _ReelPlayerItem(
       key: ValueKey('reel-item-$index-${reel.id}'),
-      controller: controller,
+      controller: safeController,
       thumbnailUrl: thumb,
       headers:
           thumb == null || thumb.isEmpty ? const {} : _headersForUrl(thumb),
@@ -1379,7 +1409,22 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem>
     super.build(context);
     final thumbnailUrl = widget.thumbnailUrl;
     final controller = widget.controller;
-    final isInitialized = controller?.value.isInitialized == true;
+    bool isInitialized = false;
+    if (controller != null) {
+      try {
+        isInitialized = controller.value.isInitialized;
+      } catch (_) {
+        isInitialized = false;
+      }
+    }
+    Size? videoSize;
+    if (isInitialized && controller != null) {
+      try {
+        videoSize = controller.value.size;
+      } catch (_) {
+        videoSize = null;
+      }
+    }
 
     return SizedBox.expand(
       child: Stack(
@@ -1399,12 +1444,12 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem>
                   )
                 else
                   Container(color: Colors.black),
-                if (controller != null && isInitialized)
+                if (controller != null && isInitialized && videoSize != null)
                   FittedBox(
                     fit: BoxFit.cover,
                     child: SizedBox(
-                      width: controller.value.size.width,
-                      height: controller.value.size.height,
+                      width: videoSize.width,
+                      height: videoSize.height,
                       child: VideoPlayer(controller),
                     ),
                   ),
