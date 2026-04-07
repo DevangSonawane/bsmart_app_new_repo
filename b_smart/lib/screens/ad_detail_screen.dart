@@ -15,6 +15,7 @@ class AdDetailScreen extends StatefulWidget {
 
 class _AdDetailScreenState extends State<AdDetailScreen> {
   final AdsService _adsService = AdsService();
+  final ValueNotifier<bool> _viewPopupVisible = ValueNotifier<bool>(false);
   Ad? _ad;
   bool _loading = true;
   bool _viewRecorded = false;
@@ -23,6 +24,12 @@ class _AdDetailScreenState extends State<AdDetailScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _viewPopupVisible.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -101,6 +108,7 @@ class _AdDetailScreenState extends State<AdDetailScreen> {
               : AdVideoItem(
                   ad: _ad!,
                   isActive: true,
+                  viewPopupVisibleListenable: _viewPopupVisible,
                   onCompletedView: _recordView,
                   onOpenComments: _openComments,
                   onAutoNext: () {},

@@ -55,7 +55,8 @@ class ApiClient {
   Future<String?> getToken() async {
     if (_cachedToken != null) return _cachedToken;
     try {
-      _cachedToken = await _storage.read(key: _tokenKey) ?? _memoryStorage[_tokenKey];
+      _cachedToken =
+          await _storage.read(key: _tokenKey) ?? _memoryStorage[_tokenKey];
     } catch (_) {
       _cachedToken = _memoryStorage[_tokenKey];
     }
@@ -89,6 +90,7 @@ class ApiClient {
     Map<String, String>? extraHeaders,
   }) async {
     final headers = <String, String>{};
+    headers['Accept'] = 'application/json';
     if (json) headers['Content-Type'] = 'application/json';
     final token = await getToken();
     if (token != null) headers['Authorization'] = 'Bearer $token';
@@ -180,10 +182,14 @@ class ApiClient {
   }
 
   /// `DELETE <baseUrl>/<path>`
-  Future<dynamic> delete(String path, {Map<String, String>? extraHeaders}) async {
+  Future<dynamic> delete(String path,
+      {Map<String, String>? extraHeaders}) async {
     try {
       final response = await _http
-          .delete(_uri(path), headers: await _headers(extraHeaders: extraHeaders))
+          .delete(
+            _uri(path),
+            headers: await _headers(json: false, extraHeaders: extraHeaders),
+          )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
     } on SocketException {
@@ -255,7 +261,7 @@ class ApiClient {
     final dynamic decoded = _tryDecodeJson(response.body);
     final Map<String, dynamic>? body =
         decoded is Map<String, dynamic> ? decoded : null;
-    
+
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return decoded ?? response.body;
     }
@@ -263,7 +269,7 @@ class ApiClient {
     // Extract detailed error message
     String? message = body?['message'] as String?;
     final error = body?['error'] as String?;
-    
+
     if (message == null) {
       final raw = response.body.trim();
       final ct = response.headers['content-type'] ?? '';
@@ -274,7 +280,9 @@ class ApiClient {
             ? title
             : (response.reasonPhrase ?? 'HTTP ${response.statusCode}');
       } else {
-        message = raw.isNotEmpty ? raw : (error ?? response.reasonPhrase ?? 'Unknown error');
+        message = raw.isNotEmpty
+            ? raw
+            : (error ?? response.reasonPhrase ?? 'Unknown error');
       }
     } else if (error != null && message != error) {
       // Append detailed error if available
@@ -295,7 +303,8 @@ class ApiClient {
         if (response.statusCode >= 500) {
           throw ServerException(message: safeMessage, body: body);
         }
-        throw ApiException(statusCode: response.statusCode, message: safeMessage, body: body);
+        throw ApiException(
+            statusCode: response.statusCode, message: safeMessage, body: body);
     }
   }
 
@@ -317,7 +326,8 @@ class ApiClient {
   }
 
   String? _extractHtmlTitle(String source) {
-    final match = RegExp(r'<title[^>]*>(.*?)<\/title>', caseSensitive: false, dotAll: true)
+    final match = RegExp(r'<title[^>]*>(.*?)<\/title>',
+            caseSensitive: false, dotAll: true)
         .firstMatch(source);
     final t = match?.group(1)?.replaceAll(RegExp(r'\s+'), ' ').trim();
     return t;
@@ -325,7 +335,8 @@ class ApiClient {
 
   MediaType? _contentTypeForFilename(String name) {
     final n = name.toLowerCase();
-    if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return MediaType('image', 'jpeg');
+    if (n.endsWith('.jpg') || n.endsWith('.jpeg'))
+      return MediaType('image', 'jpeg');
     if (n.endsWith('.png')) return MediaType('image', 'png');
     if (n.endsWith('.gif')) return MediaType('image', 'gif');
     if (n.endsWith('.mp4')) return MediaType('video', 'mp4');

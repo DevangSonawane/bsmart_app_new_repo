@@ -11,6 +11,7 @@ import '../services/reels_service.dart';
 import '../models/reel_model.dart';
 import '../services/supabase_service.dart';
 import '../widgets/profile_header.dart';
+import '../widgets/safe_network_image.dart';
 import '../widgets/posts_grid.dart';
 import '../widgets/post_detail_modal.dart';
 import '../models/feed_post_model.dart';
@@ -26,6 +27,7 @@ import '../services/user_account_service.dart';
 import '../services/wallet_service.dart';
 import '../api/auth_api.dart';
 import '../api/api_client.dart';
+import '../api/chat_api.dart';
 import '../config/api_config.dart';
 import '../services/feed_service.dart';
 import '../services/auth/auth_service.dart';
@@ -33,6 +35,7 @@ import '../models/story_model.dart';
 import 'story_viewer_screen.dart';
 import '../models/media_model.dart';
 import 'create_upload_screen.dart';
+import 'chat_conversation_screen.dart';
 import 'messaging_screen.dart';
 import '../utils/url_helper.dart';
 import '../widgets/profile_highlights_row.dart';
@@ -152,9 +155,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _openMessaging() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const MessagingScreen()),
-    );
+    final participantId = widget.userId?.trim();
+    if (participantId == null || participantId.isEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const MessagingScreen()),
+      );
+      return;
+    }
+
+    unawaited(() async {
+      try {
+        final conversation =
+            await ChatApi().createOrGetConversation(participantId: participantId);
+        if (!mounted) return;
+        final id = (conversation['_id'] ?? conversation['id'])?.toString();
+        if (id == null || id.isEmpty) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const MessagingScreen()),
+          );
+          return;
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ChatConversationScreen(
+              conversationId: id,
+              initialConversation: conversation,
+            ),
+          ),
+        );
+      } catch (_) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const MessagingScreen()),
+        );
+      }
+    }());
   }
 
   void _showProfileMoreActions(Map<String, dynamic>? profile) {
@@ -238,6 +273,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         isFollowed: fp.isFollowed,
       );
     }
+
     final nextPosts = _posts.map(syncPost).toList();
     final nextTagged = _tagged.map(syncPost).toList();
 
@@ -405,8 +441,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    final isVendor =
-        (profile?['role'] as String?)?.toLowerCase() == 'vendor';
+    final isVendor = (profile?['role'] as String?)?.toLowerCase() == 'vendor';
     List<Ad> vendorAds = [];
     if (isVendor && targetId.isNotEmpty) {
       try {
@@ -549,7 +584,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               (map['comments'] is int ? map['comments'] as int : 0),
           isLiked: toBool(map['is_liked_by_me']) || toBool(map['liked_by_me']),
           isSaved: toBool(map['is_saved_by_me']) || toBool(map['saved_by_me']),
-          isFollowed: toBool(map['is_followed_by_me']) || toBool(map['followed_by_me']),
+          isFollowed:
+              toBool(map['is_followed_by_me']) || toBool(map['followed_by_me']),
           isAd: isAdType,
           adCompanyId: map['ad_company_id']?.toString(),
           adCompanyName: map['ad_company_name']?.toString(),
@@ -947,14 +983,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   String? _extractAvatarUrl(Map<String, dynamic> res) {
-    dynamic url = res['avatar_url'] ??
-        res['url'] ??
-        res['fileUrl'] ??
-        res['file_url'];
+    dynamic url =
+        res['avatar_url'] ?? res['url'] ?? res['fileUrl'] ?? res['file_url'];
     if (url is String && url.isNotEmpty) return url;
     final data = res['data'];
     if (data is Map) {
-      url = data['avatar_url'] ?? data['url'] ?? data['fileUrl'] ?? data['file_url'];
+      url = data['avatar_url'] ??
+          data['url'] ??
+          data['fileUrl'] ??
+          data['file_url'];
       if (url is String && url.isNotEmpty) return url;
     }
     return null;
@@ -1017,7 +1054,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
   }
-
 
   void _onEdit() async {
     final targetId = widget.userId ?? await CurrentUser.id;
@@ -1250,7 +1286,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-
   Widget _buildAdsGrid() {
     if (_vendorAds.isEmpty) return const SizedBox.shrink();
     return GridView.builder(
@@ -1347,8 +1382,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final fullName = displayProfile?['full_name'] as String?;
         final bio = displayProfile?['bio'] as String?;
         final avatar = displayProfile?['avatar_url'] as String?;
-        final profileUserId =
-            (displayProfile?['id'] as String?) ??
+        final profileUserId = (displayProfile?['id'] as String?) ??
             (displayProfile?['_id'] as String?) ??
             '';
         final postsCount =
@@ -1384,8 +1418,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ? const SizedBox.shrink()
                     : Padding(
                         padding: const EdgeInsets.all(8.0),
-                        child:
-                            PostsGrid(posts: _posts, onTap: (p) => _onPostTap(p)),
+                        child: PostsGrid(
+                            posts: _posts, onTap: (p) => _onPostTap(p)),
                       ),
                 _userReels.isEmpty
                     ? const SizedBox.shrink()
@@ -1415,15 +1449,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 children: [
                                   Container(color: Colors.black),
                                   if (thumb != null)
-                                    CachedNetworkImage(
-                                      imageUrl: thumb,
-                                      httpHeaders: _reelImageHeaders,
+                                    SafeNetworkImage(
+                                      url: thumb,
+                                      headers: _reelImageHeaders,
                                       cacheKey:
                                           '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
                                       fit: BoxFit.cover,
-                                      placeholder: (ctx, url) =>
+                                      placeholder:
                                           Container(color: Colors.grey[900]),
-                                      errorWidget: (ctx, url, err) =>
+                                      errorWidget:
                                           Container(color: Colors.grey[900]),
                                     ),
                                   const Positioned(
@@ -1467,24 +1501,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
           length: tabViews.length,
           child: Scaffold(
             backgroundColor: theme.scaffoldBackgroundColor,
-              appBar: AppBar(
-                automaticallyImplyLeading: !isMe,
-                backgroundColor: theme.appBarTheme.backgroundColor,
-                foregroundColor: theme.appBarTheme.foregroundColor,
-                title: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(username, style: TextStyle(color: fgColor)),
-                    const SizedBox(width: 4),
-                    SvgPicture.string(
-                      _verifiedBadgeSvg,
-                      width: 20,
-                      height: 20,
-                      colorFilter: const ColorFilter.mode(
-                          Color(0xFF3B82F6), BlendMode.srcIn),
-                    ),
-                  ],
-                ),
+            appBar: AppBar(
+              automaticallyImplyLeading: !isMe,
+              backgroundColor: theme.appBarTheme.backgroundColor,
+              foregroundColor: theme.appBarTheme.foregroundColor,
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(username, style: TextStyle(color: fgColor)),
+                  const SizedBox(width: 4),
+                  SvgPicture.string(
+                    _verifiedBadgeSvg,
+                    width: 20,
+                    height: 20,
+                    colorFilter: const ColorFilter.mode(
+                        Color(0xFF3B82F6), BlendMode.srcIn),
+                  ),
+                ],
+              ),
               actions: [
                 if (isMe) ...[
                   IconButton(
@@ -1512,6 +1546,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       fullName: fullName,
                       bio: bio,
                       avatarUrl: avatar,
+                      avatarHeaders: _reelImageHeaders,
                       posts: postsCount,
                       followers: followers,
                       following: following,
@@ -1530,8 +1565,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onMore: () => _showProfileMoreActions(displayProfile),
                       onMessage: _openMessaging,
                       onAvatarTap: _openStoriesFromProfile,
-                      onAvatarEdit:
-                          isMe && !_avatarUploading ? _showAvatarOptionsSheet : null,
+                      onAvatarEdit: isMe && !_avatarUploading
+                          ? _showAvatarOptionsSheet
+                          : null,
                     ),
                   ),
                   SliverToBoxAdapter(
@@ -1615,6 +1651,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _fullNameCtl = TextEditingController();
   final _bioCtl = TextEditingController();
   final _phoneCtl = TextEditingController();
+  Map<String, String>? _mediaHeaders;
   bool _loading = true;
   bool _uploading = false;
   String? _avatarUrl;
@@ -1624,6 +1661,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
+    ApiClient().getToken().then((token) {
+      if (!mounted) return;
+      if (token != null && token.isNotEmpty) {
+        setState(() => _mediaHeaders = {'Authorization': 'Bearer $token'});
+      } else {
+        _mediaHeaders = const <String, String>{};
+      }
+    });
     _load();
   }
 
@@ -1783,7 +1828,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (_effectiveUserId == null || _effectiveUserId!.isEmpty) {
         throw 'User not found.';
       }
-      await _svc.updateUserProfile(_effectiveUserId!, {'avatar_url': googleUrl});
+      await _svc
+          .updateUserProfile(_effectiveUserId!, {'avatar_url': googleUrl});
       await _refreshProfileAfterAvatarChange(googleUrl);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1817,14 +1863,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   String? _extractAvatarUrl(Map<String, dynamic> res) {
-    dynamic url = res['avatar_url'] ??
-        res['url'] ??
-        res['fileUrl'] ??
-        res['file_url'];
+    dynamic url =
+        res['avatar_url'] ?? res['url'] ?? res['fileUrl'] ?? res['file_url'];
     if (url is String && url.isNotEmpty) return url;
     final data = res['data'];
     if (data is Map) {
-      url = data['avatar_url'] ?? data['url'] ?? data['fileUrl'] ?? data['file_url'];
+      url = data['avatar_url'] ??
+          data['url'] ??
+          data['fileUrl'] ??
+          data['file_url'];
       if (url is String && url.isNotEmpty) return url;
     }
     return null;
@@ -1936,12 +1983,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       padding: const EdgeInsets.all(2),
                       child: ClipOval(
                         child: _avatarUrl != null
-                            ? Image.network(_avatarUrl!,
+                            ? SafeNetworkImage(
+                                url: _avatarUrl!,
+                                headers: UrlHelper.shouldAttachAuthHeader(
+                                        _avatarUrl!)
+                                    ? _mediaHeaders
+                                    : null,
                                 width: 86,
                                 height: 86,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    _placeholderAvatar())
+                                placeholder: _placeholderAvatar(),
+                                errorWidget: _placeholderAvatar(),
+                              )
                             : _placeholderAvatar(),
                       ),
                     ),

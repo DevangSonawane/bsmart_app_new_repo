@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
@@ -41,6 +42,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   Map<String, String>? _mediaHeaders;
   int _walletBalance = 0;
   Timer? _walletTimer;
+  final ValueNotifier<bool> _viewPopupVisible = ValueNotifier<bool>(false);
 
   List<AdCategory> _categories = [];
   String _selectedCategoryId = 'All';
@@ -56,8 +58,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   Timer? _searchDebounce;
   int _searchEpoch = 0;
   final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode =
-      FocusNode(debugLabel: 'ads-search-focus');
+  final FocusNode _searchFocusNode = FocusNode(debugLabel: 'ads-search-focus');
   List<Ad> _ads = [];
   bool _categoriesExpanded = false;
 
@@ -65,7 +66,10 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     final allIndex = categories.indexWhere((c) {
       final id = c.id.trim().toLowerCase();
       final name = c.name.trim().toLowerCase();
-      return id == 'all' || name == 'all' || (id.startsWith('all') && id.length <= 4) || (name.startsWith('all') && name.length <= 4);
+      return id == 'all' ||
+          name == 'all' ||
+          (id.startsWith('all') && id.length <= 4) ||
+          (name.startsWith('all') && name.length <= 4);
     });
     if (allIndex <= 0) return categories;
 
@@ -108,6 +112,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _walletTimer?.cancel();
+    _viewPopupVisible.dispose();
     super.dispose();
   }
 
@@ -231,7 +236,6 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
         _page += 1;
         _error = null;
       });
-
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -423,6 +427,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
       );
       _viewRecordedPopup = null;
     });
+    _viewPopupVisible.value = true;
   }
 
   void _showViewRecordedPopup({int? viewCount}) {
@@ -433,18 +438,21 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
       );
       _viewRewardPopup = null;
     });
+    _viewPopupVisible.value = true;
   }
 
   void _hideViewRewardPopup() {
     setState(() {
       _viewRewardPopup = null;
     });
+    _viewPopupVisible.value = false;
   }
 
   void _hideViewRecordedPopup() {
     setState(() {
       _viewRecordedPopup = null;
     });
+    _viewPopupVisible.value = false;
   }
 
   Future<void> _openAdComments(Ad ad) async {
@@ -554,6 +562,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               key: ValueKey('ad-video-${ad.id}'),
               ad: ad,
               isActive: widget.isTabActive && index == _focusedIndex,
+              viewPopupVisibleListenable: _viewPopupVisible,
               onCompletedView: () => _recordViewForAd(ad),
               onAutoNext: () {
                 if (index + 1 < _ads.length) {
@@ -576,170 +585,170 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
         context: context,
         removeBottom: true,
         child: Stack(
-        children: [
-          // Layer 1: Main Content (Video Feed)
-          _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : _error != null
-                  ? _buildErrorState()
-                  : _ads.isEmpty
-                      ? _buildEmptyState()
-                      : isDesktop
-                          ? Center(
-                              child: Container(
-                                width: 360,
-                                height:
-                                    MediaQuery.of(context).size.height * 0.9,
-                                decoration: BoxDecoration(
-                                  color: Colors.black,
-                                  borderRadius: BorderRadius.circular(22),
-                                  border: Border.all(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.12)),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color(0xAA000000),
-                                      blurRadius: 28,
-                                      offset: Offset(0, 14),
-                                    ),
-                                  ],
+          children: [
+            // Layer 1: Main Content (Video Feed)
+            _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : _error != null
+                    ? _buildErrorState()
+                    : _ads.isEmpty
+                        ? _buildEmptyState()
+                        : isDesktop
+                            ? Center(
+                                child: Container(
+                                  width: 360,
+                                  height:
+                                      MediaQuery.of(context).size.height * 0.9,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black,
+                                    borderRadius: BorderRadius.circular(22),
+                                    border: Border.all(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.12)),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0xAA000000),
+                                        blurRadius: 28,
+                                        offset: Offset(0, 14),
+                                      ),
+                                    ],
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: feedView,
                                 ),
-                                clipBehavior: Clip.antiAlias,
-                                child: feedView,
-                              ),
-                            )
-                          : feedView,
+                              )
+                            : feedView,
 
-          // Layer 2: Top Navigation Overlay
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: _buildTopBar(isDesktop: isDesktop),
-            ),
-          ),
-          if (_searchOpen)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: _closeSearch,
-                behavior: HitTestBehavior.translucent,
-                child: const SizedBox.expand(),
-              ),
-            ),
-          _buildSearchDropdown(isDesktop: isDesktop),
-          if (_viewRewardPopup != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                ignoring: _viewRewardPopup == null,
-                child: Center(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeIn,
-                    transitionBuilder: (child, animation) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child:
-                            ScaleTransition(scale: animation, child: child),
-                      );
-                    },
-                    child: _viewRewardPopup == null
-                        ? const SizedBox.shrink()
-                        : _ViewRewardPopupCard(
-                            key: ValueKey<int>(_viewRewardPopup!.id),
-                            data: _viewRewardPopup!,
-                            onOk: _hideViewRewardPopup,
-                          ),
-                  ),
-                ),
-              ),
-            ),
-          if (_viewRecordedPopup != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                ignoring: _viewRecordedPopup == null,
-                child: Center(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeIn,
-                    transitionBuilder: (child, animation) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child:
-                            ScaleTransition(scale: animation, child: child),
-                      );
-                    },
-                    child: _viewRecordedPopup == null
-                        ? const SizedBox.shrink()
-                        : _ViewRecordedPopupCard(
-                            key: ValueKey<int>(_viewRecordedPopup!.id),
-                            data: _viewRecordedPopup!,
-                            onOk: _hideViewRecordedPopup,
-                          ),
-                  ),
-                ),
-              ),
-            ),
-          if (!_isLoading && _error == null && _ads.isNotEmpty && isDesktop)
+            // Layer 2: Top Navigation Overlay
             Positioned(
-              right: 20,
-              top: MediaQuery.of(context).size.height * 0.45,
-              child: Column(
-                children: [
-                  _navButton(
-                    icon: Icons.keyboard_arrow_up,
-                    onTap: _focusedIndex > 0
-                        ? () => _goToPage(_focusedIndex - 1)
-                        : null,
-                  ),
-                  const SizedBox(height: 10),
-                  _navButton(
-                    icon: Icons.keyboard_arrow_down,
-                    onTap: _focusedIndex < _ads.length - 1
-                        ? () => _goToPage(_focusedIndex + 1)
-                        : null,
-                  ),
-                ],
-              ),
-            ),
-          if (_isLoadingMore)
-            Positioned(
-              bottom: isDesktop ? 16 : 90,
+              top: 0,
               left: 0,
               right: 0,
-              child: Center(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        'Loading more ads...',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ],
+              child: SafeArea(
+                child: _buildTopBar(isDesktop: isDesktop),
+              ),
+            ),
+            if (_searchOpen)
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: _closeSearch,
+                  behavior: HitTestBehavior.translucent,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            _buildSearchDropdown(isDesktop: isDesktop),
+            if (_viewRewardPopup != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: _viewRewardPopup == null,
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutBack,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder: (child, animation) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child:
+                              ScaleTransition(scale: animation, child: child),
+                        );
+                      },
+                      child: _viewRewardPopup == null
+                          ? const SizedBox.shrink()
+                          : _ViewRewardPopupCard(
+                              key: ValueKey<int>(_viewRewardPopup!.id),
+                              data: _viewRewardPopup!,
+                              onOk: _hideViewRewardPopup,
+                            ),
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+            if (_viewRecordedPopup != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: _viewRecordedPopup == null,
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutBack,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder: (child, animation) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child:
+                              ScaleTransition(scale: animation, child: child),
+                        );
+                      },
+                      child: _viewRecordedPopup == null
+                          ? const SizedBox.shrink()
+                          : _ViewRecordedPopupCard(
+                              key: ValueKey<int>(_viewRecordedPopup!.id),
+                              data: _viewRecordedPopup!,
+                              onOk: _hideViewRecordedPopup,
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            if (!_isLoading && _error == null && _ads.isNotEmpty && isDesktop)
+              Positioned(
+                right: 20,
+                top: MediaQuery.of(context).size.height * 0.45,
+                child: Column(
+                  children: [
+                    _navButton(
+                      icon: Icons.keyboard_arrow_up,
+                      onTap: _focusedIndex > 0
+                          ? () => _goToPage(_focusedIndex - 1)
+                          : null,
+                    ),
+                    const SizedBox(height: 10),
+                    _navButton(
+                      icon: Icons.keyboard_arrow_down,
+                      onTap: _focusedIndex < _ads.length - 1
+                          ? () => _goToPage(_focusedIndex + 1)
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            if (_isLoadingMore)
+              Positioned(
+                bottom: isDesktop ? 16 : 90,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Loading more ads...',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -774,12 +783,14 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
 
     Widget toggleButton() {
       return IconButton(
-        onPressed: () => setState(() => _categoriesExpanded = !_categoriesExpanded),
+        onPressed: () =>
+            setState(() => _categoriesExpanded = !_categoriesExpanded),
         icon: AnimatedRotation(
           turns: _categoriesExpanded ? 0.5 : 0.0,
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeInOutCubic,
-          child: Icon(LucideIcons.chevronLeft, color: backIconColor, size: backIconSize),
+          child: Icon(LucideIcons.chevronLeft,
+              color: backIconColor, size: backIconSize),
         ),
       );
     }
@@ -848,7 +859,8 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                 icon: Icon(LucideIcons.x,
                     color: Colors.white.withValues(alpha: 0.7), size: 16),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                constraints:
+                    const BoxConstraints.tightFor(width: 28, height: 28),
               ),
           ],
         ),
@@ -910,7 +922,9 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             transitionBuilder: (child, animation) {
-              final slide = Tween<Offset>(begin: const Offset(0.18, 0), end: Offset.zero).animate(animation);
+              final slide =
+                  Tween<Offset>(begin: const Offset(0.18, 0), end: Offset.zero)
+                      .animate(animation);
               return FadeTransition(
                 opacity: animation,
                 child: SlideTransition(position: slide, child: child),
@@ -951,9 +965,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
         ),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.white
-              : Colors.transparent,
+          color: isSelected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: isSelected ? Border.all(color: Colors.white, width: 1) : null,
         ),
@@ -991,10 +1003,15 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
-                  colors: [Color(0xFFFDE047), Color(0xFFF59E0B), Color(0xFFF97316)],
+                  colors: [
+                    Color(0xFFFDE047),
+                    Color(0xFFF59E0B),
+                    Color(0xFFF97316)
+                  ],
                 ),
               ),
-              child: const Icon(LucideIcons.wallet, size: 12, color: Colors.white),
+              child:
+                  const Icon(LucideIcons.wallet, size: 12, color: Colors.white),
             ),
             const SizedBox(width: 6),
             Text(
@@ -1030,64 +1047,66 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxHeight, maxWidth: maxWidth),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.88),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x55000000),
-                blurRadius: 24,
-                offset: Offset(0, 12),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: Material(
-              color: Colors.transparent,
-              child: _searchLoading
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 28),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
-                        ),
-                      ),
-                    )
-                  : !hasResults && query.isNotEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 24, horizontal: 16),
-                          child: Text(
-                            'No results for "$query"',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.75),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x55000000),
+                  blurRadius: 24,
+                  offset: Offset(0, 12),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Material(
+                color: Colors.transparent,
+                child: _searchLoading
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 28),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white70),
                           ),
-                        )
-                      : !hasResults
-                          ? const SizedBox.shrink()
-                          : ListView(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              children: [
-                                if (_searchUsers.isNotEmpty) ...[
-                                  _buildSearchSectionHeader('People'),
-                                  ..._searchUsers.map(_buildSearchUserTile),
-                                ],
-                                if (_searchAds.isNotEmpty) ...[
-                                  _buildSearchSectionHeader('Ads'),
-                                  ..._searchAds.map(_buildSearchAdTile),
-                                ],
-                              ],
+                        ),
+                      )
+                    : !hasResults && query.isNotEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 24, horizontal: 16),
+                            child: Text(
+                              'No results for "$query"',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.75),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
+                          )
+                        : !hasResults
+                            ? const SizedBox.shrink()
+                            : ListView(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
+                                children: [
+                                  if (_searchUsers.isNotEmpty) ...[
+                                    _buildSearchSectionHeader('People'),
+                                    ..._searchUsers.map(_buildSearchUserTile),
+                                  ],
+                                  if (_searchAds.isNotEmpty) ...[
+                                    _buildSearchSectionHeader('Ads'),
+                                    ..._searchAds.map(_buildSearchAdTile),
+                                  ],
+                                ],
+                              ),
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -1328,6 +1347,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
 class AdVideoItem extends StatefulWidget {
   final Ad ad;
   final bool isActive;
+  final ValueListenable<bool> viewPopupVisibleListenable;
   final Future<void> Function() onCompletedView;
   final Future<void> Function() onOpenComments;
   final VoidCallback onAutoNext;
@@ -1336,6 +1356,7 @@ class AdVideoItem extends StatefulWidget {
     super.key,
     required this.ad,
     required this.isActive,
+    required this.viewPopupVisibleListenable,
     required this.onCompletedView,
     required this.onOpenComments,
     required this.onAutoNext,
@@ -1348,6 +1369,8 @@ class AdVideoItem extends StatefulWidget {
 class _AdVideoItemState extends State<AdVideoItem>
     with SingleTickerProviderStateMixin {
   VideoPlayerController? _controller;
+  late final AnimationController _watchProgressController =
+      AnimationController(vsync: this);
   final AdsService _adsService = AdsService();
   final SupabaseService _supabase = SupabaseService();
   bool _isInitialized = false;
@@ -1360,14 +1383,31 @@ class _AdVideoItemState extends State<AdVideoItem>
   int _likesCount = 0;
   bool _userPaused = false;
   bool _resumeAttemptInFlight = false;
-  double _progress = 0;
-  Timer? _watchTimer;
-  int _watchedMs = 0;
+  bool _loopRestartInFlight = false;
+  late bool _lastViewPopupVisible;
+  Timer? _watchGateTimer;
+  int _watchTotalMs = 15000;
+  bool _watchProgressRunning = false;
   bool _captionExpanded = false;
   Map<String, String>? _mediaHeaders;
   bool _viewMarked = false;
   Timer? _likeRewardTimer;
   _LikeRewardPopupData? _likeRewardPopup;
+
+  // Compatibility accessors for hot-reload safety (older kernels referenced these).
+  Timer? get _watchTimer => _watchGateTimer;
+  set _watchTimer(Timer? value) => _watchGateTimer = value;
+
+  double get _progress => _watchProgressController.value;
+  set _progress(double value) =>
+      _watchProgressController.value = value.clamp(0.0, 1.0);
+
+  int get _watchedMs =>
+      (_watchProgressController.value * _watchTotalMs).round();
+  set _watchedMs(int value) {
+    if (_watchTotalMs <= 0) return;
+    _watchProgressController.value = (value / _watchTotalMs).clamp(0.0, 1.0);
+  }
 
   Future<void> _safeSetVolume(double volume) async {
     final controller = _controller;
@@ -1399,7 +1439,9 @@ class _AdVideoItemState extends State<AdVideoItem>
     _isLiked = widget.ad.isLikedByMe;
     _isSaved = widget.ad.isSavedByMe;
     _likesCount = widget.ad.likesCount;
-    _watchedMs = 0;
+    _lastViewPopupVisible = widget.viewPopupVisibleListenable.value;
+    widget.viewPopupVisibleListenable
+        .addListener(_onViewPopupVisibilityChanged);
     _loadMediaHeaders();
     unawaited(_loadFollowState());
     _initializeVideo();
@@ -1409,6 +1451,14 @@ class _AdVideoItemState extends State<AdVideoItem>
   @override
   void didUpdateWidget(AdVideoItem oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewPopupVisibleListenable !=
+        widget.viewPopupVisibleListenable) {
+      oldWidget.viewPopupVisibleListenable
+          .removeListener(_onViewPopupVisibilityChanged);
+      _lastViewPopupVisible = widget.viewPopupVisibleListenable.value;
+      widget.viewPopupVisibleListenable
+          .addListener(_onViewPopupVisibilityChanged);
+    }
     if (oldWidget.ad.id != widget.ad.id) {
       _isLiked = widget.ad.isLikedByMe;
       _isSaved = widget.ad.isSavedByMe;
@@ -1416,9 +1466,10 @@ class _AdVideoItemState extends State<AdVideoItem>
       _captionExpanded = false;
       _isInitialized = false;
       _userPaused = false;
-      _progress = 0;
       _viewMarked = false;
-      _watchedMs = 0;
+      _watchProgressController.value = 0;
+      _watchProgressRunning = false;
+      _watchProgressController.stop(canceled: true);
       _controller?.removeListener(_onVideoTick);
       unawaited(_controller?.dispose());
       _controller = null;
@@ -1444,9 +1495,32 @@ class _AdVideoItemState extends State<AdVideoItem>
   void dispose() {
     _controller?.removeListener(_onVideoTick);
     _controller?.dispose();
-    _watchTimer?.cancel();
+    _watchGateTimer?.cancel();
+    _watchProgressController.dispose();
     _likeRewardTimer?.cancel();
+    widget.viewPopupVisibleListenable
+        .removeListener(_onViewPopupVisibilityChanged);
     super.dispose();
+  }
+
+  void _onViewPopupVisibilityChanged() {
+    final visible = widget.viewPopupVisibleListenable.value;
+    final dismissed = _lastViewPopupVisible && !visible;
+    _lastViewPopupVisible = visible;
+    if (!dismissed) return;
+    if (!mounted || !widget.isActive) return;
+    if (!_isVideoAd) return;
+    if (_watchProgressController.value < 1) return;
+    _resetWatchProgressForLoop();
+  }
+
+  void _resetWatchProgressForLoop() {
+    if (_watchProgressController.isAnimating) {
+      _watchProgressController.stop(canceled: false);
+    }
+    _watchProgressController.value = 0;
+    _watchProgressRunning = false;
+    _updateWatchProgressRunning();
   }
 
   void _showLikeRewardPopup({required bool isLike}) {
@@ -1506,7 +1580,8 @@ class _AdVideoItemState extends State<AdVideoItem>
   }
 
   Future<Map<String, String>> _videoHeadersFor(String url) async {
-    if (_mediaHeaders != null && _mediaHeaders!.isNotEmpty) return _mediaHeaders!;
+    if (_mediaHeaders != null && _mediaHeaders!.isNotEmpty)
+      return _mediaHeaders!;
     if (!UrlHelper.shouldAttachAuthHeader(url)) return const {};
     await _loadMediaHeaders();
     return _mediaHeaders ?? const {};
@@ -1537,16 +1612,26 @@ class _AdVideoItemState extends State<AdVideoItem>
 
     final value = controller.value;
     if (!value.isInitialized || value.hasError) return;
-    if (value.duration > Duration.zero) {
-      final duration = value.duration;
-      if (duration > Duration.zero &&
-          value.position >= duration - const Duration(milliseconds: 180)) {
-        unawaited(controller.seekTo(Duration.zero).catchError((_) {}));
-        if (!value.isPlaying) {
-          unawaited(controller.play().catchError((_) {}));
+    _updateWatchProgressRunning();
+    final duration = value.duration;
+    final atEnd = value.isCompleted ||
+        (duration > Duration.zero &&
+            value.position >= duration - const Duration(milliseconds: 250));
+    if (atEnd && !_loopRestartInFlight) {
+      _loopRestartInFlight = true;
+      unawaited(() async {
+        try {
+          await controller.seekTo(Duration.zero);
+          if (widget.isActive && !_userPaused) {
+            await controller.play();
+          }
+        } catch (_) {
+          // Ignore transient playback errors.
+        } finally {
+          _loopRestartInFlight = false;
         }
-        return;
-      }
+      }());
+      return;
     }
 
     if (!value.isPlaying && !value.isBuffering && !_resumeAttemptInFlight) {
@@ -1566,56 +1651,88 @@ class _AdVideoItemState extends State<AdVideoItem>
   bool get _isVideoAd => (widget.ad.videoUrl ?? '').trim().isNotEmpty;
 
   void _startOrStopProgress() {
-    _watchTimer?.cancel();
-    if (!widget.isActive) return;
+    _watchGateTimer?.cancel();
 
-    final totalSeconds =
-        widget.ad.watchDurationSeconds > 0 ? widget.ad.watchDurationSeconds : 15;
-    final totalMs = totalSeconds * 1000;
-    if (_watchedMs >= totalMs) {
-      _watchedMs = 0;
+    final totalSeconds = widget.ad.watchDurationSeconds > 0
+        ? widget.ad.watchDurationSeconds
+        : 15;
+    _watchTotalMs = totalSeconds * 1000;
+    _watchProgressController.duration = Duration(milliseconds: _watchTotalMs);
+
+    _watchProgressController.removeStatusListener(_onWatchProgressStatus);
+    _watchProgressController.addStatusListener(_onWatchProgressStatus);
+
+    if (!widget.isActive) {
+      _setWatchProgressRunning(false);
+      return;
     }
 
-    void tick(bool allowAdvance) {
-      if (!mounted || !widget.isActive) return;
-      if (!allowAdvance) return;
-      _watchedMs += 200;
-      final pct = (_watchedMs / totalMs).clamp(0.0, 1.0);
-      if ((_progress - pct).abs() > 0.004) {
-        setState(() {
-          _progress = pct;
-        });
-      }
-      if (pct >= 1) {
-        if (!_viewMarked) {
-          _viewMarked = true;
-          unawaited(widget.onCompletedView());
-        }
-        if (!_isVideoAd) {
-          widget.onAutoNext();
-        }
-      }
+    // If the previous ad finished, start fresh for the new ad.
+    if (_watchProgressController.value >= 1) {
+      _watchProgressController.value = 0;
     }
 
-    _watchTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
+    _updateWatchProgressRunning();
+    _watchGateTimer =
+        Timer.periodic(const Duration(milliseconds: 250), (timer) {
       if (!mounted || !widget.isActive) {
         timer.cancel();
         return;
       }
-      if (_isVideoAd) {
-        final controller = _controller;
-        final value = controller?.value;
-        final allowAdvance = controller != null &&
-            value != null &&
-            value.isInitialized &&
-            value.isPlaying &&
-            !value.isBuffering &&
-            !_userPaused;
-        tick(allowAdvance);
-      } else {
-        tick(true);
-      }
+      _updateWatchProgressRunning();
     });
+  }
+
+  void _onWatchProgressStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    if (!mounted) return;
+    if (!_viewMarked) {
+      _viewMarked = true;
+      unawaited(widget.onCompletedView());
+    }
+    if (_isVideoAd) {
+      _setWatchProgressRunning(false);
+      if (!widget.viewPopupVisibleListenable.value) {
+        _resetWatchProgressForLoop();
+      }
+      return;
+    }
+    if (!_isVideoAd && widget.isActive) {
+      widget.onAutoNext();
+    }
+  }
+
+  void _updateWatchProgressRunning() {
+    final allowAdvance = _isVideoAd ? _allowWatchProgressForVideo() : true;
+    _setWatchProgressRunning(allowAdvance);
+  }
+
+  bool _allowWatchProgressForVideo() {
+    final controller = _controller;
+    final value = controller?.value;
+    return controller != null &&
+        value != null &&
+        value.isInitialized &&
+        value.isPlaying &&
+        !value.isBuffering &&
+        !_userPaused;
+  }
+
+  void _setWatchProgressRunning(bool running) {
+    if (_watchProgressRunning == running) return;
+    _watchProgressRunning = running;
+
+    if (!running) {
+      if (_watchProgressController.isAnimating) {
+        _watchProgressController.stop(canceled: false);
+      }
+      return;
+    }
+
+    if (_watchProgressController.value >= 1) return;
+    final duration = _watchProgressController.duration;
+    if (duration == null || duration == Duration.zero) return;
+    _watchProgressController.forward();
   }
 
   void _togglePlay() {
@@ -1630,6 +1747,7 @@ class _AdVideoItemState extends State<AdVideoItem>
         unawaited(_safePlay());
       }
     });
+    _updateWatchProgressRunning();
   }
 
   Future<void> _toggleLike() async {
@@ -1870,7 +1988,8 @@ class _AdVideoItemState extends State<AdVideoItem>
                     ? CachedNetworkImage(
                         imageUrl: widget.ad.imageUrl!,
                         fit: BoxFit.cover,
-                        httpHeaders: UrlHelper.shouldAttachAuthHeader(widget.ad.imageUrl!)
+                        httpHeaders: UrlHelper.shouldAttachAuthHeader(
+                                widget.ad.imageUrl!)
                             ? (_mediaHeaders ?? const {})
                             : null,
                         placeholder: (context, _) => const Center(
@@ -1909,16 +2028,25 @@ class _AdVideoItemState extends State<AdVideoItem>
         Positioned(
           left: 0,
           right: 0,
-          top: 0,
+          bottom: 0,
           child: SafeArea(
-            bottom: false,
-            child: Container(
-              height: 2.5,
-              color: Colors.white.withValues(alpha: 0.22),
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: _progress,
-                child: Container(color: Colors.white),
+            top: false,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                height: 4,
+                color: Colors.white.withValues(alpha: 0.22),
+                child: AnimatedBuilder(
+                  animation: _watchProgressController,
+                  builder: (context, _) {
+                    return FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor:
+                          _watchProgressController.value.clamp(0.0, 1.0),
+                      child: Container(color: Colors.white),
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -2104,14 +2232,11 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: GestureDetector(
-                                onTap:
-                                    _isFollowLoading ? null : _toggleFollow,
+                                onTap: _isFollowLoading ? null : _toggleFollow,
                                 child: Text(
                                   _isFollowLoading
                                       ? '...'
-                                      : (_isFollowing
-                                          ? 'Following'
-                                          : 'Follow'),
+                                      : (_isFollowing ? 'Following' : 'Follow'),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 11,
@@ -2124,12 +2249,12 @@ class _AdVideoItemState extends State<AdVideoItem>
                         ),
                         const SizedBox(height: 4),
                         Builder(builder: (context) {
-                          final caption =
-                              (widget.ad.caption ?? widget.ad.description)
-                                      .trim()
-                                      .isEmpty
-                                  ? 'Sponsored'
-                                  : (widget.ad.caption ?? widget.ad.description);
+                          final caption = (widget.ad.caption ??
+                                      widget.ad.description)
+                                  .trim()
+                                  .isEmpty
+                              ? 'Sponsored'
+                              : (widget.ad.caption ?? widget.ad.description);
                           final words = caption.trim().split(RegExp(r'\s+'));
                           final isLong = words.length > 5;
                           final preview =
@@ -2305,7 +2430,7 @@ class _AdVideoItemState extends State<AdVideoItem>
             ),
           ),
           if (label.isNotEmpty) ...[
-              const SizedBox(height: 0),
+            const SizedBox(height: 0),
             Text(
               label,
               style: const TextStyle(
@@ -2356,9 +2481,10 @@ class _AdVideoItemState extends State<AdVideoItem>
 
   Widget _buildAdAvatarThumb() {
     final avatarUrl = widget.ad.userAvatarUrl ?? widget.ad.companyLogo;
-    final name =
-        (widget.ad.vendorBusinessName ?? widget.ad.userName ?? widget.ad.companyName)
-            .trim();
+    final name = (widget.ad.vendorBusinessName ??
+            widget.ad.userName ??
+            widget.ad.companyName)
+        .trim();
     final ch = name.isEmpty ? 'A' : name[0].toUpperCase();
 
     return Container(
@@ -2432,18 +2558,33 @@ class _LikeRewardPopupCard extends StatelessWidget {
   final _LikeRewardPopupData data;
   final VoidCallback onOk;
 
-  const _LikeRewardPopupCard({super.key, required this.data, required this.onOk});
+  const _LikeRewardPopupCard(
+      {super.key, required this.data, required this.onOk});
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = data.isLike ? const Color(0xFFFCA5A5) : const Color(0xFFD1D5DB);
-    final pillTextColor = data.isLike ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
+    final borderColor =
+        data.isLike ? const Color(0xFFFCA5A5) : const Color(0xFFD1D5DB);
+    final pillTextColor =
+        data.isLike ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
     final circleGradient = data.isLike
-        ? const LinearGradient(colors: [Color(0xFFFB7185), Color(0xFFEC4899)], begin: Alignment.topLeft, end: Alignment.bottomRight)
-        : const LinearGradient(colors: [Color(0xFF9CA3AF), Color(0xFF6B7280)], begin: Alignment.topLeft, end: Alignment.bottomRight);
+        ? const LinearGradient(
+            colors: [Color(0xFFFB7185), Color(0xFFEC4899)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight)
+        : const LinearGradient(
+            colors: [Color(0xFF9CA3AF), Color(0xFF6B7280)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight);
     final buttonGradient = data.isLike
-        ? const LinearGradient(colors: [Color(0xFFFB7185), Color(0xFFEC4899)], begin: Alignment.centerLeft, end: Alignment.centerRight)
-        : const LinearGradient(colors: [Color(0xFF9CA3AF), Color(0xFF4B5563)], begin: Alignment.centerLeft, end: Alignment.centerRight);
+        ? const LinearGradient(
+            colors: [Color(0xFFFB7185), Color(0xFFEC4899)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight)
+        : const LinearGradient(
+            colors: [Color(0xFF9CA3AF), Color(0xFF4B5563)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight);
 
     return Material(
       color: Colors.transparent,
@@ -2456,7 +2597,10 @@ class _LikeRewardPopupCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(28),
             border: Border.all(color: borderColor),
             boxShadow: const [
-              BoxShadow(color: Color(0x33000000), blurRadius: 30, offset: Offset(0, 18)),
+              BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 30,
+                  offset: Offset(0, 18)),
             ],
           ),
           child: Column(
@@ -2465,7 +2609,8 @@ class _LikeRewardPopupCard extends StatelessWidget {
               Container(
                 width: 80,
                 height: 80,
-                decoration: BoxDecoration(shape: BoxShape.circle, gradient: circleGradient),
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle, gradient: circleGradient),
                 child: Icon(
                   data.isLike ? Icons.favorite : LucideIcons.circleX,
                   color: Colors.white,
@@ -2500,7 +2645,10 @@ class _LikeRewardPopupCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                     gradient: buttonGradient,
                     boxShadow: const [
-                      BoxShadow(color: Color(0x22000000), blurRadius: 14, offset: Offset(0, 10)),
+                      BoxShadow(
+                          color: Color(0x22000000),
+                          blurRadius: 14,
+                          offset: Offset(0, 10)),
                     ],
                   ),
                   child: Material(
@@ -2513,7 +2661,10 @@ class _LikeRewardPopupCard extends StatelessWidget {
                         child: Center(
                           child: Text(
                             'Okay',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14),
                           ),
                         ),
                       ),
@@ -2565,7 +2716,10 @@ class _ViewRewardPopupCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(28),
             border: Border.all(color: borderColor),
             boxShadow: const [
-              BoxShadow(color: Color(0x33000000), blurRadius: 30, offset: Offset(0, 18)),
+              BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 30,
+                  offset: Offset(0, 18)),
             ],
           ),
           child: Column(
@@ -2578,7 +2732,8 @@ class _ViewRewardPopupCard extends StatelessWidget {
                   shape: BoxShape.circle,
                   gradient: circleGradient,
                 ),
-                child: const Icon(LucideIcons.coins, color: Colors.white, size: 36),
+                child: const Icon(LucideIcons.coins,
+                    color: Colors.white, size: 36),
               ),
               const SizedBox(height: 12),
               Text(
@@ -2608,7 +2763,10 @@ class _ViewRewardPopupCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                     gradient: buttonGradient,
                     boxShadow: const [
-                      BoxShadow(color: Color(0x22000000), blurRadius: 14, offset: Offset(0, 10)),
+                      BoxShadow(
+                          color: Color(0x22000000),
+                          blurRadius: 14,
+                          offset: Offset(0, 10)),
                     ],
                   ),
                   child: TextButton(
@@ -2616,7 +2774,8 @@ class _ViewRewardPopupCard extends StatelessWidget {
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
                     ),
                     child: const Text(
                       'Awesome!',
@@ -2668,7 +2827,10 @@ class _ViewRecordedPopupCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(28),
             border: Border.all(color: borderColor),
             boxShadow: const [
-              BoxShadow(color: Color(0x33000000), blurRadius: 30, offset: Offset(0, 18)),
+              BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 30,
+                  offset: Offset(0, 18)),
             ],
           ),
           child: Column(
@@ -2681,7 +2843,8 @@ class _ViewRecordedPopupCard extends StatelessWidget {
                   shape: BoxShape.circle,
                   gradient: circleGradient,
                 ),
-                child: const Icon(Icons.remove_red_eye, color: Colors.white, size: 34),
+                child: const Icon(Icons.remove_red_eye,
+                    color: Colors.white, size: 34),
               ),
               const SizedBox(height: 12),
               const Text(
@@ -2723,7 +2886,10 @@ class _ViewRecordedPopupCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                     gradient: buttonGradient,
                     boxShadow: const [
-                      BoxShadow(color: Color(0x22000000), blurRadius: 14, offset: Offset(0, 10)),
+                      BoxShadow(
+                          color: Color(0x22000000),
+                          blurRadius: 14,
+                          offset: Offset(0, 10)),
                     ],
                   ),
                   child: TextButton(
@@ -2731,7 +2897,8 @@ class _ViewRecordedPopupCard extends StatelessWidget {
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
                     ),
                     child: const Text(
                       'OK',
@@ -2770,7 +2937,8 @@ class _SearchUser {
     final id = pickString(raw['_id'] ?? raw['id'] ?? raw['user_id']);
     final username = pickString(raw['username']);
     final fullName = pickString(raw['full_name'] ?? raw['name']);
-    final avatar = pickString(raw['avatar_url'] ?? raw['avatar'] ?? raw['photo']);
+    final avatar =
+        pickString(raw['avatar_url'] ?? raw['avatar'] ?? raw['photo']);
 
     return _SearchUser(
       id: id,
@@ -3083,20 +3251,29 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     String? fromMap(dynamic value) {
       if (value is Map) {
         final m = Map<String, dynamic>.from(value);
-        final id = (m['_id'] ?? m['id'] ?? m['user_id'] ?? m['userId'])?.toString();
+        final id =
+            (m['_id'] ?? m['id'] ?? m['user_id'] ?? m['userId'])?.toString();
         if (id != null && id.trim().isNotEmpty) return id.trim();
       }
       return null;
     }
 
-    final direct = (c['user_id'] ?? c['userId'] ?? c['uid'] ?? c['author_id'] ?? c['authorId']);
+    final direct = (c['user_id'] ??
+        c['userId'] ??
+        c['uid'] ??
+        c['author_id'] ??
+        c['authorId']);
     if (direct is String && direct.trim().isNotEmpty) return direct.trim();
     if (direct is num) return direct.toString();
     if (direct is Map) {
       final id = fromMap(direct);
       if (id != null) return id;
     }
-    final user = c['user'] ?? c['users'] ?? c['author'] ?? c['posted_by'] ?? c['commented_by'];
+    final user = c['user'] ??
+        c['users'] ??
+        c['author'] ??
+        c['posted_by'] ??
+        c['commented_by'];
     final id = fromMap(user);
     return id ?? '';
   }
@@ -3116,7 +3293,9 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
   }
 
   Future<void> _primeUsers(Iterable<String> userIds) async {
-    final missing = userIds.where((id) => id.isNotEmpty && !_userCache.containsKey(id)).toList();
+    final missing = userIds
+        .where((id) => id.isNotEmpty && !_userCache.containsKey(id))
+        .toList();
     if (missing.isEmpty) return;
 
     final futures = <Future<void>>[];
@@ -3152,7 +3331,9 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
         final merged = Map<String, dynamic>.from(cached);
         merged.addAll(Map<String, dynamic>.from(current));
         next['user'] = merged;
-      } else if (!_hasName(next['user'] is Map ? Map<String, dynamic>.from(next['user'] as Map) : <String, dynamic>{})) {
+      } else if (!_hasName(next['user'] is Map
+          ? Map<String, dynamic>.from(next['user'] as Map)
+          : <String, dynamic>{})) {
         next['user'] = cached;
       } else {
         next['user'] = cached;
@@ -3683,8 +3864,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
 
   String _commentCreatedAt(Map<String, dynamic> c) {
     return ((c['created_at'] ?? c['createdAt'] ?? c['created'] ?? '')
-            ?.toString() ??
-        '')
+                ?.toString() ??
+            '')
         .trim();
   }
 
@@ -3737,13 +3918,18 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
         shape: BoxShape.circle,
         gradient: ring
             ? const LinearGradient(
-                colors: [Color(0xFFFACC15), Color(0xFFF97316), Color(0xFFEC4899)],
+                colors: [
+                  Color(0xFFFACC15),
+                  Color(0xFFF97316),
+                  Color(0xFFEC4899)
+                ],
               )
             : null,
         color: ring ? null : Colors.grey.shade300,
       ),
       child: Container(
-        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+        decoration:
+            const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
         padding: const EdgeInsets.all(1),
         child: CircleAvatar(
           backgroundImage: ring ? NetworkImage(url) : null,
@@ -3765,15 +3951,26 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     final ad = _ad;
     if (ad == null) return const SizedBox.shrink();
 
-    final border = isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08);
-    final surface = isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
-    final muted = isDark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.55);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.black.withValues(alpha: 0.08);
+    final surface =
+        isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
+    final muted = isDark
+        ? Colors.white.withValues(alpha: 0.55)
+        : Colors.black.withValues(alpha: 0.55);
 
-    final headline = (ad.caption?.trim().isNotEmpty ?? false) ? ad.caption!.trim() : ad.title;
+    final headline = (ad.caption?.trim().isNotEmpty ?? false)
+        ? ad.caption!.trim()
+        : ad.title;
     final name = (ad.vendorBusinessName?.trim().isNotEmpty ?? false)
         ? ad.vendorBusinessName!.trim()
-        : ((ad.userName?.trim().isNotEmpty ?? false) ? ad.userName!.trim() : ad.companyName);
-    final avatarUrl = (ad.userAvatarUrl?.trim().isNotEmpty ?? false) ? ad.userAvatarUrl!.trim() : (ad.companyLogo ?? '');
+        : ((ad.userName?.trim().isNotEmpty ?? false)
+            ? ad.userName!.trim()
+            : ad.companyName);
+    final avatarUrl = (ad.userAvatarUrl?.trim().isNotEmpty ?? false)
+        ? ad.userAvatarUrl!.trim()
+        : (ad.companyLogo ?? '');
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -3815,20 +4012,23 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                               name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w800),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Text(
                           _formatTimestamp(ad.createdAt),
-                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ],
                     ),
                     Text(
                       'Sponsored',
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -3846,7 +4046,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
             children: [
               if (ad.category != null && ad.category!.trim().isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: const Color(0x1A3B82F6),
                     borderRadius: BorderRadius.circular(999),
@@ -3854,12 +4055,16 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                   ),
                   child: Text(
                     ad.category!.trim(),
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2563EB)),
                   ),
                 ),
               if (ad.totalBudgetCoins > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: const Color(0x1AF59E0B),
                     borderRadius: BorderRadius.circular(999),
@@ -3868,32 +4073,43 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(LucideIcons.coins, size: 14, color: Color(0xFFD97706)),
+                      const Icon(LucideIcons.coins,
+                          size: 14, color: Color(0xFFD97706)),
                       const SizedBox(width: 6),
                       Text(
                         '${_fmtCount(ad.totalBudgetCoins)} coins budget',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFD97706)),
+                        style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFD97706)),
                       ),
                     ],
                   ),
                 ),
               if (ad.currentViews > 0)
-                Text('${_fmtCount(ad.currentViews)} views', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
+                Text('${_fmtCount(ad.currentViews)} views',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: muted,
+                        fontWeight: FontWeight.w600)),
             ],
           ),
-          if (ad.targetLocations.isNotEmpty || ad.targetLanguages.isNotEmpty) ...[
+          if (ad.targetLocations.isNotEmpty ||
+              ad.targetLanguages.isNotEmpty) ...[
             const SizedBox(height: 10),
             if (ad.targetLocations.isNotEmpty)
               Text(
                 '📍 ${ad.targetLocations.join(', ')}',
-                style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    fontSize: 12, color: muted, fontWeight: FontWeight.w600),
               ),
             if (ad.targetLanguages.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   '🌐 ${ad.targetLanguages.join(', ')}',
-                  style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      fontSize: 12, color: muted, fontWeight: FontWeight.w600),
                 ),
               ),
           ],
@@ -3968,7 +4184,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                           alignment: PlaceholderAlignment.middle,
                           child: Padding(
                             padding: EdgeInsets.only(left: 4, right: 4),
-                            child: Icon(Icons.check_circle, size: 13, color: Colors.blueAccent),
+                            child: Icon(Icons.check_circle,
+                                size: 13, color: Colors.blueAccent),
                           ),
                         )
                       else
@@ -4025,7 +4242,9 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                     if (isOwner && id.isNotEmpty) ...[
                       const Spacer(),
                       IconButton(
-                        icon: Icon(LucideIcons.trash2, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                        icon: Icon(LucideIcons.trash2,
+                            size: 14,
+                            color: theme.colorScheme.onSurfaceVariant),
                         onPressed: () => _deleteComment(
                           commentId: id,
                           isReply: isReply,
@@ -4050,7 +4269,9 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                     icon: Icon(
                       liked ? Icons.favorite : LucideIcons.heart,
                       size: isReply ? 14 : 16,
-                      color: liked ? Colors.red : theme.colorScheme.onSurfaceVariant,
+                      color: liked
+                          ? Colors.red
+                          : theme.colorScheme.onSurfaceVariant,
                     ),
                     onPressed: () => _toggleCommentLike(
                       commentId: id,
@@ -4065,7 +4286,9 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                       '$likeCount',
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 10,
-                        color: liked ? Colors.red : theme.colorScheme.onSurfaceVariant,
+                        color: liked
+                            ? Colors.red
+                            : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                 ],
@@ -4081,7 +4304,9 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bg = theme.scaffoldBackgroundColor;
-    final handleColor = isDark ? Colors.white.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.18);
+    final handleColor = isDark
+        ? Colors.white.withValues(alpha: 0.25)
+        : Colors.black.withValues(alpha: 0.18);
     final showAdContext = !_loadingAd && _ad != null;
 
     return SafeArea(
@@ -4109,12 +4334,14 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                     child: Center(
                       child: Text(
                         'Comments (${_comments.length})',
-                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                     ),
                   ),
                   IconButton(
-                    icon: Icon(LucideIcons.x, color: theme.iconTheme.color, size: 20),
+                    icon: Icon(LucideIcons.x,
+                        color: theme.iconTheme.color, size: 20),
                     onPressed: () => Navigator.of(context).maybePop(),
                   ),
                 ],
@@ -4126,8 +4353,11 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                   ? const Center(child: CircularProgressIndicator())
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                      itemCount: (showAdContext ? 1 : 0) + (_comments.isEmpty ? 1 : _comments.length),
-                      separatorBuilder: (_, __) => Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.35)),
+                      itemCount: (showAdContext ? 1 : 0) +
+                          (_comments.isEmpty ? 1 : _comments.length),
+                      separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          color: theme.dividerColor.withValues(alpha: 0.35)),
                       itemBuilder: (context, index) {
                         if (showAdContext && index == 0) {
                           return _buildAdContextCard();
@@ -4139,7 +4369,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                               child: Text(
                                 'No comments yet.\nBe the first to comment.',
                                 textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant),
                               ),
                             ),
                           );
@@ -4150,7 +4381,8 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                         final replyCount = _commentReplyCount(c, id);
                         final showReplies = _expandedReplies.contains(id);
                         final isLoadingReplies = _loadingReplies.contains(id);
-                        final replies = _repliesByComment[id] ?? const <Map<String, dynamic>>[];
+                        final replies = _repliesByComment[id] ??
+                            const <Map<String, dynamic>>[];
 
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -4160,28 +4392,42 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                               Padding(
                                 padding: const EdgeInsets.only(left: 6, top: 6),
                                 child: TextButton(
-                                  onPressed: isLoadingReplies ? null : () => _toggleReplies(id),
+                                  onPressed: isLoadingReplies
+                                      ? null
+                                      : () => _toggleReplies(id),
                                   child: Text(
                                     isLoadingReplies
                                         ? 'Loading replies...'
-                                        : (showReplies ? 'Hide replies' : 'View replies ($replyCount)'),
-                                    style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+                                        : (showReplies
+                                            ? 'Hide replies'
+                                            : 'View replies ($replyCount)'),
+                                    style: theme.textTheme.bodySmall
+                                        ?.copyWith(fontWeight: FontWeight.w700),
                                   ),
                                 ),
                               ),
                             if (showReplies)
                               Padding(
-                                padding: const EdgeInsets.only(left: 18, top: 6),
+                                padding:
+                                    const EdgeInsets.only(left: 18, top: 6),
                                 child: replies.isEmpty
-                                    ? Text('No replies', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant))
+                                    ? Text('No replies',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                                color: theme.colorScheme
+                                                    .onSurfaceVariant))
                                     : Column(
                                         children: [
                                           for (final r in replies) ...[
-                                            _commentTile(c: r, isReply: true, parentId: id),
+                                            _commentTile(
+                                                c: r,
+                                                isReply: true,
+                                                parentId: id),
                                             if (r != replies.last)
                                               Divider(
                                                 height: 1,
-                                                color: theme.dividerColor.withValues(alpha: 0.25),
+                                                color: theme.dividerColor
+                                                    .withValues(alpha: 0.25),
                                               ),
                                           ],
                                         ],
@@ -4192,71 +4438,78 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                       },
                     ),
             ),
-          if (_replyingTo != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              color: Colors.grey.withValues(alpha: 0.12),
+            if (_replyingTo != null)
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                color: Colors.grey.withValues(alpha: 0.12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Replying to $_replyingTo',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        setState(() {
+                          _replyParentId = null;
+                          _replyingTo = null;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                12,
+                8,
+                12,
+                MediaQuery.of(context).padding.bottom + 8,
+              ),
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      'Replying to $_replyingTo',
-                      style: const TextStyle(fontSize: 12),
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      minLines: 1,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _submit(),
+                      decoration: InputDecoration(
+                        hintText: _replyingTo != null
+                            ? 'Reply to @$_replyingTo...'
+                            : 'Add a comment...',
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () {
-                      setState(() {
-                        _replyParentId = null;
-                        _replyingTo = null;
-                      });
-                    },
+                  TextButton(
+                    onPressed: (_posting || _controller.text.trim().isEmpty)
+                        ? null
+                        : _submit,
+                    child: _posting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text(
+                            'Post',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF3B82F6)),
+                          ),
                   ),
                 ],
               ),
             ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              12,
-              8,
-              12,
-              MediaQuery.of(context).padding.bottom + 8,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    minLines: 1,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _submit(),
-                    decoration: InputDecoration(
-                      hintText: _replyingTo != null ? 'Reply to @$_replyingTo...' : 'Add a comment...',
-                      border: InputBorder.none,
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: (_posting || _controller.text.trim().isEmpty) ? null : _submit,
-                  child: _posting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text(
-                          'Post',
-                          style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF3B82F6)),
-                        ),
-                ),
-              ],
-            ),
-          ),
           ],
         ),
       ),

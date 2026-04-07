@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/design_tokens.dart';
+import '../utils/url_helper.dart';
+import 'safe_network_image.dart';
 
 class ProfileHeader extends StatelessWidget {
   final String username;
   final String? fullName;
   final String? bio;
   final String? avatarUrl;
+  final Map<String, String>? avatarHeaders;
   final int posts;
   final int followers;
   final int following;
@@ -34,6 +38,7 @@ class ProfileHeader extends StatelessWidget {
     this.fullName,
     this.bio,
     this.avatarUrl,
+    this.avatarHeaders,
     this.posts = 0,
     this.followers = 0,
     this.following = 0,
@@ -62,8 +67,8 @@ class ProfileHeader extends StatelessWidget {
     final cleanUsername = username.trim();
     final displayName =
         fullName?.trim().isNotEmpty == true ? fullName!.trim() : '';
-    final hasDisplayName =
-        displayName.isNotEmpty && displayName.toLowerCase() != cleanUsername.toLowerCase();
+    final hasDisplayName = displayName.isNotEmpty &&
+        displayName.toLowerCase() != cleanUsername.toLowerCase();
     final stats = <_StatItem>[
       _StatItem(posts, 'Posts'),
       _StatItem(followers, 'Followers'),
@@ -90,11 +95,17 @@ class ProfileHeader extends StatelessWidget {
                         builder: (context) {
                           final hasAvatar =
                               avatarUrl != null && avatarUrl!.trim().isNotEmpty;
+                          final url = (avatarUrl ?? '').trim();
+                          final shouldAuth = url.isNotEmpty &&
+                              UrlHelper.shouldAttachAuthHeader(url);
+                          final headers = shouldAuth ? avatarHeaders : null;
+                          final lower = url.toLowerCase();
+                          final isSvg = lower.contains('.svg');
+                          final unsupportedRaster = lower.contains('.avif') ||
+                              lower.contains('.heic') ||
+                              lower.contains('.heif');
                           return CircleAvatar(
                             radius: 38,
-                            backgroundImage: hasAvatar
-                                ? CachedNetworkImageProvider(avatarUrl!)
-                                : null,
                             backgroundColor: theme.cardColor,
                             child: !hasAvatar
                                 ? Text(
@@ -107,7 +118,35 @@ class ProfileHeader extends StatelessWidget {
                                       fontWeight: FontWeight.w700,
                                     ),
                                   )
-                                : null,
+                                : (shouldAuth && headers == null)
+                                    ? const SizedBox.shrink()
+                                    : ClipOval(
+                                        child: SizedBox(
+                                          width: 76,
+                                          height: 76,
+                                          child: isSvg
+                                              ? SvgPicture.network(
+                                                  url,
+                                                  headers: headers,
+                                                  fit: BoxFit.cover,
+                                                  placeholderBuilder: (_) =>
+                                                      const SizedBox.shrink(),
+                                                )
+                                              : unsupportedRaster
+                                                  ? const SizedBox.shrink()
+                                                  : SafeNetworkImage(
+                                                      url: url,
+                                                      headers: headers,
+                                                      fit: BoxFit.cover,
+                                                      placeholder:
+                                                          const SizedBox
+                                                              .shrink(),
+                                                      errorWidget:
+                                                          const SizedBox
+                                                              .shrink(),
+                                                    ),
+                                        ),
+                                      ),
                           );
                         },
                       ),
@@ -127,28 +166,28 @@ class ProfileHeader extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 6),
                   child: Align(
                     alignment: Alignment.center,
-                  child: Wrap(
-                    spacing: 18,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      ...stats.map((item) => _statPill(
+                    child: Wrap(
+                      spacing: 18,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        ...stats.map((item) => _statPill(
+                              context,
+                              item.count,
+                              item.label,
+                              fgColor,
+                              mutedColor,
+                            )),
+                        if (!isVendor)
+                          _statIconButton(
                             context,
-                            item.count,
-                            item.label,
-                            fgColor,
-                            mutedColor,
-                          )),
-                      if (!isVendor)
-                        _statIconButton(
-                          context,
-                          icon: Icons.person_outline,
-                          onTap: onUser,
-                        ),
-                    ],
+                            icon: Icons.person_outline,
+                            onTap: onUser,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
               ),
             ],
           ),
@@ -166,7 +205,8 @@ class ProfileHeader extends StatelessWidget {
               ),
               if (isVendor)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFEDD5),
                     borderRadius: BorderRadius.circular(999),
@@ -196,7 +236,8 @@ class ProfileHeader extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               bio!,
-              style: TextStyle(fontSize: 13.5, color: fgColor.withValues(alpha: 0.8)),
+              style: TextStyle(
+                  fontSize: 13.5, color: fgColor.withValues(alpha: 0.8)),
             ),
           ],
           const SizedBox(height: 12),
@@ -440,7 +481,8 @@ class ProfileHeader extends StatelessWidget {
       children: [
         Text(
           count.toString(),
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: fgColor),
+          style: TextStyle(
+              fontWeight: FontWeight.w700, fontSize: 18, color: fgColor),
         ),
         const SizedBox(height: 2),
         Text(
@@ -552,7 +594,8 @@ class _DottedCirclePainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
     final circumference = 2 * pi * rect.width / 2;
-    final dashCount = (circumference / (dashLength + gap)).floor().clamp(6, 200);
+    final dashCount =
+        (circumference / (dashLength + gap)).floor().clamp(6, 200);
     final r = rect.width / 2;
     final dashAngle = dashLength / r;
     final gapAngle = gap / r;

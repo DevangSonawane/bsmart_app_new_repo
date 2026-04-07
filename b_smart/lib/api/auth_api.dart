@@ -53,11 +53,17 @@ class AuthApi {
   Future<Map<String, dynamic>> login({
     required String email,
     required String password,
+    String? otp,
   }) async {
-    final res = await _client.post('/auth/login', body: {
+    final body = <String, dynamic>{
       'email': email,
       'password': password,
-    });
+    };
+    if (otp != null && otp.trim().isNotEmpty) {
+      body['otp'] = otp.trim();
+    }
+
+    final res = await _client.post('/auth/login', body: body);
     final data = res as Map<String, dynamic>;
 
     final token = data['token'] as String?;
@@ -92,6 +98,23 @@ class AuthApi {
   /// Logout – clears the stored token.
   Future<void> logout() async {
     await _client.clearToken();
+  }
+
+  /// Change password for the current user.
+  ///
+  /// Mirrors React web app call:
+  /// `POST /auth/change-password { currentPassword, newPassword, user_id }`
+  Future<Map<String, dynamic>> changePassword({
+    required String userId,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final res = await _client.post('/auth/change-password', body: {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+      'user_id': userId,
+    });
+    return res as Map<String, dynamic>;
   }
 
   /// Save a token obtained externally (e.g. Google OAuth redirect).

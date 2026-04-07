@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import '../api/api_client.dart';
+import '../api/api_exceptions.dart';
 import '../models/highlight_model.dart';
 import '../api/highlights_api.dart';
 import '../services/highlight_service.dart';
 import '../utils/current_user.dart';
+import '../utils/url_helper.dart';
+import 'safe_network_image.dart';
 import '../screens/highlight_viewer_screen.dart';
 import '../screens/highlight_story_picker_screen.dart';
 import '../screens/highlight_edit_screen.dart';
@@ -47,17 +52,31 @@ class _ProfileHighlightsRowState extends State<ProfileHighlightsRow> {
   List<Highlight> _highlights = const [];
   bool _loading = true;
   bool _isOwner = false;
+  Map<String, String>? _mediaHeaders;
 
   @override
   void initState() {
     super.initState();
     _init();
+    _loadMediaHeaders();
   }
 
   Future<void> _init() async {
     final meId = await CurrentUser.id;
     _isOwner = meId != null && meId == widget.userId;
     await _loadHighlights();
+  }
+
+  Future<void> _loadMediaHeaders() async {
+    if (_mediaHeaders != null) return;
+    final token = await ApiClient().getToken();
+    if (!mounted) return;
+    if (token != null && token.isNotEmpty) {
+      setState(() => _mediaHeaders = {'Authorization': 'Bearer $token'});
+    } else {
+      // Keep a non-null marker so we don't repeatedly fetch.
+      _mediaHeaders = const <String, String>{};
+    }
   }
 
   Future<void> _loadHighlights() async {
@@ -73,8 +92,7 @@ class _ProfileHighlightsRowState extends State<ProfileHighlightsRow> {
         return copy;
       }
 
-      final parsed =
-          raw.map((m) => Highlight.fromMap(_normalizeId(m))).toList()
+      final parsed = raw.map((m) => Highlight.fromMap(_normalizeId(m))).toList()
         ..sort((a, b) => a.order.compareTo(b.order));
       if (mounted) setState(() => _highlights = parsed);
     } catch (_) {
@@ -151,11 +169,21 @@ class _ProfileHighlightsRowState extends State<ProfileHighlightsRow> {
       if (confirmed != true || !mounted) return;
       try {
         await _api.delete(highlight.id);
-        if (mounted) _loadHighlights();
-      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _highlights = _highlights.where((h) => h.id != highlight.id).toList();
+        });
+        _loadHighlights();
+      } catch (e) {
+        if (e is ForbiddenException) {
+          final me = await CurrentUser.id;
+          debugPrint(
+            'Highlights: delete forbidden highlightId=${highlight.id} highlightUserId=${highlight.userId} currentUserId=$me',
+          );
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to delete highlight')),
+          SnackBar(content: Text('Failed to delete highlight: $e')),
         );
       }
     }
@@ -259,13 +287,13 @@ class _ProfileHighlightsRowState extends State<ProfileHighlightsRow> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               children: [
                 // "New" button for owner
-                if (_isOwner)
-                  _NewHighlightButton(onTap: _openNewHighlight),
+                if (_isOwner) _NewHighlightButton(onTap: _openNewHighlight),
 
                 // Highlight circles
                 ...List.generate(_highlights.length, (i) {
                   return _HighlightCircle(
                     highlight: _highlights[i],
+                    mediaHeaders: _mediaHeaders,
                     onTap: () => _openHighlight(i),
                     onLongPress: _isOwner
                         ? () => _openHighlightMenu(_highlights[i])
@@ -314,11 +342,13 @@ class _ProfileHighlightsRowState extends State<ProfileHighlightsRow> {
 
 class _HighlightCircle extends StatelessWidget {
   final Highlight highlight;
+  final Map<String, String>? mediaHeaders;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
   const _HighlightCircle({
     required this.highlight,
+    required this.mediaHeaders,
     required this.onTap,
     this.onLongPress,
   });
@@ -370,12 +400,19 @@ class _HighlightCircle extends StatelessWidget {
   Widget _buildCover() {
     final url = highlight.coverUrl;
     if (url != null && url.isNotEmpty) {
-      return CachedNetworkImage(
-        imageUrl: url,
+      final shouldAuth = UrlHelper.shouldAttachAuthHeader(url);
+      if (shouldAuth && mediaHeaders == null) {
+        // Avoid caching an unauthorized/HTML response while token loads.
+        return _placeholder();
+      }
+      return SafeNetworkImage(
+        url: url,
+        headers: shouldAuth ? (mediaHeaders ?? const <String, String>{}) : null,
         width: _kImageSize,
         height: _kImageSize,
         fit: BoxFit.cover,
-        errorWidget: (_, __, ___) => _placeholder(),
+        placeholder: _placeholder(),
+        errorWidget: _placeholder(),
       );
     }
     return _placeholder();

@@ -8,6 +8,7 @@ import '../api/api_client.dart';
 import '../services/media_aspect_cache.dart';
 import '../services/video_pool.dart';
 import '../utils/url_helper.dart';
+import 'safe_network_image.dart';
 
 /// Displays network image or video with a cached, one-time-resolved aspect ratio.
 /// Plays only when [isActive] is true (parent-controlled center item).
@@ -97,10 +98,26 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     const lr = 0.2126, lg = 0.7152, lb = 0.0722;
     final scale = c * b;
     return [
-      (invSat * lr + s) * scale, invSat * lg * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, (invSat * lg + s) * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, invSat * lg * scale, (invSat * lb + s) * scale, 0, 0,
-      0, 0, 0, 1, 0,
+      (invSat * lr + s) * scale,
+      invSat * lg * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      (invSat * lg + s) * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      invSat * lg * scale,
+      (invSat * lb + s) * scale,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
@@ -110,10 +127,26 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   }) {
     const r = 0.2126, g = 0.7152, b = 0.0722;
     return [
-      r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
-      r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
-      r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
-      0, 0, 0, 1, 0,
+      r * contrast * brightness,
+      g * contrast * brightness,
+      b * contrast * brightness,
+      0,
+      0,
+      r * contrast * brightness,
+      g * contrast * brightness,
+      b * contrast * brightness,
+      0,
+      0,
+      r * contrast * brightness,
+      g * contrast * brightness,
+      b * contrast * brightness,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
@@ -131,10 +164,26 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     const lr = 0.2126, lg = 0.7152, lb = 0.0722;
     final c = contrast * brightness;
     return [
-      (r * saturation + lr * invSat) * c, (g * saturation + lg * invSat) * c, (b * saturation + lb * invSat) * c, 0, 0,
-      (0.349 * t + 0.349 * amount) * saturation * c + lr * invSat * c, (0.686 + 0.314 * t) * saturation * c + lg * invSat * c, (0.168 * t) * saturation * c + lb * invSat * c, 0, 0,
-      (0.272 * t) * saturation * c + lr * invSat * c, (0.534 * t - 0.534 * amount) * saturation * c + lg * invSat * c, (0.131 + 0.869 * t) * saturation * c + lb * invSat * c, 0, 0,
-      0, 0, 0, 1, 0,
+      (r * saturation + lr * invSat) * c,
+      (g * saturation + lg * invSat) * c,
+      (b * saturation + lb * invSat) * c,
+      0,
+      0,
+      (0.349 * t + 0.349 * amount) * saturation * c + lr * invSat * c,
+      (0.686 + 0.314 * t) * saturation * c + lg * invSat * c,
+      (0.168 * t) * saturation * c + lb * invSat * c,
+      0,
+      0,
+      (0.272 * t) * saturation * c + lr * invSat * c,
+      (0.534 * t - 0.534 * amount) * saturation * c + lg * invSat * c,
+      (0.131 + 0.869 * t) * saturation * c + lb * invSat * c,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
@@ -145,27 +194,37 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     final key = lower.replaceAll('&', 'and').replaceAll(' ', '_');
     switch (n) {
       case 'Clarendon':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.2, saturation: 1.25);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.2, saturation: 1.25);
       case 'Gingham':
-        return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.0, saturation: 1.0);
+        return _buildFilterMatrixBase(
+            brightness: 1.05, contrast: 1.0, saturation: 1.0);
       case 'Moon':
         return _buildGrayscaleMatrix(contrast: 1.1, brightness: 1.1);
       case 'Lark':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 0.9, saturation: 1.0);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 0.9, saturation: 1.0);
       case 'Reyes':
-        return _buildSepiaMatrix(amount: 0.22, brightness: 1.1, contrast: 0.85, saturation: 0.75);
+        return _buildSepiaMatrix(
+            amount: 0.22, brightness: 1.1, contrast: 0.85, saturation: 0.75);
       case 'Juno':
-        return _buildSepiaMatrix(amount: 0.2, brightness: 1.1, contrast: 1.2, saturation: 1.4);
+        return _buildSepiaMatrix(
+            amount: 0.2, brightness: 1.1, contrast: 1.2, saturation: 1.4);
       case 'Slumber':
-        return _buildSepiaMatrix(amount: 0.2, brightness: 1.05, contrast: 1.0, saturation: 0.66);
+        return _buildSepiaMatrix(
+            amount: 0.2, brightness: 1.05, contrast: 1.0, saturation: 0.66);
       case 'Crema':
-        return _buildSepiaMatrix(amount: 0.2, brightness: 1.0, contrast: 0.9, saturation: 0.9);
+        return _buildSepiaMatrix(
+            amount: 0.2, brightness: 1.0, contrast: 0.9, saturation: 0.9);
       case 'Ludwig':
-        return _buildFilterMatrixBase(brightness: 1.1, contrast: 0.9, saturation: 0.9);
+        return _buildFilterMatrixBase(
+            brightness: 1.1, contrast: 0.9, saturation: 0.9);
       case 'Aden':
-        return _buildFilterMatrixBase(brightness: 1.2, contrast: 0.9, saturation: 0.85);
+        return _buildFilterMatrixBase(
+            brightness: 1.2, contrast: 0.9, saturation: 0.85);
       case 'Perpetua':
-        return _buildFilterMatrixBase(brightness: 1.1, contrast: 1.1, saturation: 1.1);
+        return _buildFilterMatrixBase(
+            brightness: 1.1, contrast: 1.1, saturation: 1.1);
       case 'Original':
         return _buildFilterMatrixBase();
       default:
@@ -176,22 +235,29 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
       case 'original':
         return _buildFilterMatrixBase();
       case 'vintage':
-        return _buildSepiaMatrix(amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
+        return _buildSepiaMatrix(
+            amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
       case 'black_white':
       case 'black_and_white':
         return _buildGrayscaleMatrix(contrast: 1.1, brightness: 1.0);
       case 'warm':
-        return _buildSepiaMatrix(amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
+        return _buildSepiaMatrix(
+            amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
       case 'cool':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 0.85);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.0, saturation: 0.85);
       case 'dramatic':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.3, saturation: 1.2);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.3, saturation: 1.2);
       case 'beauty':
-        return _buildSepiaMatrix(amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
+        return _buildSepiaMatrix(
+            amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
       case 'ar_effect_1':
-        return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.05, saturation: 1.2);
+        return _buildFilterMatrixBase(
+            brightness: 1.05, contrast: 1.05, saturation: 1.2);
       case 'ar_effect_2':
-        return _buildFilterMatrixBase(brightness: 0.95, contrast: 1.1, saturation: 0.9);
+        return _buildFilterMatrixBase(
+            brightness: 0.95, contrast: 1.1, saturation: 0.9);
       default:
         return _buildFilterMatrixBase();
     }
@@ -236,6 +302,16 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   void _precacheThumbnail() {
     final thumb = widget.thumbnailUrl?.trim();
     if (thumb == null || thumb.isEmpty) return;
+    final lower = thumb.toLowerCase();
+    // Avoid triggering platform decoder errors during precache for formats we
+    // can't safely handle here.
+    if (lower.contains('.svg') ||
+        lower.contains('.avif') ||
+        lower.contains('.heic') ||
+        lower.contains('.heif') ||
+        !lower.contains('.')) {
+      return;
+    }
     final headers = UrlHelper.shouldAttachAuthHeader(thumb)
         ? _cachedAuthHeaders
         : const <String, String>{};
@@ -342,13 +418,13 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
 
   Future<void> _ensureVideo() async {
     if (_loadingVideo || _videoCtl != null || _videoFailed) return;
-    
+
     final url = widget.url.trim();
     if (url.isEmpty) {
       if (mounted) setState(() => _videoFailed = true);
       return;
     }
-    
+
     _loadingVideo = true;
     if (mounted) setState(() {});
     try {
@@ -359,19 +435,34 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
       }
       setState(() {
         _videoCtl = ctl;
-        _ratio = ctl.value.isInitialized ? ctl.value.aspectRatio : (_ratio ?? 9 / 16);
+        _ratio = ctl.value.isInitialized
+            ? ctl.value.aspectRatio
+            : (_ratio ?? 9 / 16);
         _videoFailed = false;
         _loadingVideo = false;
       });
     } on PlatformException catch (e) {
-      debugPrint('DynamicMediaWidget: PlatformException for ${widget.id}: ${e.message}');
-      if (mounted) setState(() { _videoFailed = true; _loadingVideo = false; });
+      debugPrint(
+          'DynamicMediaWidget: PlatformException for ${widget.id}: ${e.message}');
+      if (mounted)
+        setState(() {
+          _videoFailed = true;
+          _loadingVideo = false;
+        });
     } on TimeoutException catch (e) {
       debugPrint('DynamicMediaWidget: Timeout for ${widget.id}: $e');
-      if (mounted) setState(() { _videoFailed = true; _loadingVideo = false; });
+      if (mounted)
+        setState(() {
+          _videoFailed = true;
+          _loadingVideo = false;
+        });
     } catch (e) {
       debugPrint('DynamicMediaWidget: Unknown error for ${widget.id}: $e');
-      if (mounted) setState(() { _videoFailed = true; _loadingVideo = false; });
+      if (mounted)
+        setState(() {
+          _videoFailed = true;
+          _loadingVideo = false;
+        });
     }
   }
 
@@ -384,7 +475,9 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
       if (!mounted) return;
       setState(() {
         _videoCtl = ctl;
-        _ratio = ctl.value.isInitialized ? ctl.value.aspectRatio : (_ratio ?? 9 / 16);
+        _ratio = ctl.value.isInitialized
+            ? ctl.value.aspectRatio
+            : (_ratio ?? 9 / 16);
         _videoFailed = false;
         _loadingVideo = false;
       });
@@ -428,26 +521,24 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   }
 
   Widget _buildImage() {
-    return CachedNetworkImage(
-      imageUrl: widget.url,
+    return SafeNetworkImage(
+      url: widget.url,
       cacheKey: widget.url,
-      httpHeaders: UrlHelper.shouldAttachAuthHeader(widget.url)
+      headers: UrlHelper.shouldAttachAuthHeader(widget.url)
           ? _cachedAuthHeaders
-          : const {},
+          : const <String, String>{},
       fit: BoxFit.cover,
-      filterQuality: FilterQuality.low,
-      fadeInDuration: Duration.zero,
-      fadeOutDuration: Duration.zero,
-      placeholderFadeInDuration: Duration.zero,
-      useOldImageOnUrlChange: true,
-      placeholder: (_, __) => const SizedBox.expand(),
-      errorWidget: (_, __, ___) => const SizedBox.expand(),
+      placeholder: const SizedBox.expand(),
+      errorWidget: const SizedBox.expand(),
     );
   }
 
   Widget _buildVideo() {
     // Start loading as soon as widget is active, don't wait for build
-    if (widget.isActive && _videoCtl == null && !_videoFailed && !_loadingVideo) {
+    if (widget.isActive &&
+        _videoCtl == null &&
+        !_videoFailed &&
+        !_loadingVideo) {
       _ensureVideo();
     }
     final thumb = _applyFilterToWidget(_buildVideoPlaceholder());
@@ -511,20 +602,15 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   Widget _buildVideoPlaceholder() {
     final thumb = widget.thumbnailUrl;
     if (thumb != null && thumb.trim().isNotEmpty) {
-      return CachedNetworkImage(
-        imageUrl: thumb.trim(),
+      return SafeNetworkImage(
+        url: thumb.trim(),
         cacheKey: thumb.trim(),
-        httpHeaders: UrlHelper.shouldAttachAuthHeader(thumb.trim())
+        headers: UrlHelper.shouldAttachAuthHeader(thumb.trim())
             ? _cachedAuthHeaders
-            : const {},
+            : const <String, String>{},
         fit: BoxFit.cover,
-        filterQuality: FilterQuality.medium,
-        fadeInDuration: Duration.zero,
-        fadeOutDuration: Duration.zero,
-        placeholderFadeInDuration: Duration.zero,
-        useOldImageOnUrlChange: true,
-        placeholder: (_, __) => const _VideoPlaceholder(),
-        errorWidget: (_, __, ___) => const _VideoPlaceholder(),
+        placeholder: const _VideoPlaceholder(),
+        errorWidget: const _VideoPlaceholder(),
       );
     }
     return const _VideoPlaceholder();

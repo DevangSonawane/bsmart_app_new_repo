@@ -1,11 +1,14 @@
 import 'api_client.dart';
 import '../config/api_config.dart';
+import 'api_exceptions.dart';
+import 'package:flutter/foundation.dart';
 
 class HighlightsApi {
   final ApiClient _client = ApiClient();
 
   String get _basePath {
-    final base = ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
+    final base =
+        ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
     final endsWithApi = base.endsWith('/api');
     return endsWithApi ? '' : '/api';
   }
@@ -46,14 +49,47 @@ class HighlightsApi {
     String highlightId,
     List<String> storyItemIds,
   ) async {
-    final body = <String, dynamic>{
-      'story_item_ids': storyItemIds,
-    };
-    final res = await _client.post(
-      _path('/highlights/$highlightId/items'),
-      body: body,
-    );
-    return (res as Map).cast<String, dynamic>();
+    assert(() {
+      debugPrint(
+        'HighlightsApi.addItems highlightId=$highlightId ids=${storyItemIds.take(5).toList()} count=${storyItemIds.length}',
+      );
+      return true;
+    }());
+
+    Future<Map<String, dynamic>> postWithBody(Map<String, dynamic> body) async {
+      final res = await _client.post(
+        _path('/highlights/$highlightId/items'),
+        body: body,
+      );
+      return (res as Map).cast<String, dynamic>();
+    }
+
+    // Primary (documented) payload.
+    try {
+      final res = await postWithBody(<String, dynamic>{
+        'story_item_ids': storyItemIds,
+      });
+      final count = (res['items_count'] as num?)?.toInt() ??
+          (res['itemsCount'] as num?)?.toInt();
+      if (count != null && count == 0 && storyItemIds.isNotEmpty) {
+        // Some backends accept the request but ignore the key; try common alternates.
+        return await postWithBody(<String, dynamic>{
+          'storyItemIds': storyItemIds,
+          'story_ids': storyItemIds,
+          'storyIds': storyItemIds,
+          'itemIds': storyItemIds,
+        });
+      }
+      return res;
+    } on BadRequestException {
+      // Validation schema mismatch; try common alternates.
+      return postWithBody(<String, dynamic>{
+        'storyItemIds': storyItemIds,
+        'story_ids': storyItemIds,
+        'storyIds': storyItemIds,
+        'itemIds': storyItemIds,
+      });
+    }
   }
 
   // ── 4. Get Highlight Items ───────────────────────────────────────────────

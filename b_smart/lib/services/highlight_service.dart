@@ -89,8 +89,10 @@ class HighlightService {
 
       // _itemId is the highlight-item link id — needed for deleteItem().
       // _id is the underlying story item id — needed for addItems().
-      final storyId = (m['_id'] as String?) ?? '';
-      final itemId = (m['_itemId'] as String?) ?? '';
+      final rawStoryId = m['_id'] ?? m['id'];
+      final rawItemId = m['_itemId'] ?? m['itemId'];
+      final storyId = rawStoryId == null ? '' : rawStoryId.toString();
+      final itemId = rawItemId == null ? '' : rawItemId.toString();
 
       // When loading items FROM a highlight, prefer _itemId so the returned
       // Story.id can be passed directly to HighlightsApi.deleteItem().
@@ -107,8 +109,8 @@ class HighlightService {
             ? UrlHelper.absoluteUrl(thumbnailUrl)
             : null,
         mediaType: mediaType,
-        createdAt:
-            DateTime.tryParse(m['createdAt'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(m['createdAt'] as String? ?? '') ??
+            DateTime.now(),
         views: 0,
         isViewed: false,
         expiresAt: DateTime.tryParse(m['expiresAt'] as String? ?? ''),

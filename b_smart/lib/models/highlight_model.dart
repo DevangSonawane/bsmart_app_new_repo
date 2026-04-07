@@ -27,13 +27,19 @@ class Highlight {
     final rawCover = (m['cover_url'] as String?) ?? '';
     return Highlight(
       id: id,
-      userId: (m['user_id'] as String?) ?? '',
+      userId: (m['user_id'] as String?) ??
+          (m['userId'] as String?) ??
+          (m['owner_id'] as String?) ??
+          (m['ownerId'] as String?) ??
+          '',
       title: (m['title'] as String?) ?? '',
       coverUrl: rawCover.isNotEmpty ? UrlHelper.absoluteUrl(rawCover) : null,
       itemsCount: (m['items_count'] as num?)?.toInt() ?? 0,
       order: (m['order'] as num?)?.toInt() ?? 0,
-      createdAt: DateTime.tryParse(m['createdAt'] as String? ?? '') ?? DateTime.now(),
-      updatedAt: DateTime.tryParse(m['updatedAt'] as String? ?? '') ?? DateTime.now(),
+      createdAt:
+          DateTime.tryParse(m['createdAt'] as String? ?? '') ?? DateTime.now(),
+      updatedAt:
+          DateTime.tryParse(m['updatedAt'] as String? ?? '') ?? DateTime.now(),
     );
   }
 

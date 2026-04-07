@@ -189,20 +189,30 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       backgroundColor: isDark ? Colors.black : const Color(0xFFF7F7FA),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 600),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            setState(() => _page = 1);
+            await _loadNotifications(force: true);
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildHeader(isDark),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+                      child: _buildHeader(isDark),
+                    ),
                     const SizedBox(height: 16),
                     _buildTabs(isDark),
                     const SizedBox(height: 14),
-                    _buildCard(isDark, totalPages),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      child: _buildCard(isDark, totalPages),
+                    ),
                   ],
                 ),
               ),
@@ -230,6 +240,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        IconButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(LucideIcons.arrowLeft, size: 20),
+          tooltip: 'Back',
+        ),
         Container(
           width: 44,
           height: 44,
@@ -295,11 +310,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         const SizedBox(width: 8),
         Row(
           children: [
-            IconButton(
-              onPressed: _loadNotifications,
-              icon: const Icon(LucideIcons.refreshCw, size: 18),
-              tooltip: 'Refresh',
-            ),
             if (_unreadCount > 0)
               TextButton.icon(
                 onPressed: _markingAll ? null : _markAllAsRead,

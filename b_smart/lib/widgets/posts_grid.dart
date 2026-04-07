@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../models/feed_post_model.dart';
 import '../api/api_client.dart';
 import '../config/api_config.dart';
+import 'safe_network_image.dart';
 
 class PostsGrid extends StatefulWidget {
   final List<FeedPost> posts;
@@ -62,13 +63,13 @@ class _PostsGridState extends State<PostsGrid> {
             fit: StackFit.expand,
             children: [
               if (thumb != null)
-                CachedNetworkImage(
-                  imageUrl: thumb,
-                  httpHeaders: _headers,
+                SafeNetworkImage(
+                  url: thumb,
+                  headers: _headers,
                   cacheKey: '$thumb#${_headers?['Authorization'] ?? ''}',
                   fit: BoxFit.cover,
-                  placeholder: (ctx, url) => Container(color: Colors.grey[300]),
-                  errorWidget: (ctx, url, err) => Container(
+                  placeholder: Container(color: Colors.grey[300]),
+                  errorWidget: Container(
                     color: Colors.grey[300],
                     child: const Icon(Icons.broken_image),
                   ),

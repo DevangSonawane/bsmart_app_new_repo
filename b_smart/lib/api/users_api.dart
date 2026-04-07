@@ -50,6 +50,7 @@ class UsersApi {
     String? avatarUrl,
     String? phone,
     String? username,
+    bool? twoFAEnabled,
   }) async {
     final body = <String, dynamic>{};
     if (fullName != null) body['full_name'] = fullName;
@@ -57,6 +58,9 @@ class UsersApi {
     if (avatarUrl != null) body['avatar_url'] = avatarUrl;
     if (phone != null) body['phone'] = phone;
     if (username != null) body['username'] = username;
+    if (twoFAEnabled != null) {
+      body['twoFA'] = {'enabled': twoFAEnabled};
+    }
 
     final res = await _client.put('/users/$userId', body: body);
     return res as Map<String, dynamic>;

@@ -79,19 +79,27 @@ class _HighlightNameScreenState extends State<HighlightNameScreen>
     }
     setState(() => _loading = true);
     try {
-      String coverUrl = widget.selectedStories.first.mediaUrl;
+      String coverUrl = _bestCoverUrl(widget.selectedStories.first);
       if (_customCoverFile != null) {
         final uploaded = await _uploadApi.uploadFile(_customCoverFile!.path);
-        coverUrl =
-            (uploaded['fileUrl'] as String?) ?? (uploaded['url'] as String?) ?? coverUrl;
+        coverUrl = (uploaded['fileUrl'] as String?) ??
+            (uploaded['url'] as String?) ??
+            coverUrl;
       }
       final created = await _api.create(title: title, coverUrl: coverUrl);
       final id =
           (created['_id'] as String?) ?? (created['id'] as String?) ?? '';
       if (id.isEmpty) throw Exception('Missing highlight id');
+      final storyIds = widget.selectedStories
+          .map((s) => s.id.trim())
+          .where((id) => id.isNotEmpty && id != 'item')
+          .toList();
+      if (storyIds.isEmpty) {
+        throw Exception('No valid story ids found to add');
+      }
       await _api.addItems(
         id,
-        widget.selectedStories.map((s) => s.id).toList(),
+        storyIds,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -103,6 +111,25 @@ class _HighlightNameScreenState extends State<HighlightNameScreen>
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  String _bestCoverUrl(Story story) {
+    final thumb = (story.thumbnailUrl ?? '').trim();
+    final media = story.mediaUrl.trim();
+    bool isBad(String url) {
+      final lower = url.toLowerCase();
+      return lower.endsWith('.m3u8') ||
+          lower.endsWith('.mp4') ||
+          lower.endsWith('.mov') ||
+          lower.endsWith('.m4v') ||
+          lower.endsWith('.mkv') ||
+          lower.endsWith('.webm');
+    }
+
+    if (thumb.isNotEmpty && !isBad(thumb)) return thumb;
+    if (media.isNotEmpty && !isBad(media)) return media;
+    // Fallback: server may still accept it, but clients won't decode it as an image.
+    return media.isNotEmpty ? media : thumb;
   }
 
   Future<void> _showExistingHighlightsSheet() async {
@@ -126,7 +153,9 @@ class _HighlightNameScreenState extends State<HighlightNameScreen>
       return copy;
     }
 
-    final highlights = raw.map((m) => Highlight.fromMap(_normalizeId(m))).toList()
+    final highlights = raw
+        .map((m) => Highlight.fromMap(_normalizeId(m)))
+        .toList()
       ..sort((a, b) => a.order.compareTo(b.order));
     if (!mounted) return;
     if (highlights.isEmpty) {
@@ -143,7 +172,10 @@ class _HighlightNameScreenState extends State<HighlightNameScreen>
     try {
       await _api.addItems(
         selectedId,
-        widget.selectedStories.map((s) => s.id).toList(),
+        widget.selectedStories
+            .map((s) => s.id.trim())
+            .where((id) => id.isNotEmpty && id != 'item')
+            .toList(),
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -159,7 +191,7 @@ class _HighlightNameScreenState extends State<HighlightNameScreen>
 
   @override
   Widget build(BuildContext context) {
-    final coverUrl = widget.selectedStories.first.mediaUrl;
+    final coverUrl = _bestCoverUrl(widget.selectedStories.first);
     final shakeAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _shakeController, curve: Curves.easeInOut),
     );
@@ -254,8 +286,7 @@ class _HighlightNameScreenState extends State<HighlightNameScreen>
                     decoration: const InputDecoration(
                       border: InputBorder.none,
                       hintText: 'Highlight name',
-                      hintStyle:
-                          TextStyle(color: Colors.white38, fontSize: 22),
+                      hintStyle: TextStyle(color: Colors.white38, fontSize: 22),
                       counterStyle:
                           TextStyle(color: Colors.white38, fontSize: 11),
                     ),
@@ -298,8 +329,7 @@ class _HighlightNameScreenState extends State<HighlightNameScreen>
                             _loading ? null : _showExistingHighlightsSheet,
                         child: const Text(
                           'Add to existing highlight',
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 14),
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -365,15 +395,15 @@ class _ExistingHighlightsSheet extends StatelessWidget {
                   return ListTile(
                     leading: _HighlightCoverThumb(coverUrl: h.coverUrl),
                     title: Text(h.title,
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 14)),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 14)),
                     subtitle: Text(
                       '${h.itemsCount} item${h.itemsCount == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                          color: Colors.white54, fontSize: 12),
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 12),
                     ),
-                    trailing: const Icon(Icons.chevron_right,
-                        color: Colors.white38),
+                    trailing:
+                        const Icon(Icons.chevron_right, color: Colors.white38),
                     onTap: () => Navigator.of(ctx).pop(h.id),
                   );
                 },

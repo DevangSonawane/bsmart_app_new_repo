@@ -20,6 +20,7 @@ import 'routes.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/ad_detail_screen.dart';
+import 'utils/system_ui.dart';
 import 'widgets/profile_setup_gate.dart';
 
 void main() async {
@@ -104,6 +105,13 @@ void main() async {
       DeviceOrientation.portraitDown,
     ]);
 
+    try {
+      // Hide Android's bottom navigation bar (swipe up from bottom to reveal).
+      await applyAndroidImmersiveSticky();
+    } catch (e) {
+      debugPrint('System UI mode update failed: $e');
+    }
+
     final store = createStore();
     setGlobalStore(store);
     
@@ -140,7 +148,7 @@ class BSmartApp extends StatefulWidget {
   State<BSmartApp> createState() => _BSmartAppState();
 }
 
-class _BSmartAppState extends State<BSmartApp> {
+class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
   bool _isInitialized = false;
   bool _isAuthenticated = false;
   int _routeVersion = 0;
@@ -149,6 +157,7 @@ class _BSmartAppState extends State<BSmartApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _routeObserver = _RouteChangeObserver(() {
       if (!mounted) return;
       setState(() {
@@ -156,6 +165,20 @@ class _BSmartAppState extends State<BSmartApp> {
       });
     });
     _checkAuthStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Some Android devices re-show system bars when returning to the app.
+      unawaited(applyAndroidImmersiveSticky());
+    }
   }
 
   Future<void> _checkAuthStatus() async {

@@ -8,6 +8,20 @@ import '../../models/auth/signup_session_model.dart';
 import '../../utils/validators.dart';
 import '../../utils/constants.dart';
 
+class AuthLoginOutcome {
+  final bool requires2fa;
+  final String? email;
+  final String? message;
+  final model.AuthUser? user;
+
+  const AuthLoginOutcome({
+    required this.requires2fa,
+    this.email,
+    this.message,
+    this.user,
+  });
+}
+
 class AuthService {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
@@ -270,9 +284,45 @@ class AuthService {
 
   // ==================== LOGIN METHODS ====================
 
+  Future<AuthLoginOutcome> login({
+    required String identifier,
+    required String password,
+    String? otp,
+  }) async {
+    try {
+      final data = await _authApi.login(
+        email: identifier,
+        password: password,
+        otp: otp,
+      );
+
+      final requires2fa = data['requires_2fa'] == true;
+      if (requires2fa) {
+        return AuthLoginOutcome(
+          requires2fa: true,
+          email: (data['email'] ?? identifier).toString(),
+          message: data['message']?.toString(),
+        );
+      }
+
+      final user = data['user'] as Map<String, dynamic>? ?? {};
+      return AuthLoginOutcome(
+        requires2fa: false,
+        user: _userFromApiMap(user),
+      );
+    } on ApiException catch (e) {
+      throw Exception('Login failed: ${e.message}');
+    } catch (e) {
+      throw Exception('Login failed: ${e.toString()}');
+    }
+  }
+
   Future<model.AuthUser> loginWithEmail(String email, String password) async {
     try {
       final data = await _authApi.login(email: email, password: password);
+      if (data['requires_2fa'] == true) {
+        throw Exception('OTP required to complete login.');
+      }
       final user = data['user'] as Map<String, dynamic>? ?? {};
       return _userFromApiMap(user);
     } on ApiException catch (e) {
@@ -291,6 +341,9 @@ class AuthService {
     // fall back to the email field.
     try {
       final data = await _authApi.login(email: username, password: password);
+      if (data['requires_2fa'] == true) {
+        throw Exception('OTP required to complete login.');
+      }
       final user = data['user'] as Map<String, dynamic>? ?? {};
       return _userFromApiMap(user);
     } on ApiException catch (e) {

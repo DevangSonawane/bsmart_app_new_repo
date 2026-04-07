@@ -62,7 +62,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 24),
           _sectionTitle('Account'),
           _settingTile(icon: LucideIcons.shield, label: 'Privacy', subLabel: 'Privacy settings', onTap: () {}),
-          _settingTile(icon: LucideIcons.lock, label: 'Security', subLabel: 'Password, 2FA', onTap: () {}),
+          _settingTile(
+            icon: LucideIcons.lock,
+            label: 'Security',
+            subLabel: 'Password, 2FA',
+            onTap: () => Navigator.of(context).pushNamed('/security'),
+          ),
           _settingTile(icon: LucideIcons.slidersHorizontal, label: 'Content Settings', subLabel: 'Moderation & restrictions', onTap: () {}),
           const SizedBox(height: 24),
           _sectionTitle('About'),

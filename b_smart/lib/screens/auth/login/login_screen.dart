@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../theme/instagram_theme.dart';
 import '../../../widgets/clay_container.dart';
@@ -22,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen>
   final _passwordController = TextEditingController();
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  bool _isVerifyingOtp = false;
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -59,13 +59,22 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       final identifier = _identifierController.text.trim();
       final password = _passwordController.text;
-      if (identifier.contains('@')) {
-        await _authService.loginWithEmail(identifier, password);
-      } else {
-        await _authService.loginWithUsername(identifier, password);
-      }
+      final outcome = await _authService.login(
+        identifier: identifier,
+        password: password,
+      );
 
-      _navigateToHome();
+      if (outcome.requires2fa) {
+        if (!mounted) return;
+        await _showOtpDialog(
+          identifier: identifier,
+          password: password,
+          email: outcome.email ?? identifier,
+          message: outcome.message,
+        );
+      } else {
+        _navigateToHome();
+      }
     } catch (e) {
       _showError(e.toString().replaceAll('Exception: ', ''));
     } finally {
@@ -73,6 +82,115 @@ class _LoginScreenState extends State<LoginScreen>
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _showOtpDialog({
+    required String identifier,
+    required String password,
+    required String email,
+    String? message,
+  }) async {
+    final otpController = TextEditingController();
+    String? localError;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !_isVerifyingOtp,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocalState) {
+            Future<void> verify() async {
+              final otp = otpController.text.trim();
+              if (otp.length < 6) {
+                setLocalState(() => localError = 'Enter the 6-digit OTP.');
+                return;
+              }
+              setState(() => _isVerifyingOtp = true);
+              setLocalState(() => localError = null);
+              try {
+                final result = await _authService.login(
+                  identifier: identifier,
+                  password: password,
+                  otp: otp,
+                );
+                if (!mounted) return;
+                if (result.requires2fa) {
+                  setLocalState(() => localError = 'Invalid OTP. Try again.');
+                  return;
+                }
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pop();
+                _navigateToHome();
+              } catch (e) {
+                setLocalState(() {
+                  localError = e.toString().replaceAll('Exception: ', '');
+                });
+              } finally {
+                if (mounted) setState(() => _isVerifyingOtp = false);
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Enter OTP'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'We sent a 6-digit verification code to $email.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (message != null && message.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(message, style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: otpController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      hintText: '000000',
+                      counterText: '',
+                      errorText: localError,
+                    ),
+                    onChanged: (v) {
+                      final digits = v.replaceAll(RegExp(r'\\D'), '');
+                      if (digits != v) otpController.text = digits;
+                      if (digits.length > 6) {
+                        otpController.text = digits.substring(0, 6);
+                      }
+                      otpController.selection = TextSelection.fromPosition(
+                        TextPosition(offset: otpController.text.length),
+                      );
+                    },
+                    onSubmitted: (_) => verify(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _isVerifyingOtp ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: _isVerifyingOtp ? null : verify,
+                  child: _isVerifyingOtp
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Verify'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    otpController.dispose();
   }
 
   void _navigateToHome() {

@@ -9,6 +9,7 @@ import '../models/feed_post_model.dart';
 import '../services/video_pool.dart';
 import '../utils/url_helper.dart';
 import 'dynamic_media_widget.dart';
+import 'safe_network_image.dart';
 
 /// Instagram-style post card with jank-free media rendering.
 /// Media aspect ratios are resolved once and cached globally via DynamicMediaWidget.
@@ -119,12 +120,14 @@ class _PostCardState extends State<PostCard> {
   }
 
   String _tagUsername(Map<String, dynamic> t) {
-    final direct = (t['username'] ?? t['user_name'] ?? t['userName'])?.toString();
+    final direct =
+        (t['username'] ?? t['user_name'] ?? t['userName'])?.toString();
     if (direct != null && direct.isNotEmpty) return direct;
     final user = t['user'];
     if (user is Map) {
       final u = Map<String, dynamic>.from(user);
-      final name = (u['username'] ?? u['user_name'] ?? u['userName'])?.toString();
+      final name =
+          (u['username'] ?? u['user_name'] ?? u['userName'])?.toString();
       if (name != null && name.isNotEmpty) return name;
     }
     return '';
@@ -187,12 +190,11 @@ class _PostCardState extends State<PostCard> {
       }
       return mediaAdjustments[index];
     }
+
     final activeListenable = widget.activeIdListenable;
     final tabActive = widget.isTabActive;
     final singleIsVideo = _isSingleVideo ||
-        (!_isCarousel &&
-            mediaUrls.isNotEmpty &&
-            _isVideoUrl(mediaUrls.first));
+        (!_isCarousel && mediaUrls.isNotEmpty && _isVideoUrl(mediaUrls.first));
     final activeIsVideo = isCarousel
         ? (mediaUrls.isNotEmpty && _mediaIndex < mediaUrls.length
             ? _isVideoUrl(mediaUrls[_mediaIndex])
@@ -269,44 +271,46 @@ class _PostCardState extends State<PostCard> {
                         }
                         widget.onComment?.call();
                       },
-                    onLongPress: _togglePeopleTags,
-                    child: activeListenable == null
-                        ? RepaintBoundary(
-                            child: DynamicMediaWidget(
-                              id: '${post.id}_$i',
-                              url: url,
-                              thumbnailUrl: post.thumbnailUrl,
-                              isVideo: isVideo,
-                              isActive:
-                                  widget.isActive && tabActive && _mediaIndex == i,
-                              initialAspectRatio: post.aspectRatio,
-                              filterName: _filterForIndex(i),
-                              adjustments: _adjustmentsForIndex(i),
+                      onLongPress: _togglePeopleTags,
+                      child: activeListenable == null
+                          ? RepaintBoundary(
+                              child: DynamicMediaWidget(
+                                id: '${post.id}_$i',
+                                url: url,
+                                thumbnailUrl: post.thumbnailUrl,
+                                isVideo: isVideo,
+                                isActive: widget.isActive &&
+                                    tabActive &&
+                                    _mediaIndex == i,
+                                initialAspectRatio: post.aspectRatio,
+                                filterName: _filterForIndex(i),
+                                adjustments: _adjustmentsForIndex(i),
+                              ),
+                            )
+                          : ValueListenableBuilder<String?>(
+                              valueListenable: activeListenable,
+                              builder: (context, activeId, _) {
+                                final isActive = activeId == post.id &&
+                                    tabActive &&
+                                    _mediaIndex == i;
+                                return RepaintBoundary(
+                                  child: DynamicMediaWidget(
+                                    id: '${post.id}_$i',
+                                    url: url,
+                                    thumbnailUrl: post.thumbnailUrl,
+                                    isVideo: isVideo,
+                                    isActive: isActive,
+                                    initialAspectRatio: post.aspectRatio,
+                                    filterName: _filterForIndex(i),
+                                    adjustments: _adjustmentsForIndex(i),
+                                  ),
+                                );
+                              },
                             ),
-                          )
-                        : ValueListenableBuilder<String?>(
-                            valueListenable: activeListenable,
-                            builder: (context, activeId, _) {
-                              final isActive =
-                                  activeId == post.id && tabActive && _mediaIndex == i;
-                              return RepaintBoundary(
-                                child: DynamicMediaWidget(
-                                  id: '${post.id}_$i',
-                                  url: url,
-                                  thumbnailUrl: post.thumbnailUrl,
-                                  isVideo: isVideo,
-                                  isActive: isActive,
-                                  initialAspectRatio: post.aspectRatio,
-                                  filterName: _filterForIndex(i),
-                                  adjustments: _adjustmentsForIndex(i),
-                                ),
-                              );
-                            },
-                          ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
             if (isCarousel)
               Positioned(
                 bottom: 10,
@@ -339,7 +343,8 @@ class _PostCardState extends State<PostCard> {
                 top: 8,
                 left: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(999),
@@ -377,7 +382,8 @@ class _PostCardState extends State<PostCard> {
                                 left: pos.dx - 8,
                                 top: pos.dy - 34,
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(
                                     color: Colors.black.withValues(alpha: 0.65),
                                     borderRadius: BorderRadius.circular(14),
@@ -504,13 +510,11 @@ class _PostCardState extends State<PostCard> {
             ? adCompany
             : '');
     final location = (post.location ?? '').trim();
-    final primaryText = theme.brightness == Brightness.dark
-        ? Colors.white
-        : Colors.black;
-    final secondaryText =
-        theme.brightness == Brightness.dark
-            ? const Color(0xFF9CA3AF)
-            : const Color(0xFF6B7280);
+    final primaryText =
+        theme.brightness == Brightness.dark ? Colors.white : Colors.black;
+    final secondaryText = theme.brightness == Brightness.dark
+        ? const Color(0xFF9CA3AF)
+        : const Color(0xFF6B7280);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
@@ -538,9 +542,6 @@ class _PostCardState extends State<PostCard> {
                 ),
                 padding: const EdgeInsets.all(1),
                 child: CircleAvatar(
-                  backgroundImage: avatarUrl.isNotEmpty
-                      ? CachedNetworkImageProvider(avatarUrl)
-                      : null,
                   backgroundColor:
                       isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
                   child: avatarUrl.isEmpty
@@ -550,7 +551,16 @@ class _PostCardState extends State<PostCard> {
                               : 'U',
                           style: TextStyle(color: theme.colorScheme.onSurface),
                         )
-                      : null,
+                      : ClipOval(
+                          child: SafeNetworkImage(
+                            url: avatarUrl,
+                            width: 34,
+                            height: 34,
+                            fit: BoxFit.cover,
+                            placeholder: const SizedBox.shrink(),
+                            errorWidget: const SizedBox.shrink(),
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -722,13 +732,11 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _buildPostDetails(FeedPost post, ThemeData theme) {
-    final primaryText = theme.brightness == Brightness.dark
-        ? Colors.white
-        : Colors.black;
-    final secondaryText =
-        theme.brightness == Brightness.dark
-            ? const Color(0xFF9CA3AF)
-            : const Color(0xFF6B7280);
+    final primaryText =
+        theme.brightness == Brightness.dark ? Colors.white : Colors.black;
+    final secondaryText = theme.brightness == Brightness.dark
+        ? const Color(0xFF9CA3AF)
+        : const Color(0xFF6B7280);
     final accentBlue = theme.brightness == Brightness.dark
         ? const Color(0xFF60A5FA)
         : const Color(0xFF2563EB);
@@ -750,13 +758,11 @@ class _PostCardState extends State<PostCard> {
             if ((post.adCategory ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 6),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: accentBlue.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                      color: accentBlue.withValues(alpha: 0.35)),
+                  border: Border.all(color: accentBlue.withValues(alpha: 0.35)),
                 ),
                 child: Text(
                   (post.adCategory ?? '').trim(),
@@ -877,7 +883,8 @@ class _PostCardState extends State<PostCard> {
                 ),
                 children: [
                   TextSpan(
-                    text: '${(post.latestCommentUser ?? post.userName).trim()} ',
+                    text:
+                        '${(post.latestCommentUser ?? post.userName).trim()} ',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   TextSpan(
@@ -922,7 +929,20 @@ class _PostCardState extends State<PostCard> {
     if (difference.inMinutes < 60) return '${difference.inMinutes}m';
     if (difference.inHours < 24) return '${difference.inHours}h';
     if (difference.inDays < 7) return '${difference.inDays}d';
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
     return '${months[date.month - 1]} ${date.day}';
   }
 }
@@ -941,8 +961,9 @@ class _BudgetBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent =
-        theme.brightness == Brightness.dark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
+    final accent = theme.brightness == Brightness.dark
+        ? const Color(0xFFFBBF24)
+        : const Color(0xFFD97706);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(

@@ -48,8 +48,7 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
   @override
   void initState() {
     super.initState();
-    _titleController =
-        TextEditingController(text: widget.highlight.title);
+    _titleController = TextEditingController(text: widget.highlight.title);
     _items = List.from(widget.items);
     _newCoverUrl = widget.highlight.coverUrl;
     _existingMediaUrls.addAll(_items.map((e) => e.mediaUrl));
@@ -147,7 +146,13 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
 
       // 2. Add newly selected archive items
       if (_itemsToAdd.isNotEmpty) {
-        await _api.addItems(widget.highlight.id, _itemsToAdd.toList());
+        final storyIds = _itemsToAdd
+            .map((e) => e.trim())
+            .where((id) => id.isNotEmpty && id != 'item')
+            .toList();
+        if (storyIds.isNotEmpty) {
+          await _api.addItems(widget.highlight.id, storyIds);
+        }
       }
 
       // 3. Remove marked items
@@ -248,8 +253,7 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
                       style: TextStyle(color: Colors.white, fontSize: 14),
                     ),
                     const Spacer(),
-                    const Icon(Icons.chevron_right,
-                        color: Colors.white38),
+                    const Icon(Icons.chevron_right, color: Colors.white38),
                   ],
                 ),
               ),
@@ -280,7 +284,8 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
   Widget _buildCoverThumb() {
     final size = 48.0;
     final child = _newCoverFile != null
-        ? Image.file(_newCoverFile!, width: size, height: size, fit: BoxFit.cover)
+        ? Image.file(_newCoverFile!,
+            width: size, height: size, fit: BoxFit.cover)
         : (widget.highlight.coverUrl != null
             ? CachedNetworkImage(
                 imageUrl: widget.highlight.coverUrl!,
@@ -347,16 +352,15 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
                       color: _kBlue,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.check,
-                        size: 16, color: Colors.white),
+                    child:
+                        const Icon(Icons.check, size: 16, color: Colors.white),
                   ),
                 ),
               if (story.mediaType == StoryMediaType.video)
                 const Positioned(
                   left: 6,
                   bottom: 6,
-                  child: Icon(Icons.play_arrow,
-                      color: Colors.white, size: 16),
+                  child: Icon(Icons.play_arrow, color: Colors.white, size: 16),
                 ),
             ],
           ),
@@ -391,8 +395,7 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
               CachedNetworkImage(
                 imageUrl: item.thumbnailUrl ?? item.mediaUrl,
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) =>
-                    Container(color: Colors.black26),
+                errorWidget: (_, __, ___) => Container(color: Colors.black26),
               ),
               if (markedForRemove)
                 Container(color: Colors.red.withValues(alpha: 0.25)),
@@ -402,9 +405,7 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: markedForRemove
-                        ? Colors.red
-                        : Colors.grey.shade700,
+                    color: markedForRemove ? Colors.red : Colors.grey.shade700,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -454,8 +455,8 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.close, color: Colors.white70),
-              title: const Text('Cancel',
-                  style: TextStyle(color: Colors.white70)),
+              title:
+                  const Text('Cancel', style: TextStyle(color: Colors.white70)),
               onTap: () => Navigator.of(ctx).pop(),
             ),
           ],

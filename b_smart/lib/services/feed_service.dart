@@ -264,13 +264,16 @@ class FeedService {
       // Debug: log pagination parameters
       try {
         // Avoid throwing in debug logging
-        print('FeedService.fetchFeedFromBackend -> page=$page limit=$limit offset=$offset currentUserId=${currentUserId ?? "(null)"}');
+        print(
+            'FeedService.fetchFeedFromBackend -> page=$page limit=$limit offset=$offset currentUserId=${currentUserId ?? "(null)"}');
       } catch (_) {}
 
       final data = useBackendDefault
-          ? await _rateLimited(() => _postsApi.getFeedDefault(cacheBuster: cacheBuster))
+          ? await _rateLimited(
+              () => _postsApi.getFeedDefault(cacheBuster: cacheBuster))
           : await _rateLimited(
-              () => _postsApi.getFeed(page: page, limit: limit, cacheBuster: cacheBuster),
+              () => _postsApi.getFeed(
+                  page: page, limit: limit, cacheBuster: cacheBuster),
             );
       List<Map<String, dynamic>> items = [];
       // Debug: log raw data shape briefly
@@ -278,10 +281,12 @@ class FeedService {
         if (data is List) {
           print('PostsApi.getFeed returned List with length=${data.length}');
         } else if (data is Map) {
-          final count = (data['posts'] is List) ? (data['posts'] as List).length : -1;
+          final count =
+              (data['posts'] is List) ? (data['posts'] as List).length : -1;
           print('PostsApi.getFeed returned Map; posts length=$count');
         } else {
-          print('PostsApi.getFeed returned unexpected type: ${data.runtimeType}');
+          print(
+              'PostsApi.getFeed returned unexpected type: ${data.runtimeType}');
         }
       } catch (_) {}
       if (data is List) {
@@ -475,9 +480,8 @@ class FeedService {
               map = Map<String, dynamic>.from(m);
               if (map['file'] is Map) {
                 final f = (map['file'] as Map);
-                url =
-                    (f['fileUrl'] ?? f['file_url'] ?? f['url'] ?? f['path'])
-                        ?.toString();
+                url = (f['fileUrl'] ?? f['file_url'] ?? f['url'] ?? f['path'])
+                    ?.toString();
               } else if (map['file'] is String) {
                 url = (map['file'] as String);
               }
@@ -615,6 +619,7 @@ class FeedService {
             }
             return null;
           }
+
           if (media.isNotEmpty) {
             for (final mm in media) {
               if (mm is! Map) continue;
@@ -646,11 +651,9 @@ class FeedService {
               } else if (rawThumb is List && rawThumb.isNotEmpty) {
                 final t = rawThumb.first;
                 if (t is Map) {
-                  thumbnailUrl = (t['url'] ??
-                          t['fileUrl'] ??
-                          t['file_url'] ??
-                          t['path'])
-                      ?.toString();
+                  thumbnailUrl =
+                      (t['url'] ?? t['fileUrl'] ?? t['file_url'] ?? t['path'])
+                          ?.toString();
                   if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
                       t['file'] is Map) {
                     final f = t['file'] as Map;
@@ -671,11 +674,9 @@ class FeedService {
                 if (thumbsAny is List && thumbsAny.isNotEmpty) {
                   final t = thumbsAny.first;
                   if (t is Map) {
-                    thumbnailUrl = (t['url'] ??
-                            t['fileUrl'] ??
-                            t['file_url'] ??
-                            t['path'])
-                        ?.toString();
+                    thumbnailUrl =
+                        (t['url'] ?? t['fileUrl'] ?? t['file_url'] ?? t['path'])
+                            ?.toString();
                     if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
                         t['fileName'] != null) {
                       thumbnailUrl = '/uploads/${t['fileName']}';
@@ -773,7 +774,9 @@ class FeedService {
               (item['item_type'] ?? item['itemType'] ?? '').toString();
           final vendorAny = item['vendor_id'] ?? item['vendorId'];
           final isAdItem = itemType.toLowerCase() == 'ad' || vendorAny != null;
-          final vendor = vendorAny is Map ? Map<String, dynamic>.from(vendorAny) : <String, dynamic>{};
+          final vendor = vendorAny is Map
+              ? Map<String, dynamic>.from(vendorAny)
+              : <String, dynamic>{};
 
           final authorName =
               (user['username'] as String?) ?? (item['username'] as String?);
@@ -782,15 +785,13 @@ class FeedService {
                   vendor['company_name'] ??
                   vendor['brand_name'])
               ?.toString();
-          final resolvedUserName = (isAdItem
-                  ? (authorName ?? vendorName)
-                  : authorName) ??
-              vendorName ??
-              'user';
-          final resolvedFullName =
-              (user['full_name'] as String?) ??
-                  (item['full_name'] as String?) ??
-                  vendorName;
+          final resolvedUserName =
+              (isAdItem ? (authorName ?? vendorName) : authorName) ??
+                  vendorName ??
+                  'user';
+          final resolvedFullName = (user['full_name'] as String?) ??
+              (item['full_name'] as String?) ??
+              vendorName;
 
           // Never cache-bust thumbnails — it breaks CachedNetworkImage disk cache
           // and causes the grey placeholder to show on every render.
@@ -844,9 +845,8 @@ class FeedService {
                 item['comments_disabled'] ??
                 item['commentsDisabled'] ??
                 false,
-            hideLikesCount: item['hide_likes_count'] ??
-                item['hideLikesCount'] ??
-                false,
+            hideLikesCount:
+                item['hide_likes_count'] ?? item['hideLikesCount'] ?? false,
             adTitle: isAdItem
                 ? (item['title'] as String?) ??
                     (item['ad_title'] as String?) ??
@@ -1013,8 +1013,7 @@ class FeedService {
                 UrlHelper.normalizeUrl(ad.userAvatarUrl ?? ad.companyLogo),
             mediaType: mediaType,
             mediaUrls: [primaryUrl],
-            thumbnailUrl:
-                isVideo ? UrlHelper.normalizeUrl(ad.imageUrl) : null,
+            thumbnailUrl: isVideo ? UrlHelper.normalizeUrl(ad.imageUrl) : null,
             aspectRatio: _extractMediaAspectFromRawAd(raw),
             caption: caption,
             hashtags: ad.hashtags,
@@ -1270,8 +1269,10 @@ class FeedService {
       final int? durationSec = (media?['durationSec'] is int)
           ? (media?['durationSec'] as int)
           : (m['durationSec'] as int?);
+      final rawId = m['_id'] ?? m['id'];
+      final id = rawId == null ? '' : rawId.toString();
       return Story(
-        id: (m['_id'] as String?) ?? 'item',
+        id: id.isNotEmpty ? id : 'item',
         userId: (m['user_id'] as String?) ?? '',
         userName: ownerUserName ?? '',
         userAvatar: ownerAvatar,

@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import '../api/api_client.dart';
 import '../models/story_model.dart';
 import '../models/highlight_model.dart';
 import '../services/highlight_service.dart';
 import '../api/highlights_api.dart';
+import '../utils/url_helper.dart';
+import '../widgets/safe_network_image.dart';
+import '../utils/system_ui.dart';
 import 'highlight_edit_screen.dart';
 
 const _kSheet = Color(0xFF1C1C1E);
@@ -56,13 +60,13 @@ class _HighlightViewerScreenState extends State<HighlightViewerScreen>
     super.initState();
     _currentHighlightIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    unawaited(applyAndroidImmersiveSticky());
   }
 
   @override
   void dispose() {
     _pageController.dispose();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    unawaited(applyAndroidImmersiveSticky());
     super.dispose();
   }
 
@@ -154,6 +158,7 @@ class _HighlightPageState extends State<_HighlightPage>
   bool _loading = true;
   bool _error = false;
   int _currentIndex = 0;
+  Map<String, String>? _mediaHeaders;
 
   // Progress animation
   late AnimationController _progressController;
@@ -175,6 +180,7 @@ class _HighlightPageState extends State<_HighlightPage>
         _advance();
       }
     });
+    _loadMediaHeaders();
     _loadItems();
   }
 
@@ -223,6 +229,24 @@ class _HighlightPageState extends State<_HighlightPage>
     }
   }
 
+  Future<void> _loadMediaHeaders() async {
+    if (_mediaHeaders != null) return;
+    final token = await ApiClient().getToken();
+    if (!mounted) return;
+    if (token != null && token.isNotEmpty) {
+      setState(() => _mediaHeaders = {'Authorization': 'Bearer $token'});
+    } else {
+      _mediaHeaders = const <String, String>{};
+    }
+  }
+
+  Future<Map<String, String>> _headersFor(String url) async {
+    if (!UrlHelper.shouldAttachAuthHeader(url)) return const <String, String>{};
+    if (_mediaHeaders != null) return _mediaHeaders!;
+    await _loadMediaHeaders();
+    return _mediaHeaders ?? const <String, String>{};
+  }
+
   void _showItem(int index) {
     if (index < 0 || index >= _items.length) return;
     _videoController?.dispose();
@@ -234,13 +258,24 @@ class _HighlightPageState extends State<_HighlightPage>
     if (item.mediaType == StoryMediaType.video) {
       _initVideo(item.mediaUrl);
     } else {
+      if (UrlHelper.shouldAttachAuthHeader(item.mediaUrl) &&
+          _mediaHeaders == null) {
+        // Wait for token before starting timer; otherwise image fetch may cache a 401/HTML response.
+        unawaited(
+            _loadMediaHeaders().then((_) => _startProgress(_imageDuration)));
+        return;
+      }
       _startProgress(_imageDuration);
     }
   }
 
   Future<void> _initVideo(String url) async {
     _progressController.stop();
-    final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+    final headers = await _headersFor(url);
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(url),
+      httpHeaders: headers,
+    );
     _videoController = controller;
     try {
       await controller.initialize();
@@ -492,8 +527,7 @@ class _HighlightPageState extends State<_HighlightPage>
           fit: StackFit.expand,
           children: [
             _buildMedia(item),
-            if (_holding)
-              Container(color: Colors.black.withValues(alpha: 0.2)),
+            if (_holding) Container(color: Colors.black.withValues(alpha: 0.2)),
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
               left: 12,
@@ -528,11 +562,18 @@ class _HighlightPageState extends State<_HighlightPage>
         child: CircularProgressIndicator(color: Colors.white),
       );
     }
-    return CachedNetworkImage(
-      imageUrl: item.mediaUrl,
+    final shouldAuth = UrlHelper.shouldAttachAuthHeader(item.mediaUrl);
+    if (shouldAuth && _mediaHeaders == null) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+    return SafeNetworkImage(
+      url: item.mediaUrl,
+      headers: shouldAuth ? (_mediaHeaders ?? const <String, String>{}) : null,
       fit: BoxFit.cover,
-      placeholder: (_, __) => Container(color: Colors.black),
-      errorWidget: (_, __, ___) => Container(
+      placeholder: Container(color: Colors.black),
+      errorWidget: Container(
         color: const Color(0xFF1A1A1A),
         child: const Icon(Icons.broken_image, color: Colors.white30, size: 64),
       ),
@@ -560,8 +601,7 @@ class _HighlightPageState extends State<_HighlightPage>
                   value: value,
                   minHeight: 4,
                   backgroundColor: Colors.white30,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(Colors.white),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                 );
               },
             ),
@@ -572,22 +612,36 @@ class _HighlightPageState extends State<_HighlightPage>
   }
 
   Widget _buildHeader() {
+    final avatarUrl = (widget.ownerAvatar ?? '').trim();
+    final shouldAuth =
+        avatarUrl.isNotEmpty && UrlHelper.shouldAttachAuthHeader(avatarUrl);
+    final headers =
+        shouldAuth ? (_mediaHeaders ?? const <String, String>{}) : null;
     return Row(
       children: [
         CircleAvatar(
           radius: 16,
           backgroundColor: Colors.white24,
-          backgroundImage: widget.ownerAvatar != null
-              ? CachedNetworkImageProvider(widget.ownerAvatar!)
-              : null,
-          child: widget.ownerAvatar == null
+          child: avatarUrl.isEmpty
               ? Text(
                   widget.ownerUserName.isNotEmpty
                       ? widget.ownerUserName[0].toUpperCase()
                       : '?',
                   style: const TextStyle(color: Colors.white),
                 )
-              : null,
+              : ClipOval(
+                  child: SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: SafeNetworkImage(
+                      url: avatarUrl,
+                      headers: headers,
+                      fit: BoxFit.cover,
+                      placeholder: const SizedBox.shrink(),
+                      errorWidget: const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -616,8 +670,7 @@ class _HighlightPageState extends State<_HighlightPage>
             onTap: _showOptions,
             child: const Padding(
               padding: EdgeInsets.all(8),
-              child:
-                  Icon(Icons.more_horiz, color: Colors.white, size: 22),
+              child: Icon(Icons.more_horiz, color: Colors.white, size: 22),
             ),
           ),
         // Close
@@ -674,8 +727,8 @@ class _HighlightOptionsSheet extends StatelessWidget {
               SizedBox(
                 height: 52,
                 child: ListTile(
-                  leading: const Icon(Icons.bookmark_remove,
-                      color: Colors.white),
+                  leading:
+                      const Icon(Icons.bookmark_remove, color: Colors.white),
                   title: const Text('Remove from Highlight',
                       style: TextStyle(color: Colors.white, fontSize: 15)),
                   onTap: () => Navigator.of(context).pop('remove'),
@@ -684,8 +737,7 @@ class _HighlightOptionsSheet extends StatelessWidget {
               SizedBox(
                 height: 52,
                 child: ListTile(
-                  leading:
-                      const Icon(Icons.edit_outlined, color: Colors.white),
+                  leading: const Icon(Icons.edit_outlined, color: Colors.white),
                   title: const Text('Edit Highlight',
                       style: TextStyle(color: Colors.white, fontSize: 15)),
                   onTap: () => Navigator.of(context).pop('edit'),
@@ -694,8 +746,7 @@ class _HighlightOptionsSheet extends StatelessWidget {
               SizedBox(
                 height: 52,
                 child: ListTile(
-                  leading:
-                      const Icon(Icons.delete_outline, color: Colors.red),
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
                   title: const Text('Delete Highlight',
                       style: TextStyle(color: Colors.red, fontSize: 15)),
                   onTap: () => Navigator.of(context).pop('delete'),

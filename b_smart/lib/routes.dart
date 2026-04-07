@@ -13,6 +13,7 @@ import 'screens/promote_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/wallet_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/security_screen.dart';
 import 'screens/auth_callback_screen.dart';
 import 'screens/story_camera_screen.dart';
 import 'screens/own_story_viewer_screen.dart';
@@ -58,6 +59,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/settings': (ctx) => const SettingsScreen(),
   '/wallet': (ctx) => const WalletScreen(),
   '/notifications': (ctx) => const NotificationsScreen(),
+  '/security': (ctx) => const SecurityScreen(),
   '/search': (ctx) => const SearchScreen(),
   '/auth/google/success': (ctx) => const AuthCallbackScreen(),
   '/edit-profile': (ctx) => const EditProfileScreen(userId: ''),
