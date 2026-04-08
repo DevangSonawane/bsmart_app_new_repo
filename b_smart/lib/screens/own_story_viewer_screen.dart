@@ -17,7 +17,8 @@ class OwnStoryViewerScreen extends StatefulWidget {
   final List<Story> stories;
   final String userName;
   final String? storyId;
-  const OwnStoryViewerScreen({super.key, required this.stories, required this.userName, this.storyId});
+  const OwnStoryViewerScreen(
+      {super.key, required this.stories, required this.userName, this.storyId});
 
   @override
   State<OwnStoryViewerScreen> createState() => _OwnStoryViewerScreenState();
@@ -169,7 +170,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       });
       _loadVideoForCurrent();
       if (_controller.hasClients) {
-        _controller.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+        _controller.nextPage(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut);
       }
       _start();
     } else {
@@ -185,7 +188,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       });
       _loadVideoForCurrent();
       if (_controller.hasClients) {
-        _controller.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+        _controller.previousPage(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut);
       }
       _start();
     } else {
@@ -310,7 +315,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     Timer? debounce;
     bool sheetActive = true;
 
-    Future<void> runSearch(String query, void Function(void Function()) setLocal) async {
+    Future<void> runSearch(
+        String query, void Function(void Function()) setLocal) async {
       debounce?.cancel();
       debounce = Timer(const Duration(milliseconds: 250), () async {
         if (!mounted || !sheetActive) return;
@@ -360,217 +366,272 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                     child: Container(
                       decoration: const BoxDecoration(
                         color: Color(0xFF2A2D33),
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(18)),
                       ),
                       child: Column(
                         children: [
-                      const SizedBox(height: 10),
-                      Center(
-                        child: Container(
-                          width: 36,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        child: Row(
-                          children: [
-                            const Text('Tag people',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                            const Spacer(),
-                            IconButton(
-                              onPressed: () {
-                                sheetActive = false;
-                                Navigator.of(ctx).pop();
-                              },
-                              icon: const Icon(LucideIcons.x, color: Colors.white),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: SizedBox(
-                          height: 44,
-                          child: TextField(
-                            style: const TextStyle(color: Colors.white),
-                            onChanged: (q) => runSearch(q, setLocal),
-                            decoration: InputDecoration(
-                              hintText: 'Search people',
-                              hintStyle: const TextStyle(color: Colors.white54),
-                              filled: true,
-                              fillColor: Colors.white12,
-                              prefixIcon: const Icon(Icons.search, color: Colors.white54),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Colors.white24),
+                          const SizedBox(height: 10),
+                          Center(
+                            child: Container(
+                              width: 36,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: Colors.white24,
+                                borderRadius: BorderRadius.circular(999),
                               ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Colors.white24),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Colors.white54),
-                              ),
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 56,
-                        child: selected.isEmpty
-                            ? const Align(
-                                alignment: Alignment.centerLeft,
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 16),
-                                  child: Text('Select people to tag',
-                                      style: TextStyle(color: Colors.white54, fontSize: 12)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            child: Row(
+                              children: [
+                                const Text('Tag people',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600)),
+                                const Spacer(),
+                                IconButton(
+                                  onPressed: () {
+                                    sheetActive = false;
+                                    Navigator.of(ctx).pop();
+                                  },
+                                  icon: const Icon(LucideIcons.x,
+                                      color: Colors.white),
                                 ),
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                scrollDirection: Axis.horizontal,
-                                itemCount: selected.length,
-                                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                                itemBuilder: (_, i) {
-                                  final u = selected.values.elementAt(i);
-                                  final name =
-                                      (u['username'] ?? u['full_name'] ?? 'User').toString();
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white12,
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text('@$name',
-                                            style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                        const SizedBox(width: 6),
-                                        GestureDetector(
-                                          onTap: () => setLocal(() {
-                                            selected.removeWhere((key, value) =>
-                                                (value['username'] ?? value['full_name']) ==
-                                                (u['username'] ?? u['full_name']));
-                                          }),
-                                          child: const Icon(LucideIcons.x,
-                                              size: 12, color: Colors.white70),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: SizedBox(
+                              height: 44,
+                              child: TextField(
+                                style: const TextStyle(color: Colors.white),
+                                onChanged: (q) => runSearch(q, setLocal),
+                                decoration: InputDecoration(
+                                  hintText: 'Search people',
+                                  hintStyle:
+                                      const TextStyle(color: Colors.white54),
+                                  filled: true,
+                                  fillColor: Colors.white12,
+                                  prefixIcon: const Icon(Icons.search,
+                                      color: Colors.white54),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide:
+                                        const BorderSide(color: Colors.white24),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide:
+                                        const BorderSide(color: Colors.white24),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide:
+                                        const BorderSide(color: Colors.white54),
+                                  ),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                ),
                               ),
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: loading
-                            ? const Center(child: CircularProgressIndicator(color: Colors.white))
-                            : results.isEmpty
-                                ? const Center(
-                                    child: Text('No results',
-                                        style: TextStyle(color: Colors.white70)),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 56,
+                            child: selected.isEmpty
+                                ? const Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Padding(
+                                      padding:
+                                          EdgeInsets.symmetric(horizontal: 16),
+                                      child: Text('Select people to tag',
+                                          style: TextStyle(
+                                              color: Colors.white54,
+                                              fontSize: 12)),
+                                    ),
                                   )
                                 : ListView.separated(
-                                    padding: EdgeInsets.zero,
-                                    itemCount: results.length,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16),
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: selected.length,
                                     separatorBuilder: (_, __) =>
-                                        const Divider(height: 1, color: Colors.white10),
-                                    itemBuilder: (ctx, i) {
-                                      final u = results[i];
-                                      final id =
-                                          (u['id'] ?? u['_id'] ?? u['user_id'])?.toString() ?? '';
-                                      final name =
-                                          (u['username'] ?? u['full_name'] ?? 'User').toString();
-                                      final key = id.isNotEmpty ? id : name;
-                                      final avatar = u['avatar_url'] as String?;
-                                      final isSelected = key.isNotEmpty && selected.containsKey(key);
-                                      return SizedBox(
-                                        height: 56,
-                                        child: ListTile(
-                                          dense: true,
-                                          leading: CircleAvatar(
-                                            backgroundImage: (avatar != null && avatar.isNotEmpty)
-                                                ? NetworkImage(avatar)
-                                                : null,
-                                            backgroundColor: Colors.white24,
-                                            child: (avatar == null || avatar.isEmpty)
-                                                ? Text(
-                                                    name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                                                    style: const TextStyle(color: Colors.white),
-                                                  )
-                                                : null,
-                                          ),
-                                          title: Text(name,
-                                              style: const TextStyle(color: Colors.white)),
-                                          trailing: Icon(
-                                            isSelected
-                                                ? Icons.check_circle
-                                                : Icons.radio_button_unchecked,
-                                            color:
-                                                isSelected ? Colors.greenAccent : Colors.white38,
-                                          ),
-                                          onTap: () {
-                                            if (key.isEmpty) return;
-                                            setLocal(() {
-                                              if (isSelected) {
-                                                selected.remove(key);
-                                              } else {
-                                                selected[key] = u;
-                                              }
-                                            });
-                                          },
+                                        const SizedBox(width: 8),
+                                    itemBuilder: (_, i) {
+                                      final u = selected.values.elementAt(i);
+                                      final name = (u['username'] ??
+                                              u['full_name'] ??
+                                              'User')
+                                          .toString();
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white12,
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text('@$name',
+                                                style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 12)),
+                                            const SizedBox(width: 6),
+                                            GestureDetector(
+                                              onTap: () => setLocal(() {
+                                                selected.removeWhere((key,
+                                                        value) =>
+                                                    (value['username'] ??
+                                                        value['full_name']) ==
+                                                    (u['username'] ??
+                                                        u['full_name']));
+                                              }),
+                                              child: const Icon(LucideIcons.x,
+                                                  size: 12,
+                                                  color: Colors.white70),
+                                            ),
+                                          ],
                                         ),
                                       );
                                     },
                                   ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: () {
-                              if (selected.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Select at least one person')),
-                                );
-                                return;
-                              }
-                              sheetActive = false;
-                              Navigator.of(ctx).pop();
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('User mentioned successfully')),
-                              );
-                            },
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF4F7DFF),
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor: const Color(0xFF4F7DFF),
-                              disabledForegroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                side: const BorderSide(color: Colors.white24),
+                          ),
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: loading
+                                ? const Center(
+                                    child: CircularProgressIndicator(
+                                        color: Colors.white))
+                                : results.isEmpty
+                                    ? const Center(
+                                        child: Text('No results',
+                                            style: TextStyle(
+                                                color: Colors.white70)),
+                                      )
+                                    : ListView.separated(
+                                        padding: EdgeInsets.zero,
+                                        itemCount: results.length,
+                                        separatorBuilder: (_, __) =>
+                                            const Divider(
+                                                height: 1,
+                                                color: Colors.white10),
+                                        itemBuilder: (ctx, i) {
+                                          final u = results[i];
+                                          final id = (u['id'] ??
+                                                      u['_id'] ??
+                                                      u['user_id'])
+                                                  ?.toString() ??
+                                              '';
+                                          final name = (u['username'] ??
+                                                  u['full_name'] ??
+                                                  'User')
+                                              .toString();
+                                          final key = id.isNotEmpty ? id : name;
+                                          final avatar =
+                                              u['avatar_url'] as String?;
+                                          final isSelected = key.isNotEmpty &&
+                                              selected.containsKey(key);
+                                          return SizedBox(
+                                            height: 56,
+                                            child: ListTile(
+                                              dense: true,
+                                              leading: CircleAvatar(
+                                                backgroundImage:
+                                                    (avatar != null &&
+                                                            avatar.isNotEmpty)
+                                                        ? NetworkImage(avatar)
+                                                        : null,
+                                                backgroundColor: Colors.white24,
+                                                child: (avatar == null ||
+                                                        avatar.isEmpty)
+                                                    ? Text(
+                                                        name.isNotEmpty
+                                                            ? name[0]
+                                                                .toUpperCase()
+                                                            : 'U',
+                                                        style: const TextStyle(
+                                                            color:
+                                                                Colors.white),
+                                                      )
+                                                    : null,
+                                              ),
+                                              title: Text(name,
+                                                  style: const TextStyle(
+                                                      color: Colors.white)),
+                                              trailing: Icon(
+                                                isSelected
+                                                    ? Icons.check_circle
+                                                    : Icons
+                                                        .radio_button_unchecked,
+                                                color: isSelected
+                                                    ? Colors.greenAccent
+                                                    : Colors.white38,
+                                              ),
+                                              onTap: () {
+                                                if (key.isEmpty) return;
+                                                setLocal(() {
+                                                  if (isSelected) {
+                                                    selected.remove(key);
+                                                  } else {
+                                                    selected[key] = u;
+                                                  }
+                                                });
+                                              },
+                                            ),
+                                          );
+                                        },
+                                      ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: () {
+                                  if (selected.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Select at least one person')),
+                                    );
+                                    return;
+                                  }
+                                  sheetActive = false;
+                                  Navigator.of(ctx).pop();
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            'User mentioned successfully')),
+                                  );
+                                },
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF4F7DFF),
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor:
+                                      const Color(0xFF4F7DFF),
+                                  disabledForegroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    side:
+                                        const BorderSide(color: Colors.white24),
+                                  ),
+                                ),
+                                child: Text(
+                                  selected.isEmpty
+                                      ? 'Tag people'
+                                      : 'Tag ${selected.length} people',
+                                ),
                               ),
                             ),
-                            child: Text(
-                              selected.isEmpty
-                                  ? 'Tag people'
-                                  : 'Tag ${selected.length} people',
-                            ),
                           ),
-                        ),
-                      ),
                         ],
                       ),
                     ),
@@ -619,17 +680,20 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         padding: const EdgeInsets.fromLTRB(14, 10, 6, 6),
                         child: Row(
                           children: [
-                            const Icon(Icons.history_toggle_off, color: Colors.white70, size: 18),
+                            const Icon(Icons.history_toggle_off,
+                                color: Colors.white70, size: 18),
                             const SizedBox(width: 10),
                             const Expanded(
                               child: Text(
                                 "Archive stories while they're active.",
-                                style: TextStyle(color: Colors.white70, fontSize: 12),
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 12),
                               ),
                             ),
                             IconButton(
                               onPressed: () => Navigator.of(ctx).pop(),
-                              icon: const Icon(LucideIcons.x, color: Colors.white70, size: 18),
+                              icon: const Icon(LucideIcons.x,
+                                  color: Colors.white70, size: 18),
                             ),
                           ],
                         ),
@@ -691,11 +755,14 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         },
                       ),
                       _buildMoreAction(
-                        label: _commentingEnabled ? 'Turn off commenting' : 'Turn on commenting',
+                        label: _commentingEnabled
+                            ? 'Turn off commenting'
+                            : 'Turn on commenting',
                         onTap: () {
                           Navigator.of(ctx).pop();
                           if (!mounted) return;
-                          setState(() => _commentingEnabled = !_commentingEnabled);
+                          setState(
+                              () => _commentingEnabled = !_commentingEnabled);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
@@ -719,7 +786,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                       backgroundColor: const Color(0xFF2A2D33),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
                     ),
                     child: const Text('Cancel'),
                   ),
@@ -748,7 +816,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         child: Center(
           child: Text(
             label,
-            style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w500),
+            style: TextStyle(
+                color: color, fontSize: 14, fontWeight: FontWeight.w500),
           ),
         ),
       ),
@@ -762,7 +831,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       if (!ps.isAuth) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gallery permission is required to save.')),
+          const SnackBar(
+              content: Text('Gallery permission is required to save.')),
         );
         return;
       }
@@ -865,7 +935,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                   child: Row(
                     children: [
                       const Text('Add to highlight',
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600)),
                       const Spacer(),
                       IconButton(
                         onPressed: () => Navigator.of(ctx).pop(),
@@ -897,8 +969,10 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         );
                       }
                       final h = highlights[i - 1];
-                      final title = (h['title'] ?? h['name'] ?? 'Highlight').toString();
-                      final cover = (h['cover_url'] ?? h['coverUrl'])?.toString();
+                      final title =
+                          (h['title'] ?? h['name'] ?? 'Highlight').toString();
+                      final cover =
+                          (h['cover_url'] ?? h['coverUrl'])?.toString();
                       final id = (h['id'] ?? h['_id'])?.toString() ?? '';
                       return ListTile(
                         leading: CircleAvatar(
@@ -907,12 +981,18 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                               : null,
                           backgroundColor: Colors.white24,
                           child: (cover == null || cover.isEmpty)
-                              ? Text(title.isNotEmpty ? title[0].toUpperCase() : 'H',
+                              ? Text(
+                                  title.isNotEmpty
+                                      ? title[0].toUpperCase()
+                                      : 'H',
                                   style: const TextStyle(color: Colors.white))
                               : null,
                         ),
-                        title: Text(title, style: const TextStyle(color: Colors.white)),
-                        onTap: id.isEmpty ? null : () => _addStoryToHighlight(id, highlight: h),
+                        title: Text(title,
+                            style: const TextStyle(color: Colors.white)),
+                        onTap: id.isEmpty
+                            ? null
+                            : () => _addStoryToHighlight(id, highlight: h),
                       );
                     },
                   ),
@@ -959,7 +1039,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white70)),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(nameController.text.trim()),
@@ -991,7 +1072,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     if (storyId == null || storyId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to add highlight (story item not found)')),
+        const SnackBar(
+            content: Text('Unable to add highlight (story item not found)')),
       );
       return;
     }
@@ -1000,7 +1082,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       debugPrint(
         'Highlight create/add: userId=$currentUserId storyId=$storyId storyUser=${storyItem?.userId} title=$title cover=$coverUrl',
       );
-      final created = await HighlightsApi().create(title: title, coverUrl: coverUrl);
+      final created =
+          await HighlightsApi().create(title: title, coverUrl: coverUrl);
       highlightId = (created['id'] ?? created['_id'])?.toString() ?? '';
       if (highlightId.isNotEmpty) {
         debugPrint('Highlight created: id=$highlightId, adding items...');
@@ -1013,20 +1096,24 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       if (Navigator.of(context).canPop()) Navigator.of(context).pop();
     } catch (e) {
       if (e is ApiException) {
-        debugPrint('Highlight add error: ${e.statusCode} ${e.message} body=${e.body}');
+        debugPrint(
+            'Highlight add error: ${e.statusCode} ${e.message} body=${e.body}');
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            e is ApiException ? '${e.message} (HTTP ${e.statusCode})' : 'Failed to add highlight',
+            e is ApiException
+                ? '${e.message} (HTTP ${e.statusCode})'
+                : 'Failed to add highlight',
           ),
         ),
       );
     }
   }
 
-  Future<void> _addStoryToHighlight(String highlightId, {Map<String, dynamic>? highlight}) async {
+  Future<void> _addStoryToHighlight(String highlightId,
+      {Map<String, dynamic>? highlight}) async {
     final story = _stories.isNotEmpty ? _stories[_index] : null;
     final currentUserId = await CurrentUser.id;
     if (currentUserId != null &&
@@ -1044,7 +1131,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     if (storyId == null || storyId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to add highlight (story item not found)')),
+        const SnackBar(
+            content: Text('Unable to add highlight (story item not found)')),
       );
       return;
     }
@@ -1086,13 +1174,16 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       if (Navigator.of(context).canPop()) Navigator.of(context).pop();
     } catch (e) {
       if (e is ApiException) {
-        debugPrint('Highlight add error: ${e.statusCode} ${e.message} body=${e.body}');
+        debugPrint(
+            'Highlight add error: ${e.statusCode} ${e.message} body=${e.body}');
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            e is ApiException ? '${e.message} (HTTP ${e.statusCode})' : 'Failed to add highlight',
+            e is ApiException
+                ? '${e.message} (HTTP ${e.statusCode})'
+                : 'Failed to add highlight',
           ),
         ),
       );
@@ -1148,13 +1239,14 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     const sheetColor = Color(0xFF2A2D33);
     const accentBlue = Color(0xFF4F7DFF);
     final story = _stories.isNotEmpty ? _stories[_index] : null;
-    final nextStory = (_index + 1 < _stories.length) ? _stories[_index + 1] : null;
+    final nextStory =
+        (_index + 1 < _stories.length) ? _stories[_index + 1] : null;
     final previewUrl = story?.mediaUrl ?? '';
     final isPreviewVideo =
         story?.mediaType == StoryMediaType.video || _isVideoUrl(previewUrl);
     final nextPreviewUrl = nextStory?.mediaUrl ?? '';
-    final isNextPreviewVideo =
-        nextStory?.mediaType == StoryMediaType.video || _isVideoUrl(nextPreviewUrl);
+    final isNextPreviewVideo = nextStory?.mediaType == StoryMediaType.video ||
+        _isVideoUrl(nextPreviewUrl);
     final countText = viewers.isEmpty ? '0' : '${viewers.length}';
     const previewW = 64.0;
     const previewH = 92.0;
@@ -1224,7 +1316,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                                               previewUrl,
                                               fit: BoxFit.cover,
                                               errorBuilder: (_, __, ___) =>
-                                                  Container(color: Colors.black87),
+                                                  Container(
+                                                      color: Colors.black87),
                                             )
                                           : Container(color: Colors.black87)),
                                 ),
@@ -1252,17 +1345,23 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                                 ...((story?.texts ?? const [])
                                     .map((t) => Map<String, dynamic>.from(t))
                                     .map((t) {
-                                  final left = ((t['x'] as num?) ?? 0) * previewW;
-                                  final top = ((t['y'] as num?) ?? 0) * previewH;
-                                  final clampedLeft = left.clamp(2.0, previewW - 2);
-                                  final clampedTop = top.clamp(2.0, previewH - 2);
-                                  final content = (t['content'] as String?) ?? '';
+                                  final left =
+                                      ((t['x'] as num?) ?? 0) * previewW;
+                                  final top =
+                                      ((t['y'] as num?) ?? 0) * previewH;
+                                  final clampedLeft =
+                                      left.clamp(2.0, previewW - 2);
+                                  final clampedTop =
+                                      top.clamp(2.0, previewH - 2);
+                                  final content =
+                                      (t['content'] as String?) ?? '';
                                   final baseSize =
-                                      (t['fontSize'] as num?)?.toDouble() ?? 20.0;
-                                  final fontSize =
-                                      (baseSize * previewScale).clamp(6.0, 14.0);
-                                  final color =
-                                      _parseStoryColor(t['color']) ?? Colors.white;
+                                      (t['fontSize'] as num?)?.toDouble() ??
+                                          20.0;
+                                  final fontSize = (baseSize * previewScale)
+                                      .clamp(6.0, 14.0);
+                                  final color = _parseStoryColor(t['color']) ??
+                                      Colors.white;
                                   return Positioned(
                                     left: clampedLeft,
                                     top: clampedTop,
@@ -1286,15 +1385,20 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                                 ...((story?.mentions ?? const [])
                                     .map((m) => Map<String, dynamic>.from(m))
                                     .map((m) {
-                                  final left = ((m['x'] as num?) ?? 0) * previewW;
-                                  final top = ((m['y'] as num?) ?? 0) * previewH;
-                                  final clampedLeft = left.clamp(2.0, previewW - 2);
-                                  final clampedTop = top.clamp(2.0, previewH - 2);
-                                  final username = (m['username'] as String?) ?? '';
-                                  final scale =
-                                      _mentionScaleFor(username, story?.texts ?? const []);
-                                  final fontSize =
-                                      (10.0 * previewScale * scale).clamp(6.0, 12.0);
+                                  final left =
+                                      ((m['x'] as num?) ?? 0) * previewW;
+                                  final top =
+                                      ((m['y'] as num?) ?? 0) * previewH;
+                                  final clampedLeft =
+                                      left.clamp(2.0, previewW - 2);
+                                  final clampedTop =
+                                      top.clamp(2.0, previewH - 2);
+                                  final username =
+                                      (m['username'] as String?) ?? '';
+                                  final scale = _mentionScaleFor(
+                                      username, story?.texts ?? const []);
+                                  final fontSize = (10.0 * previewScale * scale)
+                                      .clamp(6.0, 12.0);
                                   return Positioned(
                                     left: clampedLeft,
                                     top: (clampedTop - (10 * previewScale) - 2)
@@ -1322,7 +1426,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         ),
                         const SizedBox(width: 10),
                         GestureDetector(
-                          onTap: nextStory == null ? null : () => Navigator.of(context).pop(_index + 1),
+                          onTap: nextStory == null
+                              ? null
+                              : () => Navigator.of(context).pop(_index + 1),
                           child: Container(
                             width: 64,
                             height: 92,
@@ -1352,7 +1458,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                                                 nextPreviewUrl,
                                                 fit: BoxFit.cover,
                                                 errorBuilder: (_, __, ___) =>
-                                                    Container(color: Colors.black87),
+                                                    Container(
+                                                        color: Colors.black87),
                                               )
                                             : Container(color: Colors.black87)),
                                   ),
@@ -1370,13 +1477,18 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Row(
                     children: [
-                      const Icon(Icons.bar_chart, color: Colors.white70, size: 18),
+                      const Icon(Icons.bar_chart,
+                          color: Colors.white70, size: 18),
                       const SizedBox(width: 14),
-                      const Icon(Icons.people_alt_outlined, color: accentBlue, size: 18),
+                      const Icon(Icons.people_alt_outlined,
+                          color: accentBlue, size: 18),
                       const SizedBox(width: 6),
                       Text(
                         countText,
-                        style: const TextStyle(color: accentBlue, fontSize: 13, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                            color: accentBlue,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
                       ),
                       const Spacer(),
                       GestureDetector(
@@ -1386,7 +1498,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                             _deleteCurrentStory();
                           });
                         },
-                        child: const Icon(Icons.delete_outline, color: Colors.white70, size: 18),
+                        child: const Icon(Icons.delete_outline,
+                            color: Colors.white70, size: 18),
                       ),
                     ],
                   ),
@@ -1400,7 +1513,10 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       'Who viewed this story',
-                      style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -1414,35 +1530,48 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                       : ListView.separated(
                           controller: scroll,
                           itemCount: viewers.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1, color: Colors.white10),
                           itemBuilder: (_, i) {
                             final v = viewers[i];
-                            final name = (v['username'] ?? v['full_name'] ?? 'Viewer').toString();
+                            final name =
+                                (v['username'] ?? v['full_name'] ?? 'Viewer')
+                                    .toString();
                             final avatar = v['avatar_url'] as String?;
                             return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
                               child: SizedBox(
                                 height: 56,
                                 child: ListTile(
                                   dense: true,
                                   leading: CircleAvatar(
                                     backgroundImage:
-                                        avatar != null && avatar.isNotEmpty ? NetworkImage(avatar) : null,
+                                        avatar != null && avatar.isNotEmpty
+                                            ? NetworkImage(avatar)
+                                            : null,
                                     backgroundColor: Colors.white24,
                                     child: (avatar == null || avatar.isEmpty)
                                         ? Text(
-                                            name.isNotEmpty ? name[0].toUpperCase() : 'V',
-                                            style: const TextStyle(color: Colors.white),
+                                            name.isNotEmpty
+                                                ? name[0].toUpperCase()
+                                                : 'V',
+                                            style: const TextStyle(
+                                                color: Colors.white),
                                           )
                                         : null,
                                   ),
-                                  title: Text(name, style: const TextStyle(color: Colors.white)),
+                                  title: Text(name,
+                                      style:
+                                          const TextStyle(color: Colors.white)),
                                   trailing: const Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.more_horiz, color: Colors.white70, size: 18),
+                                      Icon(Icons.more_horiz,
+                                          color: Colors.white70, size: 18),
                                       SizedBox(width: 12),
-                                      Icon(LucideIcons.send, color: Colors.white70, size: 18),
+                                      Icon(LucideIcons.send,
+                                          color: Colors.white70, size: 18),
                                     ],
                                   ),
                                 ),
@@ -1508,7 +1637,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
               child: ListView(
                 controller: scroll,
                 children: [
-                  const Text('Insights', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text('Insights',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   Text('Total views: $totalViews'),
                   const SizedBox(height: 4),
@@ -1520,20 +1651,29 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                     const Text('No viewers yet')
                   else
                     ...viewers.take(20).map((v) {
-                      final name = (v['username'] ?? v['full_name'] ?? 'Viewer').toString();
+                      final name = (v['username'] ?? v['full_name'] ?? 'Viewer')
+                          .toString();
                       final avatar = v['avatar_url'] as String?;
-                      final viewedAtRaw = v['viewedAt'] as String? ?? v['createdAt'] as String?;
+                      final viewedAtRaw =
+                          v['viewedAt'] as String? ?? v['createdAt'] as String?;
                       DateTime? viewedAt;
                       if (viewedAtRaw != null && viewedAtRaw.isNotEmpty) {
                         viewedAt = DateTime.tryParse(viewedAtRaw);
                       }
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundImage: avatar != null && avatar.isNotEmpty ? NetworkImage(avatar) : null,
-                          child: (avatar == null || avatar.isEmpty) ? Text(name.isNotEmpty ? name[0].toUpperCase() : 'V') : null,
+                          backgroundImage: avatar != null && avatar.isNotEmpty
+                              ? NetworkImage(avatar)
+                              : null,
+                          child: (avatar == null || avatar.isEmpty)
+                              ? Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : 'V')
+                              : null,
                         ),
                         title: Text(name),
-                        subtitle: viewedAt != null ? Text(viewedAt.toLocal().toString()) : null,
+                        subtitle: viewedAt != null
+                            ? Text(viewedAt.toLocal().toString())
+                            : null,
                       );
                     }),
                 ],
@@ -1615,7 +1755,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         const SnackBar(content: Text('Uploading...')),
       );
       final bytes = await xfile.readAsBytes();
-      final upload = await UploadApi().uploadFileBytes(bytes: bytes.toList(), filename: 'story.jpg');
+      final upload = await UploadApi()
+          .uploadFileBytes(bytes: bytes.toList(), filename: 'story.jpg');
       final url = (upload['fileUrl'] as String?) ??
           (upload['url'] as String?) ??
           (upload['file_url'] as String?) ??
@@ -1623,7 +1764,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
           '';
       if (!mounted) return;
       if (url.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Upload failed')));
         return;
       }
       final payload = {
@@ -1635,7 +1777,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       };
       await StoriesApi().createFlexible([payload]);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Posted to your story')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Posted to your story')));
     } catch (e) {
       final msg = e is ApiException ? e.message : 'Failed to add story';
       if (!mounted) return;
@@ -1704,7 +1847,15 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
           }
         }
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Story deleted')));
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Story deleted\u2063${DateTime.now().microsecondsSinceEpoch}',
+            semanticsLabel: 'Story deleted',
+          ),
+        ),
+      );
       if (_stories.isEmpty) {
         Navigator.pop(context);
       } else {
@@ -1713,6 +1864,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       }
     } catch (e) {
       final msg = e is ApiException ? e.message : 'Failed to delete story';
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       _start();
     }
@@ -1743,7 +1895,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
           _dragStartX = details.globalPosition.dx;
         },
         onHorizontalDragEnd: (details) {
-          if (details.primaryVelocity != null && details.primaryVelocity! > 0 && _dragStartX < 24) {
+          if (details.primaryVelocity != null &&
+              details.primaryVelocity! > 0 &&
+              _dragStartX < 24) {
             _quickAddStory();
             return;
           }
@@ -1783,7 +1937,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                           ? Image.network(
                               mediaUrl,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(color: Colors.black),
+                              errorBuilder: (_, __, ___) =>
+                                  Container(color: Colors.black),
                             )
                           : Container(color: Colors.black))
                   : (mediaUrl.isNotEmpty
@@ -1791,7 +1946,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                           mediaUrl,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => const Center(
-                            child: Icon(LucideIcons.image, size: 80, color: Colors.white54),
+                            child: Icon(LucideIcons.image,
+                                size: 80, color: Colors.white54),
                           ),
                         )
                       : Container(color: Colors.black)),
@@ -1888,12 +2044,18 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                     children: [
                       CircleAvatar(
                         radius: 14,
-                        backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                        backgroundImage:
+                            avatarUrl != null && avatarUrl.isNotEmpty
+                                ? NetworkImage(avatarUrl)
+                                : null,
                         backgroundColor: Colors.white10,
                         child: (avatarUrl == null || avatarUrl.isEmpty)
                             ? Text(
-                                widget.userName.isNotEmpty ? widget.userName[0].toUpperCase() : 'U',
-                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                                widget.userName.isNotEmpty
+                                    ? widget.userName[0].toUpperCase()
+                                    : 'U',
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12),
                               )
                             : null,
                       ),
@@ -1904,11 +2066,14 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                           children: [
                             const Text(
                               'Your story',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600),
                             ),
                             Text(
                               '$timeLabel · ${widget.userName}',
-                              style: const TextStyle(color: Colors.white70, fontSize: 11),
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 11),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ],
@@ -1939,7 +2104,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                     const SizedBox(height: 12),
                     if (_commentingEnabled) ...[
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(22),
@@ -1947,7 +2113,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         child: Row(
                           children: [
                             Text('Say something...',
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
+                                style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.6),
+                                    fontSize: 13)),
                             const Spacer(),
                           ],
                         ),
@@ -1971,11 +2139,15 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                               onTap: _openMentionPicker,
                             ),
                             const SizedBox(width: 12),
-                            const _ActionItem(icon: LucideIcons.send, label: 'Send'),
+                            const _ActionItem(
+                                icon: LucideIcons.send, label: 'Send'),
                           ],
                         ),
                         const SizedBox(width: 12),
-                        _ActionItem(icon: Icons.more_horiz, label: 'More', onTap: _openMoreMenu),
+                        _ActionItem(
+                            icon: Icons.more_horiz,
+                            label: 'More',
+                            onTap: _openMoreMenu),
                       ],
                     ),
                   ],
@@ -2004,7 +2176,8 @@ class _ActionItem extends StatelessWidget {
         children: [
           Icon(icon, color: Colors.white, size: 18),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
+          Text(label,
+              style: const TextStyle(color: Colors.white, fontSize: 11)),
         ],
       ),
     );

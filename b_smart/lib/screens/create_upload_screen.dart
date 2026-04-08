@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:photo_manager/photo_manager.dart';
 import '../services/create_service.dart';
 import 'create_edit_preview_screen.dart';
-import 'create_post_screen.dart';
 import 'story_camera_screen.dart';
 import '../models/media_model.dart';
 import 'advertiser_create_ad_screen.dart';
@@ -174,7 +173,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       }
       return;
     }
- 
+
     if (mounted) {
       setState(() {
         _galleryPermissionDenied = false;
@@ -186,7 +185,9 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
       type: requestType,
       filterOption: FilterOptionGroup(
-        orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+        orders: [
+          const OrderOption(type: OrderOptionType.createDate, asc: false)
+        ],
       ),
     );
     if (paths.isEmpty) {
@@ -226,13 +227,17 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       final imagePaths = await PhotoManager.getAssetPathList(
         type: RequestType.image,
         filterOption: FilterOptionGroup(
-          orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+          orders: [
+            const OrderOption(type: OrderOptionType.createDate, asc: false)
+          ],
         ),
       );
       final videoPaths = await PhotoManager.getAssetPathList(
         type: RequestType.video,
         filterOption: FilterOptionGroup(
-          orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+          orders: [
+            const OrderOption(type: OrderOptionType.createDate, asc: false)
+          ],
         ),
       );
       final AssetPathEntity imageRecent = imagePaths.firstWhere(
@@ -243,8 +248,10 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         (p) => p.isAll,
         orElse: () => videoPaths.isNotEmpty ? videoPaths.first : recent,
       );
-      final images = await imageRecent.getAssetListPaged(page: 0, size: recentSize);
-      final videos = await videoRecent.getAssetListPaged(page: 0, size: recentSize);
+      final images =
+          await imageRecent.getAssetListPaged(page: 0, size: recentSize);
+      final videos =
+          await videoRecent.getAssetListPaged(page: 0, size: recentSize);
       final byId = <String, AssetEntity>{};
       for (final a in images) {
         byId[a.id] = a;
@@ -258,7 +265,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
 
       // Ensure a minimum number of videos are visible in the grid.
       const minVideoCount = 6;
-      int videoCount = normalizedRecent.where((a) => a.type == AssetType.video).length;
+      int videoCount =
+          normalizedRecent.where((a) => a.type == AssetType.video).length;
       if (videoCount < minVideoCount) {
         for (final v in videos) {
           if (byId.containsKey(v.id)) continue;
@@ -270,7 +278,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
 
       // Trim to recentSize but preserve videos when possible.
       while (normalizedRecent.length > recentSize) {
-        final idx = normalizedRecent.lastIndexWhere((a) => a.type != AssetType.video);
+        final idx =
+            normalizedRecent.lastIndexWhere((a) => a.type != AssetType.video);
         if (idx == -1) {
           normalizedRecent.removeLast();
         } else {
@@ -296,7 +305,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   void _applySource(_GallerySource newSource) {
     List<AssetEntity> visible;
     final List<AssetEntity> baseRecent = List<AssetEntity>.from(_recentAssets);
-    final List<AssetEntity> baseAll = List<AssetEntity>.from(_allAlbumAssets.isEmpty ? _recentAssets : _allAlbumAssets);
+    final List<AssetEntity> baseAll = List<AssetEntity>.from(
+        _allAlbumAssets.isEmpty ? _recentAssets : _allAlbumAssets);
     switch (newSource) {
       case _GallerySource.recents:
         visible = baseRecent;
@@ -435,7 +445,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         : (_selectedIds.isNotEmpty
             ? _assets.where((a) => _selectedIds.contains(a.id)).toList()
             : <AssetEntity>[]);
-    final primaryAsset = _currentAsset ?? (_assets.isNotEmpty ? _assets.first : null);
+    final primaryAsset =
+        _currentAsset ?? (_assets.isNotEmpty ? _assets.first : null);
     if (selectedAssets.isEmpty && primaryAsset != null) {
       selectedAssets.add(primaryAsset);
     }
@@ -520,8 +531,9 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     }
   }
 
-  bool get _hasSelection =>
-      _mode == UploadMode.reel ? _selectedIds.isNotEmpty : (_currentAsset != null || _selectedIds.isNotEmpty);
+  bool get _hasSelection => _mode == UploadMode.reel
+      ? _selectedIds.isNotEmpty
+      : (_currentAsset != null || _selectedIds.isNotEmpty);
 
   AssetEntity? _firstSelectedAsset() {
     if (_assets.isEmpty && _currentAsset == null) return null;
@@ -589,12 +601,14 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
               elevation: 0,
               leading: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+                onPressed: () =>
+                    Navigator.of(context).popUntil((route) => route.isFirst),
               ),
               centerTitle: true,
               title: Text(
                 _titleForMode(),
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600),
               ),
               actions: [
                 if (_mode != UploadMode.reel)
@@ -603,7 +617,9 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                     child: Text(
                       'Next',
                       style: TextStyle(
-                        color: _hasSelection ? const Color(0xFF0095F6) : Colors.white30,
+                        color: _hasSelection
+                            ? const Color(0xFF0095F6)
+                            : Colors.white30,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -613,92 +629,104 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: InstagramTabScaffold(
-              initialIndex: _indexForMode(_mode),
-              onTabChanged: (index) => _onModeTap(_modeForIndex(index)),
-              bottomPaddingForIndex: (index) => 20,
-              pillBackgroundColorForIndex: (index) =>
-                  (index == 1 || index == 3) ? Colors.transparent : Colors.black.withValues(alpha: 0.6),
-              pillVisibleForIndex: (index) {
-                if (_mode == UploadMode.reel && _hasSelection) return false;
-                return true;
-              },
-              pages: List.generate(
-                4,
-                (index) {
-                  if (index == 1) {
-                    return const StoryCameraScreen(
-                      initialMode: UploadMode.story,
-                      lockMode: true,
-                      showModeTabs: false,
-                    );
-                  }
-                  if (index == 3) {
-                    return const StoryCameraScreen(
-                      initialMode: UploadMode.live,
-                      lockMode: true,
-                      showModeTabs: false,
-                    );
-                  }
-                  return _UploadPage(
-                    isReelMode: _mode == UploadMode.reel,
-                    galleryPermissionDenied: _galleryPermissionDenied,
-                    assets: _assets,
-                    currentAsset: _currentAsset,
-                    selectedIds: _selectedIds,
-                    selectedOrder: _selectedOrder,
-                    multiSelect: _multiSelect,
-                    hasSelection: _hasSelection,
-                    galleryPermissionLimited: _galleryPermissionLimited,
-                    sourceLabel: _sourceLabel,
-                    sourceBarKey: index == modeIndex ? _sourceBarKey : GlobalKey(),
-                    onSourceBarTap: () {
-                      final box = _sourceBarKey.currentContext?.findRenderObject();
-                      if (box is RenderBox) {
-                        final pos = box.localToGlobal(Offset.zero);
-                        _sourceMenuPosition = Offset(pos.dx, pos.dy + box.size.height + 6);
-                      }
-                      setState(() {
-                        _showSourceMenu = !_showSourceMenu;
-                      });
-                    },
-                    onMultiSelectToggle: () => setState(() {
-                      _multiSelect = !_multiSelect;
-                      if (!_multiSelect) {
-                        _selectedIds
-                          ..clear();
-                        _selectedOrder.clear();
-                        if (_currentAsset != null) {
-                          _selectedIds.add(_currentAsset!.id);
-                          _selectedOrder.add(_currentAsset!.id);
-                        }
-                      }
-                      _saveCache();
-                    }),
-                    onLoadGalleryMedia: _loadGalleryMedia,
-                    onAssetTap: _onAssetTap,
-                    onCameraTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const StoryCameraScreen(
-                          initialMode: UploadMode.post,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: StoryCameraScreen.storyEditingActive,
+              builder: (context, isStoryEditing, _) {
+                return InstagramTabScaffold(
+                  initialIndex: _indexForMode(_mode),
+                  onTabChanged: (index) => _onModeTap(_modeForIndex(index)),
+                  bottomPaddingForIndex: (index) => 20,
+                  pillBackgroundColorForIndex: (index) =>
+                      (index == 1 || index == 3)
+                          ? Colors.transparent
+                          : Colors.black.withValues(alpha: 0.6),
+                  pillVisibleForIndex: (index) {
+                    if (isStoryEditing) return false;
+                    if (_mode == UploadMode.reel && _hasSelection) return false;
+                    return true;
+                  },
+                  pages: List.generate(
+                    4,
+                    (index) {
+                      if (index == 1) {
+                        return const StoryCameraScreen(
+                          initialMode: UploadMode.story,
                           lockMode: true,
+                          showModeTabs: false,
+                        );
+                      }
+                      if (index == 3) {
+                        return const StoryCameraScreen(
+                          initialMode: UploadMode.live,
+                          lockMode: true,
+                          showModeTabs: false,
+                        );
+                      }
+                      return _UploadPage(
+                        isReelMode: _mode == UploadMode.reel,
+                        galleryPermissionDenied: _galleryPermissionDenied,
+                        assets: _assets,
+                        currentAsset: _currentAsset,
+                        selectedIds: _selectedIds,
+                        selectedOrder: _selectedOrder,
+                        multiSelect: _multiSelect,
+                        hasSelection: _hasSelection,
+                        galleryPermissionLimited: _galleryPermissionLimited,
+                        sourceLabel: _sourceLabel,
+                        sourceBarKey:
+                            index == modeIndex ? _sourceBarKey : GlobalKey(),
+                        onSourceBarTap: () {
+                          final box =
+                              _sourceBarKey.currentContext?.findRenderObject();
+                          if (box is RenderBox) {
+                            final pos = box.localToGlobal(Offset.zero);
+                            _sourceMenuPosition = Offset(
+                              pos.dx,
+                              pos.dy + box.size.height + 6,
+                            );
+                          }
+                          setState(() {
+                            _showSourceMenu = !_showSourceMenu;
+                          });
+                        },
+                        onMultiSelectToggle: () => setState(() {
+                          _multiSelect = !_multiSelect;
+                          if (!_multiSelect) {
+                            _selectedIds..clear();
+                            _selectedOrder.clear();
+                            if (_currentAsset != null) {
+                              _selectedIds.add(_currentAsset!.id);
+                              _selectedOrder.add(_currentAsset!.id);
+                            }
+                          }
+                          _saveCache();
+                        }),
+                        onLoadGalleryMedia: _loadGalleryMedia,
+                        onAssetTap: _onAssetTap,
+                        onCameraTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const StoryCameraScreen(
+                              initialMode: UploadMode.post,
+                              lockMode: true,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    onNext: _hasSelection ? _handleNext : null,
-                    onClearSelection: () {
-                      setState(() {
-                        _selectedIds.clear();
-                        _selectedOrder.clear();
-                        _currentAsset = null;
-                      });
-                      _saveCache();
+                        onNext: _hasSelection ? _handleNext : null,
+                        onClearSelection: () {
+                          setState(() {
+                            _selectedIds.clear();
+                            _selectedOrder.clear();
+                            _currentAsset = null;
+                          });
+                          _saveCache();
+                        },
+                        firstSelectedAsset: _firstSelectedAsset(),
+                      );
                     },
-                    firstSelectedAsset: _firstSelectedAsset(),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           ),
           if (_showSourceMenu)
@@ -722,7 +750,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.18)),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
@@ -871,7 +900,8 @@ class _UploadPage extends StatelessWidget {
                           color: Colors.black,
                           child: currentAsset == null
                               ? Center(
-                                  child: Icon(Icons.image, size: 64, color: Colors.grey[700]),
+                                  child: Icon(Icons.image,
+                                      size: 64, color: Colors.grey[700]),
                                 )
                               : FutureBuilder<Uint8List?>(
                                   future: () {
@@ -891,11 +921,16 @@ class _UploadPage extends StatelessWidget {
                                       thumbW = maxSide;
                                       thumbH = maxSide;
                                     }
-                                    return asset.thumbnailDataWithSize(ThumbnailSize(thumbW, thumbH));
+                                    return asset.thumbnailDataWithSize(
+                                        ThumbnailSize(thumbW, thumbH));
                                   }(),
                                   builder: (context, snap) {
-                                    if (snap.connectionState != ConnectionState.done || snap.data == null) {
-                                      return const Center(child: CircularProgressIndicator(color: Colors.white));
+                                    if (snap.connectionState !=
+                                            ConnectionState.done ||
+                                        snap.data == null) {
+                                      return const Center(
+                                          child: CircularProgressIndicator(
+                                              color: Colors.white));
                                     }
                                     return Image.memory(
                                       snap.data!,
@@ -912,7 +947,8 @@ class _UploadPage extends StatelessWidget {
                       height: 56,
                       child: Container(
                         color: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
                         child: Row(
                           children: [
                             GestureDetector(
@@ -923,10 +959,13 @@ class _UploadPage extends StatelessWidget {
                                 children: [
                                   Text(
                                     sourceLabel,
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600),
                                   ),
                                   const SizedBox(width: 4),
-                                  const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                                  const Icon(Icons.keyboard_arrow_down,
+                                      color: Colors.white),
                                 ],
                               ),
                             ),
@@ -934,14 +973,18 @@ class _UploadPage extends StatelessWidget {
                             TextButton(
                               onPressed: onMultiSelectToggle,
                               style: TextButton.styleFrom(
-                                backgroundColor: multiSelect ? Colors.white : Colors.white10,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                backgroundColor:
+                                    multiSelect ? Colors.white : Colors.white10,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20)),
                               ),
                               child: Text(
                                 multiSelect ? 'Cancel' : 'Select',
                                 style: TextStyle(
-                                  color: multiSelect ? Colors.black : Colors.white,
+                                  color:
+                                      multiSelect ? Colors.black : Colors.white,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -1011,25 +1054,29 @@ class _UploadPage extends StatelessWidget {
                         padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
                         child: Row(
                           children: [
-                            const Icon(Icons.info_outline, color: Colors.white70, size: 18),
+                            const Icon(Icons.info_outline,
+                                color: Colors.white70, size: 18),
                             const SizedBox(width: 8),
                             const Expanded(
                               child: Text(
                                 'Limited photo access. Videos may be hidden.',
-                                style: TextStyle(color: Colors.white70, fontSize: 12),
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 12),
                               ),
                             ),
                             TextButton(
                               onPressed: () {
                                 if (Platform.isIOS) {
-                                  PhotoManager.presentLimited(type: RequestType.all);
+                                  PhotoManager.presentLimited(
+                                      type: RequestType.all);
                                 } else {
                                   PhotoManager.openSetting();
                                 }
                               },
                               child: Text(
                                 Platform.isIOS ? 'Manage' : 'Settings',
-                                style: const TextStyle(color: Color(0xFF0095F6)),
+                                style:
+                                    const TextStyle(color: Color(0xFF0095F6)),
                               ),
                             ),
                           ],
@@ -1043,7 +1090,8 @@ class _UploadPage extends StatelessWidget {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.image_search, size: 64, color: Colors.white30),
+                            Icon(Icons.image_search,
+                                size: 64, color: Colors.white30),
                             SizedBox(height: 12),
                             Text(
                               'No photos or videos',
@@ -1057,7 +1105,8 @@ class _UploadPage extends StatelessWidget {
                     SliverPadding(
                       padding: const EdgeInsets.all(1),
                       sliver: SliverGrid(
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 4,
                           crossAxisSpacing: 1,
                           mainAxisSpacing: 1,
@@ -1091,13 +1140,17 @@ class _UploadPage extends StatelessWidget {
                                 fit: StackFit.expand,
                                 children: [
                                   FutureBuilder<Uint8List?>(
-                                    future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
+                                    future: asset.thumbnailDataWithSize(
+                                        const ThumbnailSize(300, 300)),
                                     builder: (context, snap) {
-                                      if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                      if (snap.connectionState !=
+                                              ConnectionState.done ||
+                                          snap.data == null) {
                                         return Container(
                                           color: Colors.grey[850],
                                           child: const Center(
-                                            child: Icon(Icons.image, color: Colors.white38),
+                                            child: Icon(Icons.image,
+                                                color: Colors.white38),
                                           ),
                                         );
                                       }
@@ -1112,10 +1165,12 @@ class _UploadPage extends StatelessWidget {
                                       bottom: 4,
                                       right: 4,
                                       child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 4, vertical: 2),
                                         decoration: BoxDecoration(
                                           color: Colors.black54,
-                                          borderRadius: BorderRadius.circular(4),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
                                         ),
                                         child: Text(
                                           '${asset.duration}s',
@@ -1135,11 +1190,14 @@ class _UploadPage extends StatelessWidget {
                                         height: 20,
                                         decoration: BoxDecoration(
                                           color: isSelected
-                                              ? Colors.white.withValues(alpha: 0.9)
-                                              : Colors.black.withValues(alpha: 0.25),
+                                              ? Colors.white
+                                                  .withValues(alpha: 0.9)
+                                              : Colors.black
+                                                  .withValues(alpha: 0.25),
                                           shape: BoxShape.circle,
                                           border: Border.all(
-                                            color: Colors.white.withValues(alpha: 0.8),
+                                            color: Colors.white
+                                                .withValues(alpha: 0.8),
                                             width: 1,
                                           ),
                                         ),
@@ -1218,13 +1276,17 @@ class _UploadPage extends StatelessWidget {
                                           return Container(color: Colors.black);
                                         }
                                         return FutureBuilder<Uint8List?>(
-                                          future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
+                                          future: asset.thumbnailDataWithSize(
+                                              const ThumbnailSize(300, 300)),
                                           builder: (context, snap) {
-                                            if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                            if (snap.connectionState !=
+                                                    ConnectionState.done ||
+                                                snap.data == null) {
                                               return Container(
                                                 color: Colors.grey[850],
                                                 child: const Center(
-                                                  child: Icon(Icons.image, color: Colors.white38),
+                                                  child: Icon(Icons.image,
+                                                      color: Colors.white38),
                                                 ),
                                               );
                                             }
@@ -1246,12 +1308,15 @@ class _UploadPage extends StatelessWidget {
                                         width: 18,
                                         height: 18,
                                         decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.7),
+                                          color: Colors.black
+                                              .withValues(alpha: 0.7),
                                           shape: BoxShape.circle,
-                                          border: Border.all(color: Colors.white24, width: 1),
+                                          border: Border.all(
+                                              color: Colors.white24, width: 1),
                                         ),
                                         child: const Center(
-                                          child: Icon(Icons.close, size: 12, color: Colors.white),
+                                          child: Icon(Icons.close,
+                                              size: 12, color: Colors.white),
                                         ),
                                       ),
                                     ),
@@ -1268,8 +1333,10 @@ class _UploadPage extends StatelessWidget {
                                 foregroundColor: Colors.white,
                                 disabledBackgroundColor: Colors.white24,
                                 disabledForegroundColor: Colors.white60,
-                                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 22, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(24)),
                               ),
                               child: const Text('Next →'),
                             ),
@@ -1303,7 +1370,8 @@ class _FixedSliverHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return child;
   }
 
