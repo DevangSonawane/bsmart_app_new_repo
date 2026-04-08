@@ -18,6 +18,7 @@ import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
+import 'ad_company_detail_screen.dart';
 
 String? _adProfileId(Ad ad) {
   final userId = ad.userId?.trim();
@@ -1435,6 +1436,7 @@ class AdVideoItem extends StatefulWidget {
 
 class _AdVideoItemState extends State<AdVideoItem>
     with SingleTickerProviderStateMixin {
+  static const Duration _ctaRevealDelay = Duration(seconds: 5);
   VideoPlayerController? _controller;
   late final AnimationController _watchProgressController =
       AnimationController(vsync: this);
@@ -1460,6 +1462,10 @@ class _AdVideoItemState extends State<AdVideoItem>
   bool _viewMarked = false;
   Timer? _likeRewardTimer;
   _LikeRewardPopupData? _likeRewardPopup;
+  Timer? _ctaTimer;
+  DateTime? _ctaCountdownStartedAt;
+  Duration _ctaCountdownAccumulated = Duration.zero;
+  bool _ctaVisible = false;
 
   // Compatibility accessors for hot-reload safety (older kernels referenced these).
   Timer? get _watchTimer => _watchGateTimer;
@@ -1513,6 +1519,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     unawaited(_loadFollowState());
     _initializeVideo();
     _startOrStopProgress();
+    _startOrStopCtaCountdown();
   }
 
   @override
@@ -1534,6 +1541,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       _isInitialized = false;
       _userPaused = false;
       _viewMarked = false;
+      _resetCtaCountdown();
       _watchProgressController.value = 0;
       _watchProgressRunning = false;
       _watchProgressController.stop(canceled: true);
@@ -1556,6 +1564,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       }
       _startOrStopProgress();
     }
+    _startOrStopCtaCountdown();
   }
 
   @override
@@ -1565,6 +1574,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     _watchGateTimer?.cancel();
     _watchProgressController.dispose();
     _likeRewardTimer?.cancel();
+    _ctaTimer?.cancel();
     widget.viewPopupVisibleListenable
         .removeListener(_onViewPopupVisibilityChanged);
     super.dispose();
@@ -1686,6 +1696,12 @@ class _AdVideoItemState extends State<AdVideoItem>
             value.position >= duration - const Duration(milliseconds: 250));
     if (atEnd && !_loopRestartInFlight) {
       _loopRestartInFlight = true;
+      if (_ctaVisible) {
+        setState(() {
+          _ctaVisible = false;
+        });
+      }
+      _resetCtaCountdown();
       unawaited(() async {
         try {
           await controller.seekTo(Duration.zero);
@@ -1696,6 +1712,9 @@ class _AdVideoItemState extends State<AdVideoItem>
           // Ignore transient playback errors.
         } finally {
           _loopRestartInFlight = false;
+          if (mounted) {
+            _startOrStopCtaCountdown();
+          }
         }
       }());
       return;
@@ -1773,6 +1792,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     final allowAdvance =
         _isVideoAd ? _allowWatchProgressForVideo() : !_userPaused;
     _setWatchProgressRunning(allowAdvance);
+    _startOrStopCtaCountdown();
   }
 
   bool _allowWatchProgressForVideo() {
@@ -1820,12 +1840,249 @@ class _AdVideoItemState extends State<AdVideoItem>
         }
       });
       _updateWatchProgressRunning();
+      _startOrStopCtaCountdown();
       return;
     }
 
     if (!widget.isActive) return;
     setState(() => _userPaused = !_userPaused);
     _updateWatchProgressRunning();
+    _startOrStopCtaCountdown();
+  }
+
+  bool _shouldRunCtaCountdown() {
+    if (_ctaVisible) return false;
+    if (!widget.isActive) return false;
+    if (_userPaused) return false;
+    if (_isVideoAd) {
+      final value = _controller?.value;
+      if (value == null || !value.isInitialized) return false;
+      if (!value.isPlaying) return false;
+      if (value.isBuffering) return false;
+    }
+    return true;
+  }
+
+  void _resetCtaCountdown() {
+    _ctaTimer?.cancel();
+    _ctaTimer = null;
+    _ctaCountdownStartedAt = null;
+    _ctaCountdownAccumulated = Duration.zero;
+    _ctaVisible = false;
+  }
+
+  void _stopCtaCountdown({bool accumulate = true}) {
+    _ctaTimer?.cancel();
+    _ctaTimer = null;
+    final startedAt = _ctaCountdownStartedAt;
+    if (startedAt != null && accumulate) {
+      _ctaCountdownAccumulated += DateTime.now().difference(startedAt);
+      if (_ctaCountdownAccumulated > _ctaRevealDelay) {
+        _ctaCountdownAccumulated = _ctaRevealDelay;
+      }
+    }
+    _ctaCountdownStartedAt = null;
+  }
+
+  void _startOrStopCtaCountdown() {
+    if (_ctaVisible) {
+      _stopCtaCountdown(accumulate: false);
+      return;
+    }
+
+    if (!_shouldRunCtaCountdown()) {
+      _stopCtaCountdown(accumulate: true);
+      return;
+    }
+
+    if (_ctaTimer != null) return;
+    if (_ctaCountdownStartedAt != null) return;
+
+    final remaining = _ctaRevealDelay - _ctaCountdownAccumulated;
+    if (remaining <= Duration.zero) {
+      if (!mounted) return;
+      setState(() {
+        _ctaVisible = true;
+      });
+      _stopCtaCountdown(accumulate: false);
+      return;
+    }
+
+    _ctaCountdownStartedAt = DateTime.now();
+    _ctaTimer = Timer(remaining, () {
+      if (!mounted) return;
+      setState(() {
+        _ctaVisible = true;
+      });
+      _stopCtaCountdown(accumulate: false);
+    });
+  }
+
+  String _secondaryCtaLabel() {
+    final url = (widget.ad.websiteUrl ?? '').trim().toLowerCase();
+    if (url.isEmpty) return 'Company Details';
+    if (url.contains('play.google.com') || url.contains('apps.apple.com')) {
+      return 'Install';
+    }
+    if (url.contains('book') ||
+        url.contains('booking') ||
+        url.contains('reserve')) {
+      return 'Book';
+    }
+    return 'Company Details';
+  }
+
+  void _openSecondaryCta() {
+    final url = (widget.ad.websiteUrl ?? '').trim();
+    if (url.isEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AdCompanyDetailScreen(companyId: widget.ad.companyId),
+        ),
+      );
+      return;
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111827),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _secondaryCtaLabel(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  url,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: url));
+                          if (!ctx.mounted) return;
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Link copied')),
+                          );
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Copy Link'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => AdCompanyDetailScreen(
+                                companyId: widget.ad.companyId,
+                              ),
+                            ),
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Company Details'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCtaButtons() {
+    return Row(
+      children: [
+        Expanded(
+          child: FilledButton(
+            onPressed: () {
+              Navigator.of(context).pushNamed('/ad/${widget.ad.id}');
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.96),
+              foregroundColor: Colors.black,
+              elevation: 2,
+              shadowColor: Colors.black.withValues(alpha: 0.35),
+              side: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'View Ad Detail',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: FilledButton(
+            onPressed: _openSecondaryCta,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.96),
+              foregroundColor: Colors.black,
+              elevation: 2,
+              shadowColor: Colors.black.withValues(alpha: 0.35),
+              side: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text(
+              _secondaryCtaLabel(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _toggleLike() async {
@@ -2043,8 +2300,13 @@ class _AdVideoItemState extends State<AdVideoItem>
 
   @override
   Widget build(BuildContext context) {
+    const ctaBottomPadding = 10.0;
+    const ctaHeightEstimate = 48.0;
+    final ctaBottom = widget.bottomInset + ctaBottomPadding;
+    final ctaTop = ctaBottom + ctaHeightEstimate;
+
     final actionsBottom = 82.0 + widget.bottomInset;
-    final infoBottom = 6.0 + widget.bottomInset;
+    final infoBottom = _ctaVisible ? (ctaTop + 10) : (6.0 + widget.bottomInset);
     final media = Container(
       color: Colors.black,
       child: _isInitialized && _controller != null && _isVideoAd
@@ -2215,7 +2477,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                 ),
               ),
 
-            // 3. Right Side Actions
+            // 3. Right Side Actions (always visible)
             Positioned(
               right: 8,
               bottom: actionsBottom,
@@ -2274,7 +2536,9 @@ class _AdVideoItemState extends State<AdVideoItem>
             ),
 
             // 5. Bottom Info Overlay
-            Positioned(
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeInOutCubic,
               left: 16,
               right: 80,
               bottom: infoBottom,
@@ -2391,74 +2655,94 @@ class _AdVideoItemState extends State<AdVideoItem>
                               ],
                             ),
                             const SizedBox(height: 4),
-                            Builder(builder: (context) {
-                              final caption =
-                                  (widget.ad.caption ?? widget.ad.description)
-                                          .trim()
-                                          .isEmpty
-                                      ? 'Sponsored'
-                                      : (widget.ad.caption ??
-                                          widget.ad.description);
-                              final words =
-                                  caption.trim().split(RegExp(r'\s+'));
-                              final isLong = words.length > 5;
-                              final preview =
-                                  isLong ? words.take(5).join(' ') : caption;
-                              return RichText(
-                                text: TextSpan(
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      height: 1.4),
-                                  children: [
-                                    TextSpan(
-                                        text: _captionExpanded || !isLong
-                                            ? caption
-                                            : preview),
-                                    if (!_captionExpanded && isLong)
-                                      WidgetSpan(
-                                        alignment: PlaceholderAlignment.middle,
-                                        child: GestureDetector(
-                                          onTap: () => setState(
-                                              () => _captionExpanded = true),
-                                          child: const Padding(
-                                            padding: EdgeInsets.only(left: 3),
-                                            child: Text(
-                                              '... more',
-                                              style: TextStyle(
-                                                color: Color(0xCCFFFFFF),
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
+                            Text(
+                              'Sponsored',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.65),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (!_ctaVisible)
+                              Builder(builder: (context) {
+                                final caption =
+                                    (widget.ad.caption ?? widget.ad.description)
+                                        .trim();
+                                if (caption.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+                                final words =
+                                    caption.trim().split(RegExp(r'\s+'));
+                                final isLong = words.length > 5;
+                                final preview =
+                                    isLong ? words.take(5).join(' ') : caption;
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: RichText(
+                                    text: TextSpan(
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        height: 1.4,
+                                      ),
+                                      children: [
+                                        TextSpan(
+                                          text: _captionExpanded || !isLong
+                                              ? caption
+                                              : preview,
+                                        ),
+                                        if (!_captionExpanded && isLong)
+                                          WidgetSpan(
+                                            alignment:
+                                                PlaceholderAlignment.middle,
+                                            child: GestureDetector(
+                                              onTap: () => setState(
+                                                () => _captionExpanded = true,
+                                              ),
+                                              child: const Padding(
+                                                padding:
+                                                    EdgeInsets.only(left: 3),
+                                                child: Text(
+                                                  '... more',
+                                                  style: TextStyle(
+                                                    color: Color(0xCCFFFFFF),
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      ),
-                                    if (_captionExpanded && isLong)
-                                      WidgetSpan(
-                                        alignment: PlaceholderAlignment.middle,
-                                        child: GestureDetector(
-                                          onTap: () => setState(
-                                              () => _captionExpanded = false),
-                                          child: const Padding(
-                                            padding: EdgeInsets.only(left: 4),
-                                            child: Text(
-                                              'less',
-                                              style: TextStyle(
-                                                color: Color(0xCCFFFFFF),
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
+                                        if (_captionExpanded && isLong)
+                                          WidgetSpan(
+                                            alignment:
+                                                PlaceholderAlignment.middle,
+                                            child: GestureDetector(
+                                              onTap: () => setState(
+                                                () => _captionExpanded = false,
+                                              ),
+                                              child: const Padding(
+                                                padding:
+                                                    EdgeInsets.only(left: 4),
+                                                child: Text(
+                                                  'less',
+                                                  style: TextStyle(
+                                                    color: Color(0xCCFFFFFF),
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            }),
-                            if ((widget.ad.category ?? '').isNotEmpty ||
-                                widget.ad.targetCategories.isNotEmpty) ...[
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }),
+                            if (!_ctaVisible &&
+                                ((widget.ad.category ?? '').isNotEmpty ||
+                                    widget.ad.targetCategories.isNotEmpty)) ...[
                               const SizedBox(height: 6),
                               Text(
                                 widget.ad.targetCategories.isNotEmpty
@@ -2470,7 +2754,8 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 ),
                               ),
                             ],
-                            if (widget.ad.targetLanguages.isNotEmpty) ...[
+                            if (!_ctaVisible &&
+                                widget.ad.targetLanguages.isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Wrap(
                                 spacing: 6,
@@ -2490,7 +2775,8 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 ],
                               ),
                             ],
-                            if (widget.ad.targetLocations.isNotEmpty) ...[
+                            if (!_ctaVisible &&
+                                widget.ad.targetLocations.isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Wrap(
                                 spacing: 6,
@@ -2516,6 +2802,22 @@ class _AdVideoItemState extends State<AdVideoItem>
                     ],
                   ),
                 ],
+              ),
+            ),
+
+            // CTA buttons (full-width, end-to-end)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: ctaBottom,
+              child: IgnorePointer(
+                ignoring: !_ctaVisible,
+                child: AnimatedOpacity(
+                  opacity: _ctaVisible ? 1 : 0,
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeInOutCubic,
+                  child: _buildCtaButtons(),
+                ),
               ),
             ),
             Positioned.fill(
