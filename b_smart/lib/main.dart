@@ -30,7 +30,8 @@ void main() async {
     // don't bring down the app during debug/testing of plugin failures.
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
-      Zone.current.handleUncaughtError(details.exception, details.stack ?? StackTrace.current);
+      Zone.current.handleUncaughtError(
+          details.exception, details.stack ?? StackTrace.current);
     };
     // Catch asynchronous engine/platform errors that don't go through FlutterError
     PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
@@ -53,17 +54,20 @@ void main() async {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, color: DesignTokens.instaPink, size: 48),
+                    const Icon(Icons.error_outline,
+                        color: DesignTokens.instaPink, size: 48),
                     const SizedBox(height: 12),
                     const Text(
                       'Something went wrong',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       details.exceptionAsString(),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.black54),
                     ),
                   ],
                 ),
@@ -106,15 +110,15 @@ void main() async {
     ]);
 
     try {
-      // Hide Android's bottom navigation bar (swipe up from bottom to reveal).
-      await applyAndroidImmersiveSticky();
+      // Keep Android system bars visible.
+      await applyAndroidEdgeToEdge();
     } catch (e) {
       debugPrint('System UI mode update failed: $e');
     }
 
     final store = createStore();
     setGlobalStore(store);
-    
+
     ThemeNotifier themeNotifier;
     try {
       themeNotifier = await ThemeNotifier.create();
@@ -131,7 +135,8 @@ void main() async {
       ),
     ));
   }, (error, stack) {
-    if (error.toString().contains('VideoError') || error.toString().contains('ExoPlaybackException')) {
+    if (error.toString().contains('VideoError') ||
+        error.toString().contains('ExoPlaybackException')) {
       // Ignore asynchronous native ExoPlayer source errors getting thrown out-of-band.
       // DynamicMediaWidget handles these gracefully on the Dart side.
       return;
@@ -176,8 +181,8 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Some Android devices re-show system bars when returning to the app.
-      unawaited(applyAndroidImmersiveSticky());
+      // Ensure Android system bars stay visible when returning to the app.
+      unawaited(applyAndroidEdgeToEdge());
     }
   }
 
@@ -227,8 +232,8 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
     // hand it to the wrong screen (or crash with a missing argument).
     final staticRoutes = Map<String, WidgetBuilder>.from(appRoutes)
       ..remove('/')
-      ..remove('/profile')   // ← CRITICAL: must not be in static map
-      ..remove('/post');     // ← CRITICAL: must not be in static map
+      ..remove('/profile') // ← CRITICAL: must not be in static map
+      ..remove('/post'); // ← CRITICAL: must not be in static map
 
     final isDark = ThemeScope.of(context).isDark;
 

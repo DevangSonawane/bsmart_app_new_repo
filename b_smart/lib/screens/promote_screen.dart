@@ -21,14 +21,22 @@ class _PromoteScreenState extends State<PromoteScreen> {
   bool _loading = true;
   List<Map<String, dynamic>> _promotes = [];
   final Map<int, VideoPlayerController> _controllers = {};
-
-  /// No extra padding needed with the standard bottom nav.
-  static const double kBottomNavHeight = 0;
+  double _cachedBottomInset = 0;
 
   @override
   void initState() {
     super.initState();
     _loadPromotes();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final view = View.of(context);
+      final inset = view.padding.bottom / view.devicePixelRatio;
+      if (inset > 0 && inset != _cachedBottomInset) {
+        setState(() {
+          _cachedBottomInset = inset;
+        });
+      }
+    });
   }
 
   Future<void> _loadPromotes() async {
@@ -98,95 +106,147 @@ class _PromoteScreenState extends State<PromoteScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final view = View.of(context);
+    final viewPaddingBottom = view.padding.bottom / view.devicePixelRatio;
+    final mqViewPaddingBottom = mq.viewPadding.bottom;
+    final mqPaddingBottom = mq.padding.bottom;
+    double bottomSystemInset = viewPaddingBottom;
+    if (mqViewPaddingBottom > bottomSystemInset) {
+      bottomSystemInset = mqViewPaddingBottom;
+    }
+    if (mqPaddingBottom > bottomSystemInset) {
+      bottomSystemInset = mqPaddingBottom;
+    }
+    if (_cachedBottomInset > bottomSystemInset) {
+      bottomSystemInset = _cachedBottomInset;
+    }
     if (_loading) {
       return const Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: DesignTokens.instaPink)),
+        body: Center(
+            child: CircularProgressIndicator(color: DesignTokens.instaPink)),
       );
     }
     if (_promotes.isEmpty) {
       return Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: Text('No promoted content yet.', style: TextStyle(color: Colors.grey.shade400))),
+        body: Center(
+            child: Text('No promoted content yet.',
+                style: TextStyle(color: Colors.grey.shade400))),
       );
     }
     return Scaffold(
+      extendBody: true,
       backgroundColor: Colors.black,
-      body: PageView.builder(
-        controller: _pageController,
-        scrollDirection: Axis.vertical,
-        onPageChanged: _onPageChanged,
-        itemCount: _promotes.length,
-        itemBuilder: (context, index) {
-          final item = _promotes[index];
-          final products = (item['products'] as List<dynamic>?) ?? [];
-          final controller = _controllers[index];
-          return Stack(
-            children: [
-              // Video
-              Positioned.fill(
-                child: controller != null && controller.value.isInitialized
-                    ? FittedBox(
-                        fit: BoxFit.cover,
-                        child: SizedBox(
-                          width: controller.value.size.width,
-                          height: controller.value.size.height,
-                          child: VideoPlayer(controller),
+      body: ClipRect(
+        child: PageView.builder(
+          controller: _pageController,
+          scrollDirection: Axis.vertical,
+          onPageChanged: _onPageChanged,
+          itemCount: _promotes.length,
+          itemBuilder: (context, index) {
+            final item = _promotes[index];
+            final products = (item['products'] as List<dynamic>?) ?? [];
+            final controller = _controllers[index];
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                // 0. Solid black for nav bar zone
+                if (bottomSystemInset > 0)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: bottomSystemInset,
+                    child: const ColoredBox(color: Colors.black),
+                  ),
+                // Video
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: bottomSystemInset,
+                  child: controller != null && controller.value.isInitialized
+                      ? FittedBox(
+                          fit: BoxFit.cover,
+                          child: SizedBox(
+                            width: controller.value.size.width,
+                            height: controller.value.size.height,
+                            child: VideoPlayer(controller),
+                          ),
+                        )
+                      : Container(
+                          color: Colors.black,
+                          child: const Center(
+                              child: CircularProgressIndicator(
+                                  color: Colors.white54))),
+                ),
+                // Gradient overlay
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: bottomSystemInset,
+                  child: IgnorePointer(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Colors.black54],
                         ),
-                      )
-                    : Container(color: Colors.black, child: const Center(child: CircularProgressIndicator(color: Colors.white54))),
-              ),
-              // Gradient overlay
-              Positioned.fill(
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.black54],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              // Top left: mute/unmute
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 8,
-                left: 12,
-                child: _ActionIcon(
-                  icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                  onTap: () {
-                    setState(() {
-                      _isMuted = !_isMuted;
-                      final c = _controllers[_currentIndex];
-                      if (c != null) c.setVolume(_isMuted ? 0.0 : 1.0);
-                    });
-                  },
+                // Top left: mute/unmute
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 12,
+                  child: _ActionIcon(
+                    icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                    onTap: () {
+                      setState(() {
+                        _isMuted = !_isMuted;
+                        final c = _controllers[_currentIndex];
+                        if (c != null) c.setVolume(_isMuted ? 0.0 : 1.0);
+                      });
+                    },
+                  ),
                 ),
-              ),
-              // Right side actions (aligned with Ads layout)
-              Positioned(
-                right: 8,
-                bottom: 160,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _RightAction(icon: LucideIcons.heart, label: (item['likes'] as String?) ?? '0', onTap: () {}),
-                    const SizedBox(height: 16),
-                    _RightAction(icon: LucideIcons.messageCircle, label: (item['comments'] as String?) ?? '0', onTap: () {}),
-                    const SizedBox(height: 16),
-                    _RightAction(icon: LucideIcons.send, label: null, onTap: () {}),
-                    const SizedBox(height: 16),
-                    _RightAction(icon: LucideIcons.ellipsis, label: null, onTap: () {}),
-                  ],
+                // Right side actions (aligned with Ads layout)
+                Positioned(
+                  right: 8,
+                  bottom: 160.0 + bottomSystemInset,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _RightAction(
+                          icon: LucideIcons.heart,
+                          label: (item['likes'] as String?) ?? '0',
+                          onTap: () {}),
+                      const SizedBox(height: 16),
+                      _RightAction(
+                          icon: LucideIcons.messageCircle,
+                          label: (item['comments'] as String?) ?? '0',
+                          onTap: () {}),
+                      const SizedBox(height: 16),
+                      _RightAction(
+                          icon: LucideIcons.send, label: null, onTap: () {}),
+                      const SizedBox(height: 16),
+                      _RightAction(
+                          icon: LucideIcons.ellipsis,
+                          label: null,
+                          onTap: () {}),
+                    ],
+                  ),
                 ),
-              ),
-              // Bottom: gradient strip + content (match React: px-4 pb-2 pt-10, gradient from-black/90 via-black/40 to-transparent)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: kBottomNavHeight + MediaQuery.of(context).padding.bottom),
+                // Bottom: gradient strip + content (match React: px-4 pb-2 pt-10, gradient from-black/90 via-black/40 to-transparent)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: bottomSystemInset,
                   child: Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
@@ -218,8 +278,12 @@ class _PromoteScreenState extends State<PromoteScreen> {
                               ),
                               alignment: Alignment.center,
                               child: Text(
-                                ((item['brandName'] as String?) ?? 'G')[0].toUpperCase(),
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
+                                ((item['brandName'] as String?) ?? 'G')[0]
+                                    .toUpperCase(),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 20),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -228,18 +292,44 @@ class _PromoteScreenState extends State<PromoteScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    (item['brandName'] as String?) ?? (item['username'] as String? ?? ''),
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                                    (item['brandName'] as String?) ??
+                                        (item['username'] as String? ?? ''),
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16),
                                   ),
                                   const SizedBox(height: 4),
                                   Row(
                                     children: [
-                                      Text('Sponsored', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
-                                      Text(' • ', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
-                                      const Icon(LucideIcons.star, color: Colors.amber, size: 14),
-                                      Text(' ${item['rating']} ', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
-                                      Text(' • ', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
-                                      Text('FREE', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12, fontWeight: FontWeight.w600)),
+                                      Text('Sponsored',
+                                          style: TextStyle(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.85),
+                                              fontSize: 12)),
+                                      Text(' • ',
+                                          style: TextStyle(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.85),
+                                              fontSize: 12)),
+                                      const Icon(LucideIcons.star,
+                                          color: Colors.amber, size: 14),
+                                      Text(' ${item['rating']} ',
+                                          style: TextStyle(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.85),
+                                              fontSize: 12)),
+                                      Text(' • ',
+                                          style: TextStyle(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.85),
+                                              fontSize: 12)),
+                                      Text('FREE',
+                                          style: TextStyle(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.85),
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600)),
                                     ],
                                   ),
                                 ],
@@ -251,7 +341,8 @@ class _PromoteScreenState extends State<PromoteScreen> {
                         // Description
                         Text(
                           (item['description'] as String?) ?? '',
-                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 14),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -261,14 +352,19 @@ class _PromoteScreenState extends State<PromoteScreen> {
                           width: double.infinity,
                           child: OutlinedButton.icon(
                             onPressed: () {
-_showFeaturedProductsSheet(context, products);
+                              _showFeaturedProductsSheet(context, products);
                             },
-                            icon: const Icon(LucideIcons.shoppingBag, color: Colors.white, size: 20),
-                            label: const Text('View Products', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                            icon: const Icon(LucideIcons.shoppingBag,
+                                color: Colors.white, size: 20),
+                            label: const Text('View Products',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600)),
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: Colors.white),
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
                             ),
                           ),
                         ),
@@ -278,15 +374,16 @@ _showFeaturedProductsSheet(context, products);
                     ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 
-  void _showFeaturedProductsSheet(BuildContext context, List<dynamic> products) {
+  void _showFeaturedProductsSheet(
+      BuildContext context, List<dynamic> products) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -306,7 +403,11 @@ _showFeaturedProductsSheet(context, products);
               children: [
                 const Padding(
                   padding: EdgeInsets.only(left: 16),
-                  child: Text('Featured Products', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  child: Text('Featured Products',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
                 ),
                 IconButton(
                   icon: const Icon(LucideIcons.x, color: Colors.white),
@@ -339,15 +440,20 @@ _showFeaturedProductsSheet(context, products);
                           child: CachedNetworkImage(
                             imageUrl: (prod['image'] as String?) ?? '',
                             fit: BoxFit.cover,
-                            placeholder: (_, __) => const Center(child: Icon(LucideIcons.image, color: Colors.white54)),
-                            errorWidget: (_, __, ___) => const Center(child: Icon(LucideIcons.imageOff, color: Colors.white54)),
+                            placeholder: (_, __) => const Center(
+                                child: Icon(LucideIcons.image,
+                                    color: Colors.white54)),
+                            errorWidget: (_, __, ___) => const Center(
+                                child: Icon(LucideIcons.imageOff,
+                                    color: Colors.white54)),
                           ),
                         ),
                         Padding(
                           padding: const EdgeInsets.all(6),
                           child: Text(
                             (prod['title'] as String?) ?? 'Product',
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -380,7 +486,11 @@ class _RightAction extends StatelessWidget {
       children: [
         _ActionIcon(icon: icon, onTap: onTap),
         if (label != null)
-          Text(label!, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+          Text(label!,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500)),
       ],
     );
   }

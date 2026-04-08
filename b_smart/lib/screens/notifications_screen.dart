@@ -187,36 +187,29 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? Colors.black : const Color(0xFFF7F7FA),
+      backgroundColor: isDark ? Colors.black : Colors.white,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
             setState(() => _page = 1);
             await _loadNotifications(force: true);
           },
-          child: SingleChildScrollView(
+          child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-                      child: _buildHeader(isDark),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildTabs(isDark),
-                    const SizedBox(height: 14),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                      child: _buildCard(isDark, totalPages),
-                    ),
-                  ],
-                ),
+            padding: EdgeInsets.zero,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+                child: _buildHeader(isDark),
               ),
-            ),
+              const SizedBox(height: 16),
+              _buildTabs(isDark),
+              const SizedBox(height: 14),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: _buildCard(isDark, totalPages),
+              ),
+            ],
           ),
         ),
       ),
@@ -238,13 +231,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           );
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        IconButton(
-          onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(LucideIcons.arrowLeft, size: 20),
-          tooltip: 'Back',
-        ),
         Container(
           width: 44,
           height: 44,
@@ -338,126 +326,140 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _buildTabs(bool isDark) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: _tabs().map((tab) {
-          final active = _activeTab == tab.key;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () => _handleTabChange(tab.key),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: active
-                      ? (isDark ? Colors.white : Colors.black)
-                      : (isDark ? const Color(0xFF1F2937) : Colors.white),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _tabs().map((tab) {
+            final active = _activeTab == tab.key;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () => _handleTabChange(tab.key),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
                     color: active
-                        ? Colors.transparent
-                        : (isDark ? const Color(0xFF374151) : const Color(0xFFE5E7EB)),
+                        ? (isDark ? Colors.white : Colors.black)
+                        : (isDark ? const Color(0xFF1F2937) : Colors.white),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: active
+                          ? Colors.transparent
+                          : (isDark
+                              ? const Color(0xFF374151)
+                              : const Color(0xFFE5E7EB)),
+                    ),
                   ),
-                ),
-                child: Text(
-                  '${tab.emoji ?? ''}${tab.emoji != null ? ' ' : ''}${tab.label}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: active
-                        ? (isDark ? Colors.black : Colors.white)
-                        : (isDark ? Colors.white70 : Colors.black54),
+                  child: Text(
+                    '${tab.emoji ?? ''}${tab.emoji != null ? ' ' : ''}${tab.label}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: active
+                          ? (isDark ? Colors.black : Colors.white)
+                          : (isDark ? Colors.white70 : Colors.black54),
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
 
   Widget _buildCard(bool isDark, int totalPages) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0B0B0F) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: isDark ? const Color(0xFF1F2937) : const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        children: [
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 32),
-              child: Column(
-                children: [
-                  Icon(LucideIcons.circleAlert, color: Colors.redAccent),
-                  const SizedBox(height: 8),
-                  Text(_error!, style: const TextStyle(color: Colors.redAccent)),
-                  const SizedBox(height: 8),
-                  TextButton(onPressed: _loadNotifications, child: const Text('Retry')),
-                ],
-              ),
-            )
-          else if (_notifications.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 40),
-              child: Column(
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(
-                      _isVendor ? LucideIcons.megaphone : LucideIcons.bell,
-                      color: isDark ? Colors.white38 : Colors.black26,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    _isVendor ? 'No notifications' : 'No notifications here',
-                    style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.grey),
-                  ),
-                  if (_activeTab != 'all')
-                    TextButton(
-                      onPressed: () => _handleTabChange('all'),
-                      child: const Text('View all'),
-                    ),
-                ],
-              ),
-            )
-          else
-            Column(
-              children: _notifications
-                  .map((n) => _NotificationRow(
-                        notification: n,
-                        config: _getTypeConfig(n.typeKey),
-                        onTap: () => _handleNotificationTap(n),
-                        onDelete: () => _deleteNotification(n.id),
-                        onMarkRead: n.isRead ? null : () => _markAsRead(n.id),
-                      ))
-                  .toList(),
+    final theme = Theme.of(context);
+    final dividerColor =
+        (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06);
+
+    return Column(
+      children: [
+        Container(height: 1, color: dividerColor),
+        if (_isLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Column(
+              children: [
+                const Icon(LucideIcons.circleAlert, color: Colors.redAccent),
+                const SizedBox(height: 8),
+                Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _loadNotifications,
+                  child: const Text('Retry'),
+                ),
+              ],
             ),
-          if (totalPages > 1 && !_isLoading)
-            _PaginationBar(
-              page: _page,
-              totalPages: totalPages,
-              total: _total,
-              onPrev: _page == 1 ? null : () => _setPage(_page - 1),
-              onNext: _page == totalPages ? null : () => _setPage(_page + 1),
-              onSelect: (p) => _setPage(p),
+          )
+        else if (_notifications.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Column(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF1F2937)
+                        : const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    _isVendor ? LucideIcons.megaphone : LucideIcons.bell,
+                    color: isDark ? Colors.white38 : Colors.black26,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'No notifications',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey,
+                  ),
+                ),
+                if (_activeTab != 'all')
+                  TextButton(
+                    onPressed: () => _handleTabChange('all'),
+                    child: const Text('View all'),
+                  ),
+              ],
             ),
-        ],
-      ),
+          )
+        else
+          Column(
+            children: _notifications
+                .map(
+                  (n) => _NotificationRow(
+                    notification: n,
+                    config: _getTypeConfig(n.typeKey),
+                    onTap: () => _handleNotificationTap(n),
+                    onDelete: () => _deleteNotification(n.id),
+                    onMarkRead: n.isRead ? null : () => _markAsRead(n.id),
+                  ),
+                )
+                .toList(),
+          ),
+        if (totalPages > 1 && !_isLoading)
+          _PaginationBar(
+            page: _page,
+            totalPages: totalPages,
+            total: _total,
+            onPrev: _page == 1 ? null : () => _setPage(_page - 1),
+            onNext: _page == totalPages ? null : () => _setPage(_page + 1),
+            onSelect: (p) => _setPage(p),
+          ),
+      ],
     );
   }
 
@@ -484,6 +486,8 @@ class _NotificationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final isUnread = !notification.isRead;
     final sender = notification.sender ?? const <String, dynamic>{};
     final name = (sender['full_name'] ?? sender['username'] ?? 'Someone').toString();
@@ -492,17 +496,25 @@ class _NotificationRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
-          color: isUnread ? const Color(0xFFEFF6FF) : Colors.transparent,
-          border: Border(bottom: BorderSide(color: Colors.black.withValues(alpha: 0.04))),
+          color: isUnread
+              ? (isDark
+                  ? const Color(0xFF0B2239)
+                  : const Color(0xFFEFF6FF))
+              : Colors.transparent,
+          border: Border(
+            bottom: BorderSide(
+              color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06),
+            ),
+          ),
         ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             if (isUnread)
               Container(
-                margin: const EdgeInsets.only(top: 6, right: 8),
+                margin: const EdgeInsets.only(right: 6),
                 width: 6,
                 height: 6,
                 decoration: const BoxDecoration(
@@ -511,7 +523,7 @@ class _NotificationRow extends StatelessWidget {
                 ),
               )
             else
-              const SizedBox(width: 14),
+              const SizedBox(width: 8),
             Stack(
               children: [
                 CircleAvatar(
@@ -532,7 +544,10 @@ class _NotificationRow extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: config.bgColor,
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF0B0B0F) : Colors.white,
+                        width: 2,
+                      ),
                     ),
                     child: Icon(config.icon, size: 11, color: config.iconColor),
                   ),
@@ -548,10 +563,14 @@ class _NotificationRow extends StatelessWidget {
                     notification.message.isNotEmpty
                         ? notification.message
                         : notification.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: isUnread ? FontWeight.w600 : FontWeight.w400,
-                      color: isUnread ? Colors.black : Colors.black54,
+                      color: isDark
+                          ? Colors.white
+                          : (isUnread ? Colors.black : Colors.black54),
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -575,7 +594,10 @@ class _NotificationRow extends StatelessWidget {
                       const SizedBox(width: 8),
                       Text(
                         _timeAgo(notification.timestamp),
-                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white60 : Colors.grey,
+                        ),
                       ),
                     ],
                   ),
@@ -591,16 +613,31 @@ class _NotificationRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Column(
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 if (onMarkRead != null)
                   IconButton(
                     onPressed: onMarkRead,
-                    icon: const Icon(LucideIcons.checkCheck, size: 16, color: Color(0xFF3B82F6)),
+                    icon: const Icon(
+                      LucideIcons.checkCheck,
+                      size: 18,
+                      color: Color(0xFF3B82F6),
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    splashRadius: 20,
                   ),
                 IconButton(
                   onPressed: onDelete,
-                  icon: const Icon(LucideIcons.trash2, size: 16, color: Color(0xFFF87171)),
+                  icon: const Icon(
+                    LucideIcons.trash2,
+                    size: 18,
+                    color: Color(0xFFF87171),
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  splashRadius: 20,
                 ),
               ],
             ),

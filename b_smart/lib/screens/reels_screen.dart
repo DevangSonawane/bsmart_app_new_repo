@@ -275,13 +275,15 @@ class _ReelsScreenState extends State<ReelsScreen>
             return controller;
           } catch (e) {
             lastError = e;
-            debugPrint('[Reels] load failed index=$index id=${reel.id} url=$url headersAuth=${headers.containsKey('Authorization')} error=$e');
+            debugPrint(
+                '[Reels] load failed index=$index id=${reel.id} url=$url headersAuth=${headers.containsKey('Authorization')} error=$e');
             try {
               await controller?.dispose();
             } catch (_) {}
           }
         }
-        debugPrint('[Reels] tried url=$url for index=$index id=${reel.id} lastError=$lastError');
+        debugPrint(
+            '[Reels] tried url=$url for index=$index id=${reel.id} lastError=$lastError');
       }
       debugPrint(
         '[Reels] controller create failed index=$index id=${reel.id} lastUrl=${urlCandidates.isNotEmpty ? urlCandidates.last : ''} error=$lastError',
@@ -378,7 +380,8 @@ class _ReelsScreenState extends State<ReelsScreen>
     final next = index + 1 < _reels.length ? index + 1 : null;
     final keep = <int>{index, if (next != null) next};
 
-    final remove = _videoControllers.keys.where((k) => !keep.contains(k)).toList();
+    final remove =
+        _videoControllers.keys.where((k) => !keep.contains(k)).toList();
     for (final k in remove) {
       _disposeController(_videoControllers.remove(k), k);
     }
@@ -446,7 +449,8 @@ class _ReelsScreenState extends State<ReelsScreen>
       await _initializePoolAt(index);
     }
     if (!mounted || index != _currentIndex) return;
-    final otherIndexes = _videoControllers.keys.where((k) => k != index).toList();
+    final otherIndexes =
+        _videoControllers.keys.where((k) => k != index).toList();
     for (final i in otherIndexes) {
       await _pauseControllerForIndex(i);
     }
@@ -463,7 +467,8 @@ class _ReelsScreenState extends State<ReelsScreen>
         .then<void>((_) => _rotatePoolToIndex(index))
         .catchError((_) {});
     if (index + 1 < _reels.length) {
-      unawaited(_createControllerForIndex(index + 1, generation: _poolGeneration));
+      unawaited(
+          _createControllerForIndex(index + 1, generation: _poolGeneration));
     }
     _maybeLoadMore(index);
   }
@@ -825,6 +830,8 @@ class _ReelsScreenState extends State<ReelsScreen>
     }
 
     final isDesktop = MediaQuery.of(context).size.width >= 768;
+    final bottomSystemInset = MediaQuery.of(context).viewPadding.bottom;
+    final topSystemInset = MediaQuery.of(context).viewPadding.top;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -854,74 +861,80 @@ class _ReelsScreenState extends State<ReelsScreen>
                 _keyboardFocusNode.requestFocus();
               }
             },
-            child: MediaQuery.removePadding(
-              context: context,
-              removeTop: true,
-              removeBottom: true,
-              child: Stack(
-                children: [
-                  if (!isDesktop)
-                    _buildVideoCard(isDesktop: false)
-                  else
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              child: SizedBox(
-                                width: 380,
-                                child: _buildVideoCard(isDesktop: true),
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottomSystemInset),
+              child: MediaQuery.removePadding(
+                context: context,
+                removeTop: true,
+                removeBottom: true,
+                child: Stack(
+                  children: [
+                    if (!isDesktop)
+                      _buildVideoCard(isDesktop: false)
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Center(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                child: SizedBox(
+                                  width: 380,
+                                  child: _buildVideoCard(isDesktop: true),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(right: 28, bottom: 26),
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: _buildDesktopActions(),
+                          Padding(
+                            padding:
+                                const EdgeInsets.only(right: 28, bottom: 26),
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: _buildDesktopActions(),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    top: MediaQuery.of(context).padding.top + 8,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        IconButton(
-                          icon: Icon(
-                            _isMuted
-                                ? LucideIcons.volumeX
-                                : LucideIcons.volume2,
-                            color: Colors.white,
-                            size: 24,
+                        ],
+                      ),
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      top: topSystemInset + 8,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              _isMuted
+                                  ? LucideIcons.volumeX
+                                  : LucideIcons.volume2,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isMuted = !_isMuted;
+                              });
+                              final volume = _isMuted ? 0.0 : 1.0;
+                              for (final controller
+                                  in _videoControllers.values) {
+                                unawaited(_setControllerVolumeSafely(
+                                    controller, volume));
+                              }
+                            },
                           ),
-                          onPressed: () {
-                            setState(() {
-                              _isMuted = !_isMuted;
-                            });
-                            final volume = _isMuted ? 0.0 : 1.0;
-                            for (final controller in _videoControllers.values) {
-                              unawaited(
-                                  _setControllerVolumeSafely(controller, volume));
-                            }
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(LucideIcons.search,
-                              color: Colors.white, size: 24),
-                          onPressed: () =>
-                              Navigator.of(context).pushNamed('/search'),
-                        ),
-                      ],
+                          IconButton(
+                            icon: const Icon(LucideIcons.search,
+                                color: Colors.white, size: 24),
+                            onPressed: () =>
+                                Navigator.of(context).pushNamed('/search'),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (isDesktop) _buildDesktopArrows(),
-                ],
+                    if (isDesktop) _buildDesktopArrows(),
+                  ],
+                ),
               ),
             ),
           ),
@@ -993,8 +1006,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Widget _buildReelPlayer(int index, Reel reel, {required bool isDesktop}) {
     final controller = _controllerForIndex(index);
-    final safeController =
-        _isControllerUsable(controller) ? controller : null;
+    final safeController = _isControllerUsable(controller) ? controller : null;
     final thumb = reel.thumbnailUrl == null
         ? null
         : UrlHelper.absoluteUrl(reel.thumbnailUrl!);
@@ -1439,8 +1451,7 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem>
                     imageUrl: thumbnailUrl,
                     fit: BoxFit.cover,
                     httpHeaders: widget.headers,
-                    errorWidget: (_, __, ___) =>
-                        Container(color: Colors.black),
+                    errorWidget: (_, __, ___) => Container(color: Colors.black),
                   )
                 else
                   Container(color: Colors.black),

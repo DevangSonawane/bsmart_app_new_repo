@@ -87,8 +87,23 @@ class _AdDetailScreenState extends State<AdDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final view = View.of(context);
+    final devicePixelRatio = view.devicePixelRatio;
+    final viewPaddingBottom = view.padding.bottom / devicePixelRatio;
+    final mq = MediaQuery.of(context);
+    final mqViewPaddingBottom = mq.viewPadding.bottom;
+    final mqPaddingBottom = mq.padding.bottom;
+    double bottomSystemInset = viewPaddingBottom;
+    if (mqViewPaddingBottom > bottomSystemInset) {
+      bottomSystemInset = mqViewPaddingBottom;
+    }
+    if (mqPaddingBottom > bottomSystemInset) {
+      bottomSystemInset = mqPaddingBottom;
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
+      extendBody: true,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
@@ -108,6 +123,7 @@ class _AdDetailScreenState extends State<AdDetailScreen> {
               : AdVideoItem(
                   ad: _ad!,
                   isActive: true,
+                  bottomInset: bottomSystemInset,
                   viewPopupVisibleListenable: _viewPopupVisible,
                   onCompletedView: _recordView,
                   onOpenComments: _openComments,

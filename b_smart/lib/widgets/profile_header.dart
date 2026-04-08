@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/design_tokens.dart';
@@ -67,8 +66,7 @@ class ProfileHeader extends StatelessWidget {
     final cleanUsername = username.trim();
     final displayName =
         fullName?.trim().isNotEmpty == true ? fullName!.trim() : '';
-    final hasDisplayName = displayName.isNotEmpty &&
-        displayName.toLowerCase() != cleanUsername.toLowerCase();
+    final primaryName = displayName.isNotEmpty ? displayName : cleanUsername;
     final stats = <_StatItem>[
       _StatItem(posts, 'Posts'),
       _StatItem(followers, 'Followers'),
@@ -166,23 +164,20 @@ class ProfileHeader extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 6),
                   child: Align(
                     alignment: Alignment.center,
-                    child: Wrap(
-                      spacing: 18,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        ...stats.map((item) => _statPill(
-                              context,
-                              item.count,
-                              item.label,
-                              fgColor,
-                              mutedColor,
-                            )),
-                        if (!isVendor)
-                          _statIconButton(
-                            context,
-                            icon: Icons.person_outline,
-                            onTap: onUser,
+                        for (final item in stats)
+                          Expanded(
+                            child: Center(
+                              child: _statPill(
+                                context,
+                                item.count,
+                                item.label,
+                                fgColor,
+                                mutedColor,
+                              ),
+                            ),
                           ),
                       ],
                     ),
@@ -197,7 +192,7 @@ class ProfileHeader extends StatelessWidget {
             spacing: 8,
             children: [
               Text(
-                cleanUsername.isNotEmpty ? cleanUsername : 'user',
+                primaryName.isNotEmpty ? primaryName : 'user',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                   color: fgColor,
@@ -222,36 +217,34 @@ class ProfileHeader extends StatelessWidget {
                 ),
             ],
           ),
-          if (hasDisplayName) ...[
-            const SizedBox(height: 4),
-            Text(
-              displayName,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: fgColor.withValues(alpha: 0.9),
-              ),
-            ),
-          ],
           if (bio != null && bio!.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(
-              bio!,
+            _ExpandableBioText(
+              text: bio!.trim(),
               style: TextStyle(
-                  fontSize: 13.5, color: fgColor.withValues(alpha: 0.8)),
+                fontSize: 13.5,
+                color: fgColor.withValues(alpha: 0.8),
+                height: 1.25,
+              ),
+              linkStyle: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+              ),
+              trimLines: 2,
             ),
           ],
           const SizedBox(height: 12),
           if (isMe)
             Row(
               children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 160),
+                Expanded(
                   child: _primaryButton(
                     label: 'Edit profile',
                     onTap: onEdit,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 _actionIconButton(
                   context,
                   icon: Icons.share_outlined,
@@ -268,6 +261,12 @@ class ProfileHeader extends StatelessWidget {
                   context,
                   icon: LucideIcons.messageCircle,
                   onTap: onMessage ?? () {},
+                ),
+                const SizedBox(width: 12),
+                _actionIconButton(
+                  context,
+                  icon: LucideIcons.users,
+                  onTap: onUser ?? () {},
                 ),
               ],
             )
@@ -300,6 +299,12 @@ class ProfileHeader extends StatelessWidget {
                     label: 'Message',
                     onTap: onMessage,
                   ),
+                ),
+                const SizedBox(width: 8),
+                _actionIconButton(
+                  context,
+                  icon: LucideIcons.users,
+                  onTap: onUser ?? () {},
                 ),
                 const SizedBox(width: 8),
                 _actionIconButton(
@@ -477,43 +482,86 @@ class ProfileHeader extends StatelessWidget {
   ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           count.toString(),
+          textAlign: TextAlign.center,
           style: TextStyle(
               fontWeight: FontWeight.w700, fontSize: 18, color: fgColor),
         ),
         const SizedBox(height: 2),
         Text(
           label,
+          textAlign: TextAlign.center,
           style: TextStyle(color: mutedColor, fontSize: 11),
         ),
       ],
     );
   }
 
-  Widget _statIconButton(
-    BuildContext context, {
-    required IconData icon,
-    VoidCallback? onTap,
-  }) {
-    final theme = Theme.of(context);
-    final fgColor = theme.colorScheme.onSurface;
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 2),
-          Icon(icon, size: 30, color: fgColor),
-          const SizedBox(height: 4),
-          const Text(
-            ' ',
-            style: TextStyle(fontSize: 11),
-          ),
-        ],
-      ),
+}
+
+class _ExpandableBioText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  final TextStyle linkStyle;
+  final int trimLines;
+
+  const _ExpandableBioText({
+    required this.text,
+    required this.style,
+    required this.linkStyle,
+    this.trimLines = 2,
+  });
+
+  @override
+  State<_ExpandableBioText> createState() => _ExpandableBioTextState();
+}
+
+class _ExpandableBioTextState extends State<_ExpandableBioText> {
+  bool _expanded = false;
+
+  void _toggle() => setState(() => _expanded = !_expanded);
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tp = TextPainter(
+          text: TextSpan(text: widget.text, style: widget.style),
+          maxLines: widget.trimLines,
+          textDirection: Directionality.of(context),
+          ellipsis: '…',
+        )..layout(maxWidth: constraints.maxWidth);
+
+        final overflow = tp.didExceedMaxLines;
+        if (!overflow) {
+          return Text(widget.text, style: widget.style);
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.text,
+              style: widget.style,
+              maxLines: _expanded ? null : widget.trimLines,
+              overflow:
+                  _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            GestureDetector(
+              onTap: _toggle,
+              behavior: HitTestBehavior.opaque,
+              child: Text(
+                _expanded ? 'Read less' : 'Read more',
+                style: widget.linkStyle,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

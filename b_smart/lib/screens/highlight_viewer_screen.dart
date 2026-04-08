@@ -60,13 +60,13 @@ class _HighlightViewerScreenState extends State<HighlightViewerScreen>
     super.initState();
     _currentHighlightIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
-    unawaited(applyAndroidImmersiveSticky());
+    unawaited(applyAndroidEdgeToEdge());
   }
 
   @override
   void dispose() {
     _pageController.dispose();
-    unawaited(applyAndroidImmersiveSticky());
+    unawaited(applyAndroidEdgeToEdge());
     super.dispose();
   }
 
