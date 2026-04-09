@@ -16,6 +16,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import api from "../lib/api";
 
 const WS_BASE      = (import.meta.env.VITE_WS_URL || "wss://api.bebsmart.in");
+const ENABLE_NOTIFICATION_WS = import.meta.env.VITE_ENABLE_NOTIFICATION_WS === "true";
 const POLL_INTERVAL = 30_000;   // poll every 30s when WS is down
 const RECONNECT_MS  = 5_000;    // retry WS after 5s
 
@@ -76,7 +77,7 @@ export function useNotificationSocket({ limit = 20, page = 1, typeFilter = "" } 
   const connectWs = useCallback(() => {
     if (!mountedRef.current) return;
     const token = localStorage.getItem("token");
-    if (!token) { startPolling(); return; }
+    if (!token || !ENABLE_NOTIFICATION_WS) { startPolling(); return; }
 
     try {
       setWsStatus("connecting");

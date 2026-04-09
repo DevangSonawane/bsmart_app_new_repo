@@ -207,6 +207,8 @@ const Layout = () => {
       <div className="md:pl-20 min-h-screen transition-all duration-300">
         {showTopBar && <TopBar />}
 
+
+
         <div className={`
           ${showTopBar ? 'pt-16 md:pt-4' : 'pt-0 md:pt-0'}
           w-full

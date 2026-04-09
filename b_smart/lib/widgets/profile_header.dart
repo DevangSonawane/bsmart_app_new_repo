@@ -18,6 +18,7 @@ class ProfileHeader extends StatelessWidget {
   final int ads;
   final bool isMe;
   final bool isVendor;
+  final bool isValidated;
   final bool isFollowing;
   final bool isFavorite;
   final bool hasStory;
@@ -30,6 +31,8 @@ class ProfileHeader extends StatelessWidget {
   final VoidCallback? onFavorite;
   final VoidCallback? onMore;
   final VoidCallback? onUser;
+  final VoidCallback? onFollowersTap;
+  final VoidCallback? onFollowingTap;
 
   const ProfileHeader({
     super.key,
@@ -44,6 +47,7 @@ class ProfileHeader extends StatelessWidget {
     this.ads = 0,
     this.isMe = false,
     this.isVendor = false,
+    this.isValidated = false,
     this.isFollowing = false,
     this.isFavorite = false,
     this.hasStory = false,
@@ -56,6 +60,8 @@ class ProfileHeader extends StatelessWidget {
     this.onFavorite,
     this.onMore,
     this.onUser,
+    this.onFollowersTap,
+    this.onFollowingTap,
   });
 
   @override
@@ -67,12 +73,17 @@ class ProfileHeader extends StatelessWidget {
     final displayName =
         fullName?.trim().isNotEmpty == true ? fullName!.trim() : '';
     final primaryName = displayName.isNotEmpty ? displayName : cleanUsername;
-    final stats = <_StatItem>[
-      _StatItem(posts, 'Posts'),
-      _StatItem(followers, 'Followers'),
-      _StatItem(following, 'Following'),
-      if (isVendor) _StatItem(ads, 'Ads'),
-    ];
+    final stats = isVendor
+        ? <_StatItem>[
+            _StatItem(ads, 'Ads'),
+            _StatItem(followers, 'Followers'),
+            _StatItem(following, 'Following'),
+          ]
+        : <_StatItem>[
+            _StatItem(posts, 'Posts'),
+            _StatItem(followers, 'Followers'),
+            _StatItem(following, 'Following'),
+          ];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -170,13 +181,13 @@ class ProfileHeader extends StatelessWidget {
                         for (final item in stats)
                           Expanded(
                             child: Center(
-                              child: _statPill(
-                                context,
-                                item.count,
-                                item.label,
-                                fgColor,
-                                mutedColor,
-                              ),
+                              child: _statPill(context, item.count, item.label,
+                                  fgColor, mutedColor,
+                                  onTap: item.label == 'Followers'
+                                      ? onFollowersTap
+                                      : item.label == 'Following'
+                                          ? onFollowingTap
+                                          : null),
                             ),
                           ),
                       ],
@@ -210,6 +221,23 @@ class ProfileHeader extends StatelessWidget {
                     'Vendor',
                     style: TextStyle(
                       color: Color(0xFFEA580C),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              if (isVendor && isValidated)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Validated',
+                    style: TextStyle(
+                      color: Color(0xFF16A34A),
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
@@ -473,33 +501,36 @@ class ProfileHeader extends StatelessWidget {
     );
   }
 
-  Widget _statPill(
-    BuildContext context,
-    int count,
-    String label,
-    Color fgColor,
-    Color mutedColor,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text(
-          count.toString(),
-          textAlign: TextAlign.center,
-          style: TextStyle(
-              fontWeight: FontWeight.w700, fontSize: 18, color: fgColor),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: mutedColor, fontSize: 11),
-        ),
-      ],
+  Widget _statPill(BuildContext context, int count, String label, Color fgColor,
+      Color mutedColor,
+      {VoidCallback? onTap}) {
+    final child = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            count.toString(),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 18, color: fgColor),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: mutedColor, fontSize: 11),
+          ),
+        ]);
+    if (onTap == null) return child;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+        child: child,
+      ),
     );
   }
-
 }
 
 class _ExpandableBioText extends StatefulWidget {

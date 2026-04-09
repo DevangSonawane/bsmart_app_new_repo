@@ -40,6 +40,7 @@ import 'messaging_screen.dart';
 import '../utils/url_helper.dart';
 import '../widgets/profile_highlights_row.dart';
 import '../services/ads_service.dart';
+import 'follow_list_screen.dart';
 
 /// Heroicons badge-check (same as React web app verified badge)
 const String _verifiedBadgeSvg = r'''
@@ -165,8 +166,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     unawaited(() async {
       try {
-        final conversation =
-            await ChatApi().createOrGetConversation(participantId: participantId);
+        final conversation = await ChatApi()
+            .createOrGetConversation(participantId: participantId);
         if (!mounted) return;
         final id = (conversation['_id'] ?? conversation['id'])?.toString();
         if (id == null || id.isEmpty) {
@@ -449,6 +450,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       } catch (_) {}
     }
 
+    Map<String, dynamic>? vendorInfo;
+    if (isVendor && targetId.isNotEmpty) {
+      try {
+        vendorInfo = await _svc.getVendorById(targetId);
+      } catch (_) {}
+    }
+
     if (profile == null && _profile == null) {
       if (mounted) {
         setState(() {
@@ -716,6 +724,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ...?_profile, // 1. Start with existing local state as fallback
         ...derivedFromPosts, // 2. Update with info derived from posts (if any)
         ...?profile, // 3. Override with fresh API profile data (if success)
+        if (vendorInfo != null) 'vendor': vendorInfo,
         'is_followed_by_me': isFollowedByMe,
         'posts_count': finalPostsCount,
         'followers_count': finalFollowers,
@@ -724,6 +733,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'account_type': userAccount?.accountType.toString().split('.').last,
         'engagement_score': userAccount?.engagementScore,
       };
+      // React web app uses: profileUser.validated ?? vendorInfo.validated.
+      // Fill validated from vendor object only when missing on the user profile.
+      if (vendorInfo != null &&
+          merged['validated'] == null &&
+          vendorInfo!['validated'] != null) {
+        merged['validated'] = vendorInfo!['validated'];
+      }
 
       final reelsFromService =
           _reelsService.getReels().where((r) => r.userId == targetId).toList();
@@ -1391,6 +1407,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final following = (displayProfile?['following_count'] as int?) ?? 0;
         final isVendor =
             (displayProfile?['role'] as String?)?.toLowerCase() == 'vendor';
+        final vendorMap = displayProfile?['vendor'];
+        final vendorValidatedFromVendor =
+            vendorMap is Map ? (vendorMap['validated'] as bool?) : null;
+        final isValidated = (displayProfile?['vendor_validated'] as bool?) ??
+            (displayProfile?['vendorValidated'] as bool?) ??
+            (displayProfile?['validated'] as bool?) ??
+            vendorValidatedFromVendor ??
+            (displayProfile?['isValidated'] as bool?) ??
+            (displayProfile?['verified'] as bool?) ??
+            (displayProfile?['isVerified'] as bool?) ??
+            (displayProfile?['is_verified'] as bool?) ??
+            false;
 
         final theme = Theme.of(context);
         final fgColor = theme.colorScheme.onSurface;
@@ -1553,6 +1581,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ads: _vendorAds.length,
                       isMe: isMe,
                       isVendor: isVendor,
+                      isValidated: isValidated,
                       isFollowing:
                           (displayProfile?['is_followed_by_me'] as bool?) ??
                               false,
@@ -1567,6 +1596,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onAvatarTap: _openStoriesFromProfile,
                       onAvatarEdit: isMe && !_avatarUploading
                           ? _showAvatarOptionsSheet
+                          : null,
+                      onFollowersTap: profileUserId.isNotEmpty
+                          ? () => FollowListScreen.open(
+                                context,
+                                userId: profileUserId,
+                                username: username,
+                                mode: FollowListMode.followers,
+                                isOwnProfile: isMe,
+                                initialFollowersCount: followers,
+                                initialFollowingCount: following,
+                              )
+                          : null,
+                      onFollowingTap: profileUserId.isNotEmpty
+                          ? () => FollowListScreen.open(
+                                context,
+                                userId: profileUserId,
+                                username: username,
+                                mode: FollowListMode.following,
+                                isOwnProfile: isMe,
+                                initialFollowersCount: followers,
+                                initialFollowingCount: following,
+                              )
                           : null,
                     ),
                   ),

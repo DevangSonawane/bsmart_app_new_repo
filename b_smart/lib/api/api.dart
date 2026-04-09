@@ -6,6 +6,7 @@ export 'auth_api.dart';
 export 'email_api.dart';
 export 'chat_api.dart';
 export 'users_api.dart';
+export 'vendors_api.dart';
 export 'posts_api.dart';
 export 'comments_api.dart';
 export 'upload_api.dart';

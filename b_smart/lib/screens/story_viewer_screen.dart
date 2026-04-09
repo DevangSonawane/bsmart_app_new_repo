@@ -41,7 +41,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   VideoPlayerController? _videoCtl;
   Future<void>? _initVideo;
   Map<String, String>? _videoHeaders;
+  String? _videoStoryId;
+  int _videoRequestSerial = 0;
   String? _endedStoryId;
+  double _cachedBottomInset = 0;
+  final Set<String> _fetchingStoryGroupIds = <String>{};
 
   @override
   void initState() {
@@ -49,6 +53,17 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     _currentGroupIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
     _storyController = PageController();
+    // Cache the bottom inset from the window directly at init time.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final view = View.of(context);
+      final inset = view.padding.bottom / view.devicePixelRatio;
+      if (inset > 0 && inset != _cachedBottomInset) {
+        setState(() {
+          _cachedBottomInset = inset;
+        });
+      }
+    });
     ApiClient().getToken().then((token) {
       if (!mounted) return;
       if (token != null && token.isNotEmpty) {
@@ -78,8 +93,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     // Lazy-load all items for current group when only a preview story is present
     if (currentGroup.stories.length <= 1 &&
         (currentGroup.storyId ?? '').isNotEmpty) {
-      _fetchGroupItems(_currentGroupIndex);
-      return;
+      // Fetch in the background, but still play the preview item immediately.
+      // Only block playback if there is nothing to show yet.
+      unawaited(_fetchGroupItems(_currentGroupIndex));
+      if (currentGroup.stories.isEmpty) return;
     }
     if (_currentStoryIndex >= currentGroup.stories.length) {
       _nextGroup();
@@ -93,7 +110,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
     if (!_waitingForMedia) {
       _startAutoPlayTimer(currentStory);
-    } else if (_videoCtl != null && _videoCtl!.value.isInitialized) {
+    } else if (_videoCtl != null &&
+        _videoCtl!.value.isInitialized &&
+        _videoStoryId == currentStory.id) {
       _waitingForMedia = false;
       _startAutoPlayTimer(currentStory);
     }
@@ -106,18 +125,27 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     if (!isImage &&
         _videoCtl != null &&
         _videoCtl!.value.isInitialized &&
+        _videoStoryId == currentStory.id &&
         _videoCtl!.value.duration.inMilliseconds > 0) {
       durationMs = _videoCtl!.value.duration.inMilliseconds;
     } else {
       durationMs = isImage ? 5000 : ((currentStory.durationSec ?? 5) * 1000);
     }
-    const tickMs = 50;
-    final ticks = (durationMs / tickMs).clamp(1, 100000).toInt();
+    const tickMs = 16; // ~60fps for smoother progress
+    final start = DateTime.now();
     _autoPlayTimer =
         Timer.periodic(const Duration(milliseconds: tickMs), (timer) {
-      setState(() {
-        _progress += 1.0 / ticks;
-      });
+      final elapsedMs = DateTime.now().difference(start).inMilliseconds;
+      final nextProgress =
+          durationMs <= 0 ? 1.0 : (elapsedMs / durationMs).clamp(0.0, 1.0);
+      if (mounted) {
+        setState(() {
+          _progress = nextProgress;
+        });
+      } else {
+        timer.cancel();
+        return;
+      }
 
       if (_progress >= 1.0) {
         timer.cancel();
@@ -234,24 +262,24 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       );
     }
 
+    // Read the bottom inset from multiple sources and take the max (Ads page
+    // pattern). `View.padding` is in physical pixels, so convert to logical.
+    final view = View.of(context);
+    final devicePixelRatio = view.devicePixelRatio;
+    double bottomSystemInset = view.padding.bottom / devicePixelRatio;
     final mq = MediaQuery.of(context);
-    double bottomSystemInset = View.of(context).padding.bottom;
     if (mq.viewPadding.bottom > bottomSystemInset) {
       bottomSystemInset = mq.viewPadding.bottom;
     }
     if (mq.padding.bottom > bottomSystemInset) {
       bottomSystemInset = mq.padding.bottom;
     }
-    // Treat small Android gesture insets as "no nav bar" so the UI can sit
-    // flush to the bottom on gesture-navigation devices.
-    if (defaultTargetPlatform == TargetPlatform.android &&
-        bottomSystemInset > 0 &&
-        bottomSystemInset < 24) {
-      bottomSystemInset = 0;
+    if (_cachedBottomInset > bottomSystemInset) {
+      bottomSystemInset = _cachedBottomInset;
     }
     final screenHeight = mq.size.height;
-    const bottomBarHeight = 68.0; // includes padding
-    const bottomGap = 10.0;
+    const bottomBarHeight = 58.0; // includes padding
+    const bottomGap = 0.0;
     const storyRadius = 18.0;
     const storyHorizontalPadding = 6.0;
     final storyTop = mq.padding.top + 10.0;
@@ -268,6 +296,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: false,
       body: GestureDetector(
         onLongPressStart: (_) {
           _autoPlayTimer?.cancel();
@@ -358,7 +387,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                             itemCount: group.stories.length,
                             itemBuilder: (context, storyIndex) {
                               final story = group.stories[storyIndex];
-                              return _buildStoryContent(story);
+                              final isActive = groupIndex == _currentGroupIndex &&
+                                  storyIndex == _currentStoryIndex;
+                              return _buildStoryContent(story, isActive: isActive);
                             },
                           );
                         },
@@ -531,7 +562,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
   Widget _buildBottomBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
+      padding: const EdgeInsets.fromLTRB(6, 10, 6, 0),
       child: Row(
         children: [
           Expanded(
@@ -639,6 +670,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     final g = widget.storyGroups[groupIndex];
     final sid = g.storyId;
     if (sid == null || sid.isEmpty) return;
+    if (_fetchingStoryGroupIds.contains(sid)) return;
+    _fetchingStoryGroupIds.add(sid);
     try {
       final items = await _feedService.fetchStoryItems(sid,
           ownerUserName: g.userName, ownerAvatar: g.userAvatar);
@@ -659,10 +692,12 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       _startAutoPlay();
     } catch (_) {
       // ignore
+    } finally {
+      _fetchingStoryGroupIds.remove(sid);
     }
   }
 
-  Widget _buildStoryContent(Story story) {
+  Widget _buildStoryContent(Story story, {required bool isActive}) {
     final isImage = story.mediaType == StoryMediaType.image;
     final hasUrl = story.mediaUrl.isNotEmpty &&
         (story.mediaUrl.startsWith('http://') ||
@@ -702,7 +737,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                 size: 100, color: Colors.white54)),
                       )
                     : (story.mediaType == StoryMediaType.video && hasUrl)
-                        ? (_videoCtl != null && _videoCtl!.value.isInitialized)
+                        ? (isActive &&
+                                _videoCtl != null &&
+                                _videoCtl!.value.isInitialized &&
+                                _videoStoryId == story.id)
                             ? FittedBox(
                                 fit: BoxFit.cover,
                                 child: SizedBox(
@@ -862,21 +900,38 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   void _setupCurrentStoryMedia(Story story) async {
-    _videoCtl?.dispose();
+    final requestId = ++_videoRequestSerial;
+    final oldCtl = _videoCtl;
     _videoCtl = null;
+    _videoStoryId = null;
     _initVideo = null;
+    if (oldCtl != null) {
+      // Ensure the widget tree can drop any VideoPlayer that references the
+      // old controller before disposal.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        oldCtl.dispose();
+      });
+    }
     if (story.mediaType == StoryMediaType.video && story.mediaUrl.isNotEmpty) {
       final headers = _videoHeaders ?? {};
       try {
         final uri = Uri.parse(story.mediaUrl);
-        _videoCtl = VideoPlayerController.networkUrl(uri, httpHeaders: headers);
-        _initVideo = _videoCtl!.initialize().then((_) {
-          _videoCtl!.setLooping(false);
-          _videoCtl!.setVolume(0);
-          _videoCtl!.play();
-          _videoCtl!.addListener(() {
+        final ctl = VideoPlayerController.networkUrl(uri, httpHeaders: headers);
+        _videoCtl = ctl;
+        _videoStoryId = story.id;
+        _initVideo = ctl.initialize().then((_) {
+          if (!mounted) return;
+          if (requestId != _videoRequestSerial) {
+            ctl.dispose();
+            return;
+          }
+          ctl.setLooping(false);
+          ctl.setVolume(0);
+          ctl.play();
+          ctl.addListener(() {
             if (!mounted) return;
-            final v = _videoCtl!.value;
+            if (requestId != _videoRequestSerial) return;
+            final v = ctl.value;
             if (!v.isInitialized) return;
             if (v.duration.inMilliseconds <= 0) return;
             if (v.position >= v.duration && _endedStoryId != story.id) {
@@ -885,7 +940,6 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
               _nextStory();
             }
           });
-          if (!mounted) return;
           setState(() {});
           if (_waitingForMedia && _pendingStoryId == story.id) {
             _waitingForMedia = false;

@@ -54,10 +54,8 @@ class FollowsApi {
     }
     if (res is Map) {
       final map = res;
-      final list = map['data'] ??
-          map['followers'] ??
-          map['items'] ??
-          map['results'];
+      final list =
+          map['data'] ?? map['followers'] ?? map['items'] ?? map['results'];
       if (list is List) {
         return list
             .whereType<Map>()
@@ -66,6 +64,28 @@ class FollowsApi {
       }
     }
     return <Map<String, dynamic>>[];
+  }
+
+  /// List followers of a user with pagination + search (web parity).
+  ///
+  /// GET /users/{id}/followers?search=&page=&limit=
+  ///
+  /// Expected response: { users: [...], total: <int> }
+  Future<Map<String, dynamic>> getFollowersPage(
+    String userId, {
+    String search = '',
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final res = await _client.get(
+      '/users/$userId/followers',
+      queryParams: <String, String>{
+        'search': search,
+        'page': '$page',
+        'limit': '$limit',
+      },
+    );
+    return _toPagedUsersResponse(res, fallbackKey: 'followers');
   }
 
   /// List users the given user is following.
@@ -81,10 +101,8 @@ class FollowsApi {
     }
     if (res is Map) {
       final map = res;
-      final list = map['data'] ??
-          map['following'] ??
-          map['items'] ??
-          map['results'];
+      final list =
+          map['data'] ?? map['following'] ?? map['items'] ?? map['results'];
       if (list is List) {
         return list
             .whereType<Map>()
@@ -93,6 +111,95 @@ class FollowsApi {
       }
     }
     return <Map<String, dynamic>>[];
+  }
+
+  /// List users the given user is following with pagination + search (web parity).
+  ///
+  /// GET /users/{id}/following?search=&page=&limit=
+  ///
+  /// Expected response: { users: [...], total: <int> }
+  Future<Map<String, dynamic>> getFollowingPage(
+    String userId, {
+    String search = '',
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final res = await _client.get(
+      '/users/$userId/following',
+      queryParams: <String, String>{
+        'search': search,
+        'page': '$page',
+        'limit': '$limit',
+      },
+    );
+    return _toPagedUsersResponse(res, fallbackKey: 'following');
+  }
+
+  /// Check follow status for a single user (web parity).
+  ///
+  /// GET /follows/check/{userId}
+  Future<Map<String, dynamic>> checkFollowStatus(String userId) async {
+    final res = await _client.get('/follows/check/$userId');
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return <String, dynamic>{};
+  }
+
+  /// Bulk check follow statuses (web parity).
+  ///
+  /// POST /follows/status/bulk { userIds: [...] }
+  Future<List<Map<String, dynamic>>> bulkCheckFollowStatus(
+    List<String> userIds,
+  ) async {
+    final res = await _client.post(
+      '/follows/status/bulk',
+      body: <String, dynamic>{'userIds': userIds},
+    );
+    if (res is List) {
+      return res
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    if (res is Map) {
+      final list =
+          res['data'] ?? res['users'] ?? res['results'] ?? res['items'];
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  /// Remove a follower (web parity).
+  ///
+  /// DELETE /follows/remove/{followerId}
+  Future<Map<String, dynamic>> removeFollower(String followerId) async {
+    final res = await _client.delete('/follows/remove/$followerId');
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return <String, dynamic>{'success': true};
+  }
+
+  /// Get follower/following counts (web parity).
+  ///
+  /// GET /users/{id}/follow-counts
+  Future<Map<String, dynamic>> getFollowCounts(String userId) async {
+    final res = await _client.get('/users/$userId/follow-counts');
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return <String, dynamic>{};
+  }
+
+  /// Follow suggestions (used as "Vendors" tab to match web UX).
+  ///
+  /// GET /follows/suggestions?limit=
+  Future<dynamic> getSuggestions({int limit = 10}) async {
+    final res = await _client.get(
+      '/follows/suggestions',
+      queryParams: <String, String>{'limit': '$limit'},
+    );
+    return res;
   }
 
   /// Followers count for a user (non-paginated, just a number).
@@ -147,5 +254,42 @@ class FollowsApi {
       return (res['data'] as List).cast<Map<String, dynamic>>();
     }
     return <Map<String, dynamic>>[];
+  }
+
+  Map<String, dynamic> _toPagedUsersResponse(
+    dynamic res, {
+    required String fallbackKey,
+  }) {
+    if (res is Map) {
+      final map = Map<String, dynamic>.from(res);
+      final usersRaw = map['users'] ??
+          map['data'] ??
+          map[fallbackKey] ??
+          map['items'] ??
+          map['results'];
+      final totalRaw = map['total'] ?? map['count'] ?? map['totalCount'];
+      final users = usersRaw is List
+          ? usersRaw
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
+      final total = totalRaw is num ? totalRaw.toInt() : users.length;
+      return <String, dynamic>{
+        'users': users,
+        'total': total,
+      };
+    }
+    if (res is List) {
+      final users = res
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      return <String, dynamic>{'users': users, 'total': users.length};
+    }
+    return const <String, dynamic>{
+      'users': <Map<String, dynamic>>[],
+      'total': 0
+    };
   }
 }

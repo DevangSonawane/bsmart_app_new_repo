@@ -1426,7 +1426,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                 </button>
               </div>
               <h2 className="font-semibold text-base text-center dark:text-white flex-1">
-                {step === 'crop' ? 'Step 1 · Crop' : step === 'cover' ? 'Cover' : step === 'edit' ? 'Step 2 · Edit' : step === 'share' && postType === 'ad' ? 'Step 3–6 · Ad Setup' : 'Share'}
+                {step === 'crop' ? 'Step 1 · Crop' : step === 'cover' ? 'Cover' : step === 'edit' ? 'Step 2 · Edit' : step === 'share' && postType === 'ad' ? 'Ad Setup' : 'Share'}
               </h2>
               <div className="w-auto min-w-[140px] flex justify-end items-center gap-2">
                 {step === 'share' && postType === 'ad' && (
@@ -2042,67 +2042,14 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                 />
               </div>
 
-              {/* Ad Step Progress Bar */}
-              {postType === 'ad' && (
-                <div className="sticky top-0 z-30 bg-white dark:bg-[#262626] border-b border-gray-100 dark:border-gray-800 px-4 py-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Ad Setup Progress</span>
-                    <span className="text-[10px] font-bold text-purple-500">6 steps</span>
-                  </div>
-                  <div className="flex gap-1.5">
-                    {[
-                      { n: 1, label: 'Media',     done: true },
-                      { n: 2, label: 'Content',   done: !!adTitle },
-                      { n: 3, label: 'CTA',       done: !!ctaUrl || !!ctaPhone || !!ctaWhatsapp },
-                      { n: 4, label: 'Targeting', done: !!selectedCategory },
-                      { n: 5, label: 'Budget',    done: !!totalBudgetCoins },
-                      { n: 6, label: 'Policy',    done: policyAgreed },
-                    ].map((s) => (
-                      <div key={s.n} className="flex-1 flex flex-col items-center gap-1.5">
-                        <div className={`w-full h-1.5 rounded-full transition-all duration-500 ${s.done ? 'bg-gradient-to-r from-purple-500 to-pink-500' : 'bg-gray-200 dark:bg-gray-700'}`} />
-                        <div className="flex items-center gap-1">
-                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black flex-shrink-0 ${s.done ? 'bg-purple-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-400'}`}>{s.done ? '✓' : s.n}</span>
-                          <span className={`text-[9px] font-bold hidden sm:block ${s.done ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400'}`}>{s.label}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              
 
               {/* Ad-specific fields */}
               {postType === 'ad' && (
                 <div className="px-4 pb-4 border-b border-gray-100 dark:border-gray-800 space-y-3 pt-4">
 
-                  {/* ── Visual Step Progress Bar ── */}
-                  <div className="flex items-center gap-0 mb-2 -mx-1">
-                    {[
-                      { n: 1, label: 'Media' },
-                      { n: 2, label: 'Content' },
-                      { n: 3, label: 'CTA' },
-                      { n: 4, label: 'Audience' },
-                      { n: 5, label: 'Budget' },
-                      { n: 6, label: 'Review' },
-                    ].map((s, i, arr) => (
-                      <React.Fragment key={s.n}>
-                        <div className="flex flex-col items-center flex-1">
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black mb-0.5 ${
-                            s.n <= 2
-                              ? 'bg-green-500 text-white'
-                              : 'bg-purple-600 text-white'
-                          }`}>{s.n <= 2 ? '✓' : s.n}</div>
-                          <span className="text-[9px] font-semibold text-gray-400 text-center leading-none">{s.label}</span>
-                        </div>
-                        {i < arr.length - 1 && (
-                          <div className={`h-[2px] flex-1 mb-3 ${s.n < 2 ? 'bg-green-400' : 'bg-purple-200 dark:bg-purple-900/40'}`} />
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </div>
-                  <p className="text-[10px] text-gray-400 text-center -mt-1 mb-2">Steps 1 &amp; 2 (media + edit) are already done ✓ — complete steps 3–6 below</p>
-
-                  {/* ── STEP 2: Title + Description ── */}
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Step 2 · Ad Content</div>
+                  {/* Ad Content */}
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Ad Content</div>
 
                   <input
                     type="text"
@@ -2491,35 +2438,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                   {/* ── STEP 6: Review & Submit ── */}
                   <div className="pt-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Step 6 · Review & Submit</div>
 
-                  {/* Engagement Controls */}
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                    <button onClick={() => setOpenAccordion(openAccordion === 'engagement' ? null : 'engagement')}
-                      className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
-                      <span>Engagement Controls</span>
-                      <ChevronDown size={16} className={`transition-transform ${openAccordion === 'engagement' ? 'rotate-180' : ''}`} />
-                    </button>
-                    {openAccordion === 'engagement' && (
-                      <div className="p-3 bg-white dark:bg-black space-y-3">
-                        {[
-                          { label: 'Hide likes count',   value: hideLikes,          setter: setHideLikes },
-                          { label: 'Disable comments',   value: turnOffCommenting,  setter: setTurnOffCommenting },
-                          { label: 'Disable share',      value: disableShare,       setter: setDisableShare },
-                          { label: 'Disable save',       value: disableSave,        setter: setDisableSave },
-                          { label: 'Disable report',     value: disableReport,      setter: setDisableReport },
-                          { label: 'Moderation mode',    value: moderationEnabled,  setter: setModerationEnabled },
-                        ].map(ctrl => (
-                          <div key={ctrl.label} className="flex items-center justify-between">
-                            <span className="text-sm text-gray-700 dark:text-gray-300">{ctrl.label}</span>
-                            <div className="relative inline-flex items-center cursor-pointer" onClick={() => ctrl.setter(!ctrl.value)}>
-                              <input type="checkbox" className="sr-only peer" checked={ctrl.value} readOnly />
-                              <div className="w-10 h-5 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
                   {/* Policy Agreement — REQUIRED */}
                   <div className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-colors cursor-pointer ${
                     policyAgreed
@@ -2613,6 +2531,33 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                           </div>
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">You can change this later by going to the ... menu at the top of your post.</p>
+                      </div>
+                      <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                        <button onClick={() => setOpenAccordion(openAccordion === 'engagement' ? null : 'engagement')}
+                          className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
+                          <span>Engagement Controls</span>
+                          <ChevronDown size={16} className={`transition-transform ${openAccordion === 'engagement' ? 'rotate-180' : ''}`} />
+                        </button>
+                        {openAccordion === 'engagement' && (
+                          <div className="p-3 bg-white dark:bg-black space-y-3">
+                            {[
+                              { label: 'Hide likes count',   value: hideLikes,          setter: setHideLikes },
+                              { label: 'Disable comments',   value: turnOffCommenting,  setter: setTurnOffCommenting },
+                              { label: 'Disable share',      value: disableShare,       setter: setDisableShare },
+                              { label: 'Disable save',       value: disableSave,        setter: setDisableSave },
+                              { label: 'Disable report',     value: disableReport,      setter: setDisableReport },
+                              { label: 'Moderation mode',    value: moderationEnabled,  setter: setModerationEnabled },
+                            ].map(ctrl => (
+                              <div key={ctrl.label} className="flex items-center justify-between">
+                                <span className="text-sm text-gray-700 dark:text-gray-300">{ctrl.label}</span>
+                                <div className="relative inline-flex items-center cursor-pointer" onClick={() => ctrl.setter(!ctrl.value)}>
+                                  <input type="checkbox" className="sr-only peer" checked={ctrl.value} readOnly />
+                                  <div className="w-10 h-5 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

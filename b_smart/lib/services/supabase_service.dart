@@ -14,6 +14,7 @@ class SupabaseService {
   SupabaseService._internal();
 
   final UsersApi _usersApi = UsersApi();
+  final VendorsApi _vendorsApi = VendorsApi();
   final PostsApi _postsApi = PostsApi();
   final CommentsApi _commentsApi = CommentsApi();
   final UploadApi _uploadApi = UploadApi();
@@ -194,6 +195,25 @@ class SupabaseService {
       }
     } catch (_) {}
     return null;
+  }
+
+  Future<Map<String, dynamic>?> getVendorById(String vendorUserId) async {
+    try {
+      final data = await _vendorsApi.getVendorById(vendorUserId);
+      if (data['vendor'] is Map) {
+        return (data['vendor'] as Map).cast<String, dynamic>();
+      }
+      if (data['data'] is Map) {
+        final d = (data['data'] as Map).cast<String, dynamic>();
+        if (d['vendor'] is Map) {
+          return (d['vendor'] as Map).cast<String, dynamic>();
+        }
+        return d;
+      }
+      return data;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Map<String, dynamic>?> getUserByEmail(String email) async {
