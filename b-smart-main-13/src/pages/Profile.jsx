@@ -650,16 +650,14 @@ const Profile = () => {
                         <div className="flex gap-6 items-start mb-6">
                             {/* Avatar */}
                             <div className="relative flex-shrink-0">
-                                <div className="w-[100px] h-[100px] rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500">
-                                    <div className="w-full h-full rounded-full bg-white dark:bg-black p-[2px] overflow-hidden">
+                                <div className="w-[100px] h-[100px] rounded-full overflow-hidden border-[3px] border-white dark:border-gray-900" style={{boxShadow:'0 4px 20px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.10)'}}>
                                         {profileUser.avatar_url ? (
                                             <img src={profileUser.avatar_url} alt={profileUser.username} className="w-full h-full object-cover rounded-full" />
                                         ) : (
-                                            <div className="w-full h-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 flex items-center justify-center text-xl font-bold text-white rounded-full">
+                                            <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center text-xl font-bold text-gray-600 dark:text-gray-300 rounded-full">
                                                 {getInitials(profileUser.full_name || profileUser.username)}
                                             </div>
                                         )}
-                                    </div>
                                 </div>
                                 {isOwnProfile && (
                                     <button type="button" onClick={() => setShowAvatarModal(true)}
@@ -823,16 +821,15 @@ const Profile = () => {
                         <div className="relative flex-shrink-0">
                             <div
                                 onClick={() => isOwnProfile && setShowAvatarModal(true)}
-                                className={`w-[168px] h-[168px] rounded-full p-[4px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 transition-opacity ${isOwnProfile ? 'cursor-pointer hover:opacity-90' : ''}`}>
-                                <div className="w-full h-full rounded-full bg-white dark:bg-black p-[4px] overflow-hidden">
+                                className={`w-[168px] h-[168px] rounded-full overflow-hidden border-4 border-white dark:border-gray-900 transition-opacity ${isOwnProfile ? 'cursor-pointer hover:opacity-90' : ''}`}
+                                style={{boxShadow:'0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)'}}>
                                     {profileUser.avatar_url ? (
                                         <img src={profileUser.avatar_url} className="w-full h-full rounded-full object-cover" alt="Profile" />
                                     ) : (
-                                        <div className="w-full h-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 flex items-center justify-center text-5xl font-bold text-white rounded-full">
+                                        <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center text-5xl font-bold text-gray-600 dark:text-gray-300 rounded-full">
                                             {getInitials(profileUser.full_name || profileUser.username)}
                                         </div>
                                     )}
-                                </div>
                             </div>
                             {isOwnProfile && (
                                 <button type="button" onClick={() => setShowAvatarModal(true)}

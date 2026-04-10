@@ -18,6 +18,9 @@ import 'screens/auth_callback_screen.dart';
 import 'screens/story_camera_screen.dart';
 import 'screens/own_story_viewer_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/advertiser_ads_list_screen.dart';
+import 'screens/advertiser_create_ad_screen.dart';
+import 'screens/role_redirect_gate.dart';
 import '../models/media_model.dart';
 import 'screens/edit_video_screen.dart';
 
@@ -54,7 +57,29 @@ final Map<String, WidgetBuilder> appRoutes = {
         (args is Map ? args['initialReelId'] : null)?.toString();
     return ReelsScreen(initialReelId: initialId);
   },
-  '/ads': (ctx) => const AdsPageScreen(),
+  // Mirrors React: vendors are redirected off `/ads` to `/vendor-ads`.
+  '/ads': (ctx) => const RoleRedirectGate(
+        requireVendor: false,
+        redirectTo: '/vendor-ads',
+        child: AdsPageScreen(),
+      ),
+  // Mirrors React: vendors are redirected off `/ads` to `/vendor-ads`.
+  '/vendor-ads': (ctx) => const RoleRedirectGate(
+        requireVendor: true,
+        redirectTo: '/ads',
+        child: AdsPageScreen(),
+      ),
+  // Mirrors React: vendors manage campaigns under `/vendor/ads-management`.
+  '/vendor/ads-management': (ctx) => const RoleRedirectGate(
+        requireVendor: true,
+        redirectTo: '/ads',
+        child: AdvertiserAdsListScreen(),
+      ),
+  '/vendor/ads-management/create': (ctx) => const RoleRedirectGate(
+        requireVendor: true,
+        redirectTo: '/ads',
+        child: AdvertiserCreateAdScreen(),
+      ),
   '/promote': (ctx) => const PromoteScreen(),
   '/settings': (ctx) => const SettingsScreen(),
   '/wallet': (ctx) => const WalletScreen(),

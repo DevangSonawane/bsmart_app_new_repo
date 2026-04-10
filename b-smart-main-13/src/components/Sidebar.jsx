@@ -874,7 +874,13 @@ const Sidebar = ({ onOpenCreateModal }) => {
                   {filteredUsers.map(u => (
                     <button
                       key={u._id || u.id}
-                      onClick={() => { navigate(`/profile/${u._id || u.id}`); closeSidebarSearch(); }}
+                      onClick={() => { 
+                        const profilePath = u.role === 'vendor' 
+                          ? `/vendor/${u._id || u.id}/public` 
+                          : `/profile/${u._id || u.id}`;
+                        navigate(profilePath); 
+                        closeSidebarSearch(); 
+                      }}
                       className="w-full flex items-center gap-3 px-6 py-3 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors text-left"
                     >
                       <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[2px] shrink-0">

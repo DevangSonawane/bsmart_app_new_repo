@@ -11,7 +11,7 @@ import Reels from './pages/Reels';
 import Promote from './pages/Promote';
 import Ads from './pages/Ads';
 import VendorAds from './pages/VendorAds';
-
+import AdPublicDetail from './pages/AdPublicDetail';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
@@ -29,6 +29,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Search from './pages/Search';
 import ChatPage from './pages/ChatPage';
 
+import VendorPublicProfile from './pages/VendorPublicProfile';
 import VendorLayout from './components/VendorLayout';
 import VendorDashboard from './pages/vendor-pages/Dashboard';
 import VendorProfile from './pages/vendor-pages/VendorProfile';
@@ -110,6 +111,9 @@ function App() {
           <Route path="/search"           element={<Search />} />
           <Route path="/messages"         element={<ChatPage />} />
           <Route path="/messages/:conversationId" element={<ChatPage />} />
+          <Route path="/vendor/:userId/public" element={<VendorPublicProfile />} />
+          <Route path="/ads/:adId/details" element={<AdPublicDetail />} />
+
         </Route>
 
         <Route path="/vendor" element={

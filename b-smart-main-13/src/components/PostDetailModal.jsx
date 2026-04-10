@@ -175,12 +175,17 @@ const PeopleTagsOverlay = ({ tags }) => {
         const x = Math.min(88, Math.max(12, tag.x));
         const y = Math.min(88, Math.max(12, tag.y));
         const inBottom = y > 55;
+        
+        const profilePath = tag.role === 'vendor' 
+          ? `/vendor/${tag.user_id || ''}/public` 
+          : `/profile/${tag.user_id || ''}`;
+
         return (
           <div key={tag._id || idx} className="absolute z-30 pointer-events-auto"
             style={{ left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)', animation: `igTagPop 0.28s ${idx * 0.07}s cubic-bezier(0.34,1.56,0.64,1) both` }}>
             <div className="flex flex-col items-center">
               {!inBottom && <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-white/90 -mb-px" />}
-              <Link to={`/profile/${tag.user_id || ''}`} onClick={e => e.stopPropagation()}
+              <Link to={profilePath} onClick={e => e.stopPropagation()}
                 className="block bg-white/90 text-black text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap shadow-xl hover:bg-white">
                 @{tag.username}
               </Link>
@@ -671,6 +676,8 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
       ? `${window.location.origin}/reels/${postId}`
       : `${window.location.origin}/posts/${postId}`;
 
+  const profilePath = isAd ? `/vendor/${userId}/public` : `/profile/${userId}`;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 md:p-10">
       <button onClick={onClose} className="absolute top-4 right-4 text-white hover:opacity-75 z-[60]">
@@ -690,10 +697,12 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
           {/* Header */}
           <div className="flex items-center justify-between p-3 md:p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              <Avatar src={avatar} username={username} />
+              <Link to={profilePath}>
+                <Avatar src={avatar} username={username} />
+              </Link>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Link to={`/profile/${userId}`} className="font-semibold text-sm text-gray-900 dark:text-white hover:opacity-70 truncate">
+                  <Link to={profilePath} className="font-semibold text-sm text-gray-900 dark:text-white hover:opacity-70 truncate">
                     {username}
                   </Link>
                   {isAd && <span className="text-[10px] text-gray-400">Sponsored</span>}
@@ -760,9 +769,11 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
 
             {/* Caption block */}
             <div className="flex gap-3 mb-4">
-              <Avatar src={avatar} username={username} size="sm" />
+              <Link to={profilePath}>
+                <Avatar src={avatar} username={username} size="sm" />
+              </Link>
               <div className="flex-1 text-sm">
-                <span className="font-semibold mr-2 dark:text-white">{username}</span>
+                <Link to={profilePath} className="font-semibold mr-2 dark:text-white hover:underline">{username}</Link>
                 {post.caption ? (
                   <span className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap">{post.caption}</span>
                 ) : (

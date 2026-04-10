@@ -388,6 +388,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
   // A/B testing
   const [abTestingEnabled, setAbTestingEnabled] = useState(false);
 
+  // Search states for accordions
+  const [countrySearch, setCountrySearch] = useState('');
+  const [stateSearch, setStateSearch] = useState('');
+  const [languageSearch, setLanguageSearch] = useState('');
+
   // Scheduling
   const [scheduleSlots, setScheduleSlots] = useState([]);
 
@@ -1927,30 +1932,54 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                   </div>
                 </div>
 
-                {/* ── Section 2: Ad Type ── */}
+                {/* ── Section 2: Ad Type & Category ── */}
                 <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
                   <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-orange-50 to-orange-50/0 dark:from-orange-950/30 dark:to-transparent">
                     <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0">
                       <Tag size={12} className="text-white" />
                     </div>
-                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Ad Type</span>
+                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Type & Category</span>
                   </div>
-                  <div className="p-4 grid grid-cols-2 gap-2">
-                    {[
-                      { value: 'sponsored_post', label: 'Sponsored Post', icon: '📢' },
-                      { value: 'banner',         label: 'Banner',         icon: '🖼️' },
-                      { value: 'video',          label: 'Video',          icon: '🎬' },
-                      { value: 'carousel',       label: 'Carousel',       icon: '🎠' },
-                    ].map(t => (
-                      <button key={t.value} onClick={() => setAdType(t.value)}
-                        className={`flex items-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold border-2 transition-all ${
-                          adType === t.value
-                            ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white border-orange-500 shadow-md shadow-orange-200 dark:shadow-orange-900/30'
-                            : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-orange-300 hover:text-orange-500'
-                        }`}>
-                        <span>{t.icon}</span> {t.label}
-                      </button>
-                    ))}
+                  <div className="p-4 space-y-4">
+                    {/* Category Dropdown */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Category <span className="text-orange-500">*</span></label>
+                      <div className="relative">
+                        <select
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all appearance-none"
+                        >
+                          <option value="">Select a Category</option>
+                          {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* Ad Type grid */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Display Format</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { value: 'sponsored_post', label: 'Sponsored Post', icon: '📢' },
+                          { value: 'banner',         label: 'Banner',         icon: '🖼️' },
+                          { value: 'video',          label: 'Video',          icon: '🎬' },
+                          { value: 'carousel',       label: 'Carousel',       icon: '🎠' },
+                        ].map(t => (
+                          <button key={t.value} onClick={() => setAdType(t.value)}
+                            className={`flex items-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold border-2 transition-all ${
+                              adType === t.value
+                                ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white border-orange-500 shadow-md shadow-orange-200 dark:shadow-orange-900/30'
+                                : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-orange-300 hover:text-orange-500'
+                            }`}>
+                            <span>{t.icon}</span> {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -2356,22 +2385,36 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       <ChevronDown size={16} className={`transition-transform ${openAccordion === 'country' ? 'rotate-180' : ''}`} />
                     </button>
                     {openAccordion === 'country' && (
-                      <div className="max-h-52 overflow-y-auto bg-white dark:bg-black">
-                        {isLoadingCountries ? (
-                          <div className="p-3 text-xs text-gray-500">Loading countries...</div>
-                        ) : allCountries.length === 0 ? (
-                          <div className="p-3 text-xs text-gray-400">No countries available</div>
-                        ) : allCountries.map(c => {
-                          const name = typeof c === 'string' ? c : (c.name || c.country);
-                          return (
-                            <label key={name} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
-                              <input type="checkbox" checked={selectedCountries.includes(name)}
-                                onChange={() => setSelectedCountries(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name])}
-                                className="accent-blue-600" />
-                              <span className="text-sm dark:text-gray-200">{name}</span>
-                            </label>
-                          );
-                        })}
+                      <div className="flex flex-col bg-white dark:bg-black">
+                        <div className="p-2 border-b border-gray-100 dark:border-gray-800">
+                          <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              placeholder="Search country..."
+                              value={countrySearch}
+                              onChange={(e) => setCountrySearch(e.target.value)}
+                              className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs dark:text-white outline-none"
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-52 overflow-y-auto">
+                          {isLoadingCountries ? (
+                            <div className="p-3 text-xs text-gray-500">Loading countries...</div>
+                          ) : allCountries.filter(c => (typeof c === 'string' ? c : (c.name || c.country)).toLowerCase().includes(countrySearch.toLowerCase())).length === 0 ? (
+                            <div className="p-3 text-xs text-gray-400">No countries found</div>
+                          ) : allCountries.filter(c => (typeof c === 'string' ? c : (c.name || c.country)).toLowerCase().includes(countrySearch.toLowerCase())).map(c => {
+                            const name = typeof c === 'string' ? c : (c.name || c.country);
+                            return (
+                              <label key={name} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                <input type="checkbox" checked={selectedCountries.includes(name)}
+                                  onChange={() => setSelectedCountries(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name])}
+                                  className="accent-blue-600" />
+                                <span className="text-sm dark:text-gray-200">{name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2385,29 +2428,44 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                         <ChevronDown size={16} className={`transition-transform ${openAccordion === 'state' ? 'rotate-180' : ''}`} />
                       </button>
                       {openAccordion === 'state' && (
-                        <div className="max-h-52 overflow-y-auto bg-white dark:bg-black">
-                          {isLoadingStates ? <div className="p-3 text-xs text-gray-500">Loading states...</div> : (
-                            selectedCountries.map(country => {
-                              const states = statesByCountry[country] || [];
-                              if (!states.length) return null;
-                              return (
-                                <div key={country}>
-                                  <div className="px-3 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 dark:bg-gray-900">{country}</div>
-                                  {states.map(st => {
-                                    const stateName = st.state || (typeof st === 'string' ? st : st.name);
-                                    return (
-                                      <label key={stateName} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
-                                        <input type="checkbox" checked={selectedStates.includes(stateName)}
-                                          onChange={() => setSelectedStates(prev => prev.includes(stateName) ? prev.filter(x => x !== stateName) : [...prev, stateName])}
-                                          className="accent-blue-600" />
-                                        <span className="text-sm dark:text-gray-200">{stateName}</span>
-                                      </label>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })
-                          )}
+                        <div className="flex flex-col bg-white dark:bg-black">
+                          <div className="p-2 border-b border-gray-100 dark:border-gray-800">
+                            <div className="relative">
+                              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                placeholder="Search state..."
+                                value={stateSearch}
+                                onChange={(e) => setStateSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs dark:text-white outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-52 overflow-y-auto">
+                            {isLoadingStates ? <div className="p-3 text-xs text-gray-500">Loading states...</div> : (
+                              selectedCountries.map(country => {
+                                const states = (statesByCountry[country] || []).filter(st => (st.state || (typeof st === 'string' ? st : st.name)).toLowerCase().includes(stateSearch.toLowerCase()));
+                                if (!states.length && !stateSearch) return null;
+                                if (!states.length && stateSearch) return null;
+                                return (
+                                  <div key={country}>
+                                    <div className="px-3 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 dark:bg-gray-900">{country}</div>
+                                    {states.map(st => {
+                                      const stateName = st.state || (typeof st === 'string' ? st : st.name);
+                                      return (
+                                        <label key={stateName} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                          <input type="checkbox" checked={selectedStates.includes(stateName)}
+                                            onChange={() => setSelectedStates(prev => prev.includes(stateName) ? prev.filter(x => x !== stateName) : [...prev, stateName])}
+                                            className="accent-blue-600" />
+                                          <span className="text-sm dark:text-gray-200">{stateName}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2422,27 +2480,42 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                         <ChevronDown size={16} className={`transition-transform ${openAccordion === 'language' ? 'rotate-180' : ''}`} />
                       </button>
                       {openAccordion === 'language' && (
-                        <div className="max-h-52 overflow-y-auto bg-white dark:bg-black">
-                          {isLoadingLanguages ? <div className="p-3 text-xs text-gray-500">Loading languages...</div>
-                          : Object.keys(languagesByState).length === 0 ? <div className="p-3 text-xs text-gray-400">No languages found for selected states</div>
-                          : selectedCountries.map(country => {
-                              const langs = languagesByState[country] || [];
-                              if (!langs.length) return null;
-                              return (
-                                <div key={country}>
-                                  <div className="px-3 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 dark:bg-gray-900">{country}</div>
-                                  {langs.map(langName => (
-                                    <label key={langName} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
-                                      <input type="checkbox" checked={selectedLanguages.includes(langName)}
-                                        onChange={() => setSelectedLanguages(prev => prev.includes(langName) ? prev.filter(x => x !== langName) : [...prev, langName])}
-                                        className="accent-purple-600" />
-                                      <span className="text-sm dark:text-gray-200">{langName}</span>
-                                    </label>
-                                  ))}
-                                </div>
-                              );
-                            })
-                          }
+                        <div className="flex flex-col bg-white dark:bg-black">
+                          <div className="p-2 border-b border-gray-100 dark:border-gray-800">
+                            <div className="relative">
+                              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                placeholder="Search language..."
+                                value={languageSearch}
+                                onChange={(e) => setLanguageSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs dark:text-white outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-52 overflow-y-auto">
+                            {isLoadingLanguages ? <div className="p-3 text-xs text-gray-500">Loading languages...</div>
+                            : Object.keys(languagesByState).length === 0 ? <div className="p-3 text-xs text-gray-400">No languages found for selected states</div>
+                            : selectedCountries.map(country => {
+                                const langs = (languagesByState[country] || []).filter(l => l.toLowerCase().includes(languageSearch.toLowerCase()));
+                                if (!langs.length && !languageSearch) return null;
+                                if (!langs.length && languageSearch) return null;
+                                return (
+                                  <div key={country}>
+                                    <div className="px-3 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 dark:bg-gray-900">{country}</div>
+                                    {langs.map(langName => (
+                                      <label key={langName} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                        <input type="checkbox" checked={selectedLanguages.includes(langName)}
+                                          onChange={() => setSelectedLanguages(prev => prev.includes(langName) ? prev.filter(x => x !== langName) : [...prev, langName])}
+                                          className="accent-purple-600" />
+                                        <span className="text-sm dark:text-gray-200">{langName}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                );
+                              })
+                            }
+                          </div>
                         </div>
                       )}
                     </div>

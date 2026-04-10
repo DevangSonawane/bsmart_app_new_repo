@@ -2,13 +2,112 @@ import { useState, useRef, useEffect } from "react";
 import { useSelector } from "react-redux";
 import api from "../../lib/api";
 import AvatarCropModal from "../../components/AvatarCropModal";
+import CoverImageCropModal from "../../components/CoverImageCropModal";
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Autoplay, Pagination } from "swiper/modules";
+
+// Swiper styles
+import "swiper/css";
+import "swiper/css/pagination";
+
 import {
   Building2, User, Handshake, ChevronDown, ChevronUp,
   Globe, Mail, Phone, MapPin, Edit3, Check, X,
   Loader2, AlertCircle, CheckCircle2, Instagram,
   Facebook, Linkedin, Twitter, Plus, Trash2, Save,
-  Shield, Star, BadgeCheck
+  Shield, Star, BadgeCheck, Camera, Image as ImageIcon,
+  GripVertical,
 } from "lucide-react";
+
+// Cover Manager Modal
+const CoverManagerModal = ({ images, onClose, onAdd, onDelete, onReorder, deleting }) => {
+  const [localImages, setLocalImages] = useState([...images]);
+  const dragIdx = useRef(null);
+  const handleDragStart = (i) => { dragIdx.current = i; };
+  const handleDragOver  = (e, i) => {
+    e.preventDefault();
+    if (dragIdx.current === null || dragIdx.current === i) return;
+    const arr = [...localImages];
+    const [moved] = arr.splice(dragIdx.current, 1);
+    arr.splice(i, 0, moved);
+    dragIdx.current = i;
+    setLocalImages(arr);
+  };
+  const handleDrop = () => { onReorder(localImages); dragIdx.current = null; };
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-2xl overflow-hidden">
+        <div className="sm:hidden flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-gray-200 dark:bg-gray-700" /></div>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+          <div>
+            <div className="text-base font-black text-gray-900 dark:text-white">Manage Cover Photos</div>
+            <div className="text-xs text-gray-400 mt-0.5">Drag to reorder · tap ✕ to remove</div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-400"><X size={16} /></button>
+        </div>
+        <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
+          {localImages.length === 0 && (<div className="text-center py-10 text-gray-400 text-sm">No cover photos yet.</div>)}
+          {localImages.map((url, i) => (
+            <div key={url} draggable onDragStart={() => handleDragStart(i)} onDragOver={(e) => handleDragOver(e, i)} onDrop={handleDrop}
+              className="flex items-center gap-3 p-2 rounded-2xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 cursor-grab active:cursor-grabbing hover:border-gray-200 dark:hover:border-gray-700 transition-all">
+              <GripVertical size={16} className="text-gray-300 dark:text-gray-600 flex-shrink-0" />
+              <img src={url} alt={`Cover ${i+1}`} className="w-14 h-10 object-cover rounded-lg flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  {i === 0 ? <span className="text-pink-600 dark:text-pink-400 font-bold">First (shown first)</span> : `Photo ${i + 1}`}
+                </div>
+                <div className="text-[10px] text-gray-400">Drag to reorder</div>
+              </div>
+              <button onClick={() => onDelete(url)} disabled={deleting === url}
+                className="w-7 h-7 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center hover:bg-red-100 transition-colors disabled:opacity-50 flex-shrink-0">
+                {deleting === url ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="px-4 pb-4 pt-2 border-t border-gray-100 dark:border-gray-800">
+          <button onClick={onAdd} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-pink-200 dark:border-pink-900 text-pink-600 dark:text-pink-400 text-sm font-bold hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-colors">
+            <Plus size={16} /> Add Cover Photo
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Avatar Manager Modal
+const AvatarManagerModal = ({ avatarUrl, companyName, onClose, onUpload, onDelete, deleting }) => (
+  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="w-full sm:max-w-xs rounded-t-3xl sm:rounded-3xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-2xl overflow-hidden">
+      <div className="sm:hidden flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-gray-200 dark:bg-gray-700" /></div>
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+        <div className="text-base font-black text-gray-900 dark:text-white">Profile Photo</div>
+        <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400"><X size={16} /></button>
+      </div>
+      <div className="flex flex-col items-center gap-4 px-5 py-6">
+        <div className="w-24 h-24 rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 border-4 border-white dark:border-gray-900 shadow-xl">
+          {avatarUrl
+            ? <img src={avatarUrl} alt="Logo" className="w-full h-full object-cover" />
+            : <div className="w-full h-full bg-gradient-to-br from-orange-400 to-pink-600 flex items-center justify-center text-3xl font-black text-white">{companyName?.[0]?.toUpperCase() || "?"}</div>
+          }
+        </div>
+        <div className="text-sm font-semibold text-gray-700 dark:text-gray-300">{companyName || "Logo"}</div>
+      </div>
+      <div className="px-4 pb-5 space-y-2">
+        <button onClick={onUpload} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-orange-500 to-pink-600 text-white text-sm font-bold hover:opacity-90 transition-all shadow-md shadow-pink-500/20">
+          <Camera size={15} /> {avatarUrl ? "Change Photo" : "Upload Photo"}
+        </button>
+        {avatarUrl && (
+          <button onClick={onDelete} disabled={deleting} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-red-200 dark:border-red-800 text-red-500 text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-all disabled:opacity-50">
+            {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            {deleting ? "Removing…" : "Remove Photo"}
+          </button>
+        )}
+        <button onClick={onClose} className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 transition-colors">Cancel</button>
+      </div>
+    </div>
+  </div>
+);
 
 // ─── Reusable Field Components ───────────────────────────────────────────────
 const Field = ({ label, children, required }) => (
@@ -179,7 +278,8 @@ const EMPTY_FORM = {
   addressLine1: "", addressLine2: "", city: "", pincode: "",
   state: "", addressCountry: "", instagram: "", facebook: "",
   linkedin: "", twitter: "", description: "", profileCompletion: 0,
-  validated: false, verificationStatus: "",
+  validated: false, verificationStatus: "", coverImageUrls: [],
+  avatarUrl: "",
 };
 
 const mapApiToForm = (data) => ({
@@ -192,6 +292,7 @@ const mapApiToForm = (data) => ({
   userEmail:        data.user_id?.email                       ?? "",
   userPhone:        data.user_id?.phone                       ?? "",
   userFullName:     data.user_id?.full_name                   ?? "",
+  avatarUrl:        data.user_id?.avatar_url                  ?? "",
   industry:         data.business_details?.industry_category  ?? "",
   businessNature:   data.business_details?.business_nature    ?? "",
   coverage:         data.business_details?.service_coverage   ?? "",
@@ -213,6 +314,7 @@ const mapApiToForm = (data) => ({
   profileCompletion: data.profile_completion_percentage       ?? 0,
   validated:        data.validated === true,
   verificationStatus: data.verification_status               ?? "",
+  coverImageUrls:   data.cover_image_urls                     ?? [],
 });
 
 const mapFormToBody = (form) => ({
@@ -232,6 +334,7 @@ const mapFormToBody = (form) => ({
     linkedin: form.linkedin, twitter: form.twitter,
   },
   company_description: form.description,
+  cover_image_urls: form.coverImageUrls,
 });
 
 // ─── CompanyInfo ──────────────────────────────────────────────────────────────
@@ -242,12 +345,53 @@ const CompanyInfo = () => {
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const [logoPreview, setLogoPreview] = useState(null);
   const [showLogoCropModal, setShowLogoCropModal] = useState(false);
+  const [showCoverCropModal, setShowCoverCropModal] = useState(false);
+  const [showCoverManager, setShowCoverManager] = useState(false);
+  const [showAvatarManager, setShowAvatarManager] = useState(false);
   const [showCompletionReminder, setShowCompletionReminder] = useState(false);
+  const [deletingCover, setDeletingCover] = useState(null); // url being deleted
+  const [deletingAvatar, setDeletingAvatar] = useState(false);
   const fileRef = useRef();
   const [form, setForm] = useState(EMPTY_FORM);
   const userId = userObject?._id || userObject?.id;
+
+  const handleCoverSuccess = (newUrl) => {
+    setForm(prev => ({ ...prev, coverImageUrls: [...prev.coverImageUrls, newUrl] }));
+    setShowCoverCropModal(false);
+    setShowCoverManager(true);
+  };
+
+  const handleAvatarSuccess = (newUrl) => {
+    setForm(prev => ({ ...prev, avatarUrl: newUrl }));
+    setShowLogoCropModal(false);
+    setShowAvatarManager(false);
+  };
+
+  const handleDeleteCoverApi = async (imageUrl) => {
+    if (!userId) return;
+    setDeletingCover(imageUrl);
+    try {
+      await api.delete(`/vendors/profile/${userId}/cover-image`, { data: { imageUrl } });
+      setForm(prev => ({ ...prev, coverImageUrls: prev.coverImageUrls.filter(u => u !== imageUrl) }));
+    } catch { /* silently fail – optimistic UI already removed it */ }
+    finally { setDeletingCover(null); }
+  };
+
+  const handleDeleteAvatar = async () => {
+    if (!userId) return;
+    setDeletingAvatar(true);
+    try {
+      await api.delete(`/vendors/profile/${userId}/avatar`);
+      setForm(prev => ({ ...prev, avatarUrl: "" }));
+      setShowAvatarManager(false);
+    } catch { /* ignore */ }
+    finally { setDeletingAvatar(false); }
+  };
+
+  const handleReorderCovers = (newOrder) => {
+    setForm(prev => ({ ...prev, coverImageUrls: newOrder }));
+  };
 
   const fetchProfile = async () => {
     if (!userId) return;
@@ -279,11 +423,6 @@ const CompanyInfo = () => {
       setTimeout(() => setSaved(false), 3000);
     } catch { setError("Failed to save changes. Please try again."); }
     finally { setSaving(false); }
-  };
-
-  const handleLogo = (e) => {
-    const f = e.target.files[0];
-    if (f) setLogoPreview(URL.createObjectURL(f));
   };
 
   const D = !editing;
@@ -321,56 +460,66 @@ const CompanyInfo = () => {
 
       {/* ── Profile Hero Card ── */}
       <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 overflow-hidden shadow-sm">
+
         {/* Cover banner */}
-        <div className="h-36 bg-gradient-to-r from-orange-400 via-pink-500 to-purple-600 relative overflow-hidden">
-          <div
-            className="absolute inset-0 opacity-20"
-            style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "20px 20px" }}
-          />
+        <div className="h-48 md:h-64 bg-gray-100 dark:bg-gray-800 relative overflow-hidden group">
+          {form.coverImageUrls && form.coverImageUrls.length > 0 ? (
+            <Swiper modules={[Autoplay, Pagination]} autoplay={{ delay: 3500, disableOnInteraction: false }} pagination={{ clickable: true }} className="w-full h-full">
+              {form.coverImageUrls.map((url, index) => (
+                <SwiperSlide key={index}>
+                  <img src={url} alt={`Cover ${index + 1}`} className="w-full h-full object-cover" />
+                </SwiperSlide>
+              ))}
+            </Swiper>
+          ) : (
+            <div className="w-full h-full bg-gradient-to-r from-orange-400 via-pink-500 to-purple-600 relative">
+              <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
+              <div className="absolute inset-0 flex items-center justify-center"><ImageIcon size={48} className="text-white/20" /></div>
+            </div>
+          )}
+          {/* Manage covers button — always visible */}
+          <button
+            type="button"
+            onClick={() => setShowCoverManager(true)}
+            className="absolute top-3 right-3 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/50 backdrop-blur-sm text-white text-[11px] font-bold hover:bg-black/70 transition-all shadow-lg"
+          >
+            <Camera size={13} /> {form.coverImageUrls.length > 0 ? "Edit Covers" : "Add Cover"}
+          </button>
         </div>
 
-        {/* Logo + actions row */}
-        <div className="px-5 pb-5">
-          {/* Logo overlaps banner — negative margin pulls it up */}
-          <div className="flex items-start justify-between" style={{ marginTop: "-40px" }}>
-            {/* Logo button */}
+        {/* Avatar + actions row */}
+        <div className="px-5 pb-5 bg-gray-50 dark:bg-gray-950/40">
+          <div className="flex items-end justify-between -mt-10 relative z-30">
+            {/* Avatar — opens AvatarManagerModal */}
             <button
               type="button"
-              onClick={() => setShowLogoCropModal(true)}
-              className={`w-[80px] h-[80px] rounded-2xl flex items-center justify-center overflow-hidden bg-white dark:bg-gray-800 border-4 border-white dark:border-gray-900 shadow-xl flex-shrink-0 transition-all relative ${editing ? "ring-2 ring-pink-500/60 ring-offset-2 cursor-pointer" : "cursor-pointer hover:opacity-90"}`}
-              title="Change Logo"
+              onClick={() => setShowAvatarManager(true)}
+              className="w-[80px] h-[80px] rounded-2xl flex items-center justify-center overflow-hidden bg-white dark:bg-gray-800 border-4 border-white dark:border-gray-900 shadow-xl flex-shrink-0 relative group/av cursor-pointer"
+              title="Manage Profile Photo"
             >
-              {logoPreview
-                ? <img src={logoPreview} alt="logo" className="w-full h-full object-cover" />
+              {form.avatarUrl
+                ? <img src={form.avatarUrl} alt="logo" className="w-full h-full object-cover" />
                 : <span className="text-3xl">🏢</span>}
-              {/* Edit overlay on hover */}
-              <div className="absolute inset-0 bg-black/30 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
-                <Edit3 size={18} className="text-white" />
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/av:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
+                <Camera size={18} className="text-white" />
               </div>
             </button>
 
-            {/* Edit / Save buttons — aligned to top right, with top padding matching banner height */}
-            <div className="flex gap-2 pt-10">
+            {/* Edit / Save buttons */}
+            <div className="flex gap-2 mb-2">
               {!editing ? (
-                <button
-                  onClick={() => setEditing(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all shadow-sm"
-                >
-                  <Edit3 size={13} /> Edit Profile
+                <button onClick={() => setEditing(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all shadow-sm">
+                  <Edit3 size={12} /> Edit Profile
                 </button>
               ) : (
                 <>
-                  <button
-                    onClick={() => { setEditing(false); setError(""); }}
-                    className="flex items-center gap-1 px-3.5 py-2 rounded-xl text-xs font-bold text-gray-500 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all"
-                  >
+                  <button onClick={() => { setEditing(false); setError(""); }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold text-gray-500 border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
                     <X size={12} /> Cancel
                   </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-orange-500 to-pink-600 text-white shadow-md shadow-pink-500/20 disabled:opacity-60 hover:opacity-90 transition-all"
-                  >
+                  <button onClick={handleSave} disabled={saving}
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-bold bg-gradient-to-r from-orange-500 to-pink-600 text-white shadow-md shadow-pink-500/20 disabled:opacity-60 hover:opacity-90 transition-all">
                     {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                     {saving ? "Saving…" : "Save Changes"}
                   </button>
@@ -379,21 +528,15 @@ const CompanyInfo = () => {
             </div>
           </div>
 
-          {/* Company info below logo */}
-          <div className="mt-3">
+          {/* Company info */}
+          <div className="mt-4">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-lg font-black text-gray-900 dark:text-white">{form.companyName || "—"}</div>
+              <div className="text-xl font-black text-gray-900 dark:text-white leading-none">{form.companyName || "—"}</div>
               <ValidationStatusBadge validated={form.validated} status={form.verificationStatus} />
             </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
               {[form.userFullName, form.userEmail].filter(Boolean).join(" · ")}
             </div>
-            <button
-              onClick={() => setShowLogoCropModal(true)}
-              className="text-[11px] font-semibold text-pink-600 dark:text-pink-400 mt-1.5 hover:underline"
-            >
-              Change Logo
-            </button>
           </div>
         </div>
       </div>
@@ -401,12 +544,44 @@ const CompanyInfo = () => {
       {/* Completion bar */}
       <CompletionBar pct={pct} />
 
+      {/* ── Cover Manager Modal ── */}
+      {showCoverManager && (
+        <CoverManagerModal
+          images={form.coverImageUrls}
+          onClose={() => setShowCoverManager(false)}
+          onAdd={() => { setShowCoverManager(false); setShowCoverCropModal(true); }}
+          onDelete={handleDeleteCoverApi}
+          onReorder={handleReorderCovers}
+          deleting={deletingCover}
+        />
+      )}
+
+      {/* ── Avatar Manager Modal ── */}
+      {showAvatarManager && (
+        <AvatarManagerModal
+          avatarUrl={form.avatarUrl}
+          companyName={form.companyName}
+          onClose={() => setShowAvatarManager(false)}
+          onUpload={() => { setShowAvatarManager(false); setShowLogoCropModal(true); }}
+          onDelete={handleDeleteAvatar}
+          deleting={deletingAvatar}
+        />
+      )}
+
+      {/* Cover Image Crop Modal */}
+      <CoverImageCropModal
+        isOpen={showCoverCropModal}
+        onClose={() => setShowCoverCropModal(false)}
+        onSuccess={handleCoverSuccess}
+        userId={userId}
+      />
+
       {/* Logo Crop Modal */}
       <AvatarCropModal
         isOpen={showLogoCropModal}
         onClose={() => setShowLogoCropModal(false)}
-        onSuccess={(newUrl) => { setLogoPreview(newUrl); setShowLogoCropModal(false); }}
-        currentAvatar={logoPreview}
+        onSuccess={handleAvatarSuccess}
+        currentAvatar={form.avatarUrl}
         userName={form.companyName || "Logo"}
       />
 

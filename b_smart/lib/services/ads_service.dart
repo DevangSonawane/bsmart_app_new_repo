@@ -182,6 +182,13 @@ class AdsService {
     return _adsApi.recordAdView(adId: adId, userId: userId);
   }
 
+  Future<Map<String, dynamic>> recordAdClick({
+    required String adId,
+    String? userId,
+  }) async {
+    return _adsApi.recordAdClick(adId: adId, userId: userId);
+  }
+
   Future<Map<String, dynamic>> likeAd({
     required String adId,
     String? userId,
@@ -206,6 +213,14 @@ class AdsService {
 
   Future<List<Map<String, dynamic>>> fetchAdComments(String adId) async {
     return _adsApi.getAdComments(adId);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAdCommentsPaged(
+    String adId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
+    return _adsApi.getAdCommentsPaged(adId, page: page, limit: limit);
   }
 
   Future<Map<String, dynamic>> addAdComment({
@@ -235,6 +250,25 @@ class AdsService {
 
   Future<Map<String, dynamic>> toggleAdCommentDislike(String commentId) async {
     return _adsApi.toggleAdCommentDislike(commentId);
+  }
+
+  Future<Map<String, dynamic>> getAdStats(String adId) async {
+    return _adsApi.getAdStats(adId);
+  }
+
+  Future<Map<String, dynamic>> updateAdMetadata({
+    required String adId,
+    required Map<String, dynamic> metadata,
+  }) async {
+    return _adsApi.updateAdMetadata(adId: adId, metadata: metadata);
+  }
+
+  Future<Map<String, dynamic>> getAdWalletHistory({
+    required String adId,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    return _adsApi.getAdWalletHistory(adId: adId, page: page, limit: limit);
   }
 
   Future<Map<String, dynamic>> adminUpdateAdStatus({

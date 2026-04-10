@@ -154,6 +154,7 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
   double _rotationStart = 0.0;
   bool _positionInitialized = false;
   Size _editorSize = Size.zero;
+  bool _isDragging = false;
   bool _showMentionStrip = false;
   bool _mentionLoading = false;
   int? _activeMentionStart;
@@ -420,7 +421,8 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
           Text(
             text,
             textAlign: _alignment,
-            style: _outlinedStyle(strokeColor: _textColor.withValues(alpha: 0.8), width: 4),
+            style: _outlinedStyle(
+                strokeColor: _textColor.withValues(alpha: 0.8), width: 4),
           ),
           Text(
             text,
@@ -428,7 +430,8 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
             style: base.copyWith(
               shadows: [
                 Shadow(color: _textColor, blurRadius: 14),
-                Shadow(color: _textColor.withValues(alpha: 0.8), blurRadius: 24),
+                Shadow(
+                    color: _textColor.withValues(alpha: 0.8), blurRadius: 24),
               ],
             ),
           ),
@@ -504,6 +507,7 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
       ),
     );
   }
+
   Widget _buildFramedBackground() {
     return Positioned.fill(
       child: Container(
@@ -698,6 +702,17 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                           rotation: _rotation,
                           onScaleStart: _onScaleStart,
                           onScaleUpdate: _onScaleUpdate,
+                          isDragging: _isDragging,
+                          isNearTrash: false,
+                          onDragStart: () {
+                            if (!mounted) return;
+                            setState(() => _isDragging = true);
+                          },
+                          onDragUpdate: (_) {},
+                          onDragEnd: () {
+                            if (!mounted) return;
+                            setState(() => _isDragging = false);
+                          },
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 320),
                             child: Stack(
@@ -720,7 +735,8 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                                       maxLines: null,
                                       keyboardType: TextInputType.multiline,
                                       enableInteractiveSelection: false,
-                                      scrollPhysics: const NeverScrollableScrollPhysics(),
+                                      scrollPhysics:
+                                          const NeverScrollableScrollPhysics(),
                                       decoration: const InputDecoration(
                                         border: InputBorder.none,
                                         hintText: '',
@@ -794,57 +810,78 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                                 height: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
                                 ),
                               ),
                             )
-                              : _mentionResults.isEmpty
+                          : _mentionResults.isEmpty
                               ? const Center(
                                   child: Text(
                                     'No suggestions',
-                                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                                    style: TextStyle(
+                                        color: Colors.white54, fontSize: 12),
                                   ),
                                 )
                               : ListView.separated(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
                                   scrollDirection: Axis.horizontal,
                                   itemCount: _mentionResults.length,
-                                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(width: 14),
                                   itemBuilder: (context, index) {
                                     final user = _mentionResults[index];
-                                    final username = (user['username'] as String?) ?? '';
-                                    final userId =
-                                        (user['id'] as String?) ?? (user['_id'] as String?) ?? '';
-                                    final avatarUrl = user['avatar_url'] as String?;
+                                    final username =
+                                        (user['username'] as String?) ?? '';
+                                    final userId = (user['id'] as String?) ??
+                                        (user['_id'] as String?) ??
+                                        '';
+                                    final avatarUrl =
+                                        user['avatar_url'] as String?;
                                     return GestureDetector(
                                       onTap: username.isEmpty || userId.isEmpty
                                           ? null
-                                          : () => _insertMention(userId, username),
+                                          : () =>
+                                              _insertMention(userId, username),
                                       child: SizedBox(
                                         width: 70,
                                         child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
                                             CircleAvatar(
                                               radius: 24,
                                               backgroundColor: Colors.white24,
-                                              backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
-                                                  ? NetworkImage(avatarUrl)
-                                                  : null,
-                                              child: avatarUrl == null || avatarUrl.isEmpty
+                                              backgroundImage:
+                                                  avatarUrl != null &&
+                                                          avatarUrl.isNotEmpty
+                                                      ? NetworkImage(avatarUrl)
+                                                      : null,
+                                              child: avatarUrl == null ||
+                                                      avatarUrl.isEmpty
                                                   ? Text(
-                                                      username.isNotEmpty ? username[0].toUpperCase() : '?',
-                                                      style: const TextStyle(color: Colors.white, fontSize: 18),
+                                                      username.isNotEmpty
+                                                          ? username[0]
+                                                              .toUpperCase()
+                                                          : '?',
+                                                      style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 18),
                                                     )
                                                   : null,
                                             ),
                                             const SizedBox(height: 6),
                                             Text(
-                                              username.isEmpty ? 'user' : username,
+                                              username.isEmpty
+                                                  ? 'user'
+                                                  : username,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               textAlign: TextAlign.center,
-                                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                                              style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12),
                                             ),
                                           ],
                                         ),
@@ -879,9 +916,11 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF1A1A1A).withValues(alpha: 0.82),
+                            color:
+                                const Color(0xFF1A1A1A).withValues(alpha: 0.82),
                             borderRadius: BorderRadius.circular(22),
                             border: Border.all(color: Colors.white12),
                           ),
@@ -920,7 +959,8 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                               _ToolbarIcon(
                                 label: '[A]',
                                 onTap: _toggleBackgroundStyle,
-                                isActive: _backgroundStyle != BackgroundStyle.none,
+                                isActive:
+                                    _backgroundStyle != BackgroundStyle.none,
                               ),
                             ],
                           ),
@@ -939,8 +979,10 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                       child: SliderTheme(
                         data: const SliderThemeData(
                           trackHeight: 4,
-                          thumbShape: RoundSliderThumbShape(enabledThumbRadius: 8),
-                          overlayShape: RoundSliderOverlayShape(overlayRadius: 0),
+                          thumbShape:
+                              RoundSliderThumbShape(enabledThumbRadius: 8),
+                          overlayShape:
+                              RoundSliderOverlayShape(overlayRadius: 0),
                           activeTrackColor: Colors.white,
                           inactiveTrackColor: Colors.white38,
                           thumbColor: Colors.white,
@@ -988,7 +1030,9 @@ class _ToolbarIcon extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: isActive ? Colors.white.withValues(alpha: 0.25) : Colors.transparent,
+          color: isActive
+              ? Colors.white.withValues(alpha: 0.25)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
         ),
         child: SizedBox(

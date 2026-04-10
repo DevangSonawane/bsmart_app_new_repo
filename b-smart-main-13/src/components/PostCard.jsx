@@ -95,12 +95,18 @@ const PeopleTagsOverlay = ({ tags, visible }) => {
         const x = Math.min(88, Math.max(12, tag.x));
         const y = Math.min(88, Math.max(12, tag.y));
         const inBottom = y > 55;
+        
+        // Tags might be members or vendors
+        const profilePath = tag.role === 'vendor' 
+          ? `/vendor/${tag.user_id || ''}/public` 
+          : `/profile/${tag.user_id || ''}`;
+
         return (
           <div key={tag._id || idx} className="absolute z-30 pointer-events-auto"
             style={{ left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)', animation: `igTagPop 0.28s ${idx * 0.07}s cubic-bezier(0.34,1.56,0.64,1) both` }}>
             <div className="flex flex-col items-center">
               {!inBottom && <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-white/90 -mb-[1px]" />}
-              <Link to={`/profile/${tag.user_id || ''}`} onClick={e => e.stopPropagation()}
+              <Link to={profilePath} onClick={e => e.stopPropagation()}
                 className="block bg-white/90 backdrop-blur-sm text-black text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap shadow-xl hover:bg-white">
                 @{tag.username}
               </Link>
@@ -184,9 +190,12 @@ const ExpandCaption = ({ username, userId, text, isAd }) => {
   const words = text.trim().split(/\s+/);
   const isLong = words.length > (isAd ? 10 : 15);
   const preview = isLong ? words.slice(0, isAd ? 10 : 15).join(' ') : text;
+  
+  const profilePath = isAd ? `/vendor/${userId}/public` : `/profile/${userId}`;
+
   return (
     <p className="text-sm dark:text-white leading-snug mb-1">
-      <Link to={`/profile/${userId}`} className="font-semibold mr-1 hover:underline dark:text-white">{username}</Link>
+      <Link to={profilePath} className="font-semibold mr-1 hover:underline dark:text-white">{username}</Link>
       {expanded || !isLong ? (
         <>
           {text}
@@ -592,13 +601,15 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
       ? `${window.location.origin}/reels/${postId}`
       : `${window.location.origin}/posts/${postId}`;
 
+  const profilePath = isAd ? `/vendor/${userId}/public` : `/profile/${userId}`;
+
   return (
     <div className="relative isolate overflow-hidden bg-white dark:bg-black mb-4 border-b border-gray-200 dark:border-gray-800 pb-4 md:rounded-lg md:border max-w-[470px] mx-auto">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between p-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <Link to={`/profile/${userId}`} className="flex-shrink-0 w-9 h-9 rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[2px] block">
+          <Link to={profilePath} className="flex-shrink-0 w-9 h-9 rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[2px] block">
             <div className="w-full h-full rounded-full bg-white dark:bg-black p-[1px]">
               {avatar ? (
                 <img src={avatar} alt={username} className="w-full h-full rounded-full object-cover" />
@@ -611,7 +622,7 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
           </Link>
 
           <div className="flex flex-col min-w-0 leading-tight">
-            <Link to={`/profile/${userId}`} className="font-semibold text-sm dark:text-white hover:underline truncate">
+            <Link to={profilePath} className="font-semibold text-sm dark:text-white hover:underline truncate">
               {username}
             </Link>
             <div className="flex items-center gap-1.5">
@@ -748,10 +759,15 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
         {/* People tag mentions — posts only */}
         {!isAd && peopleTags.length > 0 && (
           <div className="flex flex-wrap gap-x-2 gap-y-0.5 mb-1">
-            {peopleTags.map((tag, i) => (
-              <Link key={tag._id || i} to={`/profile/${tag.user_id || ''}`}
-                className="text-sm text-[#0095f6] hover:underline font-semibold">@{tag.username}</Link>
-            ))}
+            {peopleTags.map((tag, i) => {
+              const profilePath = tag.role === 'vendor' 
+                ? `/vendor/${tag.user_id || ''}/public` 
+                : `/profile/${tag.user_id || ''}`;
+              return (
+                <Link key={tag._id || i} to={profilePath}
+                  className="text-sm text-[#0095f6] hover:underline font-semibold">@{tag.username}</Link>
+              );
+            })}
           </div>
         )}
 

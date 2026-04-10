@@ -490,28 +490,33 @@ export default function SearchPage() {
                 <p className="text-[11px] font-black uppercase tracking-wider text-gray-400 dark:text-gray-500">People</p>
                 <span className="text-[10px] font-bold text-gray-400 dark:text-gray-600">· {results.users.length}</span>
               </div>
-              {filteredUsers.map(u => (
-                <button key={u._id} onClick={() => navigate(`/profile/${u.username || u._id}`)}
-                  className="w-full flex items-center gap-3 py-3 hover:bg-gray-50 dark:hover:bg-white/5 active:bg-gray-100 dark:active:bg-white/10 transition-colors text-left rounded-xl px-2">
-                  <Avatar src={u.avatar_url} name={u.username || u.full_name} size={44} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.full_name || u.username}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      @{u.username}{u.location ? ` · ${u.location}` : ''}
-                    </p>
-                    {u.bio && <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{u.bio}</p>}
-                  </div>
-                  {u.role && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                      u.role === 'vendor'
-                        ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
-                    }`}>
-                      {u.role === 'vendor' ? 'Vendor' : 'Member'}
-                    </span>
-                  )}
-                </button>
-              ))}
+              {filteredUsers.map(u => {
+                const profilePath = u.role === 'vendor' 
+                  ? `/vendor/${u._id || u.id}/public` 
+                  : `/profile/${u.username || u._id}`;
+                return (
+                  <button key={u._id} onClick={() => navigate(profilePath)}
+                    className="w-full flex items-center gap-3 py-3 hover:bg-gray-50 dark:hover:bg-white/5 active:bg-gray-100 dark:active:bg-white/10 transition-colors text-left rounded-xl px-2">
+                    <Avatar src={u.avatar_url} name={u.username || u.full_name} size={44} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.full_name || u.username}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        @{u.username}{u.location ? ` · ${u.location}` : ''}
+                      </p>
+                      {u.bio && <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{u.bio}</p>}
+                    </div>
+                    {u.role && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                        u.role === 'vendor'
+                          ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+                      }`}>
+                        {u.role === 'vendor' ? 'Vendor' : 'Member'}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
               <LoadMoreBtn loading={loadingMore.users} hasMore={hasMoreUsers} onClick={loadMoreUsers} />
             </section>
           )}

@@ -154,25 +154,25 @@ export default function FollowersModal({ isOpen, onClose, userId, isOwnProfile }
   return (
     <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/75 backdrop-blur-sm md:items-center" onClick={onClose}>
       <div
-        className="flex h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-zinc-900 text-white md:h-[72vh] md:max-h-[720px] md:w-full md:max-w-lg md:rounded-3xl md:border md:border-white/10"
+        className="flex h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-white dark:bg-zinc-900 text-gray-900 dark:text-white md:h-[72vh] md:max-h-[720px] md:w-full md:max-w-lg md:rounded-3xl md:border border-gray-100 dark:border-white/10"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-gray-100 dark:border-white/10 px-5 py-4">
           <div className="w-10" />
           <h2 className="text-base font-semibold">Followers</h2>
-          <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition hover:bg-white/5 hover:text-white">
+          <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white">
             <X size={18} />
           </button>
         </div>
 
-        <div className="border-b border-white/10 px-4 py-3">
-          <div className="flex items-center gap-3 rounded-full bg-zinc-800 px-4 py-3 text-sm text-gray-400">
-            <Search size={16} />
+        <div className="border-b border-gray-100 dark:border-white/10 px-4 py-3">
+          <div className="flex items-center gap-3 rounded-full bg-gray-100 dark:bg-zinc-800 px-4 py-3 text-sm">
+            <Search size={16} className="text-gray-400 dark:text-white/50" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search"
-              className="w-full bg-transparent outline-none placeholder:text-gray-500"
+              className="w-full bg-transparent outline-none text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-white/50"
             />
           </div>
         </div>
@@ -193,28 +193,28 @@ export default function FollowersModal({ isOpen, onClose, userId, isOwnProfile }
                 const showFollowBadge = !user.isFollowing && targetUserId !== currentUserId;
 
                 return (
-                  <div key={targetUserId} className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-zinc-800/80">
+                  <div key={targetUserId} className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-gray-50 dark:hover:bg-zinc-800/80">
                     <Avatar user={user} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-white">{getUserName(user)}</p>
+                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{getUserName(user)}</p>
                         {showFollowBadge ? (
                           <button
                             onClick={() => handleFollowBack(targetUserId)}
                             disabled={actionUserId === targetUserId}
-                            className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] font-semibold text-blue-400 transition hover:bg-blue-500/25 disabled:opacity-60"
+                            className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] font-semibold text-blue-500 dark:text-blue-400 transition hover:bg-blue-500/25 disabled:opacity-60"
                           >
                             Follow
                           </button>
                         ) : null}
                       </div>
-                      <p className="truncate text-sm text-gray-400">{getFullName(user)}</p>
+                      <p className="truncate text-sm text-gray-500 dark:text-gray-400">{getFullName(user)}</p>
                     </div>
                     {isOwnProfile ? (
                       <button
                         onClick={() => handleRemoveFollower(targetUserId)}
                         disabled={actionUserId === targetUserId}
-                        className="rounded-full border border-white/10 bg-zinc-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:opacity-60"
+                        className="rounded-full border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-zinc-800 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white transition hover:bg-gray-200 dark:hover:bg-zinc-700 disabled:opacity-60"
                       >
                         {actionUserId === targetUserId ? 'Removing...' : 'Remove'}
                       </button>

@@ -616,6 +616,7 @@ const Ads = ({ feedMode = 'user' }) => {
   const imageTimerRef = useRef(null);
   // Track manually paused video (user tapped to pause/resume)
   const [isPausedByUser, setIsPausedByUser] = useState(false);
+  const [showCtaButtons, setShowCtaButtons] = useState(false);  // shows after 50% progress
 
   // Measure action-panel position so comment popup arrow aligns correctly
   useEffect(() => {
@@ -685,7 +686,10 @@ const Ads = ({ feedMode = 'user' }) => {
   const handleSearchResultClick = (item) => {
     handleSearchClose();
     if (item._type === 'user') {
-      navigate(`/profile/${item._id || item.id}`);
+      const profilePath = item.role === 'vendor' 
+        ? `/vendor/${item._id || item.id}/public` 
+        : `/profile/${item._id || item.id}`;
+      navigate(profilePath);
       return;
     }
     if (item._type === 'ad') {
@@ -765,10 +769,31 @@ const Ads = ({ feedMode = 'user' }) => {
 
         const data = await res.json();
         const list = Array.isArray(data) ? data : (data.data || data.ads || []);
-        setAds(list);
+        // Fetch fresh likes/comments counts for each ad from the API
+        const enriched = await Promise.all(
+          list.map(async (ad) => {
+            try {
+              const detail = await fetch(`${BASE_URL}/api/ads/${ad._id}`, { headers: authHeaders() });
+              if (detail.ok) {
+                const d = await detail.json();
+                const fresh = d.ad || d;
+                return {
+                  ...ad,
+                  likes_count: fresh.likes_count ?? ad.likes_count ?? 0,
+                  comments_count: fresh.comments_count ?? ad.comments_count ?? 0,
+                  views_count: fresh.views_count ?? ad.views_count ?? 0,
+                  is_liked_by_me: fresh.is_liked_by_me ?? ad.is_liked_by_me ?? false,
+                };
+              }
+            } catch { /* use original */ }
+            return ad;
+          })
+        );
+        setAds(enriched);
         setCurrentIndex(0);
         setProgress(0);
-        setLikedIds(new Set(list.filter(a => a.is_liked_by_me).map(a => a._id)));
+        setShowCtaButtons(false);
+        setLikedIds(new Set(enriched.filter(a => a.is_liked_by_me).map(a => a._id)));
         return;
       }
       throw new Error(`HTTP ${lastStatus || 0}`);
@@ -1004,6 +1029,7 @@ const Ads = ({ feedMode = 'user' }) => {
     const curVid = videoRefs.current[currentIndex];
     if (curVid) curVid.pause();
     setIsPausedByUser(false); // reset pause state when navigating
+    setShowCtaButtons(false); // reset CTA on navigation
     setCurrentIndex(next);
     setTimeout(() => { isAnimatingRef.current = false; }, 500);
   }, [currentIndex, ads.length]);
@@ -1705,12 +1731,15 @@ const Ads = ({ feedMode = 'user' }) => {
                                 return;
                               }
 
-                              // Move progress bar
+                              // Move progress bar + trigger CTA after 50%
+                              let pct = 0;
                               if (dur && dur > 0) {
-                                setProgress(Math.min(((ct - start) / dur) * 100, 100));
+                                pct = Math.min(((ct - start) / dur) * 100, 100);
                               } else if (vid.duration > 0) {
-                                setProgress((ct / vid.duration) * 100);
+                                pct = (ct / vid.duration) * 100;
                               }
+                              setProgress(pct);
+                              if (pct >= 50) setShowCtaButtons(true);
                             }}
                             onEnded={() => {
                               if (!isCurrent) return;
@@ -1776,74 +1805,92 @@ const Ads = ({ feedMode = 'user' }) => {
                         </div>
                       )}
 
-                      {/* Bottom info — clears bottom nav (64px) on mobile */}
-                      <div className="absolute bottom-0 left-0 w-full p-4 md:pb-6 z-20" style={{ paddingRight: '60px' }}>
-                        {/* Vendor row — name is clickable → public profile */}
-                        <div className="flex items-center gap-2 mb-2 flex-nowrap min-w-0">
-                          <button
-                            onClick={() => {
-                              trackAdClick(a._id);
-                              const uid = a.user_id?._id || a.user_id?.id || a.vendor_id?._id;
-                              if (uid) navigate(`/profile/${uid}`);
-                            }}
-                            className="flex items-center gap-2 active:opacity-70 transition-opacity min-w-0 flex-1"
-                          >
-                            {a.user_id?.avatar_url
-                              ? <img src={a.user_id.avatar_url} className="w-8 h-8 rounded-full border border-white/30 object-cover shrink-0" alt="user" />
-                              : <div className="w-8 h-8 rounded-full border border-white/30 bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                                  {(a.vendor_id?.business_name || 'A')[0]}
-                                </div>
-                            }
-                            <span className="font-bold text-white text-sm hover:underline decoration-white/60 underline-offset-2 truncate">
-                              {a.vendor_id?.business_name || a.user_id?.username}
-                            </span>
-                          </button>
-                          {a.total_budget_coins > 0 && (
-                            <div className="shrink-0 flex items-center gap-1 bg-amber-500/20 border border-amber-400/40 rounded-full px-1.5 py-0.5">
-                              <CoinIcon size={11} />
-                              <span className="text-amber-300 text-[10px] font-bold">{fmt(a.total_budget_coins)}</span>
-                            </div>
-                          )}
-                          <FollowButton userId={a.user_id?._id} mobile />
+                      {/* Bottom info — flex column, Vendor info + Caption above, CTA buttons below */}
+                      <div className="absolute bottom-0 left-0 w-full z-20 flex flex-col justify-end" style={{ paddingRight: '60px' }}>
+
+                        {/* Vendor + caption + tags */}
+                        <div className="px-4 pt-4 pb-2">
+                          {/* Vendor row */}
+                          <div className="flex items-center gap-2 mb-2 flex-nowrap min-w-0">
+                            <button
+                              onClick={() => { trackAdClick(a._id); const uid = a.user_id?._id || a.user_id?.id || a.vendor_id?._id; if (uid) navigate(`/vendor/${uid}/public`); }}
+                              className="flex items-center gap-2 active:opacity-70 transition-opacity min-w-0 flex-1"
+                            >
+                              {a.user_id?.avatar_url
+                                ? <img src={a.user_id.avatar_url} className="w-8 h-8 rounded-full border border-white/30 object-cover shrink-0" alt="user" />
+                                : <div className="w-8 h-8 rounded-full border border-white/30 bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold shrink-0">{(a.vendor_id?.business_name || 'A')[0]}</div>
+                              }
+                              <span className="font-bold text-white text-sm hover:underline decoration-white/60 underline-offset-2 truncate">
+                                {a.vendor_id?.business_name || a.user_id?.username}
+                              </span>
+                            </button>
+                            {a.total_budget_coins > 0 && (
+                              <div className="shrink-0 flex items-center gap-1 bg-amber-500/20 border border-amber-400/40 rounded-full px-1.5 py-0.5">
+                                <CoinIcon size={11} /><span className="text-amber-300 text-[10px] font-bold">{fmt(a.total_budget_coins)}</span>
+                              </div>
+                            )}
+                            <FollowButton userId={a.user_id?._id} mobile />
+                          </div>
+
+                          <Caption text={a.caption} />
+
+                          <div className="flex items-center gap-2 flex-wrap mb-2">
+                            {a.category && <span className="text-white/70 text-[10px] bg-white/10 px-2 py-0.5 rounded-full">{a.category}</span>}
+                            {a.hashtags?.slice(0, 3).map(h => <span key={h} className="text-white/50 text-[10px]">#{h}</span>)}
+                          </div>
+
+                          {a.product_offer?.length > 0 && <ProductOffer offer={a.product_offer[0]} />}
+
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {a.target_language?.slice(0, 3).map(lang => (
+                              <span key={lang} className="flex items-center gap-1 text-[10px] font-medium text-white/80 bg-white/10 backdrop-blur-sm border border-white/15 px-2 py-0.5 rounded-full">
+                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-70"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                                {lang}
+                              </span>
+                            ))}
+                            {a.target_language?.length > 3 && <span className="text-[10px] font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">+{a.target_language.length - 3}</span>}
+                            {a.target_location?.slice(0, 2).map(loc => (
+                              <span key={loc} className="flex items-center gap-1 text-[10px] font-medium text-white/80 bg-white/10 backdrop-blur-sm border border-white/15 px-2 py-0.5 rounded-full">
+                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-70"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                {loc}
+                              </span>
+                            ))}
+                            {a.target_location?.length > 2 && <span className="text-[10px] font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">+{a.target_location.length - 2} more</span>}
+                          </div>
                         </div>
 
-                        <Caption text={a.caption} />
-
-                        <div className="flex items-center gap-2 flex-wrap mb-2">
-                          {a.category && (
-                            <span className="text-white/70 text-[10px] bg-white/10 px-2 py-0.5 rounded-full">{a.category}</span>
-                          )}
-                          {a.hashtags?.slice(0, 3).map(h => (
-                            <span key={h} className="text-white/50 text-[10px]">#{h}</span>
-                          ))}
-                        </div>
-
-                        {a.product_offer?.length > 0 && <ProductOffer offer={a.product_offer[0]} />}
-
-                        {/* Target language + location pills — replaces music marquee */}
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {a.target_language?.slice(0, 3).map(lang => (
-                            <span key={lang} className="flex items-center gap-1 text-[10px] font-medium text-white/80 bg-white/10 backdrop-blur-sm border border-white/15 px-2 py-0.5 rounded-full">
-                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-70"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                              {lang}
-                            </span>
-                          ))}
-                          {a.target_language?.length > 3 && (
-                            <span className="text-[10px] font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">
-                              +{a.target_language.length - 3}
-                            </span>
-                          )}
-                          {a.target_location?.slice(0, 2).map(loc => (
-                            <span key={loc} className="flex items-center gap-1 text-[10px] font-medium text-white/80 bg-white/10 backdrop-blur-sm border border-white/15 px-2 py-0.5 rounded-full">
-                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-70"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                              {loc}
-                            </span>
-                          ))}
-                          {a.target_location?.length > 2 && (
-                            <span className="text-[10px] font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">
-                              +{a.target_location.length - 2} more
-                            </span>
-                          )}
+                        {/* CTA Buttons — slide up from bottom, below caption */}
+                        <div
+                          className="overflow-hidden transition-all duration-500 ease-out"
+                          style={{ maxHeight: isCurrent && showCtaButtons ? '100px' : '0px', opacity: isCurrent && showCtaButtons ? 1 : 0 }}
+                        >
+                          <div className="flex gap-2 px-4 pb-6 pt-2">
+                            {/* View Ad Details */}
+                            <button
+                              onClick={() => { trackAdClick(a._id); navigate(`/ads/${a._id}/details`); }}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-black/40 backdrop-blur-md border border-white/25 text-white text-xs font-bold hover:bg-black/60 active:scale-95 transition-all shadow-lg"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                              Visit Ad Details
+                            </button>
+                            {/* CTA based on type */}
+                            {a.cta?.type && (() => {
+                              const cta = a.cta;
+                              const label = cta.type === 'view_site' ? 'Visit Website' : cta.type === 'call_now' ? 'Call Now' : cta.type === 'install_app' ? 'Install App' : cta.type === 'book_now' ? 'Book Now' : cta.type === 'contact_info' ? 'Contact Us' : 'Learn More';
+                              const icon = cta.type === 'call_now'
+                                ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                                : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>;
+                              const href = cta.type === 'call_now' && cta.phone_number ? `tel:${cta.phone_number}` : cta.url?.trim() || cta.deep_link?.trim() || null;
+                              if (!href) return null;
+                              return (
+                                <a href={href} target={cta.type !== 'call_now' ? '_blank' : '_self'} rel="noopener noreferrer"
+                                  onClick={() => trackAdClick(a._id)}
+                                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-orange-500 to-pink-600 text-white text-xs font-bold hover:opacity-90 active:scale-95 transition-all shadow-lg">
+                                  {icon}{label}
+                                </a>
+                              );
+                            })()}
+                          </div>
                         </div>
                       </div>
 
@@ -2176,6 +2223,14 @@ const Ads = ({ feedMode = 'user' }) => {
           to   { opacity: 1; transform: translateX(0); }
         }
 
+        @keyframes ctaSlideUp {
+          0%   { opacity: 0; transform: translateY(24px) scale(0.95); }
+          60%  { transform: translateY(-4px) scale(1.02); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-cta-slide-up {
+          animation: ctaSlideUp 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+        }
         .scrollbar-none::-webkit-scrollbar { display: none; }
         .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
         .mask-linear-fade {

@@ -4,11 +4,13 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:math' as math;
 import 'package:extended_image/extended_image.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:vector_math/vector_math_64.dart' as vector_math;
 import 'package:photo_manager/photo_manager.dart';
 import '../models/media_model.dart' as app_models;
@@ -23,6 +25,8 @@ import '../instagram_overlay/overlay_sticker.dart';
 import '../instagram_overlay/overlay_sticker_widget.dart';
 import '../features/reel_timeline/reel_timeline_models.dart';
 import '../features/reel_timeline/reel_timeline_renderer.dart';
+
+enum _ActiveDragLayer { none, text, sticker }
 
 class _PreviewTextOverlay {
   final String text;
@@ -90,7 +94,8 @@ class _ZoomPanImageView extends StatefulWidget {
   final List<String> filterIds;
   final Map<String, int> adjustments;
   final Widget Function(Widget, {List<String>? filterIds}) applyFilter;
-  final Widget Function(Widget, {Map<String, int>? adjustments}) applyAdjustments;
+  final Widget Function(Widget, {Map<String, int>? adjustments})
+      applyAdjustments;
 
   const _ZoomPanImageView({
     super.key,
@@ -148,8 +153,7 @@ class _ZoomPanImageViewState extends State<_ZoomPanImageView>
   void didUpdateWidget(covariant _ZoomPanImageView oldWidget) {
     super.didUpdateWidget(oldWidget);
     final mediaChanged = widget.filePath != oldWidget.filePath;
-    final geometryChanged =
-        widget.viewportW != oldWidget.viewportW ||
+    final geometryChanged = widget.viewportW != oldWidget.viewportW ||
         widget.viewportH != oldWidget.viewportH ||
         widget.imagePxW != oldWidget.imagePxW ||
         widget.imagePxH != oldWidget.imagePxH ||
@@ -237,8 +241,7 @@ class _ZoomPanImageViewState extends State<_ZoomPanImageView>
       return;
     }
 
-    if (_scale < widget.coverScale &&
-        widget.coverScale > widget.containScale) {
+    if (_scale < widget.coverScale && widget.coverScale > widget.containScale) {
       _animateTo(
         targetScale: widget.coverScale,
         targetOffset: _clampOffset(_offset, widget.coverScale),
@@ -386,10 +389,15 @@ class CreateEditPreviewScreen extends StatefulWidget {
   });
 
   @override
-  State<CreateEditPreviewScreen> createState() => _CreateEditPreviewScreenState();
+  State<CreateEditPreviewScreen> createState() =>
+      _CreateEditPreviewScreenState();
 }
 
-class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
+class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
+    with SingleTickerProviderStateMixin {
+  static const double _trashProximityRadius = 72.0;
+  static const double _trashSize = 68.0;
+
   final CreateService _createService = CreateService();
   late app_models.MediaItem _currentMedia;
   late List<app_models.MediaItem> _mediaList;
@@ -426,16 +434,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   Offset _stickerLastLocalFocalPoint = Offset.zero;
   double _stickerBaseScale = 1.0;
   double _stickerBaseRotation = 0.0;
-  bool _isStickerDeleteMode = false;
-  final Map<String, double> _stickerDeleteScale = {};
   final Set<String> _deletingStickerIds = {};
-  Timer? _stickerHoldTimer;
-  bool _suppressStickerTap = false;
-  bool _isTextDeleteMode = false;
-  final Map<int, double> _textDeleteScale = {};
   final Set<int> _deletingTextIndexes = {};
-  Timer? _textHoldTimer;
-  bool _suppressTextTap = false;
+  bool _anyDragActive = false;
+  bool _isNearTrash = false;
+  bool _wasNearTrash = false;
+  _ActiveDragLayer _activeDragLayer = _ActiveDragLayer.none;
   bool _hideTextOverlaysForCapture = false;
   bool _captureWithoutRadius = false;
   ImageProvider? _cachedTextEditorBackground;
@@ -445,11 +449,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   double? _autoPostAspect;
   ImageStream? _imageStream;
   ImageStreamListener? _imageStreamListener;
-  final TransformationController _transformController = TransformationController();
-  final GlobalKey<_ZoomPanImageViewState> _zoomPanKey = GlobalKey<_ZoomPanImageViewState>();
+  final TransformationController _transformController =
+      TransformationController();
+  final GlobalKey<_ZoomPanImageViewState> _zoomPanKey =
+      GlobalKey<_ZoomPanImageViewState>();
   final GlobalKey _previewRepaintKey = GlobalKey();
   Key _imageKey = const ValueKey('img_0_0');
   Size? _postViewportSize;
+  late final AnimationController _trashAnimController;
+  late final Animation<double> _trashScaleAnim;
   Map<String, int> _imageAdjustments = <String, int>{
     'brightness': 0,
     'contrast': 0,
@@ -502,8 +510,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           return _postFixedAspect!;
         }
         // If there's any image in the carousel, default to 4:5 until image sets fixed aspect.
-        final hasImage =
-            _mediaList.any((m) => !_isVideoMedia(m));
+        final hasImage = _mediaList.any((m) => !_isVideoMedia(m));
         if (hasImage) {
           return 4.0 / 5.0;
         }
@@ -549,8 +556,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   void _maybeInitPostAspect(double aspect) {
     if (!widget.isPostFlow) return;
     if (_postFixedAspect != null || _autoPostAspect != null) return;
-    final hasImage =
-        _mediaList.any((m) => !_isVideoMedia(m));
+    final hasImage = _mediaList.any((m) => !_isVideoMedia(m));
     if (hasImage && _isVideoMedia(_currentMedia)) {
       return;
     }
@@ -559,8 +565,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     _postFixedAspect = next;
   }
 
-
-  List<double> _buildFilterMatrixBase({double brightness = 1, double contrast = 1, double saturation = 1}) {
+  List<double> _buildFilterMatrixBase(
+      {double brightness = 1, double contrast = 1, double saturation = 1}) {
     final b = brightness;
     final c = contrast;
     final s = saturation;
@@ -568,24 +574,61 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     const lr = 0.2126, lg = 0.7152, lb = 0.0722;
     final scale = c * b;
     return [
-      (invSat * lr + s) * scale, invSat * lg * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, (invSat * lg + s) * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, invSat * lg * scale, (invSat * lb + s) * scale, 0, 0,
-      0, 0, 0, 1, 0,
+      (invSat * lr + s) * scale,
+      invSat * lg * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      (invSat * lg + s) * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      invSat * lg * scale,
+      (invSat * lb + s) * scale,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
-  List<double> _buildGrayscaleMatrix({double contrast = 1.0, double brightness = 1.0}) {
+  List<double> _buildGrayscaleMatrix(
+      {double contrast = 1.0, double brightness = 1.0}) {
     const r = 0.2126, g = 0.7152, b = 0.0722;
     return [
-      r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
-      r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
-      r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
-      0, 0, 0, 1, 0,
+      r * contrast * brightness,
+      g * contrast * brightness,
+      b * contrast * brightness,
+      0,
+      0,
+      r * contrast * brightness,
+      g * contrast * brightness,
+      b * contrast * brightness,
+      0,
+      0,
+      r * contrast * brightness,
+      g * contrast * brightness,
+      b * contrast * brightness,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
-  List<double> _buildSepiaMatrix({double amount = 0.2, double brightness = 1.0, double contrast = 1.0, double saturation = 1.0}) {
+  List<double> _buildSepiaMatrix(
+      {double amount = 0.2,
+      double brightness = 1.0,
+      double contrast = 1.0,
+      double saturation = 1.0}) {
     final t = 1 - amount;
     final r = 0.393 + 0.607 * t;
     final g = 0.769 - 0.769 * amount;
@@ -594,41 +637,64 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     const lr = 0.2126, lg = 0.7152, lb = 0.0722;
     final c = contrast * brightness;
     return [
-      (r * saturation + lr * invSat) * c, (g * saturation + lg * invSat) * c, (b * saturation + lb * invSat) * c, 0, 0,
-      (0.349 * t + 0.349 * amount) * saturation * c + lr * invSat * c, (0.686 + 0.314 * t) * saturation * c + lg * invSat * c, (0.168 * t) * saturation * c + lb * invSat * c, 0, 0,
-      (0.272 * t) * saturation * c + lr * invSat * c, (0.534 * t - 0.534 * amount) * saturation * c + lg * invSat * c, (0.131 + 0.869 * t) * saturation * c + lb * invSat * c, 0, 0,
-      0, 0, 0, 1, 0,
+      (r * saturation + lr * invSat) * c,
+      (g * saturation + lg * invSat) * c,
+      (b * saturation + lb * invSat) * c,
+      0,
+      0,
+      (0.349 * t + 0.349 * amount) * saturation * c + lr * invSat * c,
+      (0.686 + 0.314 * t) * saturation * c + lg * invSat * c,
+      (0.168 * t) * saturation * c + lb * invSat * c,
+      0,
+      0,
+      (0.272 * t) * saturation * c + lr * invSat * c,
+      (0.534 * t - 0.534 * amount) * saturation * c + lg * invSat * c,
+      (0.131 + 0.869 * t) * saturation * c + lb * invSat * c,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
   List<double> _reelFilterMatrixFor(String id) {
     switch (id) {
       case 'vintage':
-        return _buildSepiaMatrix(amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
+        return _buildSepiaMatrix(
+            amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
       case 'black_white':
         return _buildGrayscaleMatrix(contrast: 1.1, brightness: 1.0);
       case 'warm':
-        return _buildSepiaMatrix(amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
+        return _buildSepiaMatrix(
+            amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
       case 'cool':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 0.85);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.0, saturation: 0.85);
       case 'dramatic':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.3, saturation: 1.2);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.3, saturation: 1.2);
       case 'beauty':
-        return _buildSepiaMatrix(amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
+        return _buildSepiaMatrix(
+            amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
       case 'ar_effect_1':
-        return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.05, saturation: 1.2);
+        return _buildFilterMatrixBase(
+            brightness: 1.05, contrast: 1.05, saturation: 1.2);
       case 'ar_effect_2':
-        return _buildFilterMatrixBase(brightness: 0.95, contrast: 1.1, saturation: 0.9);
+        return _buildFilterMatrixBase(
+            brightness: 0.95, contrast: 1.1, saturation: 0.9);
       case 'none':
       default:
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.0, saturation: 1.0);
     }
   }
 
   Widget _applySelectedFilter(Widget child, {List<String>? filterIds}) {
-    final ids = (filterIds ?? const <String>[])
-        .where((id) => id != 'none')
-        .toList();
+    final ids =
+        (filterIds ?? const <String>[]).where((id) => id != 'none').toList();
     if (ids.isEmpty) return child;
     Widget out = child;
     for (final id in ids) {
@@ -653,10 +719,26 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     const lr = 0.2126, lg = 0.7152, lb = 0.0722;
     final scale = c * b;
     return [
-      (invSat * lr + s) * scale, invSat * lg * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, (invSat * lg + s) * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, invSat * lg * scale, (invSat * lb + s) * scale, 0, 0,
-      0, 0, 0, 1, 0,
+      (invSat * lr + s) * scale,
+      invSat * lg * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      (invSat * lg + s) * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      invSat * lg * scale,
+      (invSat * lb + s) * scale,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
@@ -676,12 +758,17 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     Widget out = child;
     if (sepiaAmount > 0) {
       out = ColorFiltered(
-        colorFilter: ColorFilter.matrix(_buildSepiaMatrix(amount: sepiaAmount, brightness: 1.0, contrast: 1.0, saturation: 1.0)),
+        colorFilter: ColorFilter.matrix(_buildSepiaMatrix(
+            amount: sepiaAmount,
+            brightness: 1.0,
+            contrast: 1.0,
+            saturation: 1.0)),
         child: out,
       );
     }
     out = ColorFiltered(
-      colorFilter: ColorFilter.matrix(_buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s)),
+      colorFilter: ColorFilter.matrix(
+          _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s)),
       child: out,
     );
     out = Opacity(
@@ -771,15 +858,18 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       preset = _combineColorMatrices(_reelFilterMatrixFor(id), preset);
     }
     final sepiaMatrix = (sepiaAmount <= 0)
-        ? _buildAdjustmentMatrix(brightness: 1.0, contrast: 1.0, saturation: 1.0)
+        ? _buildAdjustmentMatrix(
+            brightness: 1.0, contrast: 1.0, saturation: 1.0)
         : _buildSepiaMatrix(
             amount: sepiaAmount,
             brightness: 1.0,
             contrast: 1.0,
             saturation: 1.0,
           );
-    final adjust = _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
-    final combined = _combineColorMatrices(adjust, _combineColorMatrices(sepiaMatrix, preset));
+    final adjust =
+        _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
+    final combined = _combineColorMatrices(
+        adjust, _combineColorMatrices(sepiaMatrix, preset));
 
     // Apply opacity as final alpha multiplier (via color matrix A column)
     combined[18] = 1.0;
@@ -817,7 +907,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     }).toList();
   }
 
-  List<ReelStickerOverlay> _buildReelStickerOverlaysFor(app_models.MediaItem media) {
+  List<ReelStickerOverlay> _buildReelStickerOverlaysFor(
+      app_models.MediaItem media) {
     final preview = _previewSize() ?? const Size(1080, 1920);
     final scaleFactor = 1080 / preview.width;
     return _effectiveStickerOverlays(media).map((s) {
@@ -976,6 +1067,13 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   @override
   void initState() {
     super.initState();
+    _trashAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _trashScaleAnim = Tween<double>(begin: 0.88, end: 1.0).animate(
+      CurvedAnimation(parent: _trashAnimController, curve: Curves.easeOutBack),
+    );
     _mediaList = widget.mediaList != null && widget.mediaList!.isNotEmpty
         ? List<app_models.MediaItem>.from(widget.mediaList!)
         : [widget.media];
@@ -994,7 +1092,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       }
     }
     if (_isVideoMedia(_currentMedia) && _currentMedia.filePath != null) {
-      final controller = VideoPlayerController.file(File(_currentMedia.filePath!));
+      final controller =
+          VideoPlayerController.file(File(_currentMedia.filePath!));
       _videoController = controller;
       _videoInit = controller.initialize().then((_) {
         if (!mounted) return;
@@ -1006,7 +1105,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         controller.play();
         setState(() => _isPlaying = true);
       });
-    } else if (!_isVideoMedia(_currentMedia) && _currentMedia.filePath != null) {
+    } else if (!_isVideoMedia(_currentMedia) &&
+        _currentMedia.filePath != null) {
       final provider = FileImage(File(_currentMedia.filePath!));
       final stream = provider.resolve(const ImageConfiguration());
       _imageStream = stream;
@@ -1035,9 +1135,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
   @override
   void dispose() {
     _postPageController?.dispose();
-    _stickerHoldTimer?.cancel();
-    _textHoldTimer?.cancel();
     _transformController.dispose();
+    _trashAnimController.dispose();
     _videoController?.removeListener(_handlePreviewVideoTick);
     _videoController?.dispose();
     final stream = _imageStream;
@@ -1174,23 +1273,24 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         _videoController = controller;
         _videoInit = controller.initialize().then((_) {
           if (!mounted) return;
-        controller.setLooping(true);
-        controller.addListener(_handlePreviewVideoTick);
-        controller.play();
-        setState(() => _isPlaying = true);
-      });
-        setState(() {}); // Trigger immediate rebuild to show loading for the NEW future
+          controller.setLooping(true);
+          controller.addListener(_handlePreviewVideoTick);
+          controller.play();
+          setState(() => _isPlaying = true);
+        });
+        setState(
+            () {}); // Trigger immediate rebuild to show loading for the NEW future
       } else {
-      // Seek preview to the new trim start and resume playback
-      final controller = _videoController;
-      if (controller != null && controller.value.isInitialized) {
-        final seekTo = _trimStartFor(_currentMedia);
-        if (seekTo != null) {
-          await controller.seekTo(seekTo);
+        // Seek preview to the new trim start and resume playback
+        final controller = _videoController;
+        if (controller != null && controller.value.isInitialized) {
+          final seekTo = _trimStartFor(_currentMedia);
+          if (seekTo != null) {
+            await controller.seekTo(seekTo);
+          }
+          controller.play();
+          setState(() => _isPlaying = true);
         }
-        controller.play();
-        setState(() => _isPlaying = true);
-      }
       }
     } else {
       // User cancelled – resume playback
@@ -1244,10 +1344,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                           final preview = (f.id == 'none')
                               ? base
                               : ColorFiltered(
-                                  colorFilter: ColorFilter.matrix(_reelFilterMatrixFor(f.id)),
+                                  colorFilter: ColorFilter.matrix(
+                                      _reelFilterMatrixFor(f.id)),
                                   child: base,
                                 );
-                          final displayName = f.id == 'none' ? 'Normal' : f.name;
+                          final displayName =
+                              f.id == 'none' ? 'Normal' : f.name;
                           return GestureDetector(
                             onTap: () {
                               setState(() {
@@ -1268,7 +1370,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: isActive ? Colors.white : Colors.white70,
+                                        color: isActive
+                                            ? Colors.white
+                                            : Colors.white70,
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -1280,7 +1384,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
-                                          color: isActive ? Colors.white : Colors.white24,
+                                          color: isActive
+                                              ? Colors.white
+                                              : Colors.white24,
                                           width: 1,
                                         ),
                                       ),
@@ -1312,20 +1418,26 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                               },
                               child: const Text(
                                 'Cancel',
-                                style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w600),
                               ),
                             ),
                             const Spacer(),
                             const Text(
                               'Filter',
-                              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w700),
                             ),
                             const Spacer(),
                             TextButton(
                               onPressed: () => Navigator.of(context).pop(),
                               child: const Text(
                                 'Done',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700),
                               ),
                             ),
                           ],
@@ -1452,13 +1564,48 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
   void _openImageAdjustmentsEditor() {
     const tools = <_ImageToolSpec>[
-      _ImageToolSpec(key: 'lux', label: 'Lux', icon: Icons.auto_fix_high, min: 0, max: 100),
-      _ImageToolSpec(key: 'brightness', label: 'Brightness', icon: Icons.wb_sunny_outlined, min: -100, max: 100),
-      _ImageToolSpec(key: 'contrast', label: 'Contrast', icon: Icons.contrast, min: -100, max: 100),
-      _ImageToolSpec(key: 'saturate', label: 'Saturation', icon: Icons.palette_outlined, min: -100, max: 100),
-      _ImageToolSpec(key: 'sepia', label: 'Temperature', icon: Icons.thermostat_outlined, min: -100, max: 100),
-      _ImageToolSpec(key: 'opacity', label: 'Fade', icon: Icons.blur_on_outlined, min: 0, max: 100),
-      _ImageToolSpec(key: 'vignette', label: 'Vignette', icon: Icons.vignette_outlined, min: 0, max: 100),
+      _ImageToolSpec(
+          key: 'lux',
+          label: 'Lux',
+          icon: Icons.auto_fix_high,
+          min: 0,
+          max: 100),
+      _ImageToolSpec(
+          key: 'brightness',
+          label: 'Brightness',
+          icon: Icons.wb_sunny_outlined,
+          min: -100,
+          max: 100),
+      _ImageToolSpec(
+          key: 'contrast',
+          label: 'Contrast',
+          icon: Icons.contrast,
+          min: -100,
+          max: 100),
+      _ImageToolSpec(
+          key: 'saturate',
+          label: 'Saturation',
+          icon: Icons.palette_outlined,
+          min: -100,
+          max: 100),
+      _ImageToolSpec(
+          key: 'sepia',
+          label: 'Temperature',
+          icon: Icons.thermostat_outlined,
+          min: -100,
+          max: 100),
+      _ImageToolSpec(
+          key: 'opacity',
+          label: 'Fade',
+          icon: Icons.blur_on_outlined,
+          min: 0,
+          max: 100),
+      _ImageToolSpec(
+          key: 'vignette',
+          label: 'Vignette',
+          icon: Icons.vignette_outlined,
+          min: 0,
+          max: 100),
     ];
     final initial = Map<String, int>.from(_imageAdjustments);
     String? selectedKey;
@@ -1481,7 +1628,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                     Row(
                       children: [
                         const Expanded(child: SizedBox()),
-                        Text(current.toString(), style: const TextStyle(color: Colors.white70)),
+                        Text(current.toString(),
+                            style: const TextStyle(color: Colors.white70)),
                       ],
                     ),
                     Slider(
@@ -1508,7 +1656,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
 
               final selectedTool = selectedKey == null
                   ? null
-                  : tools.firstWhere((t) => t.key == selectedKey, orElse: () => tools[0]);
+                  : tools.firstWhere((t) => t.key == selectedKey,
+                      orElse: () => tools[0]);
 
               final sheetHeightFactor = selectedTool == null ? 0.36 : 0.28;
               if (!didCenterScroll && selectedTool == null) {
@@ -1542,10 +1691,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                 key: const ValueKey('toolPicker'),
                                 child: ListView.separated(
                                   controller: scrollController,
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
                                   scrollDirection: Axis.horizontal,
                                   itemCount: tools.length,
-                                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(width: 12),
                                   itemBuilder: (context, i) {
                                     final t = tools[i];
                                     return GestureDetector(
@@ -1576,7 +1727,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                                 height: 64,
                                                 decoration: BoxDecoration(
                                                   shape: BoxShape.circle,
-                                                  color: Colors.white.withValues(alpha: 0.06),
+                                                  color: Colors.white
+                                                      .withValues(alpha: 0.06),
                                                   border: Border.all(
                                                     color: Colors.white24,
                                                     width: 1,
@@ -1598,7 +1750,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                               )
                             : Padding(
                                 key: const ValueKey('toolSlider'),
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
                                 child: SingleChildScrollView(
                                   child: Column(
                                     children: [
@@ -1610,7 +1763,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                                 selectedKey = null;
                                               });
                                             },
-                                            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white70, size: 18),
+                                            icon: const Icon(
+                                                Icons.arrow_back_ios_new,
+                                                color: Colors.white70,
+                                                size: 18),
                                           ),
                                           Expanded(
                                             child: Center(
@@ -1651,7 +1807,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                               },
                               child: const Text(
                                 'Cancel',
-                                style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w600),
                               ),
                             ),
                             const Spacer(),
@@ -1659,7 +1817,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                               onPressed: () => Navigator.of(context).pop(),
                               child: const Text(
                                 'Done',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700),
                               ),
                             ),
                           ],
@@ -1723,8 +1883,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       return const SizedBox.shrink();
     }
 
-    final imgW = (_imagePixelSize?.width ?? viewportW).clamp(1.0, double.infinity);
-    final imgH = (_imagePixelSize?.height ?? viewportH).clamp(1.0, double.infinity);
+    final imgW =
+        (_imagePixelSize?.width ?? viewportW).clamp(1.0, double.infinity);
+    final imgH =
+        (_imagePixelSize?.height ?? viewportH).clamp(1.0, double.infinity);
 
     double containScale;
     if (imageAspect > viewportAspect) {
@@ -1785,7 +1947,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       applyFilter: _applySelectedFilter,
       applyAdjustments: _applyImageAdjustments,
     );
-}
+  }
 
   Rect? _computeVisibleCropRect({
     required Size viewport,
@@ -1793,10 +1955,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     required double totalScale,
     required Offset totalOffset,
   }) {
-    if (viewport.width <= 0 || viewport.height <= 0 || imagePx.width <= 0 || imagePx.height <= 0) {
+    if (viewport.width <= 0 ||
+        viewport.height <= 0 ||
+        imagePx.width <= 0 ||
+        imagePx.height <= 0) {
       return null;
     }
-    final baseScale = math.min(viewport.width / imagePx.width, viewport.height / imagePx.height);
+    final baseScale = math.min(
+        viewport.width / imagePx.width, viewport.height / imagePx.height);
     if (baseScale <= 0) return null;
 
     final scale = (baseScale * totalScale).clamp(0.0001, 100000.0);
@@ -1895,7 +2061,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final outH = cropRect.height.round().clamp(1, image.height);
 
     final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder, ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
+    final canvas = ui.Canvas(
+        recorder, ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
     final paint = Paint()
       ..isAntiAlias = true
       ..filterQuality = FilterQuality.high;
@@ -1907,7 +2074,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (byteData == null) return null;
     final pngBytes = Uint8List.view(byteData.buffer);
 
-    final filename = 'bsmart_crop_${DateTime.now().millisecondsSinceEpoch}_${pngBytes.lengthInBytes}.png';
+    final filename =
+        'bsmart_crop_${DateTime.now().millisecondsSinceEpoch}_${pngBytes.lengthInBytes}.png';
     final outPath = '${Directory.systemTemp.path}/$filename';
     final outFile = File(outPath);
     await outFile.writeAsBytes(pngBytes, flush: true);
@@ -1919,9 +2087,16 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     for (int r = 0; r < 4; r++) {
       final r0 = r * 5;
       for (int c = 0; c < 4; c++) {
-        out[r0 + c] = a[r0 + 0] * b[0 + c] + a[r0 + 1] * b[5 + c] + a[r0 + 2] * b[10 + c] + a[r0 + 3] * b[15 + c];
+        out[r0 + c] = a[r0 + 0] * b[0 + c] +
+            a[r0 + 1] * b[5 + c] +
+            a[r0 + 2] * b[10 + c] +
+            a[r0 + 3] * b[15 + c];
       }
-      out[r0 + 4] = a[r0 + 0] * b[4] + a[r0 + 1] * b[9] + a[r0 + 2] * b[14] + a[r0 + 3] * b[19] + a[r0 + 4];
+      out[r0 + 4] = a[r0 + 0] * b[4] +
+          a[r0 + 1] * b[9] +
+          a[r0 + 2] * b[14] +
+          a[r0 + 3] * b[19] +
+          a[r0 + 4];
     }
     out[15] = 0;
     out[16] = 0;
@@ -1952,7 +2127,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final fade = 1.0 - (adjustments['opacity'] ?? 0) / 100.0;
     final tempRaw = (adjustments['sepia'] ?? 0).abs().clamp(0, 100);
     final sepiaAmount = (tempRaw / 100.0) * 0.35;
-    final vignette = ((adjustments['vignette'] ?? 0).clamp(0, 100) / 100.0) * 0.65;
+    final vignette =
+        ((adjustments['vignette'] ?? 0).clamp(0, 100) / 100.0) * 0.65;
 
     final identity = _buildAdjustmentMatrix(
       brightness: 1.0,
@@ -1964,15 +2140,23 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       preset = _combineColorMatrices(_reelFilterMatrixFor(id), preset);
     }
     final sepiaMatrix = (sepiaAmount <= 0)
-        ? _buildAdjustmentMatrix(brightness: 1.0, contrast: 1.0, saturation: 1.0)
-        : _buildSepiaMatrix(amount: sepiaAmount, brightness: 1.0, contrast: 1.0, saturation: 1.0);
-    final adjust = _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
-    final combined = _combineColorMatrices(adjust, _combineColorMatrices(sepiaMatrix, preset));
+        ? _buildAdjustmentMatrix(
+            brightness: 1.0, contrast: 1.0, saturation: 1.0)
+        : _buildSepiaMatrix(
+            amount: sepiaAmount,
+            brightness: 1.0,
+            contrast: 1.0,
+            saturation: 1.0);
+    final adjust =
+        _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
+    final combined = _combineColorMatrices(
+        adjust, _combineColorMatrices(sepiaMatrix, preset));
 
     final outW = image.width;
     final outH = image.height;
     final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder, ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
+    final canvas = ui.Canvas(
+        recorder, ui.Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
     final paint = Paint()
       ..isAntiAlias = true
       ..filterQuality = FilterQuality.high
@@ -2003,7 +2187,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (byteData == null) return null;
     final pngBytes = Uint8List.view(byteData.buffer);
 
-    final filename = 'bsmart_post_${DateTime.now().millisecondsSinceEpoch}_${pngBytes.lengthInBytes}.png';
+    final filename =
+        'bsmart_post_${DateTime.now().millisecondsSinceEpoch}_${pngBytes.lengthInBytes}.png';
     final outPath = '${Directory.systemTemp.path}/$filename';
     final outFile = File(outPath);
     await outFile.writeAsBytes(pngBytes, flush: true);
@@ -2067,7 +2252,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       }
     }
     if (!usedComposite && !isVideo && filePath != null) {
-      final imagePx = _imagePixelSize ?? await _readImagePixelSizeFromFile(filePath);
+      final imagePx =
+          _imagePixelSize ?? await _readImagePixelSizeFromFile(filePath);
       if (imagePx != null) {
         Rect? cropRect;
         final zoomState = _zoomPanState;
@@ -2161,22 +2347,25 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       final renderer = ReelTimelineRenderer(
         outputSize: const Size(1080, 1920),
       );
-      final clips = _mediaList.map<ReelClip>((m) {
-        final isVideo = _isVideoMedia(m);
-        return ReelClip(
-          id: m.id,
-          type: isVideo ? ReelClipType.video : ReelClipType.image,
-          path: m.filePath ?? '',
-          duration: isVideo
-              ? (m.duration ?? const Duration(seconds: 1))
-              : const Duration(seconds: 3),
-          trimStart: _trimStartFor(m),
-          trimEnd: _trimEndFor(m),
-          colorMatrix: _buildReelColorMatrixForMedia(m),
-          textOverlays: _buildReelTextOverlaysFor(m),
-          stickerOverlays: _buildReelStickerOverlaysFor(m),
-        );
-      }).where((c) => c.path.isNotEmpty).toList();
+      final clips = _mediaList
+          .map<ReelClip>((m) {
+            final isVideo = _isVideoMedia(m);
+            return ReelClip(
+              id: m.id,
+              type: isVideo ? ReelClipType.video : ReelClipType.image,
+              path: m.filePath ?? '',
+              duration: isVideo
+                  ? (m.duration ?? const Duration(seconds: 1))
+                  : const Duration(seconds: 3),
+              trimStart: _trimStartFor(m),
+              trimEnd: _trimEndFor(m),
+              colorMatrix: _buildReelColorMatrixForMedia(m),
+              textOverlays: _buildReelTextOverlaysFor(m),
+              stickerOverlays: _buildReelStickerOverlaysFor(m),
+            );
+          })
+          .where((c) => c.path.isNotEmpty)
+          .toList();
       final stitchedPath = await renderer.renderTimeline(clips);
       if (stitchedPath != null && stitchedPath.isNotEmpty) {
         nextMedia = app_models.MediaItem(
@@ -2212,8 +2401,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                     final end = _trimEndFor(media);
                     if (start != null || end != null) {
                       out[media.id] = {
-                        if (start != null)
-                          'start_ms': start.inMilliseconds,
+                        if (start != null) 'start_ms': start.inMilliseconds,
                         if (end != null) 'end_ms': end.inMilliseconds,
                       };
                     }
@@ -2223,10 +2411,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               )
             : CreateReelDetailsScreen(
                 media: nextMedia,
-                trimStart:
-                    nextMedia.id == _currentMedia.id ? _trimStartFor(_currentMedia) : null,
-                trimEnd:
-                    nextMedia.id == _currentMedia.id ? _trimEndFor(_currentMedia) : null,
+                trimStart: nextMedia.id == _currentMedia.id
+                    ? _trimStartFor(_currentMedia)
+                    : null,
+                trimEnd: nextMedia.id == _currentMedia.id
+                    ? _trimEndFor(_currentMedia)
+                    : null,
               ),
       ),
     );
@@ -2236,8 +2426,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       return;
     }
     // Resume preview only when user comes back from next screen.
-    if (_videoController != null &&
-        _videoController!.value.isInitialized) {
+    if (_videoController != null && _videoController!.value.isInitialized) {
       await _videoController!.play();
       if (mounted) {
         setState(() => _isPlaying = true);
@@ -2330,6 +2519,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (_textOverlays.isEmpty) return;
     final activeIndex = _activeTextIndex ?? (_textOverlays.length - 1);
     _bringTextToFront(activeIndex);
+    _setDragState(active: true, layer: _ActiveDragLayer.text);
     _textLastLocalFocalPoint = _toPreviewLocal(details.focalPoint);
     final overlay = _textOverlays[activeIndex];
     _textTransformBaseScale = overlay.scale;
@@ -2352,43 +2542,56 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       newRotation = _textTransformBaseRotation + details.rotation;
     }
 
-    final nextPosition =
-        _clampTextPosition(overlay, overlay.position + delta, newScale);
+    Offset nextPosition = overlay.position;
+    if (!_isNearTrash) {
+      nextPosition =
+          _clampTextPosition(overlay, overlay.position + delta, newScale);
+    }
+
+    final media = MediaQuery.of(context);
+    final screenSize = media.size;
+    final padding = media.padding;
+    final previewOrigin = _previewOriginGlobal();
+    final previewWidth = _previewSize()?.width ?? 320.0;
+    final textSize = _measureTextSize(overlay, previewWidth);
+    final scaledSize =
+        Size(textSize.width * newScale, textSize.height * newScale);
+    final widgetCenterGlobal = previewOrigin +
+        nextPosition +
+        Offset(scaledSize.width / 2, scaledSize.height / 2);
+    final near = _isNearTrashZone(widgetCenterGlobal, screenSize, padding);
+    if (near && !_wasNearTrash) {
+      HapticFeedback.lightImpact();
+    }
+    _wasNearTrash = near;
+
+    if (near) {
+      final snappedCenterLocal =
+          _trashCenterGlobal(screenSize, padding) - previewOrigin;
+      nextPosition = snappedCenterLocal -
+          Offset(scaledSize.width / 2, scaledSize.height / 2);
+    } else if (_isNearTrash) {
+      _textLastLocalFocalPoint = local;
+    }
+
     setState(() {
       _textOverlays[activeIndex] = overlay.copyWith(
         position: nextPosition,
         scale: newScale,
         rotation: newRotation,
       );
-      _updateTextDeleteScale(activeIndex, overlay);
+      _isNearTrash = near;
     });
   }
 
-  void _updateTextDeleteScale(int index, _PreviewTextOverlay overlay) {
-    if (!_isTextDeleteMode) return;
-    final center = _trashCenterLocal();
-    final distance = (center - _textLastLocalFocalPoint).distance;
-    const threshold = 120.0;
-    final t = (distance / threshold).clamp(0.0, 1.0);
-    final scale = 0.2 + (0.8 * t);
-    _textDeleteScale[index] = scale;
-  }
-
   void _handleTextScaleEnd() {
-    _cancelTextHold();
-    if (!_isTextDeleteMode) return;
     final index = _activeTextIndex;
-    if (index == null || index < 0 || index >= _textOverlays.length) {
-      _exitTextDeleteMode();
-      return;
-    }
-    final center = _trashCenterLocal();
-    final distance = (center - _textLastLocalFocalPoint).distance;
-    if (distance <= 44) {
-      _deleteTextByIndex(index);
-    } else {
-      _exitTextDeleteMode();
-    }
+    final shouldDelete =
+        _activeDragLayer == _ActiveDragLayer.text && _isNearTrash;
+    _setDragState(active: false, layer: _ActiveDragLayer.none);
+    if (!shouldDelete) return;
+    if (index == null || index < 0 || index >= _textOverlays.length) return;
+    _deleteTextByIndex(index);
   }
 
   void _deleteTextByIndex(int index) {
@@ -2421,8 +2624,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           ..addAll(newZOrder);
         _deletingTextIndexes.remove(index);
         _activeTextIndex = null;
-        _isTextDeleteMode = false;
-        _textDeleteScale.clear();
       });
     });
   }
@@ -2431,16 +2632,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     if (_stickerOverlays.isEmpty) return;
     final activeIndex = _activeStickerIndex ?? (_stickerOverlays.length - 1);
     _bringStickerToFront(activeIndex);
+    _setDragState(active: true, layer: _ActiveDragLayer.sticker);
     _stickerLastLocalFocalPoint = _toPreviewLocal(details.focalPoint);
     final overlay = _stickerOverlays[activeIndex];
     _stickerBaseScale = overlay.scale;
     _stickerBaseRotation = overlay.rotation;
   }
 
-  void _handleStickerScaleUpdate(
-    ScaleUpdateDetails details,
-    BuildContext context,
-  ) {
+  void _handleStickerScaleUpdate(ScaleUpdateDetails details) {
     if (_stickerOverlays.isEmpty) return;
     final activeIndex = _activeStickerIndex ?? (_stickerOverlays.length - 1);
     final overlay = _stickerOverlays[activeIndex];
@@ -2456,13 +2655,42 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       newRotation = _stickerBaseRotation + details.rotation;
     }
 
+    Offset nextPosition = overlay.position;
+    if (!_isNearTrash) {
+      nextPosition =
+          _clampStickerPosition(overlay, overlay.position + delta, newScale);
+    }
+
+    final media = MediaQuery.of(context);
+    final screenSize = media.size;
+    final padding = media.padding;
+    final previewOrigin = _previewOriginGlobal();
+    final stickerSize = Size(120 * newScale, 120 * newScale);
+    final widgetCenterGlobal = previewOrigin +
+        nextPosition +
+        Offset(stickerSize.width / 2, stickerSize.height / 2);
+    final near = _isNearTrashZone(widgetCenterGlobal, screenSize, padding);
+    if (near && !_wasNearTrash) {
+      HapticFeedback.lightImpact();
+    }
+    _wasNearTrash = near;
+
+    if (near) {
+      final snappedCenterLocal =
+          _trashCenterGlobal(screenSize, padding) - previewOrigin;
+      nextPosition = snappedCenterLocal -
+          Offset(stickerSize.width / 2, stickerSize.height / 2);
+    } else if (_isNearTrash) {
+      _stickerLastLocalFocalPoint = local;
+    }
+
     setState(() {
       _stickerOverlays[activeIndex] = overlay.copyWith(
-        position: overlay.position + delta,
+        position: nextPosition,
         scale: newScale,
         rotation: newRotation,
       );
-      _updateDeleteScale(context, overlay);
+      _isNearTrash = near;
     });
   }
 
@@ -2477,8 +2705,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final boundary = _previewRepaintKey.currentContext?.findRenderObject();
     try {
       if (boundary is RenderRepaintBoundary) {
-        final pixelRatio =
-            math.min(2.0, View.of(context).devicePixelRatio);
+        final pixelRatio = math.min(2.0, View.of(context).devicePixelRatio);
         final image = await boundary.toImage(pixelRatio: pixelRatio);
         final data = await image.toByteData(format: ui.ImageByteFormat.png);
         if (data != null) {
@@ -2563,17 +2790,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     }
     final background = await _buildTextEditorBackground();
     if (!mounted) return;
-    final normalizedInitialPosition = existing != null
-        ? _normalizePreviewPosition(existing.position)
-        : null;
+    final normalizedInitialPosition =
+        existing != null ? _normalizePreviewPosition(existing.position) : null;
     final result = await InstagramTextEditor.open(
       context,
       backgroundImage: background,
       initialText: existing?.text,
       initialColor: existing?.textColor ?? Colors.white,
       initialAlignment: existing?.alignment ?? TextAlign.center,
-      initialBackgroundStyle:
-          existing?.backgroundStyle ?? BackgroundStyle.none,
+      initialBackgroundStyle: existing?.backgroundStyle ?? BackgroundStyle.none,
       initialScale: existing?.scale ?? 1.0,
       initialRotation: existing?.rotation ?? 0.0,
       initialPosition: normalizedInitialPosition,
@@ -2636,7 +2861,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     final paths = await PhotoManager.getAssetPathList(
       type: RequestType.all,
       filterOption: FilterOptionGroup(
-        orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+        orders: [
+          const OrderOption(type: OrderOptionType.createDate, asc: false)
+        ],
       ),
     );
     if (paths.isEmpty || !mounted) return;
@@ -2744,69 +2971,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     return values[next];
   }
 
-  void _exitStickerDeleteMode() {
-    if (_isStickerDeleteMode) {
-      setState(() {
-        _isStickerDeleteMode = false;
-        _stickerDeleteScale.clear();
-        _suppressStickerTap = false;
-      });
-    }
-  }
-
-  void _exitTextDeleteMode() {
-    if (_isTextDeleteMode) {
-      setState(() {
-        _isTextDeleteMode = false;
-        _textDeleteScale.clear();
-        _suppressTextTap = false;
-      });
-    }
-  }
-
-  void _startStickerHold(int index) {
-    _stickerHoldTimer?.cancel();
-    _stickerHoldTimer = Timer(const Duration(milliseconds: 300), () {
-      if (!mounted) return;
-      setState(() {
-        _activeStickerIndex = index;
-        _isStickerDeleteMode = true;
-        _suppressStickerTap = true;
-      });
-    });
-  }
-
-  void _cancelStickerHold() {
-    _stickerHoldTimer?.cancel();
-    _stickerHoldTimer = null;
-  }
-
-  void _startTextHold(int index) {
-    _textHoldTimer?.cancel();
-    _textHoldTimer = Timer(const Duration(milliseconds: 300), () {
-      if (!mounted) return;
-      setState(() {
-        _activeTextIndex = index;
-        _isTextDeleteMode = true;
-        _suppressTextTap = true;
-      });
-    });
-  }
-
-  void _cancelTextHold() {
-    _textHoldTimer?.cancel();
-    _textHoldTimer = null;
-  }
-
-  void _deleteActiveSticker() {
-    final index = _activeStickerIndex;
-    if (index == null || index < 0 || index >= _stickerOverlays.length) {
-      _exitStickerDeleteMode();
-      return;
-    }
-    _deleteStickerById(_stickerOverlays[index].id);
-  }
-
   void _deleteStickerById(String id) {
     if (_deletingStickerIds.contains(id)) return;
     setState(() {
@@ -2822,8 +2986,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
             _activeStickerIndex! >= _stickerOverlays.length) {
           _activeStickerIndex = null;
         }
-        _isStickerDeleteMode = false;
-        _stickerDeleteScale.clear();
       });
     });
   }
@@ -2858,8 +3020,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
             (_textOverlays.length + i),
       });
     }
-    layers.sort((a, b) =>
-        (a['zOrder'] as int).compareTo(b['zOrder'] as int));
+    layers.sort((a, b) => (a['zOrder'] as int).compareTo(b['zOrder'] as int));
     return layers;
   }
 
@@ -2868,6 +3029,51 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         _previewRepaintKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null) return global;
     return renderBox.globalToLocal(global);
+  }
+
+  Offset _previewOriginGlobal() {
+    final renderBox =
+        _previewRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return Offset.zero;
+    return renderBox.localToGlobal(Offset.zero);
+  }
+
+  Offset _trashCenterGlobal(Size screenSize, EdgeInsets padding) {
+    return Offset(
+      screenSize.width / 2,
+      screenSize.height - padding.bottom - 24 - _trashSize / 2,
+    );
+  }
+
+  bool _isNearTrashZone(
+      Offset widgetCenter, Size screenSize, EdgeInsets padding) {
+    final trashCenter = _trashCenterGlobal(screenSize, padding);
+    return (widgetCenter - trashCenter).distance < _trashProximityRadius;
+  }
+
+  void _setDragState({
+    required bool active,
+    required _ActiveDragLayer layer,
+  }) {
+    if (!mounted) return;
+    if (_anyDragActive == active &&
+        _activeDragLayer == layer &&
+        (!_anyDragActive || !_isNearTrash)) {
+      return;
+    }
+    setState(() {
+      _anyDragActive = active;
+      _activeDragLayer = layer;
+      if (!active) {
+        _isNearTrash = false;
+        _wasNearTrash = false;
+      }
+    });
+    if (active) {
+      _trashAnimController.forward();
+    } else {
+      _trashAnimController.reverse();
+    }
   }
 
   Size? _previewSize() {
@@ -2927,39 +3133,32 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     return Offset(clampedX, clampedY);
   }
 
-  Offset _trashCenterLocal() {
+  Offset _clampStickerPosition(
+    OverlaySticker sticker,
+    Offset position,
+    double scale,
+  ) {
     final renderBox =
         _previewRepaintKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null) return const Offset(0, 0);
-    final size = renderBox.size;
-    return Offset(size.width / 2, size.height - 24 - 28);
+    if (renderBox == null) return position;
+    final bounds = renderBox.size;
+    final size = Size(120 * scale, 120 * scale);
+    final maxX = (bounds.width - size.width).clamp(0.0, bounds.width);
+    final maxY = (bounds.height - size.height).clamp(0.0, bounds.height);
+    return Offset(
+      position.dx.clamp(0.0, maxX),
+      position.dy.clamp(0.0, maxY),
+    );
   }
 
-  void _updateDeleteScale(BuildContext context, OverlaySticker sticker) {
-    if (!_isStickerDeleteMode) return;
-    final center = _trashCenterLocal();
-    final distance = (center - _stickerLastLocalFocalPoint).distance;
-    const threshold = 120.0;
-    final t = (distance / threshold).clamp(0.0, 1.0);
-    final scale = 0.2 + (0.8 * t);
-    _stickerDeleteScale[sticker.id] = scale;
-  }
-
-  void _handleStickerScaleEnd(BuildContext context) {
-    _cancelStickerHold();
-    if (!_isStickerDeleteMode) return;
+  void _handleStickerScaleEnd() {
     final index = _activeStickerIndex;
-    if (index == null || index < 0 || index >= _stickerOverlays.length) {
-      _exitStickerDeleteMode();
-      return;
-    }
-    final center = _trashCenterLocal();
-    final distance = (center - _stickerLastLocalFocalPoint).distance;
-    if (distance <= 44) {
-      _deleteStickerById(_stickerOverlays[index].id);
-    } else {
-      _exitStickerDeleteMode();
-    }
+    final shouldDelete =
+        _activeDragLayer == _ActiveDragLayer.sticker && _isNearTrash;
+    _setDragState(active: false, layer: _ActiveDragLayer.none);
+    if (!shouldDelete) return;
+    if (index == null || index < 0 || index >= _stickerOverlays.length) return;
+    _deleteStickerById(_stickerOverlays[index].id);
   }
 
   Widget _buildOverlayVisual(_PreviewTextOverlay overlay, bool isActive) {
@@ -3048,6 +3247,11 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
             child: OverlayStickerWidget(
               sticker: s,
               isActive: false,
+              isDragging: false,
+              isNearTrash: false,
+              onDragStart: (_) {},
+              onDragUpdate: (_) {},
+              onDragEnd: (_) {},
               onDelete: () {},
             ),
           ),
@@ -3121,9 +3325,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                 children: [
                   AnimatedOpacity(
                     duration: const Duration(milliseconds: 160),
-                    opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                    opacity: _anyDragActive ? 0 : 1,
                     child: IgnorePointer(
-                      ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                      ignoring: _anyDragActive,
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(4, 4, 8, 0),
                         child: Row(
@@ -3138,7 +3342,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                   color: const Color(0xFF2E2E2E),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
-                                child: const Icon(Icons.close, color: Colors.white, size: 22),
+                                child: const Icon(Icons.close,
+                                    color: Colors.white, size: 22),
                               ),
                             ),
                           ],
@@ -3172,59 +3377,67 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                             controller: _postPageController,
                                             itemCount: _mediaList.length,
                                             onPageChanged: (i) {
-                                              _setCurrentMedia(_mediaList[i], i);
+                                              _setCurrentMedia(
+                                                  _mediaList[i], i);
                                             },
                                             itemBuilder: (context, i) {
                                               final item = _mediaList[i];
-                                              final isActive = i == _currentIndex;
-                                        if (_isVideoMedia(item)) {
-                                          if (isActive) {
-                                            return GestureDetector(
-                                              onTap: () => _openPerVideoEditor(
-                                                item,
-                                                i,
-                                              ),
-                                              child: _buildVideoPreview(),
-                                            );
-                                          }
-                                                if (item.filePath == null) {
-                                                  return Container(color: Colors.black);
+                                              final isActive =
+                                                  i == _currentIndex;
+                                              if (_isVideoMedia(item)) {
+                                                if (isActive) {
+                                                  return GestureDetector(
+                                                    onTap: () =>
+                                                        _openPerVideoEditor(
+                                                      item,
+                                                      i,
+                                                    ),
+                                                    child: _buildVideoPreview(),
+                                                  );
                                                 }
-                                                final thumb = _applySelectedFilter(
+                                                if (item.filePath == null) {
+                                                  return Container(
+                                                      color: Colors.black);
+                                                }
+                                                final thumb =
+                                                    _applySelectedFilter(
                                                   _buildVideoThumbnail(
                                                     item.filePath!,
-                                                    coverPath: _coverPathFor(item),
+                                                    coverPath:
+                                                        _coverPathFor(item),
                                                     fit: BoxFit.cover,
                                                   ),
-                                                  filterIds: _effectiveFilterIds(item),
+                                                  filterIds:
+                                                      _effectiveFilterIds(item),
                                                 );
                                                 return GestureDetector(
                                                   onTap: () {
                                                     if (!isActive) {
                                                       _setCurrentMedia(item, i);
                                                     }
-                                                    _openPerVideoEditor(item, i);
+                                                    _openPerVideoEditor(
+                                                        item, i);
                                                   },
                                                   child: thumb,
                                                 );
                                               }
-                                                return GestureDetector(
-                                                  onTap: () {
-                                                    if (!isActive) {
-                                                      _setCurrentMedia(item, i);
-                                                    }
-                                                    _openPerImageEditor(item);
+                                              return GestureDetector(
+                                                onTap: () {
+                                                  if (!isActive) {
+                                                    _setCurrentMedia(item, i);
+                                                  }
+                                                  _openPerImageEditor(item);
+                                                },
+                                                child: LayoutBuilder(
+                                                  builder: (context, viewport) {
+                                                    return _buildPostZoomableImagePreviewFor(
+                                                      item,
+                                                      viewport,
+                                                      enableGesture: isActive,
+                                                    );
                                                   },
-                                                  child: LayoutBuilder(
-                                                    builder: (context, viewport) {
-                                                      return _buildPostZoomableImagePreviewFor(
-                                                        item,
-                                                        viewport,
-                                                        enableGesture: isActive,
-                                                      );
-                                                    },
-                                                  ),
-                                                );
+                                                ),
+                                              );
                                             },
                                           )
                                         else if (_isVideoMedia(_currentMedia))
@@ -3257,21 +3470,25 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                                   _textOverlays[index];
                                               final isActive =
                                                   _activeTextIndex == index;
-                                              return Positioned(
+                                              final isDragging =
+                                                  _anyDragActive &&
+                                                      _activeDragLayer ==
+                                                          _ActiveDragLayer
+                                                              .text &&
+                                                      _activeTextIndex == index;
+                                              final isNearTrash =
+                                                  isDragging && _isNearTrash;
+                                              return AnimatedPositioned(
+                                                duration: isNearTrash
+                                                    ? const Duration(
+                                                        milliseconds: 200)
+                                                    : Duration.zero,
+                                                curve: Curves.easeOutCubic,
                                                 key: ValueKey('text_$index'),
                                                 left: overlay.position.dx,
                                                 top: overlay.position.dy,
                                                 child: GestureDetector(
-                                                  onTapDown: (_) =>
-                                                      _startTextHold(index),
-                                                  onTapUp: (_) =>
-                                                      _cancelTextHold(),
-                                                  onTapCancel: _cancelTextHold,
                                                   onTap: () {
-                                                    if (_suppressTextTap) {
-                                                      _suppressTextTap = false;
-                                                      return;
-                                                    }
                                                     setState(() =>
                                                         _bringTextToFront(
                                                             index));
@@ -3282,7 +3499,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                                     setState(() =>
                                                         _bringTextToFront(
                                                             index));
-                                                    _cancelTextHold();
                                                     _handleTextScaleStart(d);
                                                   },
                                                   onScaleUpdate:
@@ -3294,32 +3510,62 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                                         milliseconds: 180),
                                                     opacity:
                                                         _deletingTextIndexes
-                                                                .contains(
-                                                                    index)
+                                                                .contains(index)
                                                             ? 0.0
                                                             : 1.0,
                                                     child: AnimatedScale(
-                                                      duration:
-                                                          const Duration(
-                                                              milliseconds:
-                                                                  180),
+                                                      duration: const Duration(
+                                                          milliseconds: 180),
                                                       scale:
                                                           _deletingTextIndexes
                                                                   .contains(
                                                                       index)
                                                               ? 0.0
                                                               : 1.0,
-                                                      child: Transform.rotate(
-                                                        angle: overlay.rotation,
-                                                        child: Transform.scale(
-                                                          scale: overlay.scale *
-                                                              (_textDeleteScale[
-                                                                      index] ??
-                                                                  1.0),
+                                                      child: AnimatedContainer(
+                                                        duration:
+                                                            const Duration(
+                                                                milliseconds:
+                                                                    200),
+                                                        curve:
+                                                            Curves.easeOutCubic,
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: isNearTrash
+                                                              ? Colors.red
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.08)
+                                                              : null,
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(10),
+                                                        ),
+                                                        child: AnimatedScale(
+                                                          duration:
+                                                              const Duration(
+                                                                  milliseconds:
+                                                                      200),
+                                                          curve: Curves
+                                                              .easeOutCubic,
+                                                          scale: isNearTrash
+                                                              ? 0.85
+                                                              : 1.0,
                                                           child:
-                                                              _buildOverlayVisual(
-                                                                  overlay,
-                                                                  isActive),
+                                                              Transform.rotate(
+                                                            angle: overlay
+                                                                .rotation,
+                                                            child:
+                                                                Transform.scale(
+                                                              scale:
+                                                                  overlay.scale,
+                                                              child:
+                                                                  _buildOverlayVisual(
+                                                                overlay,
+                                                                isActive,
+                                                              ),
+                                                            ),
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
@@ -3334,22 +3580,23 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                             final s = _stickerOverlays[i];
                                             final isActive =
                                                 _activeStickerIndex == i;
-                                            return Positioned(
+                                            final isDragging = _anyDragActive &&
+                                                _activeDragLayer ==
+                                                    _ActiveDragLayer.sticker &&
+                                                _activeStickerIndex == i;
+                                            final isNearTrash =
+                                                isDragging && _isNearTrash;
+                                            return AnimatedPositioned(
+                                              duration: isNearTrash
+                                                  ? const Duration(
+                                                      milliseconds: 200)
+                                                  : Duration.zero,
+                                              curve: Curves.easeOutCubic,
                                               key: ValueKey('sticker_${s.id}'),
                                               left: s.position.dx,
                                               top: s.position.dy,
                                               child: GestureDetector(
-                                                onTapDown: (_) =>
-                                                    _startStickerHold(i),
-                                                onTapUp: (_) =>
-                                                    _cancelStickerHold(),
-                                                onTapCancel: () =>
-                                                    _cancelStickerHold(),
                                                 onTap: () {
-                                                  if (_suppressStickerTap) {
-                                                    _suppressStickerTap = false;
-                                                    return;
-                                                  }
                                                   setState(() {
                                                     if (_activeStickerIndex ==
                                                         i) {
@@ -3365,52 +3612,48 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                                 onScaleStart: (d) {
                                                   setState(() =>
                                                       _bringStickerToFront(i));
-                                                  _cancelStickerHold();
                                                   _handleStickerScaleStart(d);
                                                 },
-                                                onScaleUpdate: (d) =>
-                                                    _handleStickerScaleUpdate(
-                                                        d, context),
+                                                onScaleUpdate:
+                                                    _handleStickerScaleUpdate,
                                                 onScaleEnd: (_) =>
-                                                    _handleStickerScaleEnd(
-                                                        context),
+                                                    _handleStickerScaleEnd(),
                                                 child: AnimatedOpacity(
                                                   duration: const Duration(
                                                       milliseconds: 180),
-                                                  opacity:
-                                                      _deletingStickerIds
-                                                              .contains(s.id)
-                                                          ? 0.0
-                                                          : 1.0,
+                                                  opacity: _deletingStickerIds
+                                                          .contains(s.id)
+                                                      ? 0.0
+                                                      : 1.0,
                                                   child: AnimatedScale(
                                                     duration: const Duration(
                                                         milliseconds: 180),
-                                                    scale:
-                                                        _deletingStickerIds
-                                                                .contains(
-                                                                    s.id)
-                                                            ? 0.0
-                                                            : 1.0,
+                                                    scale: _deletingStickerIds
+                                                            .contains(s.id)
+                                                        ? 0.0
+                                                        : 1.0,
                                                     child: Transform(
                                                       alignment:
                                                           Alignment.center,
-                                                      transform:
-                                                          Matrix4.identity()
-                                                            ..rotateZ(
-                                                                s.rotation)
-                                                            ..scaleByVector3(
-                                                              vector_math
-                                                                  .Vector3.all(
-                                                                s.scale *
-                                                                    (_stickerDeleteScale[
-                                                                            s.id] ??
-                                                                        1.0),
-                                                              ),
-                                                            ),
+                                                      transform: Matrix4
+                                                          .identity()
+                                                        ..rotateZ(s.rotation)
+                                                        ..scaleByVector3(
+                                                          vector_math.Vector3
+                                                              .all(
+                                                            s.scale,
+                                                          ),
+                                                        ),
                                                       child:
                                                           OverlayStickerWidget(
                                                         sticker: s,
                                                         isActive: isActive,
+                                                        isDragging: isDragging,
+                                                        isNearTrash:
+                                                            isNearTrash,
+                                                        onDragStart: (_) {},
+                                                        onDragUpdate: (_) {},
+                                                        onDragEnd: (_) {},
                                                         onDelete: () {},
                                                       ),
                                                     ),
@@ -3419,59 +3662,53 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                               ),
                                             );
                                           }),
-                                        if (_isStickerDeleteMode ||
-                                            _isTextDeleteMode)
-                                          Positioned.fill(
-                                            child: GestureDetector(
-                                              behavior: HitTestBehavior
-                                                  .translucent,
-                                              onTap: () {
-                                                _exitStickerDeleteMode();
-                                                _exitTextDeleteMode();
-                                              },
-                                            ),
-                                          ),
                                         Positioned(
                                           left: 0,
                                           right: 0,
                                           bottom: 24,
                                           child: IgnorePointer(
-                                            ignoring: !(_isStickerDeleteMode ||
-                                                _isTextDeleteMode),
+                                            ignoring: !_anyDragActive,
                                             child: AnimatedOpacity(
                                               duration: const Duration(
-                                                  milliseconds: 160),
-                                              curve: Curves.easeOut,
-                                              opacity: (_isStickerDeleteMode ||
-                                                      _isTextDeleteMode)
-                                                  ? 1
-                                                  : 0,
-                                              child: AnimatedScale(
-                                                duration: const Duration(
-                                                    milliseconds: 160),
-                                                curve: Curves.easeOut,
-                                                scale: _isStickerDeleteMode
-                                                    ? 1
-                                                    : _isTextDeleteMode
-                                                        ? 1
-                                                        : 0.9,
-                                                child: Center(
-                                                  child: GestureDetector(
-                                                    onTap:
-                                                        _deleteActiveSticker,
-                                                    child: Container(
-                                                      width: 56,
-                                                      height: 56,
-                                                      decoration:
-                                                          const BoxDecoration(
-                                                        color: Colors.black87,
-                                                        shape:
-                                                            BoxShape.circle,
+                                                  milliseconds: 180),
+                                              opacity:
+                                                  _anyDragActive ? 1.0 : 0.0,
+                                              child: Center(
+                                                child: ScaleTransition(
+                                                  scale: _trashScaleAnim,
+                                                  child: Container(
+                                                    width: _trashSize,
+                                                    height: _trashSize,
+                                                    decoration: BoxDecoration(
+                                                      color: _isNearTrash
+                                                          ? Colors.red
+                                                              .withValues(
+                                                                  alpha: 0.15)
+                                                          : Colors.black
+                                                              .withValues(
+                                                                  alpha: 0.6),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              18),
+                                                      border: Border.all(
+                                                        color: _isNearTrash
+                                                            ? Colors.red
+                                                                .withValues(
+                                                                    alpha: 0.6)
+                                                            : Colors.white24,
+                                                        width: _isNearTrash
+                                                            ? 1.5
+                                                            : 1.0,
                                                       ),
-                                                      child: const Icon(
-                                                          Icons.delete_outline,
-                                                          color: Colors.white,
-                                                          size: 28),
+                                                    ),
+                                                    child: Icon(
+                                                      LucideIcons.trash2,
+                                                      color: _isNearTrash
+                                                          ? Colors.red
+                                                          : Colors.white,
+                                                      size: _isNearTrash
+                                                          ? 32
+                                                          : 28,
                                                     ),
                                                   ),
                                                 ),
@@ -3493,9 +3730,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                   ),
                   AnimatedOpacity(
                     duration: const Duration(milliseconds: 160),
-                    opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                    opacity: _anyDragActive ? 0 : 1,
                     child: IgnorePointer(
-                      ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                      ignoring: _anyDragActive,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Column(
@@ -3516,7 +3753,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                     label: 'Audio',
                                     onTap: () {
                                       setState(() {
-                                        _showMusicControls = !_showMusicControls;
+                                        _showMusicControls =
+                                            !_showMusicControls;
                                       });
                                     },
                                   ),
@@ -3539,16 +3777,17 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                     icon: Icons.filter_alt_outlined,
                                     label: 'Filter',
                                     onTap: _openFilterPicker,
-                                    isActive: (_selectedFilter ?? 'none') != 'none',
+                                    isActive:
+                                        (_selectedFilter ?? 'none') != 'none',
                                   ),
                                   const SizedBox(width: 10),
                                   _buildPostBottomPill(
                                     icon: Icons.tune,
                                     label: 'Edit',
-                                    onTap:
-                                        widget.media.type == app_models.MediaType.video
-                                            ? _openVideoEditor
-                                            : _openImageAdjustmentsEditor,
+                                    onTap: widget.media.type ==
+                                            app_models.MediaType.video
+                                        ? _openVideoEditor
+                                        : _openImageAdjustmentsEditor,
                                     enabled: !_isCarouselVideo,
                                   ),
                                 ],
@@ -3561,9 +3800,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                   ),
                   AnimatedOpacity(
                     duration: const Duration(milliseconds: 160),
-                    opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                    opacity: _anyDragActive ? 0 : 1,
                     child: IgnorePointer(
-                      ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                      ignoring: _anyDragActive,
                       child: SafeArea(
                         top: false,
                         child: Padding(
@@ -3613,8 +3852,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                           duration: const Duration(milliseconds: 220),
                           curve: Curves.easeOutCubic,
                           width: double.infinity,
-                          height:
-                              MediaQuery.of(context).size.height * 0.72,
+                          height: MediaQuery.of(context).size.height * 0.72,
                           decoration: const BoxDecoration(
                             color: Color(0xFF0B0B0E),
                             borderRadius: BorderRadius.vertical(
@@ -3694,9 +3932,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                         icon: Icons.filter_alt_outlined,
                                         label: 'Filter',
                                         onTap: _openFilterPicker,
-                                        isActive:
-                                            (_selectedFilter ?? 'none') !=
-                                                'none',
+                                        isActive: (_selectedFilter ?? 'none') !=
+                                            'none',
                                       ),
                                       const SizedBox(width: 10),
                                       _buildPostBottomPill(
@@ -3753,8 +3990,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-          child: Stack(
-            children: [
+        child: Stack(
+          children: [
             Column(
               children: [
                 Expanded(
@@ -3781,14 +4018,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                 if (_activeTextIndex != null) {
                                   setState(() => _activeTextIndex = null);
                                 }
-                                _exitStickerDeleteMode();
-                                _exitTextDeleteMode();
                               },
                               onScaleStart: _handleTextScaleStart,
                               onScaleUpdate: _handleTextScaleUpdate,
                               onScaleEnd: (_) => _handleTextScaleEnd(),
                               onHorizontalDragEnd: (details) {
-                                if (_isStickerDeleteMode || _isTextDeleteMode) return;
+                                if (_anyDragActive) return;
                                 if (_mediaList.length > 1) return;
                                 final v = details.primaryVelocity ?? 0;
                                 if (v.abs() < 250) return;
@@ -3816,7 +4051,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                             );
                                           }
                                           if (item.filePath == null) {
-                                            return Container(color: Colors.black);
+                                            return Container(
+                                                color: Colors.black);
                                           }
                                           return _buildVideoThumbnail(
                                             item.filePath!,
@@ -3847,7 +4083,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                       bottom: 2,
                                       child: _buildVideoProgressBar(),
                                     ),
-                                  if (!_isStickerDeleteMode &&
+                                  if (!_anyDragActive &&
                                       trimStart != null &&
                                       trimEnd != null)
                                     Positioned(
@@ -3887,20 +4123,23 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                         final overlay = _textOverlays[index];
                                         final isActive =
                                             _activeTextIndex == index;
-                                        return Positioned(
+                                        final isDragging = _anyDragActive &&
+                                            _activeDragLayer ==
+                                                _ActiveDragLayer.text &&
+                                            _activeTextIndex == index;
+                                        final isNearTrash =
+                                            isDragging && _isNearTrash;
+                                        return AnimatedPositioned(
+                                          duration: isNearTrash
+                                              ? const Duration(
+                                                  milliseconds: 200)
+                                              : Duration.zero,
+                                          curve: Curves.easeOutCubic,
                                           key: ValueKey('text_$index'),
                                           left: overlay.position.dx,
                                           top: overlay.position.dy,
                                           child: GestureDetector(
-                                            onTapDown: (_) =>
-                                                _startTextHold(index),
-                                            onTapUp: (_) => _cancelTextHold(),
-                                            onTapCancel: _cancelTextHold,
                                             onTap: () {
-                                              if (_suppressTextTap) {
-                                                _suppressTextTap = false;
-                                                return;
-                                              }
                                               setState(() =>
                                                   _bringTextToFront(index));
                                               _openPreviewTextEditor(
@@ -3909,7 +4148,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                             onScaleStart: (d) {
                                               setState(() =>
                                                   _bringTextToFront(index));
-                                              _cancelTextHold();
                                               _handleTextScaleStart(d);
                                             },
                                             onScaleUpdate:
@@ -3919,11 +4157,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                             child: AnimatedOpacity(
                                               duration: const Duration(
                                                   milliseconds: 180),
-                                              opacity:
-                                                  _deletingTextIndexes.contains(
-                                                          index)
-                                                      ? 0.0
-                                                      : 1.0,
+                                              opacity: _deletingTextIndexes
+                                                      .contains(index)
+                                                  ? 0.0
+                                                  : 1.0,
                                               child: AnimatedScale(
                                                 duration: const Duration(
                                                     milliseconds: 180),
@@ -3931,15 +4168,37 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                                         .contains(index)
                                                     ? 0.0
                                                     : 1.0,
-                                                child: Transform.rotate(
-                                                  angle: overlay.rotation,
-                                                  child: Transform.scale(
-                                                    scale: overlay.scale *
-                                                        (_textDeleteScale[
-                                                                index] ??
-                                                            1.0),
-                                                    child: _buildOverlayVisual(
-                                                        overlay, isActive),
+                                                child: AnimatedContainer(
+                                                  duration: const Duration(
+                                                      milliseconds: 200),
+                                                  curve: Curves.easeOutCubic,
+                                                  decoration: BoxDecoration(
+                                                    color: isNearTrash
+                                                        ? Colors.red.withValues(
+                                                            alpha: 0.08)
+                                                        : null,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                  ),
+                                                  child: AnimatedScale(
+                                                    duration: const Duration(
+                                                        milliseconds: 200),
+                                                    curve: Curves.easeOutCubic,
+                                                    scale: isNearTrash
+                                                        ? 0.85
+                                                        : 1.0,
+                                                    child: Transform.rotate(
+                                                      angle: overlay.rotation,
+                                                      child: Transform.scale(
+                                                        scale: overlay.scale,
+                                                        child:
+                                                            _buildOverlayVisual(
+                                                          overlay,
+                                                          isActive,
+                                                        ),
+                                                      ),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
@@ -3954,25 +4213,25 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                         final s = _stickerOverlays[i];
                                         final isActive =
                                             _activeStickerIndex == i;
-                                        return Positioned(
+                                        final isDragging = _anyDragActive &&
+                                            _activeDragLayer ==
+                                                _ActiveDragLayer.sticker &&
+                                            _activeStickerIndex == i;
+                                        final isNearTrash =
+                                            isDragging && _isNearTrash;
+                                        return AnimatedPositioned(
+                                          duration: isNearTrash
+                                              ? const Duration(
+                                                  milliseconds: 200)
+                                              : Duration.zero,
+                                          curve: Curves.easeOutCubic,
                                           key: ValueKey('sticker_${s.id}'),
                                           left: s.position.dx,
                                           top: s.position.dy,
                                           child: GestureDetector(
-                                            onTapDown: (_) =>
-                                                _startStickerHold(i),
-                                            onTapUp: (_) =>
-                                                _cancelStickerHold(),
-                                            onTapCancel: () =>
-                                                _cancelStickerHold(),
                                             onTap: () {
-                                              if (_suppressStickerTap) {
-                                                _suppressStickerTap = false;
-                                                return;
-                                              }
                                               setState(() {
-                                                if (_activeStickerIndex ==
-                                                    i) {
+                                                if (_activeStickerIndex == i) {
                                                   _stickerOverlays[i] =
                                                       s.copyWith(
                                                     shape: _nextShape(s.shape),
@@ -3984,22 +4243,19 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                             onScaleStart: (d) {
                                               setState(() =>
                                                   _bringStickerToFront(i));
-                                              _cancelStickerHold();
                                               _handleStickerScaleStart(d);
                                             },
-                                            onScaleUpdate: (d) =>
-                                                _handleStickerScaleUpdate(
-                                                    d, context),
+                                            onScaleUpdate:
+                                                _handleStickerScaleUpdate,
                                             onScaleEnd: (_) =>
-                                                _handleStickerScaleEnd(context),
+                                                _handleStickerScaleEnd(),
                                             child: AnimatedOpacity(
                                               duration: const Duration(
                                                   milliseconds: 180),
-                                              opacity:
-                                                  _deletingStickerIds.contains(
-                                                          s.id)
-                                                      ? 0.0
-                                                      : 1.0,
+                                              opacity: _deletingStickerIds
+                                                      .contains(s.id)
+                                                  ? 0.0
+                                                  : 1.0,
                                               child: AnimatedScale(
                                                 duration: const Duration(
                                                     milliseconds: 180),
@@ -4013,15 +4269,17 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                                     ..rotateZ(s.rotation)
                                                     ..scaleByVector3(
                                                       vector_math.Vector3.all(
-                                                        s.scale *
-                                                            (_stickerDeleteScale[
-                                                                    s.id] ??
-                                                                1.0),
+                                                        s.scale,
                                                       ),
                                                     ),
                                                   child: OverlayStickerWidget(
                                                     sticker: s,
                                                     isActive: isActive,
+                                                    isDragging: isDragging,
+                                                    isNearTrash: isNearTrash,
+                                                    onDragStart: (_) {},
+                                                    onDragUpdate: (_) {},
+                                                    onDragEnd: (_) {},
                                                     onDelete: () {},
                                                   ),
                                                 ),
@@ -4031,55 +4289,45 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                         );
                                       }
                                     }),
-                                  if (_isStickerDeleteMode || _isTextDeleteMode)
-                                    Positioned.fill(
-                                      child: GestureDetector(
-                                        behavior:
-                                            HitTestBehavior.translucent,
-                                        onTap: () {
-                                          _exitStickerDeleteMode();
-                                          _exitTextDeleteMode();
-                                        },
-                                      ),
-                                    ),
                                   Positioned(
                                     left: 0,
                                     right: 0,
                                     bottom: 24,
                                     child: IgnorePointer(
-                                      ignoring: !(_isStickerDeleteMode ||
-                                          _isTextDeleteMode),
+                                      ignoring: !_anyDragActive,
                                       child: AnimatedOpacity(
                                         duration:
-                                            const Duration(milliseconds: 160),
-                                        curve: Curves.easeOut,
-                                        opacity: (_isStickerDeleteMode ||
-                                                _isTextDeleteMode)
-                                            ? 1
-                                            : 0,
-                                        child: AnimatedScale(
-                                          duration: const Duration(
-                                              milliseconds: 160),
-                                          curve: Curves.easeOut,
-                                          scale: (_isStickerDeleteMode ||
-                                                  _isTextDeleteMode)
-                                              ? 1
-                                              : 0.9,
-                                          child: Center(
-                                            child: GestureDetector(
-                                              onTap: _deleteActiveSticker,
-                                              child: Container(
-                                                width: 56,
-                                                height: 56,
-                                                decoration:
-                                                    const BoxDecoration(
-                                                  color: Colors.black87,
-                                                  shape: BoxShape.circle,
+                                            const Duration(milliseconds: 180),
+                                        opacity: _anyDragActive ? 1.0 : 0.0,
+                                        child: Center(
+                                          child: ScaleTransition(
+                                            scale: _trashScaleAnim,
+                                            child: Container(
+                                              width: _trashSize,
+                                              height: _trashSize,
+                                              decoration: BoxDecoration(
+                                                color: _isNearTrash
+                                                    ? Colors.red
+                                                        .withValues(alpha: 0.15)
+                                                    : Colors.black
+                                                        .withValues(alpha: 0.6),
+                                                borderRadius:
+                                                    BorderRadius.circular(18),
+                                                border: Border.all(
+                                                  color: _isNearTrash
+                                                      ? Colors.red.withValues(
+                                                          alpha: 0.6)
+                                                      : Colors.white24,
+                                                  width:
+                                                      _isNearTrash ? 1.5 : 1.0,
                                                 ),
-                                                child: const Icon(
-                                                    Icons.delete_outline,
-                                                    color: Colors.white,
-                                                    size: 28),
+                                              ),
+                                              child: Icon(
+                                                LucideIcons.trash2,
+                                                color: _isNearTrash
+                                                    ? Colors.red
+                                                    : Colors.white,
+                                                size: _isNearTrash ? 32 : 28,
                                               ),
                                             ),
                                           ),
@@ -4098,9 +4346,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                 ),
                 AnimatedOpacity(
                   duration: const Duration(milliseconds: 160),
-                  opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                  opacity: _anyDragActive ? 0 : 1,
                   child: IgnorePointer(
-                    ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                    ignoring: _anyDragActive,
                     child: Container(
                       height: 72,
                       padding: const EdgeInsets.symmetric(
@@ -4126,7 +4374,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                   icon: Icons.filter_alt_outlined,
                                   label: 'Filter',
                                   onTap: _openFilterPicker,
-                                  isActive: (_selectedFilter ?? 'none') != 'none',
+                                  isActive:
+                                      (_selectedFilter ?? 'none') != 'none',
                                 ),
                               ],
                             )
@@ -4187,9 +4436,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               bottom: 72 + 16,
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 160),
-                opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                opacity: _anyDragActive ? 0 : 1,
                 child: IgnorePointer(
-                  ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                  ignoring: _anyDragActive,
                   child: widget.isPostFlow
                       ? const SizedBox.shrink()
                       : Column(
@@ -4202,7 +4451,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                               ),
                             SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               child: Row(
                                 children: [
                                   _buildEditOption(
@@ -4229,7 +4479,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                     label: 'Audio',
                                     onTap: () {
                                       setState(() {
-                                        _showMusicControls = !_showMusicControls;
+                                        _showMusicControls =
+                                            !_showMusicControls;
                                       });
                                     },
                                   ),
@@ -4286,7 +4537,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                                     icon: Icons.filter_alt_outlined,
                                     label: 'Filters',
                                     onTap: _openFilterPicker,
-                                    isActive: (_selectedFilter ?? 'none') != 'none',
+                                    isActive:
+                                        (_selectedFilter ?? 'none') != 'none',
                                   ),
                                   const SizedBox(width: 8),
                                   _buildEditOption(
@@ -4307,9 +4559,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
               left: 8,
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 160),
-                opacity: (_isStickerDeleteMode || _isTextDeleteMode) ? 0 : 1,
+                opacity: _anyDragActive ? 0 : 1,
                 child: IgnorePointer(
-                  ignoring: _isStickerDeleteMode || _isTextDeleteMode,
+                  ignoring: _anyDragActive,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(20),
                     onTap: () => Navigator.of(context).pop(),
@@ -4320,73 +4572,54 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
                         color: const Color(0xFF2E2E2E),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Icon(Icons.close, color: Colors.white, size: 22),
+                      child: const Icon(Icons.close,
+                          color: Colors.white, size: 22),
                     ),
                   ),
                 ),
               ),
             ),
-                                      if (_isStickerDeleteMode ||
-                                          _isTextDeleteMode)
-                                        Positioned.fill(
-                                          child: GestureDetector(
-                                            behavior: HitTestBehavior.translucent,
-                                            onTap: () {
-                                              _exitStickerDeleteMode();
-                                              _exitTextDeleteMode();
-                                            },
-                                          ),
-                                        ),
-                                      Positioned(
-                                        left: 0,
-                                        right: 0,
-                                        bottom: 24,
-                                        child: IgnorePointer(
-                                          ignoring: !(_isStickerDeleteMode ||
-                                              _isTextDeleteMode),
-                                          child: AnimatedOpacity(
-                                            duration:
-                                                const Duration(milliseconds: 160),
-                                            curve: Curves.easeOut,
-                                            opacity:
-                                                (_isStickerDeleteMode ||
-                                                        _isTextDeleteMode)
-                                                    ? 1
-                                                    : 0,
-                                            child: AnimatedScale(
-                                              duration: const Duration(
-                                                  milliseconds: 160),
-                                              curve: Curves.easeOut,
-                                              scale:
-                                                  (_isStickerDeleteMode ||
-                                                          _isTextDeleteMode)
-                                                      ? 1
-                                                      : 0.9,
-                                              child: Center(
-                                                child: GestureDetector(
-                                                  onTap: _deleteActiveSticker,
-                                                  child: Container(
-                                                    width: 56,
-                                                    height: 56,
-                                                    decoration:
-                                                        const BoxDecoration(
-                                                      color: Colors.black87,
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    child: const Icon(
-                                                        Icons.delete_outline,
-                                                        color: Colors.white,
-                                                        size: 28),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 24,
+              child: IgnorePointer(
+                ignoring: !_anyDragActive,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: _anyDragActive ? 1.0 : 0.0,
+                  child: Center(
+                    child: ScaleTransition(
+                      scale: _trashScaleAnim,
+                      child: Container(
+                        width: _trashSize,
+                        height: _trashSize,
+                        decoration: BoxDecoration(
+                          color: _isNearTrash
+                              ? Colors.red.withValues(alpha: 0.15)
+                              : Colors.black.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: _isNearTrash
+                                ? Colors.red.withValues(alpha: 0.6)
+                                : Colors.white24,
+                            width: _isNearTrash ? 1.5 : 1.0,
+                          ),
+                        ),
+                        child: Icon(
+                          LucideIcons.trash2,
+                          color: _isNearTrash ? Colors.red : Colors.white,
+                          size: _isNearTrash ? 32 : 28,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -4457,7 +4690,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
         return Container(
           color: Colors.black,
           child: Center(
-            child: _buildVideoThumbnail(_currentMedia.filePath!, fit: BoxFit.contain),
+            child: _buildVideoThumbnail(_currentMedia.filePath!,
+                fit: BoxFit.contain),
           ),
         );
       }
@@ -4493,12 +4727,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Music',
-                  style: TextStyle(color: Colors.white)),
+              const Text('Music', style: TextStyle(color: Colors.white)),
               IconButton(
                 icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () =>
-                    setState(() => _showMusicControls = false),
+                onPressed: () => setState(() => _showMusicControls = false),
               ),
             ],
           ),
@@ -4608,9 +4840,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
           const SizedBox(height: 3),
           Text(label,
               style: TextStyle(
-                  color: isActive
-                      ? const Color(0xFF0095F6)
-                      : Colors.white,
+                  color: isActive ? const Color(0xFF0095F6) : Colors.white,
                   fontSize: 11)),
         ],
       ),
@@ -4633,9 +4863,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       builder: (context, value, _) {
         final durationMs = value.duration.inMilliseconds;
         final positionMs = value.position.inMilliseconds;
-        final progress = durationMs > 0
-            ? (positionMs / durationMs).clamp(0.0, 1.0)
-            : 0.0;
+        final progress =
+            durationMs > 0 ? (positionMs / durationMs).clamp(0.0, 1.0) : 0.0;
         return TweenAnimationBuilder<double>(
           tween: Tween(begin: 0.0, end: progress),
           duration: const Duration(milliseconds: 180),
@@ -4655,8 +4884,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen> {
       },
     );
   }
-
-
 }
 
 class _ClipPickerSheet extends StatefulWidget {
@@ -4741,7 +4968,8 @@ class _ClipPickerSheetState extends State<_ClipPickerSheet> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, color: Colors.white70, size: 16),
+                  const Icon(Icons.info_outline,
+                      color: Colors.white70, size: 16),
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
@@ -4761,9 +4989,11 @@ class _ClipPickerSheetState extends State<_ClipPickerSheet> {
             ),
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                ? const Center(
+                    child: CircularProgressIndicator(color: Colors.white))
                 : GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
                       crossAxisSpacing: 1,
                       mainAxisSpacing: 1,
@@ -4786,12 +5016,16 @@ class _ClipPickerSheetState extends State<_ClipPickerSheet> {
                           fit: StackFit.expand,
                           children: [
                             FutureBuilder<Uint8List?>(
-                              future: asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
+                              future: asset.thumbnailDataWithSize(
+                                  const ThumbnailSize(300, 300)),
                               builder: (context, snap) {
-                                if (snap.connectionState != ConnectionState.done || snap.data == null) {
+                                if (snap.connectionState !=
+                                        ConnectionState.done ||
+                                    snap.data == null) {
                                   return Container(color: Colors.grey[850]);
                                 }
-                                return Image.memory(snap.data!, fit: BoxFit.cover);
+                                return Image.memory(snap.data!,
+                                    fit: BoxFit.cover);
                               },
                             ),
                             if (asset.type == AssetType.video)
@@ -4799,14 +5033,17 @@ class _ClipPickerSheetState extends State<_ClipPickerSheet> {
                                 bottom: 4,
                                 right: 4,
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 2),
                                   decoration: BoxDecoration(
                                     color: Colors.black54,
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
-                                    _formatDuration(Duration(seconds: asset.duration)),
-                                    style: const TextStyle(color: Colors.white, fontSize: 10),
+                                    _formatDuration(
+                                        Duration(seconds: asset.duration)),
+                                    style: const TextStyle(
+                                        color: Colors.white, fontSize: 10),
                                   ),
                                 ),
                               ),
@@ -4821,11 +5058,13 @@ class _ClipPickerSheetState extends State<_ClipPickerSheet> {
                                       ? Colors.white.withValues(alpha: 0.9)
                                       : Colors.black.withValues(alpha: 0.35),
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white70, width: 1),
+                                  border: Border.all(
+                                      color: Colors.white70, width: 1),
                                 ),
                                 child: isSelected
                                     ? const Center(
-                                        child: Icon(Icons.check, size: 12, color: Colors.black),
+                                        child: Icon(Icons.check,
+                                            size: 12, color: Colors.black),
                                       )
                                     : null,
                               ),
@@ -4935,9 +5174,8 @@ class _PerVideoEditPageState extends State<_PerVideoEditPage> {
     final durationMs = _videoDuration.inMilliseconds;
     final frames = <Uint8List?>[];
     for (int i = 0; i < count; i++) {
-      final timeMs = durationMs == 0
-          ? 0
-          : (durationMs * i / (count - 1)).round();
+      final timeMs =
+          durationMs == 0 ? 0 : (durationMs * i / (count - 1)).round();
       final bytes = await VideoThumbnail.thumbnailData(
         video: path,
         imageFormat: ImageFormat.JPEG,
@@ -4994,7 +5232,8 @@ class _PerVideoEditPageState extends State<_PerVideoEditPage> {
               children: [
                 Expanded(
                   child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
                     scrollDirection: Axis.horizontal,
                     itemCount: widget.filters.length,
                     itemBuilder: (context, i) {
@@ -5062,8 +5301,7 @@ class _PerVideoEditPageState extends State<_PerVideoEditPage> {
                       const Text(
                         'Filter',
                         style: TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w700),
+                            color: Colors.white70, fontWeight: FontWeight.w700),
                       ),
                       const Spacer(),
                       TextButton(
@@ -5136,7 +5374,8 @@ class _PerVideoEditPageState extends State<_PerVideoEditPage> {
               children: [
                 Expanded(
                   child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
                     scrollDirection: Axis.horizontal,
                     itemCount: _thumbs.length,
                     itemBuilder: (context, i) {
@@ -5156,9 +5395,7 @@ class _PerVideoEditPageState extends State<_PerVideoEditPage> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: isActive
-                                  ? Colors.white
-                                  : Colors.white24,
+                              color: isActive ? Colors.white : Colors.white24,
                             ),
                           ),
                           clipBehavior: Clip.antiAlias,
@@ -5178,8 +5415,7 @@ class _PerVideoEditPageState extends State<_PerVideoEditPage> {
                       Text(
                         'Cover',
                         style: TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w700),
+                            color: Colors.white70, fontWeight: FontWeight.w700),
                       ),
                       Spacer(),
                     ],
@@ -5415,8 +5651,7 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
     _selectedFilter = widget.initialFilter ?? 'none';
     _adjustments = Map<String, int>.from(widget.initialAdjustments);
     _textOverlays = List<_PreviewTextOverlay>.from(widget.initialTextOverlays);
-    _stickerOverlays =
-        List<OverlaySticker>.from(widget.initialStickerOverlays);
+    _stickerOverlays = List<OverlaySticker>.from(widget.initialStickerOverlays);
     final path = widget.media.filePath;
     if (path != null && path.isNotEmpty) {
       final provider = FileImage(File(path));
@@ -5714,7 +5949,8 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
   }
 
   Offset _toPreviewLocal(Offset global) {
-    final renderBox = _previewKey.currentContext?.findRenderObject() as RenderBox?;
+    final renderBox =
+        _previewKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null) return global;
     return renderBox.globalToLocal(global);
   }
@@ -5757,7 +5993,8 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
     Offset position,
     double scale,
   ) {
-    final renderBox = _previewKey.currentContext?.findRenderObject() as RenderBox?;
+    final renderBox =
+        _previewKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null) return position;
     final bounds = renderBox.size;
     final textSize = _measureTextSize(overlay, bounds.width);
@@ -5879,8 +6116,10 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                           final f = widget.filters[i];
                           final isActive = (_selectedFilter ?? 'none') == f.id;
                           final base = _isVideoMedia(widget.media)
-                              ? _buildVideoThumbnail(widget.media.filePath!, fit: BoxFit.cover)
-                              : Image.file(File(widget.media.filePath!), fit: BoxFit.cover);
+                              ? _buildVideoThumbnail(widget.media.filePath!,
+                                  fit: BoxFit.cover)
+                              : Image.file(File(widget.media.filePath!),
+                                  fit: BoxFit.cover);
                           final preview = (f.id == 'none')
                               ? base
                               : ColorFiltered(
@@ -6155,9 +6394,7 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(16),
-          border: isActive
-              ? Border.all(color: const Color(0xFF0095F6))
-              : null,
+          border: isActive ? Border.all(color: const Color(0xFF0095F6)) : null,
         ),
         child: Column(
           children: [
@@ -6167,9 +6404,7 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
             const SizedBox(height: 3),
             Text(label,
                 style: TextStyle(
-                    color: isActive
-                        ? const Color(0xFF0095F6)
-                        : Colors.white,
+                    color: isActive ? const Color(0xFF0095F6) : Colors.white,
                     fontSize: 11)),
           ],
         ),
@@ -6200,7 +6435,7 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
               child: Center(
                 child: AspectRatio(
                   aspectRatio: widget.frameAspect,
-                    child: ClipRRect(
+                  child: ClipRRect(
                     borderRadius: BorderRadius.circular(24),
                     child: LayoutBuilder(
                       builder: (context, viewport) {
@@ -6229,10 +6464,12 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                             extendedImageGestureKey: _gestureKey,
                             initGestureConfigHandler: (state) {
                               final imageAspect = _imageAspect ?? 1.0;
-                              final viewportAspect = viewport.maxWidth / viewport.maxHeight;
-                              final fillScale = (imageAspect / viewportAspect) > 1.0
-                                  ? viewportAspect / imageAspect
-                                  : imageAspect / viewportAspect;
+                              final viewportAspect =
+                                  viewport.maxWidth / viewport.maxHeight;
+                              final fillScale =
+                                  (imageAspect / viewportAspect) > 1.0
+                                      ? viewportAspect / imageAspect
+                                      : imageAspect / viewportAspect;
                               final minFillScale = math.max(1.0, fillScale);
                               return GestureConfig(
                                 minScale: minFillScale,
@@ -6281,8 +6518,7 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                                       double newRotation = overlay.rotation;
                                       if (d.pointerCount > 1) {
                                         newScale =
-                                            (_textTransformBaseScale *
-                                                    d.scale)
+                                            (_textTransformBaseScale * d.scale)
                                                 .clamp(0.2, 8.0);
                                         newRotation =
                                             _textTransformBaseRotation +
@@ -6336,12 +6572,10 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                                       double newScale = s.scale;
                                       double newRotation = s.rotation;
                                       if (d.pointerCount > 1) {
-                                        newScale =
-                                            (_stickerBaseScale * d.scale)
-                                                .clamp(0.2, 8.0);
+                                        newScale = (_stickerBaseScale * d.scale)
+                                            .clamp(0.2, 8.0);
                                         newRotation =
-                                            _stickerBaseRotation +
-                                                d.rotation;
+                                            _stickerBaseRotation + d.rotation;
                                       }
                                       setState(() {
                                         _stickerOverlays[i] = s.copyWith(
@@ -6361,6 +6595,11 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                                       child: OverlayStickerWidget(
                                         sticker: s,
                                         isActive: isActive,
+                                        isDragging: false,
+                                        isNearTrash: false,
+                                        onDragStart: (_) {},
+                                        onDragUpdate: (_) {},
+                                        onDragEnd: (_) {},
                                         onDelete: () {},
                                       ),
                                     ),
@@ -6438,8 +6677,8 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: Colors.black,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 28, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(24),
                     ),

@@ -20,6 +20,8 @@ import 'routes.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/ad_detail_screen.dart';
+import 'screens/ad_public_detail_screen.dart';
+import 'screens/vendor_public_profile_react_screen.dart';
 import 'utils/system_ui.dart';
 import 'widgets/profile_setup_gate.dart';
 
@@ -257,10 +259,48 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
         final uri = Uri.parse(name);
         final segments = uri.pathSegments;
 
+        // React parity: /vendor/:userId/public → VendorPublicProfileReactScreen(userId)
+        if (segments.length == 3 &&
+            segments[0] == 'vendor' &&
+            segments[2] == 'public') {
+          final userId = segments[1];
+          debugPrint(
+              '[Router] → VendorPublicProfileReactScreen userId=$userId');
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (ctx) => VendorPublicProfileReactScreen(userId: userId),
+          );
+        }
+
+        // React parity: /ads/:adId/details → AdPublicDetailScreen(adId)
+        if (segments.length == 3 &&
+            segments[0] == 'ads' &&
+            segments[2] == 'details') {
+          final adId = segments[1];
+          debugPrint('[Router] → AdPublicDetailScreen adId=$adId');
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (ctx) => AdPublicDetailScreen(adId: adId),
+          );
+        }
+
         // /ad/:adId
         if (segments.length == 2 && segments[0] == 'ad') {
           final adId = segments[1];
           debugPrint('[Router] → AdDetailScreen adId=$adId');
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (ctx) => AdDetailScreen(adId: adId),
+          );
+        }
+
+        // React parity: /vendor/ads-management/:adId → AdDetailScreen(adId)
+        if (segments.length == 3 &&
+            segments[0] == 'vendor' &&
+            segments[1] == 'ads-management') {
+          final adId = segments[2];
+          debugPrint(
+              '[Router] → AdDetailScreen (vendor ads-management) adId=$adId');
           return MaterialPageRoute<void>(
             settings: settings,
             builder: (ctx) => AdDetailScreen(adId: adId),

@@ -18,7 +18,9 @@ import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
+import '../widgets/ad_cta_buttons.dart';
 import 'ad_company_detail_screen.dart';
+import 'external_link_screen.dart';
 
 String? _adProfileId(Ad ad) {
   final userId = ad.userId?.trim();
@@ -359,6 +361,11 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   void _handleSearchUserTap(_SearchUser user) {
     if (user.id.isEmpty) return;
     _closeSearch();
+    final role = (user.role ?? '').trim().toLowerCase();
+    if (role == 'vendor') {
+      Navigator.of(context).pushNamed('/vendor/${user.id}/public');
+      return;
+    }
     Navigator.of(context).pushNamed('/profile/${user.id}');
   }
 
@@ -374,7 +381,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     final uid = _adProfileId(ad);
     if (uid == null || uid.isEmpty) return;
     _closeSearch();
-    Navigator.of(context).pushNamed('/profile/$uid');
+    Navigator.of(context).pushNamed('/vendor/$uid/public');
   }
 
   Future<void> _ensurePersistViewedLoaded() async {
@@ -614,13 +621,6 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     if (_cachedBottomInset > bottomSystemInset) {
       bottomSystemInset = _cachedBottomInset;
     }
-    assert(() {
-      debugPrint(
-        '[AdsPageScreen] bottomSystemInset=$bottomSystemInset '
-        'viewPadding=${mq.viewPadding.bottom} padding=${mq.padding.bottom}',
-      );
-      return true;
-    }());
     final clipFeedBottomInsetForAndroid = !isDesktop &&
         defaultTargetPlatform == TargetPlatform.android &&
         bottomSystemInset > 0;
@@ -1457,7 +1457,6 @@ class _AdVideoItemState extends State<AdVideoItem>
   Timer? _watchGateTimer;
   int _watchTotalMs = 15000;
   bool _watchProgressRunning = false;
-  bool _captionExpanded = false;
   Map<String, String>? _mediaHeaders;
   bool _viewMarked = false;
   Timer? _likeRewardTimer;
@@ -1498,12 +1497,128 @@ class _AdVideoItemState extends State<AdVideoItem>
     } catch (_) {}
   }
 
+  Future<void> _trackAdClick(String adId) async {
+    final id = adId.trim();
+    if (id.isEmpty) return;
+    try {
+      await _adsService.recordAdClick(adId: id);
+    } catch (_) {
+      // Non-blocking: click tracking should never break navigation.
+    }
+  }
+
   Future<void> _safePause() async {
     final controller = _controller;
     if (controller == null) return;
     try {
       await controller.pause();
     } catch (_) {}
+  }
+
+  Future<void> _showCaptionSheet(String caption) async {
+    if (!mounted) return;
+    final trimmed = caption.trim();
+    if (trimmed.isEmpty) return;
+
+    final wasPlaying = _controller?.value.isPlaying ?? false;
+    if (wasPlaying) {
+      unawaited(_safePause());
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (context) {
+        final media = MediaQuery.of(context);
+        final maxHeight = media.size.height * 0.72;
+        return SafeArea(
+          top: false,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: Material(
+                color: const Color(0xFF121212),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: Icon(
+                              Icons.close,
+                              color: Colors.white.withValues(alpha: 0.8),
+                            ),
+                            tooltip: 'Close',
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Description',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          0,
+                          16,
+                          16 + media.viewInsets.bottom,
+                        ),
+                        child: Text(
+                          trimmed,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            height: 1.45,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted) return;
+    if (wasPlaying && widget.isActive && !_userPaused) {
+      unawaited(_safePlay());
+    }
   }
 
   @override
@@ -1537,7 +1652,6 @@ class _AdVideoItemState extends State<AdVideoItem>
       _isLiked = widget.ad.isLikedByMe;
       _isSaved = widget.ad.isSavedByMe;
       _likesCount = widget.ad.likesCount;
-      _captionExpanded = false;
       _isInitialized = false;
       _userPaused = false;
       _viewMarked = false;
@@ -1919,29 +2033,24 @@ class _AdVideoItemState extends State<AdVideoItem>
   }
 
   String _secondaryCtaLabel() {
-    final url = (widget.ad.websiteUrl ?? '').trim().toLowerCase();
-    if (url.isEmpty) return 'Company Details';
-    if (url.contains('play.google.com') || url.contains('apps.apple.com')) {
-      return 'Install';
-    }
-    if (url.contains('book') ||
-        url.contains('booking') ||
-        url.contains('reserve')) {
-      return 'Book';
-    }
-    return 'Company Details';
+    return 'Visit Website';
   }
 
   void _openSecondaryCta() {
+    unawaited(_trackAdClick(widget.ad.id));
     final url = (widget.ad.websiteUrl ?? '').trim();
     if (url.isEmpty) {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => AdCompanyDetailScreen(companyId: widget.ad.companyId),
-        ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Website not available')),
       );
       return;
     }
+
+    final normalized = UrlHelper.absoluteUrl(url);
+    final uri = Uri.tryParse(normalized);
+    final canWebView = uri != null &&
+        (uri.scheme.toLowerCase() == 'http' ||
+            uri.scheme.toLowerCase() == 'https');
 
     showModalBottomSheet<void>(
       context: context,
@@ -2001,13 +2110,24 @@ class _AdVideoItemState extends State<AdVideoItem>
                       child: OutlinedButton(
                         onPressed: () {
                           Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => AdCompanyDetailScreen(
-                                companyId: widget.ad.companyId,
+                          if (canWebView) {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => ExternalLinkScreen(
+                                  url: normalized,
+                                  title: _secondaryCtaLabel(),
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          } else {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => AdCompanyDetailScreen(
+                                  companyId: widget.ad.companyId,
+                                ),
+                              ),
+                            );
+                          }
                         },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white,
@@ -2018,7 +2138,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text('Company Details'),
+                        child: Text(canWebView ? 'Open Link' : 'Visit Website'),
                       ),
                     ),
                   ],
@@ -2035,50 +2155,24 @@ class _AdVideoItemState extends State<AdVideoItem>
     return Row(
       children: [
         Expanded(
-          child: FilledButton(
+          child: AdGlassCtaButton(
             onPressed: () {
-              Navigator.of(context).pushNamed('/ad/${widget.ad.id}');
+              unawaited(_trackAdClick(widget.ad.id));
+              Navigator.of(context).pushNamed('/ads/${widget.ad.id}/details');
             },
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white.withValues(alpha: 0.96),
-              foregroundColor: Colors.black,
-              elevation: 2,
-              shadowColor: Colors.black.withValues(alpha: 0.35),
-              side: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text(
-              'View Ad Detail',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-            ),
+            icon: Icons.desktop_windows_outlined,
+            label: 'Visit Ad Details',
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: FilledButton(
-            onPressed: _openSecondaryCta,
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white.withValues(alpha: 0.96),
-              foregroundColor: Colors.black,
-              elevation: 2,
-              shadowColor: Colors.black.withValues(alpha: 0.35),
-              side: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: Text(
-              _secondaryCtaLabel(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-            ),
+          child: AdGradientCtaButton(
+            onPressed: (widget.ad.websiteUrl ?? '').trim().isEmpty
+                ? null
+                : _openSecondaryCta,
+            icon: Icons.open_in_new,
+            label: _secondaryCtaLabel(),
+            boxShadow: const [],
           ),
         ),
       ],
@@ -2342,511 +2436,485 @@ class _AdVideoItemState extends State<AdVideoItem>
     );
 
     return ClipRect(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _togglePlay,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Solid black fill for the system nav bar zone — nothing renders here.
-            if (widget.bottomInset > 0)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: widget.bottomInset,
-                child: const ColoredBox(color: Colors.black),
-              ),
-
-            // 1. Media — constrained to stop at bottomInset.
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Solid black fill for the system nav bar zone — nothing renders here.
+          if (widget.bottomInset > 0)
             Positioned(
-              top: 0,
               left: 0,
               right: 0,
-              bottom: widget.bottomInset,
+              bottom: 0,
+              height: widget.bottomInset,
+              child: const ColoredBox(color: Colors.black),
+            ),
+
+          // 1. Media — constrained to stop at bottomInset.
+          // Gesture is attached ONLY to media so overlay taps (username, CTA, etc.)
+          // don't get swallowed by the tap-to-pause handler.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: widget.bottomInset,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _togglePlay,
               child: media,
             ),
+          ),
 
-            // Gradient Overlay (ignore pointers so it doesn't swallow taps).
+          // Gradient Overlay (ignore pointers so it doesn't swallow taps).
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: widget.bottomInset,
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.3),
+                      Colors.transparent,
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.6),
+                    ],
+                    stops: const [0.0, 0.2, 0.8, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Tap-to-pause hint (shows when paused).
+          if (_userPaused && widget.isActive)
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               bottom: widget.bottomInset,
               child: IgnorePointer(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.3),
-                        Colors.transparent,
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.6),
-                      ],
-                      stops: const [0.0, 0.2, 0.8, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Tap-to-pause hint (shows when paused).
-            if (_userPaused && widget.isActive)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: widget.bottomInset,
-                child: IgnorePointer(
-                  child: Center(
-                    child: Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.45),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.18)),
-                      ),
-                      child: const Icon(
-                        LucideIcons.play,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-            // 3. Progress Bar (ignore pointers so it doesn't swallow taps).
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: widget.bottomInset,
-              child: IgnorePointer(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: Container(
-                    height: 4,
-                    color: Colors.white.withValues(alpha: 0.22),
-                    child: AnimatedBuilder(
-                      animation: _watchProgressController,
-                      builder: (context, _) {
-                        return FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor:
-                              _watchProgressController.value.clamp(0.0, 1.0),
-                          child: Container(color: Colors.white),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            if (widget.ad.coinReward > 0)
-              Positioned(
-                top: 12,
-                left: 12,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(LucideIcons.coins,
-                          color: Colors.white, size: 12),
-                      const SizedBox(width: 4),
-                      Text(
-                        '+${widget.ad.coinReward}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            // 3. Right Side Actions (always visible)
-            Positioned(
-              right: 8,
-              bottom: actionsBottom,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildGlassAction(
-                    icon: LucideIcons.eye,
-                    label: _formatCount(widget.ad.currentViews),
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: 16),
-                  _buildGlassAction(
-                    icon: _isLiked ? Icons.favorite : LucideIcons.heart,
-                    label: _formatCount(_likesCount),
-                    iconColor: _isLiked ? Colors.red : Colors.white,
-                    fillColor: _isLiked ? Colors.red : null,
-                    onTap: _toggleLike,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildGlassAction(
-                    icon: LucideIcons.messageCircle,
-                    label: _formatCount(widget.ad.commentsCount),
-                    onTap: () => unawaited(widget.onOpenComments()),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildGlassAction(
-                    icon: LucideIcons.send,
-                    label: '',
-                    onTap: () {},
-                    rotate: -0.2, // ~12 degrees
-                  ),
-                  const SizedBox(height: 16),
-                  _buildGlassAction(
-                    icon: _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                    label: '',
-                    iconColor: Colors.white,
-                    onTap: _toggleSaveAd,
-                  ),
-                  if (_isVideoAd) ...[
-                    const SizedBox(height: 16),
-                    _buildGlassAction(
-                      icon:
-                          _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                      label: '',
-                      onTap: () {
-                        setState(() {
-                          _isMuted = !_isMuted;
-                          unawaited(_safeSetVolume(_isMuted ? 0 : 1));
-                        });
-                      },
-                    ),
-                  ],
-                ],
-              ),
-            ),
-
-            // 5. Bottom Info Overlay
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 240),
-              curve: Curves.easeInOutCubic,
-              left: 16,
-              right: 80,
-              bottom: infoBottom,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // User/Company Info
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InkWell(
-                        onTap: () {
-                          final uid = _adProfileId(widget.ad);
-                          if (uid == null || uid.isEmpty) return;
-                          Navigator.of(context).pushNamed('/profile/$uid');
-                        },
-                        borderRadius: BorderRadius.circular(10),
-                        child: _buildAdAvatarThumb(),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: InkWell(
-                                    onTap: () {
-                                      final uid = _adProfileId(widget.ad);
-                                      if (uid == null || uid.isEmpty) return;
-                                      Navigator.of(context)
-                                          .pushNamed('/profile/$uid');
-                                    },
-                                    child: Text(
-                                      widget.ad.vendorBusinessName ??
-                                          widget.ad.userName ??
-                                          widget.ad.companyName,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                if (widget.ad.totalBudgetCoins > 0)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          Colors.amber.withValues(alpha: 0.2),
-                                      border: Border.all(
-                                          color: Colors.amber
-                                              .withValues(alpha: 0.4)),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(LucideIcons.coins,
-                                            color: Colors.amber, size: 10),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          _formatCount(
-                                              widget.ad.totalBudgetCoins),
-                                          style: const TextStyle(
-                                            color: Colors.amberAccent,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: _isFollowing
-                                        ? Colors.green.withValues(alpha: 0.15)
-                                        : Colors.white.withValues(alpha: 0.1),
-                                    border: Border.all(
-                                        color: _isFollowing
-                                            ? Colors.green
-                                                .withValues(alpha: 0.45)
-                                            : Colors.white
-                                                .withValues(alpha: 0.4)),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: GestureDetector(
-                                    onTap:
-                                        _isFollowLoading ? null : _toggleFollow,
-                                    child: Text(
-                                      _isFollowLoading
-                                          ? '...'
-                                          : (_isFollowing
-                                              ? 'Following'
-                                              : 'Follow'),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Sponsored',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.65),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            if (!_ctaVisible)
-                              Builder(builder: (context) {
-                                final caption =
-                                    (widget.ad.caption ?? widget.ad.description)
-                                        .trim();
-                                if (caption.isEmpty) {
-                                  return const SizedBox.shrink();
-                                }
-                                final words =
-                                    caption.trim().split(RegExp(r'\s+'));
-                                final isLong = words.length > 5;
-                                final preview =
-                                    isLong ? words.take(5).join(' ') : caption;
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: RichText(
-                                    text: TextSpan(
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        height: 1.4,
-                                      ),
-                                      children: [
-                                        TextSpan(
-                                          text: _captionExpanded || !isLong
-                                              ? caption
-                                              : preview,
-                                        ),
-                                        if (!_captionExpanded && isLong)
-                                          WidgetSpan(
-                                            alignment:
-                                                PlaceholderAlignment.middle,
-                                            child: GestureDetector(
-                                              onTap: () => setState(
-                                                () => _captionExpanded = true,
-                                              ),
-                                              child: const Padding(
-                                                padding:
-                                                    EdgeInsets.only(left: 3),
-                                                child: Text(
-                                                  '... more',
-                                                  style: TextStyle(
-                                                    color: Color(0xCCFFFFFF),
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        if (_captionExpanded && isLong)
-                                          WidgetSpan(
-                                            alignment:
-                                                PlaceholderAlignment.middle,
-                                            child: GestureDetector(
-                                              onTap: () => setState(
-                                                () => _captionExpanded = false,
-                                              ),
-                                              child: const Padding(
-                                                padding:
-                                                    EdgeInsets.only(left: 4),
-                                                child: Text(
-                                                  'less',
-                                                  style: TextStyle(
-                                                    color: Color(0xCCFFFFFF),
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }),
-                            if (!_ctaVisible &&
-                                ((widget.ad.category ?? '').isNotEmpty ||
-                                    widget.ad.targetCategories.isNotEmpty)) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                widget.ad.targetCategories.isNotEmpty
-                                    ? widget.ad.targetCategories.join(' • ')
-                                    : (widget.ad.category ?? ''),
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.6),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                            if (!_ctaVisible &&
-                                widget.ad.targetLanguages.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: [
-                                  ...widget.ad.targetLanguages.take(3).map(
-                                        (lang) => _buildMetaPill(
-                                          icon: Icons.language,
-                                          label: lang,
-                                        ),
-                                      ),
-                                  if (widget.ad.targetLanguages.length > 3)
-                                    _buildMetaPill(
-                                      label:
-                                          '+${widget.ad.targetLanguages.length - 3}',
-                                    ),
-                                ],
-                              ),
-                            ],
-                            if (!_ctaVisible &&
-                                widget.ad.targetLocations.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: [
-                                  ...widget.ad.targetLocations.take(2).map(
-                                        (loc) => _buildMetaPill(
-                                          icon: Icons.place,
-                                          label: loc,
-                                        ),
-                                      ),
-                                  if (widget.ad.targetLocations.length > 2)
-                                    _buildMetaPill(
-                                      label:
-                                          '+${widget.ad.targetLocations.length - 2} more',
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            // CTA buttons (full-width, end-to-end)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: ctaBottom,
-              child: IgnorePointer(
-                ignoring: !_ctaVisible,
-                child: AnimatedOpacity(
-                  opacity: _ctaVisible ? 1 : 0,
-                  duration: const Duration(milliseconds: 240),
-                  curve: Curves.easeInOutCubic,
-                  child: _buildCtaButtons(),
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                ignoring: _likeRewardPopup == null,
                 child: Center(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeIn,
-                    transitionBuilder: (child, animation) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child: ScaleTransition(scale: animation, child: child),
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.18)),
+                    ),
+                    child: const Icon(
+                      LucideIcons.play,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // 3. Progress Bar (ignore pointers so it doesn't swallow taps).
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: widget.bottomInset,
+            child: IgnorePointer(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  height: 4,
+                  color: Colors.white.withValues(alpha: 0.22),
+                  child: AnimatedBuilder(
+                    animation: _watchProgressController,
+                    builder: (context, _) {
+                      return FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor:
+                            _watchProgressController.value.clamp(0.0, 1.0),
+                        child: Container(color: Colors.white),
                       );
                     },
-                    child: _likeRewardPopup == null
-                        ? const SizedBox.shrink()
-                        : _LikeRewardPopupCard(
-                            key: ValueKey<int>(_likeRewardPopup!.id),
-                            data: _likeRewardPopup!,
-                            onOk: _hideLikeRewardPopup,
-                          ),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+
+          if (widget.ad.coinReward > 0)
+            Positioned(
+              top: 12,
+              left: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(LucideIcons.coins,
+                        color: Colors.white, size: 12),
+                    const SizedBox(width: 4),
+                    Text(
+                      '+${widget.ad.coinReward}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 3. Right Side Actions (always visible)
+          Positioned(
+            right: 8,
+            bottom: actionsBottom,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildGlassAction(
+                  icon: LucideIcons.eye,
+                  label: _formatCount(widget.ad.currentViews),
+                  onTap: () {},
+                ),
+                const SizedBox(height: 16),
+                _buildGlassAction(
+                  icon: _isLiked ? Icons.favorite : LucideIcons.heart,
+                  label: _formatCount(_likesCount),
+                  iconColor: _isLiked ? Colors.red : Colors.white,
+                  fillColor: _isLiked ? Colors.red : null,
+                  onTap: _toggleLike,
+                ),
+                const SizedBox(height: 16),
+                _buildGlassAction(
+                  icon: LucideIcons.messageCircle,
+                  label: _formatCount(widget.ad.commentsCount),
+                  onTap: () => unawaited(widget.onOpenComments()),
+                ),
+                const SizedBox(height: 16),
+                _buildGlassAction(
+                  icon: LucideIcons.send,
+                  label: '',
+                  onTap: () {},
+                  rotate: -0.2, // ~12 degrees
+                ),
+                const SizedBox(height: 16),
+                _buildGlassAction(
+                  icon: _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                  label: '',
+                  iconColor: Colors.white,
+                  onTap: _toggleSaveAd,
+                ),
+                if (_isVideoAd) ...[
+                  const SizedBox(height: 16),
+                  _buildGlassAction(
+                    icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                    label: '',
+                    onTap: () {
+                      setState(() {
+                        _isMuted = !_isMuted;
+                        unawaited(_safeSetVolume(_isMuted ? 0 : 1));
+                      });
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // 5. Bottom Info Overlay
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeInOutCubic,
+            left: 16,
+            right: 80,
+            bottom: infoBottom,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // User/Company Info
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    InkWell(
+                      onTap: () {
+                        final uid = _adProfileId(widget.ad);
+                        if (uid == null || uid.isEmpty) return;
+                        unawaited(_trackAdClick(widget.ad.id));
+                        Navigator.of(context).pushNamed('/vendor/$uid/public');
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: _buildAdAvatarThumb(),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: InkWell(
+                                  onTap: () {
+                                    final uid = _adProfileId(widget.ad);
+                                    if (uid == null || uid.isEmpty) return;
+                                    unawaited(_trackAdClick(widget.ad.id));
+                                    Navigator.of(context)
+                                        .pushNamed('/vendor/$uid/public');
+                                  },
+                                  child: Text(
+                                    widget.ad.vendorBusinessName ??
+                                        widget.ad.userName ??
+                                        widget.ad.companyName,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (widget.ad.totalBudgetCoins > 0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withValues(alpha: 0.2),
+                                    border: Border.all(
+                                        color: Colors.amber
+                                            .withValues(alpha: 0.4)),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(LucideIcons.coins,
+                                          color: Colors.amber, size: 10),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _formatCount(
+                                            widget.ad.totalBudgetCoins),
+                                        style: const TextStyle(
+                                          color: Colors.amberAccent,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _isFollowing
+                                      ? Colors.green.withValues(alpha: 0.15)
+                                      : Colors.white.withValues(alpha: 0.1),
+                                  border: Border.all(
+                                      color: _isFollowing
+                                          ? Colors.green.withValues(alpha: 0.45)
+                                          : Colors.white
+                                              .withValues(alpha: 0.4)),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: GestureDetector(
+                                  onTap:
+                                      _isFollowLoading ? null : _toggleFollow,
+                                  child: Text(
+                                    _isFollowLoading
+                                        ? '...'
+                                        : (_isFollowing
+                                            ? 'Following'
+                                            : 'Follow'),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Sponsored',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.65),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (!_ctaVisible)
+                            Builder(builder: (context) {
+                              final caption =
+                                  (widget.ad.caption ?? widget.ad.description)
+                                      .trim();
+                              if (caption.isEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              final words =
+                                  caption.trim().split(RegExp(r'\s+'));
+                              final isLong = words.length > 5;
+                              final preview =
+                                  isLong ? words.take(5).join(' ') : caption;
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      height: 1.4,
+                                    ),
+                                    children: [
+                                      TextSpan(
+                                        text: isLong ? preview : caption,
+                                      ),
+                                      if (isLong)
+                                        WidgetSpan(
+                                          alignment:
+                                              PlaceholderAlignment.middle,
+                                          child: GestureDetector(
+                                            onTap: () =>
+                                                _showCaptionSheet(caption),
+                                            child: const Padding(
+                                              padding: EdgeInsets.only(left: 3),
+                                              child: Text(
+                                                '  Read more',
+                                                style: TextStyle(
+                                                  color: Color(0xCCFFFFFF),
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
+                          if (!_ctaVisible &&
+                              ((widget.ad.category ?? '').isNotEmpty ||
+                                  widget.ad.targetCategories.isNotEmpty)) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              widget.ad.targetCategories.isNotEmpty
+                                  ? widget.ad.targetCategories.join(' • ')
+                                  : (widget.ad.category ?? ''),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.6),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                          if (!_ctaVisible &&
+                              widget.ad.targetLanguages.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                ...widget.ad.targetLanguages.take(3).map(
+                                      (lang) => _buildMetaPill(
+                                        icon: Icons.language,
+                                        label: lang,
+                                      ),
+                                    ),
+                                if (widget.ad.targetLanguages.length > 3)
+                                  _buildMetaPill(
+                                    label:
+                                        '+${widget.ad.targetLanguages.length - 3}',
+                                  ),
+                              ],
+                            ),
+                          ],
+                          if (!_ctaVisible &&
+                              widget.ad.targetLocations.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                ...widget.ad.targetLocations.take(2).map(
+                                      (loc) => _buildMetaPill(
+                                        icon: Icons.place,
+                                        label: loc,
+                                      ),
+                                    ),
+                                if (widget.ad.targetLocations.length > 2)
+                                  _buildMetaPill(
+                                    label:
+                                        '+${widget.ad.targetLocations.length - 2} more',
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // CTA buttons (full-width, end-to-end)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: ctaBottom,
+            child: IgnorePointer(
+              ignoring: !_ctaVisible,
+              child: AnimatedOpacity(
+                opacity: _ctaVisible ? 1 : 0,
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeInOutCubic,
+                child: _buildCtaButtons(),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: _likeRewardPopup == null,
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutBack,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(scale: animation, child: child),
+                    );
+                  },
+                  child: _likeRewardPopup == null
+                      ? const SizedBox.shrink()
+                      : _LikeRewardPopupCard(
+                          key: ValueKey<int>(_likeRewardPopup!.id),
+                          data: _likeRewardPopup!,
+                          onOk: _hideLikeRewardPopup,
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3369,12 +3437,14 @@ class _SearchUser {
   final String username;
   final String? fullName;
   final String? avatarUrl;
+  final String? role;
 
   const _SearchUser({
     required this.id,
     required this.username,
     required this.fullName,
     required this.avatarUrl,
+    required this.role,
   });
 
   factory _SearchUser.fromMap(Map<String, dynamic> raw) {
@@ -3388,12 +3458,14 @@ class _SearchUser {
     final fullName = pickString(raw['full_name'] ?? raw['name']);
     final avatar =
         pickString(raw['avatar_url'] ?? raw['avatar'] ?? raw['photo']);
+    final role = pickString(raw['role'] ?? raw['user_role'] ?? raw['type']);
 
     return _SearchUser(
       id: id,
       username: username,
       fullName: fullName.isEmpty ? null : fullName,
       avatarUrl: avatar.isEmpty ? null : avatar,
+      role: role.isEmpty ? null : role,
     );
   }
 
@@ -4278,7 +4350,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
   void _openAdVendorProfile(Ad ad) {
     final uid = _adProfileId(ad);
     if (uid == null || uid.isEmpty) return;
-    Navigator.of(context).pushNamed('/profile/$uid');
+    Navigator.of(context).pushNamed('/vendor/$uid/public');
   }
 
   String _fmtCount(int n) {

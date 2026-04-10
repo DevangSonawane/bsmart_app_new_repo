@@ -155,25 +155,25 @@ export default function FollowingModal({ isOpen, onClose, userId, isOwnProfile }
   return (
     <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/80 backdrop-blur-sm md:items-center" onClick={onClose}>
       <div
-        className="flex h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-[#26272b] text-white md:h-auto md:max-h-[70vh] md:w-full md:max-w-[600px] md:rounded-[28px] md:border md:border-white/10"
+        className="flex h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-white dark:bg-[#26272b] text-gray-900 dark:text-white md:h-auto md:max-h-[70vh] md:w-full md:max-w-[600px] md:rounded-[28px] md:border border-gray-100 dark:border-white/10"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-gray-100 dark:border-white/10 px-5 py-4">
           <div className="w-10" />
           <h2 className="text-[18px] font-semibold">Following</h2>
-          <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition hover:bg-white/5 hover:text-white">
+          <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white">
             <X size={20} />
           </button>
         </div>
 
-        <div className="border-b border-white/10 px-4 py-3">
-          <div className="flex items-center gap-3 rounded-xl bg-[#34353a] px-4 py-2.5 text-sm text-gray-400">
+        <div className="border-b border-gray-100 dark:border-white/10 px-4 py-3">
+          <div className="flex items-center gap-3 rounded-xl bg-gray-100 dark:bg-[#34353a] px-4 py-2.5 text-sm text-gray-500 dark:text-gray-400">
             <Search size={16} />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search"
-              className="w-full bg-transparent outline-none placeholder:text-gray-500"
+              className="w-full bg-transparent outline-none text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"
             />
           </div>
         </div>
@@ -194,18 +194,18 @@ export default function FollowingModal({ isOpen, onClose, userId, isOwnProfile }
                 const isFollowingUser = Boolean(user.isFollowing);
 
                 return (
-                  <div key={targetUserId} className="flex items-center gap-3 px-5 py-3 transition hover:bg-white/[0.03]">
+                  <div key={targetUserId} className="flex items-center gap-3 px-5 py-3 transition hover:bg-gray-50 dark:hover:bg-white/[0.03]">
                     <Avatar user={user} />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[16px] font-semibold leading-5 text-white">{getUserName(user)}</p>
-                      <p className="truncate text-[14px] leading-5 text-gray-400">{getFullName(user)}</p>
+                      <p className="truncate text-[16px] font-semibold leading-5 text-gray-900 dark:text-white">{getUserName(user)}</p>
+                      <p className="truncate text-[14px] leading-5 text-gray-500 dark:text-gray-400">{getFullName(user)}</p>
                     </div>
                     <button
                       onClick={() => handleToggleFollow(targetUserId, isFollowingUser)}
                       disabled={actionUserId === targetUserId}
                       className={`min-w-[112px] rounded-xl px-4 py-2 text-[15px] font-semibold transition disabled:opacity-60 ${
                         isFollowingUser
-                          ? 'border border-white/10 bg-[#36373b] text-white hover:bg-[#404148]'
+                          ? 'border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-[#36373b] text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-[#404148]'
                           : 'bg-blue-500 text-white hover:bg-blue-400'
                       }`}
                     >

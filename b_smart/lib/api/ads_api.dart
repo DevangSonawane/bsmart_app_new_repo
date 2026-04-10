@@ -13,16 +13,22 @@ import 'api_exceptions.dart';
 ///   GET  /ads/:id         – get ad details by id
 ///   DELETE /ads/:id       – delete ad by id (vendor)
 ///   POST /ads/:id/view    – record ad view
+///   POST /ads/:id/click   – record ad click
 ///   POST /ads/:id/like    – like ad
-///   POST /ads/:id/dislike – reverse a previous like
+///   POST /ads/:id/unlike  – reverse a previous like (backend variant)
+///   POST /ads/:id/dislike – reverse a previous like (backend variant)
 ///   POST /ads/:id/save    – save ad
 ///   POST /ads/:id/unsave  – unsave ad
 ///   POST /ads/:id/comments – add comment to ad
 ///   GET  /ads/:id/comments – get comments for ad
 ///   GET  /ads/comments/:commentId/replies – get replies for ad comment
 ///   DELETE /ads/comments/:commentId – delete ad comment
-///   POST /ads/comments/:id/like – like/unlike ad comment
-///   POST /ads/comments/:id/dislike – dislike/undislike ad comment
+///   POST /ads/comments/:id/like – like ad comment
+///   POST /ads/comments/:id/unlike – unlike ad comment (backend variant)
+///   POST /ads/comments/:id/dislike – unlike ad comment (backend variant)
+///   GET  /ads/:id/stats   – fetch ad analytics (vendor)
+///   PATCH /ads/:id/metadata – update ad metadata (vendor)
+///   GET  /wallet/ads/:id/history – ad wallet ledger (vendor)
 ///   PATCH /admin/ads/:id – admin update ad status
 ///   DELETE /admin/ads/:id – admin delete ad (soft delete)
 ///   POST /ads/categories  – add ad category
@@ -333,20 +339,64 @@ class AdsApi {
     if (normalizedUserId != null && normalizedUserId.isEmpty) {
       throw ArgumentError('userId cannot be empty when provided');
     }
-    final path = '$_basePath/ads/$normalizedAdId/dislike';
-    try {
-      final body = normalizedUserId == null
-          ? null
-          : <String, dynamic>{
-              'user': {'id': normalizedUserId},
-            };
-      final res = await _client.post(path, body: body);
-      return (res as Map).cast<String, dynamic>();
-    } on BadRequestException {
-      if (normalizedUserId == null) rethrow;
-      final res = await _client.post(path);
-      return (res as Map).cast<String, dynamic>();
+    final body = normalizedUserId == null
+        ? null
+        : <String, dynamic>{
+            'user': {'id': normalizedUserId},
+          };
+
+    // Backend has used both `/unlike` and `/dislike` for "remove like".
+    final candidates = <String>[
+      '$_basePath/ads/$normalizedAdId/unlike',
+      '$_basePath/ads/$normalizedAdId/dislike',
+    ];
+
+    ApiException? lastApiError;
+    for (final path in candidates) {
+      try {
+        final res = await _client.post(path, body: body);
+        return (res as Map).cast<String, dynamic>();
+      } on BadRequestException catch (e) {
+        // Some deployments reject the `{ user: { id } }` body; retry without it.
+        if (normalizedUserId != null) {
+          try {
+            final res = await _client.post(path);
+            return (res as Map).cast<String, dynamic>();
+          } on ApiException catch (e2) {
+            lastApiError = e2;
+          }
+        } else {
+          lastApiError = e;
+        }
+      } on ApiException catch (e) {
+        lastApiError = e;
+      }
     }
+    throw lastApiError ?? ApiException(statusCode: 0, message: 'Unknown API error');
+  }
+
+  Future<Map<String, dynamic>> recordAdClick({
+    required String adId,
+    String? userId,
+  }) async {
+    final normalizedAdId = adId.trim();
+    final normalizedUserId = userId?.trim();
+    if (normalizedAdId.isEmpty) {
+      throw ArgumentError('adId cannot be empty');
+    }
+    if (normalizedUserId != null && normalizedUserId.isEmpty) {
+      throw ArgumentError('userId cannot be empty when provided');
+    }
+    final body = normalizedUserId == null
+        ? null
+        : <String, dynamic>{
+            'user': {'id': normalizedUserId},
+          };
+    final res = await _client.post(
+      '$_basePath/ads/$normalizedAdId/click',
+      body: body,
+    );
+    return (res as Map).cast<String, dynamic>();
   }
 
   Future<Map<String, dynamic>> saveAd(String adId) async {
@@ -367,6 +417,51 @@ class AdsApi {
     return (res as Map).cast<String, dynamic>();
   }
 
+  Future<Map<String, dynamic>> getAdStats(String adId) async {
+    final normalizedAdId = adId.trim();
+    if (normalizedAdId.isEmpty) {
+      throw ArgumentError('adId cannot be empty');
+    }
+    final res = await _client.get('$_basePath/ads/$normalizedAdId/stats');
+    return (res as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> updateAdMetadata({
+    required String adId,
+    required Map<String, dynamic> metadata,
+  }) async {
+    final normalizedAdId = adId.trim();
+    if (normalizedAdId.isEmpty) {
+      throw ArgumentError('adId cannot be empty');
+    }
+    final res = await _client.patch(
+      '$_basePath/ads/$normalizedAdId/metadata',
+      body: metadata,
+    );
+    return (res as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> getAdWalletHistory({
+    required String adId,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final normalizedAdId = adId.trim();
+    if (normalizedAdId.isEmpty) {
+      throw ArgumentError('adId cannot be empty');
+    }
+    final safePage = page < 1 ? 1 : page;
+    final safeLimit = limit < 1 ? 1 : (limit > 50 ? 50 : limit);
+    final res = await _client.get(
+      '$_basePath/wallet/ads/$normalizedAdId/history',
+      queryParams: {
+        'page': safePage.toString(),
+        'limit': safeLimit.toString(),
+      },
+    );
+    return (res as Map).cast<String, dynamic>();
+  }
+
   Future<List<Map<String, dynamic>>> getAdComments(String adId) async {
     final normalizedAdId = adId.trim();
     if (normalizedAdId.isEmpty) {
@@ -374,6 +469,46 @@ class AdsApi {
     }
 
     final res = await _client.get('$_basePath/ads/$normalizedAdId/comments');
+
+    List<dynamic> rawList = const <dynamic>[];
+    if (res is List) {
+      rawList = res;
+    } else if (res is Map<String, dynamic>) {
+      if (res['comments'] is List) {
+        rawList = res['comments'] as List;
+      } else if (res['data'] is List) {
+        rawList = res['data'] as List;
+      } else if (res['data'] is Map &&
+          (res['data'] as Map)['comments'] is List) {
+        rawList = (res['data'] as Map)['comments'] as List;
+      }
+    }
+
+    return rawList
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getAdCommentsPaged(
+    String adId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final normalizedAdId = adId.trim();
+    if (normalizedAdId.isEmpty) {
+      throw ArgumentError('adId cannot be empty');
+    }
+
+    final safePage = page < 1 ? 1 : page;
+    final safeLimit = limit < 1 ? 1 : (limit > 50 ? 50 : limit);
+    final res = await _client.get(
+      '$_basePath/ads/$normalizedAdId/comments',
+      queryParams: {
+        'page': safePage.toString(),
+        'limit': safeLimit.toString(),
+      },
+    );
 
     List<dynamic> rawList = const <dynamic>[];
     if (res is List) {
@@ -483,9 +618,22 @@ class AdsApi {
     if (normalizedCommentId.isEmpty) {
       throw ArgumentError('commentId cannot be empty');
     }
-    final res = await _client
-        .post('$_basePath/ads/comments/$normalizedCommentId/dislike');
-    return (res as Map).cast<String, dynamic>();
+    // Backend has used both `/unlike` and `/dislike` for comment "remove like".
+    final candidates = <String>[
+      '$_basePath/ads/comments/$normalizedCommentId/unlike',
+      '$_basePath/ads/comments/$normalizedCommentId/dislike',
+    ];
+
+    ApiException? lastApiError;
+    for (final path in candidates) {
+      try {
+        final res = await _client.post(path);
+        return (res as Map).cast<String, dynamic>();
+      } on ApiException catch (e) {
+        lastApiError = e;
+      }
+    }
+    throw lastApiError ?? ApiException(statusCode: 0, message: 'Unknown API error');
   }
 
   Future<Map<String, dynamic>> adminUpdateAdStatus({

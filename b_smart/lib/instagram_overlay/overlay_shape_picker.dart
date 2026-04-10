@@ -11,74 +11,86 @@ Future<OverlayShape?> openOverlayShapePicker(
     context: context,
     backgroundColor: const Color(0xFF1C1C1E),
     isScrollControlled: true,
-    builder: (context) {
-      OverlayShape selected = OverlayShape.none;
-      return StatefulBuilder(
-        builder: (context, setSheetState) {
-          return SafeArea(
-            top: false,
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.35,
-              child: Column(
+    builder: (context) => _OverlayShapePickerSheet(imageFile: imageFile),
+  );
+}
+
+class _OverlayShapePickerSheet extends StatefulWidget {
+  final File imageFile;
+
+  const _OverlayShapePickerSheet({required this.imageFile});
+
+  @override
+  State<_OverlayShapePickerSheet> createState() =>
+      _OverlayShapePickerSheetState();
+}
+
+class _OverlayShapePickerSheetState extends State<_OverlayShapePickerSheet> {
+  OverlayShape _selected = OverlayShape.none;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.35,
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
                 children: [
-                  const SizedBox(height: 10),
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(2),
+                  const Text(
+                    'Choose Shape',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: Row(
-                      children: [
-                        const Text(
-                          'Choose Shape',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const Spacer(),
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(selected),
-                          child: const Text(
-                            'Done',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ),
-                      ],
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(_selected),
+                    child: const Text(
+                      'Done',
+                      style: TextStyle(color: Colors.white),
                     ),
                   ),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: OverlayShape.values.map((shape) {
-                          final isSelected = shape == selected;
-                          return _ShapeThumb(
-                            imageFile: imageFile,
-                            shape: shape,
-                            isSelected: isSelected,
-                            onTap: () => setSheetState(() => selected = shape),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                 ],
               ),
             ),
-          );
-        },
-      );
-    },
-  );
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: OverlayShape.values.map((shape) {
+                    final isSelected = shape == _selected;
+                    return _ShapeThumb(
+                      imageFile: widget.imageFile,
+                      shape: shape,
+                      isSelected: isSelected,
+                      onTap: () => setState(() => _selected = shape),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ShapeThumb extends StatelessWidget {
