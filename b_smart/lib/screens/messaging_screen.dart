@@ -162,7 +162,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 15),
           Row(
             children: [
               const Expanded(child: SizedBox.shrink()),
@@ -172,7 +172,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
                   child: Text(
                     'Requests',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: requestColor,
                     ),
