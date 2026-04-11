@@ -87,7 +87,8 @@ class _FeedHeader extends StatelessWidget {
               color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
               border: Border(
                 bottom: BorderSide(
-                  color: isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade200,
+                  color:
+                      isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade200,
                 ),
               ),
             ),
@@ -489,7 +490,8 @@ class _HomeDashboardState extends State<HomeDashboard>
       _currentIndex = widget.initialIndex!;
     }
     final initialPage = _swipeTabs.indexOf(_currentIndex);
-    _tabPageController = PageController(initialPage: initialPage < 0 ? 0 : initialPage);
+    _tabPageController =
+        PageController(initialPage: initialPage < 0 ? 0 : initialPage);
     _feedScrollController.addListener(_onFeedScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(primeMediaAuthHeaders());
@@ -567,7 +569,8 @@ class _HomeDashboardState extends State<HomeDashboard>
       _feedScrollController.jumpTo(0);
     }
     final store = StoreProvider.of<AppState>(context);
-    unawaited(Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]));
+    unawaited(
+        Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]));
   }
 
   void _scheduleHomeRefresh() {
@@ -583,7 +586,8 @@ class _HomeDashboardState extends State<HomeDashboard>
       }
       _lastAutoRefreshAt = now;
       final store = StoreProvider.of<AppState>(context);
-      unawaited(Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]));
+      unawaited(Future.wait(
+          [_loadData(store), _loadInitialFeed(forceNetwork: true)]));
     });
   }
 
@@ -716,8 +720,7 @@ class _HomeDashboardState extends State<HomeDashboard>
           store.dispatch(SetProfile(mergedProfile));
         }
       }
-    } finally {
-    }
+    } finally {}
   }
 
   Future<void> _loadInitialFeed({bool forceNetwork = false}) async {
@@ -866,10 +869,9 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (firstVideoPost != null &&
         (firstVideoPost.thumbnailUrl ?? '').isNotEmpty) {
       final url = firstVideoPost.thumbnailUrl!;
-      final Map<String, String> headers =
-          UrlHelper.shouldAttachAuthHeader(url)
-              ? authHeaders
-              : const <String, String>{};
+      final Map<String, String> headers = UrlHelper.shouldAttachAuthHeader(url)
+          ? authHeaders
+          : const <String, String>{};
       try {
         await precacheImage(
           CachedNetworkImageProvider(url, headers: headers),
@@ -892,10 +894,9 @@ class _HomeDashboardState extends State<HomeDashboard>
         url = post.mediaUrls.first;
       }
       if (url == null || url.isEmpty) continue;
-      final Map<String, String> headers =
-          UrlHelper.shouldAttachAuthHeader(url)
-              ? authHeaders
-              : const <String, String>{};
+      final Map<String, String> headers = UrlHelper.shouldAttachAuthHeader(url)
+          ? authHeaders
+          : const <String, String>{};
       futures.add(
         precacheImage(
           CachedNetworkImageProvider(url, headers: headers),
@@ -904,8 +905,7 @@ class _HomeDashboardState extends State<HomeDashboard>
       );
     }
     try {
-      await Future.wait(futures)
-          .timeout(const Duration(milliseconds: 1500));
+      await Future.wait(futures).timeout(const Duration(milliseconds: 1500));
     } catch (_) {
       // Best-effort prefetch only.
     }
@@ -1017,7 +1017,8 @@ class _HomeDashboardState extends State<HomeDashboard>
       _pagingInFlight = false;
       return;
     }
-    final newOnes = pageItems.where((p) => !existingIds.contains(p.id)).toList();
+    final newOnes =
+        pageItems.where((p) => !existingIds.contains(p.id)).toList();
     if (newOnes.isEmpty) {
       _noMorePages = true;
       _pagingInFlight = false;
@@ -1053,23 +1054,23 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (visibleFraction >= 0.15) {
       _preWarmVisibleVideo(postId);
     }
-    if (visibleFraction < 0.1) return;
+    // Only consider activating a post when at least half of it is visible.
+    // This matches typical "Instagram-like" behavior and prevents audio/video
+    // flipping while the user is mid-scroll.
+    if (visibleFraction < 0.50) return;
     if (_activeFeedPostId == postId) return;
     if (_isFeedScrolling) {
       if (post != null) {
         final isVideo = post.mediaType == PostMediaType.video ||
             post.mediaType == PostMediaType.reel;
-        final hasThumb =
-            (post.thumbnailUrl ?? '').toString().trim().isNotEmpty;
+        final hasThumb = (post.thumbnailUrl ?? '').toString().trim().isNotEmpty;
         if (isVideo && !hasThumb && visibleFraction >= 0.35) {
           _activeFeedPostId = postId;
           _activeFeedPostIdListenable.value = postId;
           return;
         }
       }
-      if (visibleFraction >= 0.65) {
-        _pendingActivePostId = postId;
-      }
+      _pendingActivePostId = postId;
       return;
     }
     _activeFeedDebounce?.cancel();
@@ -1136,7 +1137,8 @@ class _HomeDashboardState extends State<HomeDashboard>
           child: Container(
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF1B1B1B) : Colors.white,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(18)),
             ),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             child: Column(
@@ -1362,11 +1364,13 @@ class _HomeDashboardState extends State<HomeDashboard>
       });
     } else {
       setState(() => _isCommentsOpen = true);
-      Navigator.of(context).push(
+      Navigator.of(context)
+          .push(
         MaterialPageRoute(
           builder: (context) => PostDetailModal(postId: post.id),
         ),
-      ).whenComplete(() {
+      )
+          .whenComplete(() {
         if (mounted) setState(() => _isCommentsOpen = false);
       });
     }
@@ -1882,7 +1886,8 @@ class _HomeDashboardState extends State<HomeDashboard>
     );
   }
 
-  void _setTabIndex(int idx, {required bool userInitiated, required bool fromSwipe}) {
+  void _setTabIndex(int idx,
+      {required bool userInitiated, required bool fromSwipe}) {
     if (idx == 2) {
       _pendingHomeRefreshAfterRoute = true;
       if (_isVendor) {
@@ -1905,7 +1910,8 @@ class _HomeDashboardState extends State<HomeDashboard>
     }
 
     final wasOnHome = _currentIndex == 0;
-    final switchingToHome = idx == 0 && !wasOnHome; // ← only true when actually switching
+    final switchingToHome =
+        idx == 0 && !wasOnHome; // ← only true when actually switching
 
     if (idx != _currentIndex) {
       if (idx == 4 && !_reelsPrefetched) {
@@ -1917,7 +1923,7 @@ class _HomeDashboardState extends State<HomeDashboard>
         }());
       }
       // Pause any in-feed video audio while switching away from Home.
-    if (wasOnHome) {
+      if (wasOnHome) {
         _activeFeedPostId = null;
         _activeFeedPostIdListenable.value = null;
         unawaited(VideoPool.instance.pauseActive());
@@ -2079,7 +2085,8 @@ class _HomeDashboardState extends State<HomeDashboard>
             totalCount,
             (_visibleCount <= 0) ? _pageSize : _visibleCount,
           );
-    final posts = feedState.posts.take(effectiveVisible).toList(growable: false);
+    final posts =
+        feedState.posts.take(effectiveVisible).toList(growable: false);
     final hasMoreToShow = effectiveVisible < totalCount;
     final isLoading = feedState.isLoading;
     final isDesktop = MediaQuery.sizeOf(context).width >= 768;
@@ -2131,8 +2138,9 @@ class _HomeDashboardState extends State<HomeDashboard>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color:
-                            isDark ? const Color(0xFF2D2D2D) : Colors.grey.shade100,
+                        color: isDark
+                            ? const Color(0xFF2D2D2D)
+                            : Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
                             color: isDark
@@ -2207,15 +2215,20 @@ class _HomeDashboardState extends State<HomeDashboard>
                                 ? const Color(0xFF3D3D3D)
                                 : Colors.grey.shade200,
                             backgroundImage: _currentUserProfile != null &&
-                                    _currentUserProfile!['avatar_url'] != null &&
-                                    (_currentUserProfile!['avatar_url'] as String)
+                                    _currentUserProfile!['avatar_url'] !=
+                                        null &&
+                                    (_currentUserProfile!['avatar_url']
+                                            as String)
                                         .isNotEmpty
                                 ? NetworkImage(
-                                    _currentUserProfile!['avatar_url'] as String)
+                                    _currentUserProfile!['avatar_url']
+                                        as String)
                                 : null,
                             child: _currentUserProfile == null ||
-                                    _currentUserProfile!['avatar_url'] == null ||
-                                    (_currentUserProfile!['avatar_url'] as String)
+                                    _currentUserProfile!['avatar_url'] ==
+                                        null ||
+                                    (_currentUserProfile!['avatar_url']
+                                            as String)
                                         .isEmpty
                                 ? Text(
                                     _currentUserProfile != null
@@ -2272,11 +2285,10 @@ class _HomeDashboardState extends State<HomeDashboard>
                         storyGroups: _storyGroups,
                         storyStatuses: _storyStatuses,
                         yourStoryHasActive: _yourStoryHasActive,
-                        yourAvatarUrl:
-                            (_currentUserProfile?['avatar_url'] ??
-                                    _currentUserProfile?['avatar'] ??
-                                    _currentUserProfile?['profile_image'])
-                                ?.toString(),
+                        yourAvatarUrl: (_currentUserProfile?['avatar_url'] ??
+                                _currentUserProfile?['avatar'] ??
+                                _currentUserProfile?['profile_image'])
+                            ?.toString(),
                         currentLocation: _currentLocation,
                         locationLoading: _locationLoading,
                         isDark: isDark,
@@ -2287,12 +2299,10 @@ class _HomeDashboardState extends State<HomeDashboard>
                                 builder: (_) => OwnStoryViewerScreen(
                                   stories: _myStories,
                                   storyId: _myStoryId,
-                                  userName:
-                                      (_currentUserProfile?['username'] ??
-                                              _currentUserProfile?[
-                                                  'full_name'] ??
-                                              'You')
-                                          .toString(),
+                                  userName: (_currentUserProfile?['username'] ??
+                                          _currentUserProfile?['full_name'] ??
+                                          'You')
+                                      .toString(),
                                 ),
                               ),
                             );
@@ -2327,9 +2337,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 16,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurface,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
                                 ),
                               ),
                               const SizedBox(height: 6),
@@ -2353,8 +2362,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
                             final p = posts[index];
-                            final isOwnPost =
-                                _currentUserId != null && p.userId == _currentUserId;
+                            final isOwnPost = _currentUserId != null &&
+                                p.userId == _currentUserId;
                             Widget itemWidget;
                             try {
                               itemWidget = VisibilityDetector(
@@ -2370,7 +2379,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                                     key: ValueKey(
                                         'card-${p.id}'), // Prevent unnecessary rebuilds
                                     post: p,
-                                    isTabActive: _currentIndex == 0 && _isRouteActive,
+                                    isTabActive:
+                                        _currentIndex == 0 && _isRouteActive,
                                     isActive: false,
                                     activeIdListenable:
                                         _activeFeedPostIdListenable,
@@ -2385,7 +2395,9 @@ class _HomeDashboardState extends State<HomeDashboard>
                                     onComment: () => _onCommentPost(p),
                                     onShare: () => _onSharePost(p),
                                     onSave: () => _onSavePost(p),
-                                    onFollow: isOwnPost ? null : () => _onFollowPost(p),
+                                    onFollow: isOwnPost
+                                        ? null
+                                        : () => _onFollowPost(p),
                                     onMore: () => _onMorePost(context, p),
                                   ),
                                 ),
@@ -2421,8 +2433,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                 const ColoredBox(
                   color: Colors.transparent,
                   child: Center(
-                    child:
-                        CircularProgressIndicator(color: DesignTokens.instaPink),
+                    child: CircularProgressIndicator(
+                        color: DesignTokens.instaPink),
                   ),
                 ),
             ],
@@ -2620,13 +2632,18 @@ class _DesktopNotificationsButtonState
                   border: Border.all(
                     color: _showDropdown
                         ? Colors.transparent
-                        : (isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade100),
+                        : (isDark
+                            ? const Color(0xFF3D3D3D)
+                            : Colors.grey.shade100),
                   ),
                 ),
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Center(child: Icon(LucideIcons.heart, size: 20, color: _showDropdown ? Colors.white : fgColor)),
+                    Center(
+                        child: Icon(LucideIcons.heart,
+                            size: 20,
+                            color: _showDropdown ? Colors.white : fgColor)),
                     Positioned(
                       right: 7,
                       top: 7,
@@ -2662,18 +2679,22 @@ class _DesktopNotificationsButtonState
                     color: surfaceColor,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                      color:
+                          isDark ? Colors.grey.shade800 : Colors.grey.shade100,
                     ),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
                           border: Border(
                             bottom: BorderSide(
-                              color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                              color: isDark
+                                  ? Colors.grey.shade800
+                                  : Colors.grey.shade100,
                             ),
                           ),
                         ),
@@ -2771,7 +2792,8 @@ class _NotificationTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+                    style: TextStyle(
+                        fontSize: 14, color: theme.colorScheme.onSurface),
                   ),
                   const SizedBox(height: 2),
                   Text(time, style: TextStyle(fontSize: 12, color: mutedColor)),

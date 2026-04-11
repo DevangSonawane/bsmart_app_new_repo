@@ -1,5 +1,7 @@
 import 'package:video_player/video_player.dart';
+import 'dart:async';
 import '../api/api_client.dart';
+import '../utils/url_helper.dart';
 
 class VideoPool {
   VideoPool._();
@@ -7,7 +9,7 @@ class VideoPool {
 
   // Keep up to 3 controllers: active + 2 neighbors
   final Map<String, VideoPlayerController> _pool = {};
-  final Set<String> _inFlight = {};
+  final Map<String, Completer<void>> _inFlight = <String, Completer<void>>{};
   final List<String> _warmOrder = <String>[];
   static const int _maxSlots = 3;
   String? _activeId;
@@ -16,7 +18,8 @@ class VideoPool {
   DateTime? _tokenFetchedAt;
 
   bool get isMuted => _muted;
-  bool contains(String id) => _pool.containsKey(id) || _inFlight.contains(id);
+  bool contains(String id) =>
+      _pool.containsKey(id) || _inFlight.containsKey(id);
 
   VideoPlayerController? peek(String id) {
     return _usableController(id);
@@ -49,22 +52,98 @@ class VideoPool {
     return _cachedToken;
   }
 
+  Future<void> _awaitInFlightIfAny(String id) async {
+    final completer = _inFlight[id];
+    if (completer == null) return;
+    try {
+      await completer.future.timeout(const Duration(seconds: 6));
+    } catch (_) {}
+  }
+
+  List<String> _urlCandidates(String raw) {
+    final seen = <String>{};
+    void add(String v) {
+      final s = v.trim();
+      if (s.isEmpty) return;
+      seen.add(s);
+    }
+
+    add(raw);
+    final canonical = UrlHelper.absoluteUrl(raw);
+    add(canonical);
+    if (canonical.startsWith('http://')) {
+      add(canonical.replaceFirst('http://', 'https://'));
+    }
+    try {
+      final uri = Uri.parse(canonical);
+      if (uri.path.startsWith('/api/')) {
+        add(uri.replace(path: uri.path.replaceFirst('/api', '')).toString());
+      } else {
+        add(uri.replace(path: '/api${uri.path}').toString());
+      }
+    } catch (_) {}
+
+    return seen.toList();
+  }
+
+  Future<List<Map<String, String>>> _headerCandidates(String url) async {
+    // Try without auth first (CDNs often reject Authorization), then with auth
+    // if this host is expected to require it.
+    final base = <String, String>{};
+    final out = <Map<String, String>>[base];
+    final token = await _getToken();
+    if (token == null || token.isEmpty) return out;
+    if (!UrlHelper.shouldAttachAuthHeader(url)) return out;
+    out.add(<String, String>{'Authorization': 'Bearer $token'});
+    return out;
+  }
+
+  Future<VideoPlayerController> _createControllerFor(
+    String url, {
+    required Map<String, String> headers,
+  }) async {
+    final ctl = VideoPlayerController.networkUrl(
+      Uri.parse(url),
+      httpHeaders: headers,
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
+    await ctl.initialize().timeout(const Duration(seconds: 12));
+    await ctl.setLooping(true);
+    return ctl;
+  }
+
   /// Pre-warm a video controller without playing it.
   /// Call this for the item JUST below the active one.
   Future<void> preWarm(String id, String url) async {
     if (contains(id)) return; // already warmed or in-flight
-    _inFlight.add(id);
-    _evictIfNeeded(keep: _activeId);
+    final completer = Completer<void>();
+    _inFlight[id] = completer;
     try {
-      final headers = await _headersFor(url);
-      final ctl = VideoPlayerController.networkUrl(Uri.parse(url), httpHeaders: headers);
-      await ctl.initialize();
-      await ctl.setLooping(true);
-      await ctl.setVolume(0); // silent while pre-warming
-      _pool[id] = ctl;
-      _touchWarmOrder(id);
-    } catch (_) {}
-    finally {
+      _evictIfNeeded(keep: _activeId);
+      for (final candidateUrl in _urlCandidates(url)) {
+        final headerCandidates = await _headerCandidates(candidateUrl);
+        for (final headers in headerCandidates) {
+          VideoPlayerController? ctl;
+          try {
+            ctl = await _createControllerFor(candidateUrl, headers: headers);
+            await ctl.setVolume(0); // silent while pre-warming
+            _pool[id] = ctl;
+            _touchWarmOrder(id);
+            _evictIfNeeded(keep: _activeId);
+            return;
+          } catch (_) {
+            try {
+              await ctl?.dispose();
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {
+      // Intentionally ignored: pre-warming is best-effort.
+    } finally {
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
       _inFlight.remove(id);
     }
   }
@@ -87,6 +166,10 @@ class VideoPool {
 
     _activeId = id;
 
+    // If a prewarm is still initializing for this id, wait briefly for it to
+    // finish so we can reuse the warmed controller instead of creating a new one.
+    await _awaitInFlightIfAny(id);
+
     // Reuse pre-warmed controller if we have it
     final prewarmed = _usableController(id);
     if (prewarmed != null) {
@@ -100,15 +183,28 @@ class VideoPool {
 
     // Not pre-warmed — initialize fresh
     _evictIfNeeded(keep: id);
-    final headers = await _headersFor(url);
-    final ctl = VideoPlayerController.networkUrl(Uri.parse(url), httpHeaders: headers);
-    _pool[id] = ctl;
-    await ctl.initialize();
-    await ctl.setLooping(true);
-    await ctl.setVolume(_muted ? 0 : 1);
-    await ctl.play();
-    _touchWarmOrder(id);
-    return ctl;
+    Object? lastError;
+    for (final candidateUrl in _urlCandidates(url)) {
+      final headerCandidates = await _headerCandidates(candidateUrl);
+      for (final headers in headerCandidates) {
+        VideoPlayerController? ctl;
+        try {
+          ctl = await _createControllerFor(candidateUrl, headers: headers);
+          await ctl.setVolume(_muted ? 0 : 1);
+          await ctl.play();
+          _pool[id] = ctl;
+          _touchWarmOrder(id);
+          _evictIfNeeded(keep: id);
+          return ctl;
+        } catch (e) {
+          lastError = e;
+          try {
+            await ctl?.dispose();
+          } catch (_) {}
+        }
+      }
+    }
+    throw lastError ?? Exception('VideoPool.attach failed for id=$id');
   }
 
   void _touchWarmOrder(String id) {
@@ -156,7 +252,8 @@ class VideoPool {
       ctl.pause().then((_) => ctl.dispose()).catchError((_) {});
     }
     if (_pool.length > _maxSlots) {
-      final leftovers = _pool.keys.where((k) => !protected.contains(k)).toList();
+      final leftovers =
+          _pool.keys.where((k) => !protected.contains(k)).toList();
       for (final id in leftovers) {
         if (_pool.length <= _maxSlots) break;
         final ctl = _pool.remove(id);
@@ -164,12 +261,6 @@ class VideoPool {
         ctl.pause().then((_) => ctl.dispose()).catchError((_) {});
       }
     }
-  }
-
-  Future<Map<String, String>> _headersFor(String url) async {
-    final token = await _getToken();
-    if (token == null || token.isEmpty) return const {};
-    return {'Authorization': 'Bearer $token'};
   }
 
   Future<void> disposeActive() async {

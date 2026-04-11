@@ -54,6 +54,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   Future<void> _poolOps = Future<void>.value();
   int _poolGeneration = 0;
   bool _autoplayKickScheduled = false;
+  static const double _audioOnScreenThreshold = 0.10;
+  bool _audioGateOpen = true;
 
   bool _isControllerUsable(VideoPlayerController? controller) {
     if (controller == null) return false;
@@ -89,6 +91,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   @override
   void initState() {
     super.initState();
+    _pageController.addListener(_onPageScrollForAudioGate);
     final cached = _reelsService.getReels();
     final initialId = widget.initialReelId?.trim();
     if (cached.isNotEmpty) {
@@ -122,9 +125,35 @@ class _ReelsScreenState extends State<ReelsScreen>
   void dispose() {
     _navigationUnlockTimer?.cancel();
     _keyboardFocusNode.dispose();
+    _pageController.removeListener(_onPageScrollForAudioGate);
     _pageController.dispose();
     _disposeAllControllers();
     super.dispose();
+  }
+
+  bool _isCurrentReelFullyOnScreen() {
+    if (!_pageController.hasClients) return true;
+    final page = _pageController.page;
+    if (page == null) return true;
+    final nearest = page.round();
+    if (nearest != _currentIndex) return false;
+    return (page - nearest).abs() <= _audioOnScreenThreshold;
+  }
+
+  void _applyAudioGate() {
+    if (!mounted) return;
+    final open = widget.isActive && _isCurrentReelFullyOnScreen();
+    if (open == _audioGateOpen) return;
+    _audioGateOpen = open;
+    final controller = _controllerForIndex(_currentIndex);
+    if (controller == null) return;
+    final vol = (_audioGateOpen && !_isMuted) ? 1.0 : 0.0;
+    unawaited(_setControllerVolumeSafely(controller, vol));
+  }
+
+  void _onPageScrollForAudioGate() {
+    // Only flip volume when we cross the threshold (prevents spam).
+    _applyAudioGate();
   }
 
   @override
@@ -141,10 +170,12 @@ class _ReelsScreenState extends State<ReelsScreen>
       _poolOps = _poolOps.then<void>((_) async {
         await _activateCurrentReelPlayback();
       }).catchError((_) {});
+      _applyAudioGate();
     } else {
       for (final controller in _videoControllers.values) {
         unawaited(_setControllerVolumeSafely(controller, 0));
       }
+      _audioGateOpen = false;
       _disposeAllControllers();
     }
   }
@@ -377,8 +408,15 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (!widget.isActive) return;
     final generation = ++_poolGeneration;
     _currentIndex = index;
+    final prev = index - 1 >= 0 ? index - 1 : null;
     final next = index + 1 < _reels.length ? index + 1 : null;
-    final keep = <int>{index, if (next != null) next};
+    // Keep previous + current + next so we don't show black frames while the
+    // user is mid-swipe between reels.
+    final keep = <int>{
+      if (prev != null) prev,
+      index,
+      if (next != null) next,
+    };
 
     final remove =
         _videoControllers.keys.where((k) => !keep.contains(k)).toList();
@@ -409,6 +447,9 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (controller == null) return;
     try {
       await controller.pause();
+      await controller.setVolume(0);
+      // Mirror web/Instagram behavior: non-current reels reset to start so that
+      // when you swipe back they restart from 0 with the poster behind.
       await controller.seekTo(Duration.zero);
     } catch (_) {}
   }
@@ -427,7 +468,11 @@ class _ReelsScreenState extends State<ReelsScreen>
     final controller = _controllerForIndex(index);
     if (controller == null) return;
     try {
-      await controller.setVolume(widget.isActive && !_isMuted ? 1 : 0);
+      // Mirror web/Instagram behavior: when a reel becomes current, start from 0.
+      await controller.seekTo(Duration.zero);
+      await controller.setVolume(
+        (widget.isActive && _audioGateOpen && !_isMuted) ? 1 : 0,
+      );
       if (!mounted || _controllerForIndex(index) != controller) return;
       if (widget.isActive) {
         await controller.play();
@@ -444,6 +489,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Future<void> _activateCurrentReelPlayback() async {
     if (!widget.isActive) return;
+    _applyAudioGate();
     final index = _currentIndex;
     if (_controllerForIndex(index) == null) {
       await _initializePoolAt(index);
@@ -462,6 +508,8 @@ class _ReelsScreenState extends State<ReelsScreen>
     setState(() {
       _currentIndex = index;
     });
+    // The active index changed; reevaluate audio gate based on page settling.
+    _applyAudioGate();
     unawaited(_reelsService.incrementViews(_reels[index].id));
     _poolOps = _poolOps
         .then<void>((_) => _rotatePoolToIndex(index))
@@ -956,6 +1004,7 @@ class _ReelsScreenState extends State<ReelsScreen>
               controller: _pageController,
               scrollDirection: Axis.vertical,
               physics: const BouncingScrollPhysics(),
+              allowImplicitScrolling: true,
               itemCount: _reels.length,
               onPageChanged: _onPageChanged,
               itemBuilder: (context, index) {
@@ -1010,6 +1059,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     final thumb = reel.thumbnailUrl == null
         ? null
         : UrlHelper.absoluteUrl(reel.thumbnailUrl!);
+    final isActive = widget.isActive && index == _currentIndex;
 
     return _ReelPlayerItem(
       key: ValueKey('reel-item-$index-${reel.id}'),
@@ -1017,6 +1067,7 @@ class _ReelsScreenState extends State<ReelsScreen>
       thumbnailUrl: thumb,
       headers:
           thumb == null || thumb.isEmpty ? const {} : _headersForUrl(thumb),
+      isActive: isActive,
       isFailed: false,
       onRetry: null,
     );
@@ -1395,6 +1446,7 @@ class _ReelPlayerItem extends StatefulWidget {
   final VideoPlayerController? controller;
   final String? thumbnailUrl;
   final Map<String, String> headers;
+  final bool isActive;
   final bool isFailed;
   final VoidCallback? onRetry;
 
@@ -1403,6 +1455,7 @@ class _ReelPlayerItem extends StatefulWidget {
     required this.controller,
     required this.thumbnailUrl,
     required this.headers,
+    required this.isActive,
     required this.isFailed,
     required this.onRetry,
   });
@@ -1415,6 +1468,21 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem>
     with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
+
+  Widget _fallbackPlaceholder() {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF1B1B1F),
+            Color(0xFF2A2A2F),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1451,74 +1519,44 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem>
                     imageUrl: thumbnailUrl,
                     fit: BoxFit.cover,
                     httpHeaders: widget.headers,
-                    errorWidget: (_, __, ___) => Container(color: Colors.black),
+                    placeholder: (_, __) => _fallbackPlaceholder(),
+                    errorWidget: (_, __, ___) => _fallbackPlaceholder(),
                   )
                 else
-                  Container(color: Colors.black),
-                if (controller != null && isInitialized && videoSize != null)
-                  FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: videoSize.width,
-                      height: videoSize.height,
-                      child: VideoPlayer(controller),
+                  _fallbackPlaceholder(),
+                // Only render the video texture for the active reel.
+                // Non-active reels should show only the thumbnail/poster (no white/black flashes).
+                if (widget.isActive &&
+                    controller != null &&
+                    isInitialized &&
+                    videoSize != null)
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    opacity: 1,
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: videoSize.width,
+                        height: videoSize.height,
+                        child: VideoPlayer(controller),
+                      ),
                     ),
                   ),
               ],
             ),
           ),
-          if (!isInitialized)
+          if (widget.isActive && widget.isFailed && widget.onRetry != null)
             Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.50),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white24),
+              child: FilledButton.tonal(
+                onPressed: widget.onRetry,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white12,
+                  foregroundColor: Colors.white,
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!widget.isFailed)
-                      const SizedBox(
-                        width: 26,
-                        height: 26,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white70,
-                        ),
-                      )
-                    else
-                      const Icon(
-                        Icons.wifi_tethering_error_rounded,
-                        color: Colors.white70,
-                        size: 20,
-                      ),
-                    const SizedBox(height: 8),
-                    Text(
-                      widget.isFailed ? 'Could not load reel' : 'Loading reel',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    if (widget.isFailed && widget.onRetry != null) ...[
-                      const SizedBox(height: 8),
-                      FilledButton.tonal(
-                        onPressed: widget.onRetry,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white12,
-                          foregroundColor: Colors.white,
-                          visualDensity: VisualDensity.compact,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ],
-                ),
+                child: const Text('Retry'),
               ),
             ),
         ],

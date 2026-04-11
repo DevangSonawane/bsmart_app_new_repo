@@ -378,12 +378,10 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
           _resumeVideoIfNeeded();
         }
       } else if (!widget.isActive && oldWidget.isActive) {
-        // Became inactive — pause and release reference
+        // Became inactive — pause (keep controller reference so the last frame
+        // stays visible and we avoid black flashes while scrolling).
         _loadingVideo = false;
         VideoPool.instance.pauseIf(widget.id);
-        if (_videoCtl != null) {
-          _videoCtl = null;
-        }
         if (mounted) setState(() {});
       }
     }
@@ -543,24 +541,17 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     }
     final thumb = _applyFilterToWidget(_buildVideoPlaceholder());
     final ctl = _videoCtl;
-    final canShowVideo = widget.isActive && _isControllerUsable(ctl);
-    if (ctl != null && !canShowVideo) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (_videoCtl == ctl) setState(() => _videoCtl = null);
-      });
-      return thumb;
-    }
+    final canShowVideo = _isControllerUsable(ctl);
     try {
       return Stack(
         fit: StackFit.expand,
         children: [
           thumb,
-          if (ctl != null)
+          if (ctl != null && canShowVideo)
             AnimatedOpacity(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOut,
-              opacity: canShowVideo ? 1 : 0,
+              opacity: 1,
               child: _applyFilterToWidget(
                 FittedBox(
                   fit: BoxFit.cover,
@@ -622,7 +613,19 @@ class _VideoPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(color: Colors.black);
+    // Use a consistently dark placeholder to avoid "white screen" flashes.
+    // The actual thumbnail (when present) is drawn above this immediately.
+    const c1 = Color(0xFF1B1B1F);
+    const c2 = Color(0xFF2A2A2F);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [c1, c2],
+        ),
+      ),
+    );
   }
 }
 
