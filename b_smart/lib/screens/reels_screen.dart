@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
@@ -1047,10 +1048,37 @@ class _ReelsScreenState extends State<ReelsScreen>
               bottom: isDesktop ? 20 : 18,
               child: _buildBottomInfo(current),
             ),
+            // Progress Bar — keep as the top-most overlay so the bottom gradient/info
+            // doesn't visually hide it. Matches Ads bar styling/behavior.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    height: 4,
+                    color: Colors.white.withValues(alpha: 0.22),
+                    child: _buildReelPlaybackProgress(),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildReelPlaybackProgress() {
+    final controller = _controllerForIndex(_currentIndex);
+    // Always show the track (already provided by parent Container). If controller
+    // isn't ready, keep fill at 0 so the bar still looks consistent.
+    if (!_isControllerUsable(controller)) {
+      return const SizedBox.shrink();
+    }
+    return _SmoothReelProgressBar(controller: controller!);
   }
 
   Widget _buildReelPlayer(int index, Reel reel, {required bool isDesktop}) {
@@ -1268,34 +1296,41 @@ class _ReelsScreenState extends State<ReelsScreen>
       children: [
         Row(
           children: [
-            CircleAvatar(
-              radius: 15,
-              backgroundColor: Colors.grey[700],
-              backgroundImage:
-                  reel.userAvatarUrl != null && reel.userAvatarUrl!.isNotEmpty
-                      ? CachedNetworkImageProvider(
-                          UrlHelper.absoluteUrl(reel.userAvatarUrl!))
-                      : null,
-              child: reel.userAvatarUrl == null || reel.userAvatarUrl!.isEmpty
-                  ? Text(
-                      (reel.userName.isEmpty ? 'U' : reel.userName[0])
-                          .toUpperCase(),
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold),
-                    )
-                  : null,
+            GestureDetector(
+              onTap: () => unawaited(_openUserProfile(reel.userId)),
+              child: CircleAvatar(
+                radius: 15,
+                backgroundColor: Colors.grey[700],
+                backgroundImage: reel.userAvatarUrl != null &&
+                        reel.userAvatarUrl!.isNotEmpty
+                    ? CachedNetworkImageProvider(
+                        UrlHelper.absoluteUrl(reel.userAvatarUrl!))
+                    : null,
+                child: reel.userAvatarUrl == null || reel.userAvatarUrl!.isEmpty
+                    ? Text(
+                        (reel.userName.isEmpty ? 'U' : reel.userName[0])
+                            .toUpperCase(),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold),
+                      )
+                    : null,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                reel.userName,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => unawaited(_openUserProfile(reel.userId)),
+                child: Text(
+                  reel.userName,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
             GestureDetector(
@@ -1384,6 +1419,20 @@ class _ReelsScreenState extends State<ReelsScreen>
     );
   }
 
+  Future<void> _openUserProfile(String userId) async {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    if (!mounted) return;
+    if (_isCommentsOpen) return;
+    if (_isNavigating) return;
+    _isNavigating = true;
+    try {
+      await Navigator.of(context).pushNamed('/profile/$id');
+    } finally {
+      _isNavigating = false;
+    }
+  }
+
   Widget _buildDesktopArrows() {
     final canGoUp = _currentIndex > 0;
     final canGoDown = _currentIndex < _reels.length - 1;
@@ -1439,6 +1488,106 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
     return count.toString();
+  }
+}
+
+class _SmoothReelProgressBar extends StatefulWidget {
+  final VideoPlayerController controller;
+  const _SmoothReelProgressBar({required this.controller});
+
+  @override
+  State<_SmoothReelProgressBar> createState() => _SmoothReelProgressBarState();
+}
+
+class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
+    with SingleTickerProviderStateMixin {
+  Ticker? _ticker;
+  Duration _duration = Duration.zero;
+  Duration _basePosition = Duration.zero;
+  double _playbackSpeed = 1.0;
+  bool _isPlaying = false;
+  int _baseEpochMs = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker(_onTick);
+    widget.controller.addListener(_onControllerValueChanged);
+    _syncFromController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SmoothReelProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller == widget.controller) return;
+    oldWidget.controller.removeListener(_onControllerValueChanged);
+    widget.controller.addListener(_onControllerValueChanged);
+    _syncFromController();
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onControllerValueChanged);
+    _ticker?.dispose();
+    super.dispose();
+  }
+
+  void _onTick(Duration _) {
+    if (!mounted) return;
+    // While playing, repaint each frame so the bar moves smoothly even if the
+    // video controller only notifies at coarse intervals.
+    setState(() {});
+  }
+
+  void _syncFromController() {
+    if (!mounted) return;
+    try {
+      final value = widget.controller.value;
+      _duration = value.duration;
+      _basePosition = value.position;
+      _playbackSpeed = value.playbackSpeed;
+      _isPlaying = value.isPlaying;
+      _baseEpochMs = DateTime.now().millisecondsSinceEpoch;
+      _updateTicker();
+      setState(() {});
+    } catch (_) {
+      _isPlaying = false;
+      _updateTicker();
+    }
+  }
+
+  void _onControllerValueChanged() {
+    _syncFromController();
+  }
+
+  void _updateTicker() {
+    final ticker = _ticker;
+    if (ticker == null) return;
+    if (_isPlaying) {
+      if (!ticker.isActive) ticker.start();
+    } else {
+      if (ticker.isActive) ticker.stop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final durationMs = _duration.inMilliseconds;
+    if (durationMs <= 0) return const SizedBox.shrink();
+
+    var positionMs = _basePosition.inMilliseconds;
+    if (_isPlaying) {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final elapsedMs = (nowMs - _baseEpochMs).clamp(0, 1 << 30);
+      positionMs += (elapsedMs * _playbackSpeed).round();
+    }
+    final progress = (positionMs / durationMs).clamp(0.0, 1.0);
+
+    return FractionallySizedBox(
+      alignment: Alignment.centerLeft,
+      widthFactor: progress,
+      child: const ColoredBox(color: Colors.white),
+    );
   }
 }
 

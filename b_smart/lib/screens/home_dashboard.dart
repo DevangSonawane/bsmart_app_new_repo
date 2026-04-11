@@ -33,15 +33,18 @@ import '../utils/current_user.dart';
 import '../api/auth_api.dart';
 import '../api/api_exceptions.dart';
 import '../api/api_client.dart';
+import '../api/follows_api.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/url_helper.dart';
 import '../widgets/dynamic_media_widget.dart';
 import '../widgets/floating_message_overlay.dart';
+import '../widgets/suggestion_follow.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'profile_screen.dart';
 import '../routes.dart';
+import 'follow_list_screen.dart';
 import 'messaging_screen.dart';
 
 class _FeedHeader extends StatelessWidget {
@@ -150,6 +153,36 @@ class _FeedHeader extends StatelessWidget {
           userStatuses: storyStatuses,
         ),
       ],
+    );
+  }
+}
+
+enum _FeedRenderRowType { post, suggestions }
+
+class _FeedRenderRow {
+  final _FeedRenderRowType type;
+  final FeedPost? post;
+  final int suggestionBlockIndex;
+
+  const _FeedRenderRow._({
+    required this.type,
+    required this.post,
+    required this.suggestionBlockIndex,
+  });
+
+  factory _FeedRenderRow.post(FeedPost post) {
+    return _FeedRenderRow._(
+      type: _FeedRenderRowType.post,
+      post: post,
+      suggestionBlockIndex: -1,
+    );
+  }
+
+  factory _FeedRenderRow.suggestions(int blockIndex) {
+    return _FeedRenderRow._(
+      type: _FeedRenderRowType.suggestions,
+      post: null,
+      suggestionBlockIndex: blockIndex,
     );
   }
 }
@@ -297,6 +330,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   final SupabaseService _supabase = SupabaseService();
   final WalletService _walletService = WalletService();
   final ReelsService _reelsService = ReelsService();
+  final FollowsApi _followsApi = FollowsApi();
   String? _currentLocation;
   bool _locationLoading = false;
 
@@ -351,6 +385,12 @@ class _HomeDashboardState extends State<HomeDashboard>
   int _pageCursor = 2; // next server page to try after initial default feed
   bool _pagingInFlight = false;
   bool _noMorePages = false;
+
+  bool _followSuggestionsLoading = false;
+  List<SuggestionUser> _followSuggestions = <SuggestionUser>[];
+  final Set<String> _dismissedSuggestionUserIds = <String>{};
+  final Set<String> _suggestionFollowOpsInFlight = <String>{};
+  Map<String, String> _suggestionImageHeaders = const <String, String>{};
 
   /// Current user profile from `users` table (same source as React web app) for header avatar.
   Map<String, dynamic>? _currentUserProfile;
@@ -501,8 +541,187 @@ class _HomeDashboardState extends State<HomeDashboard>
       store.dispatch(SetFeedLoading(true));
       _loadData(store);
       _loadInitialFeed(forceNetwork: true);
+      unawaited(_loadFollowSuggestions());
       _fetchCurrentLocation();
     });
+  }
+
+  String _suggestionIdOf(Map<String, dynamic> u) {
+    final raw = u['_id'] ?? u['id'] ?? u['userId'];
+    return raw == null ? '' : raw.toString();
+  }
+
+  String _suggestionTitleOf(Map<String, dynamic> u) {
+    final rawUsername = u['username'] ?? u['userName'];
+    final username = rawUsername == null ? '' : rawUsername.toString().trim();
+    if (username.isNotEmpty) return username;
+    final name = (u['full_name'] ?? u['name'] ?? u['fullName'])?.toString() ?? '';
+    return name.trim().isNotEmpty ? name.trim() : 'user';
+  }
+
+  String _suggestionAvatarOf(Map<String, dynamic> u) {
+    final raw = u['avatar_url'] ?? u['profilePicture'] ?? u['avatar'];
+    return raw == null ? '' : raw.toString();
+  }
+
+  bool _suggestionIsFollowingOf(Map<String, dynamic> u) =>
+      _parseBoolLike(u['isFollowing']) ??
+      _parseBoolLike(u['is_followed_by_me']) ??
+      false;
+
+  Future<void> _loadFollowSuggestions({bool force = false}) async {
+    if (_followSuggestionsLoading) return;
+    if (!force && _followSuggestions.isNotEmpty) return;
+    setState(() => _followSuggestionsLoading = true);
+    try {
+      final token = await ApiClient().getToken();
+      if (token != null &&
+          token.isNotEmpty &&
+          _suggestionImageHeaders.isEmpty &&
+          mounted) {
+        setState(() {
+          _suggestionImageHeaders = <String, String>{
+            'Authorization': 'Bearer $token',
+          };
+        });
+      }
+
+      final res = await _followsApi.getSuggestions(limit: 30);
+      final raw = (res is Map)
+          ? (res['users'] ?? res['vendors'] ?? res['data'] ?? res)
+          : res;
+      final list = raw is List
+          ? raw
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
+
+      final ids = list.map(_suggestionIdOf).where((e) => e.isNotEmpty).toList();
+      if (ids.isNotEmpty && (_currentUserId?.isNotEmpty ?? false)) {
+        try {
+          final statuses = await _followsApi.bulkCheckFollowStatus(ids);
+          final statusMap = <String, Map<String, dynamic>>{};
+          for (final s in statuses) {
+            final sid = (s['userId'] as String?) ??
+                (s['_id'] as String?) ??
+                (s['id'] as String?) ??
+                '';
+            if (sid.isNotEmpty) statusMap[sid] = s;
+          }
+          for (var i = 0; i < list.length; i++) {
+            final u = list[i];
+            final uid = _suggestionIdOf(u);
+            final s = statusMap[uid];
+            if (s == null) continue;
+            list[i] = <String, dynamic>{
+              ...u,
+              ...s,
+              'isFollowing': (s['isFollowing'] as bool?) ?? _suggestionIsFollowingOf(u),
+            };
+          }
+        } catch (_) {
+          // ignore
+        }
+      }
+
+      final parsed = <SuggestionUser>[];
+      for (final u in list) {
+        final id = _suggestionIdOf(u).trim();
+        if (id.isEmpty) continue;
+        if ((_currentUserId ?? '').isNotEmpty && id == _currentUserId) {
+          continue;
+        }
+        final isFollowing = _suggestionIsFollowingOf(u);
+        if (isFollowing) continue;
+        final avatar = _suggestionAvatarOf(u).trim();
+        parsed.add(
+          SuggestionUser(
+            id: id,
+            title: _suggestionTitleOf(u),
+            avatarUrl: avatar.isEmpty ? null : UrlHelper.absoluteUrl(avatar),
+          ),
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _followSuggestions = parsed;
+      });
+    } catch (_) {
+      // ignore
+    } finally {
+      if (mounted) {
+        setState(() {
+          _followSuggestionsLoading = false;
+        });
+      }
+    }
+  }
+
+  List<SuggestionUser> _suggestionsForBlock(int blockIndex, {int count = 10}) {
+    final all = _followSuggestions
+        .where((u) => !_dismissedSuggestionUserIds.contains(u.id))
+        .toList();
+    if (all.isEmpty) return const <SuggestionUser>[];
+    final start = (blockIndex * count) % all.length;
+    final out = <SuggestionUser>[];
+    for (var i = 0; i < count && i < all.length; i++) {
+      out.add(all[(start + i) % all.length]);
+    }
+    return out;
+  }
+
+  void _dismissSuggestionUser(String userId) {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    setState(() => _dismissedSuggestionUserIds.add(id));
+  }
+
+  Future<void> _followSuggestionUser(SuggestionUser user) async {
+    if (_suggestionFollowOpsInFlight.contains(user.id)) return;
+    _suggestionFollowOpsInFlight.add(user.id);
+    _dismissSuggestionUser(user.id);
+    try {
+      await _followsApi.follow(user.id);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _dismissedSuggestionUserIds.remove(user.id));
+    } finally {
+      _suggestionFollowOpsInFlight.remove(user.id);
+    }
+  }
+
+  Future<void> _openSuggestionsSeeAll() async {
+    if (!mounted) return;
+    final uid = _currentUserId ?? '';
+    if (uid.isEmpty) return;
+    final username = (_currentUserProfile?['username'] ??
+            _currentUserProfile?['userName'] ??
+            _currentUserProfile?['full_name'] ??
+            _currentUserProfile?['fullName'] ??
+            'You')
+        .toString();
+    await FollowListScreen.open(
+      context,
+      userId: uid,
+      username: username,
+      mode: FollowListMode.vendors,
+      isOwnProfile: true,
+    );
+  }
+
+  List<_FeedRenderRow> _buildFeedRows(List<FeedPost> posts) {
+    final rows = <_FeedRenderRow>[];
+    var suggestionBlockIndex = 0;
+    for (final p in posts) {
+      rows.add(_FeedRenderRow.post(p));
+      if (p.isAd) {
+        rows.add(_FeedRenderRow.suggestions(suggestionBlockIndex));
+        suggestionBlockIndex++;
+      }
+    }
+    return rows;
   }
 
   @override
@@ -2358,70 +2577,120 @@ class _HomeDashboardState extends State<HomeDashboard>
                         ),
                       )
                     else
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final p = posts[index];
-                            final isOwnPost = _currentUserId != null &&
-                                p.userId == _currentUserId;
-                            Widget itemWidget;
-                            try {
-                              itemWidget = VisibilityDetector(
-                                key: ValueKey('feed-vis-${p.id}'),
-                                onVisibilityChanged: (info) {
-                                  _onFeedItemVisibilityChanged(
-                                    p.id,
-                                    info.visibleFraction,
-                                  );
-                                },
-                                child: RepaintBoundary(
-                                  child: PostCard(
+                      Builder(
+                        builder: (context) {
+                          final rows = _buildFeedRows(posts);
+                          return SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final row = rows[index];
+                                if (row.type == _FeedRenderRowType.suggestions) {
+                                  final isLoading = _followSuggestionsLoading ||
+                                      _followSuggestions.isEmpty;
+                                  final users = isLoading
+                                      ? const <SuggestionUser>[]
+                                      : _suggestionsForBlock(
+                                          row.suggestionBlockIndex,
+                                          count: 10,
+                                        );
+                                  return SuggestionFollowBlock(
                                     key: ValueKey(
-                                        'card-${p.id}'), // Prevent unnecessary rebuilds
-                                    post: p,
-                                    isTabActive:
-                                        _currentIndex == 0 && _isRouteActive,
-                                    isActive: false,
-                                    activeIdListenable:
-                                        _activeFeedPostIdListenable,
-                                    isOwnPost: isOwnPost,
-                                    onUserTap: p.userId.isNotEmpty
-                                        ? () => Navigator.of(context)
-                                            .pushNamed('/profile/${p.userId}')
-                                        : null,
-                                    onLike: () => _onLikePost(p),
-                                    onDoubleTapLike: () =>
-                                        _onDoubleTapLikePost(p),
-                                    onComment: () => _onCommentPost(p),
-                                    onShare: () => _onSharePost(p),
-                                    onSave: () => _onSavePost(p),
-                                    onFollow: isOwnPost
+                                        'follow-suggestions-${row.suggestionBlockIndex}'),
+                                    isLoading: isLoading,
+                                    imageHeaders: _suggestionImageHeaders.isEmpty
                                         ? null
-                                        : () => _onFollowPost(p),
-                                    onMore: () => _onMorePost(context, p),
-                                  ),
-                                ),
-                              );
-                            } catch (e, st) {
-                              itemWidget = Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Column(
-                                  children: [
-                                    const Icon(Icons.broken_image, size: 40),
-                                    const SizedBox(height: 8),
-                                    Text('Failed to load post',
-                                        style: TextStyle(
+                                        : _suggestionImageHeaders,
+                                    sections: [
+                                      SuggestionFollowSection(
+                                        title:
+                                            'Follow businesses that you might like',
+                                        helperText:
+                                            'Connect with businesses based on your interests.',
+                                        users: users,
+                                        onSeeAll: _openSuggestionsSeeAll,
+                                        onOverflow: null,
+                                      ),
+                                    ],
+                                    onDismissUser: _dismissSuggestionUser,
+                                    onUserTap: (userId) {
+                                      final id = userId.trim();
+                                      if (id.isEmpty) return;
+                                      Navigator.of(context)
+                                          .pushNamed('/profile/$id');
+                                    },
+                                    onFollow: (user) =>
+                                        unawaited(_followSuggestionUser(user)),
+                                  );
+                                }
+
+                                final p = row.post!;
+                                final isOwnPost = _currentUserId != null &&
+                                    p.userId == _currentUserId;
+                                Widget itemWidget;
+                                try {
+                                  itemWidget = VisibilityDetector(
+                                    key: ValueKey('feed-vis-${p.id}'),
+                                    onVisibilityChanged: (info) {
+                                      _onFeedItemVisibilityChanged(
+                                        p.id,
+                                        info.visibleFraction,
+                                      );
+                                    },
+                                    child: RepaintBoundary(
+                                      child: PostCard(
+                                        key: ValueKey(
+                                            'card-${p.id}'), // Prevent unnecessary rebuilds
+                                        post: p,
+                                        isTabActive: _currentIndex == 0 &&
+                                            _isRouteActive,
+                                        isActive: false,
+                                        activeIdListenable:
+                                            _activeFeedPostIdListenable,
+                                        isOwnPost: isOwnPost,
+                                        onUserTap: p.userId.isNotEmpty
+                                            ? () => Navigator.of(context)
+                                                .pushNamed(
+                                                    '/profile/${p.userId}')
+                                            : null,
+                                        onLike: () => _onLikePost(p),
+                                        onDoubleTapLike: () =>
+                                            _onDoubleTapLikePost(p),
+                                        onComment: () => _onCommentPost(p),
+                                        onShare: () => _onSharePost(p),
+                                        onSave: () => _onSavePost(p),
+                                        onFollow: isOwnPost
+                                            ? null
+                                            : () => _onFollowPost(p),
+                                        onMore: () => _onMorePost(context, p),
+                                      ),
+                                    ),
+                                  );
+                                } catch (e, st) {
+                                  itemWidget = Padding(
+                                    padding: const EdgeInsets.all(16.0),
+                                    child: Column(
+                                      children: [
+                                        const Icon(Icons.broken_image,
+                                            size: 40),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Failed to load post',
+                                          style: TextStyle(
                                             color: Theme.of(context)
                                                 .colorScheme
-                                                .onSurface)),
-                                  ],
-                                ),
-                              );
-                            }
-                            return itemWidget;
-                          },
-                          childCount: posts.length,
-                        ),
+                                                .onSurface,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+                                return itemWidget;
+                              },
+                              childCount: rows.length,
+                            ),
+                          );
+                        },
                       ),
                     if (hasMoreToShow)
                       const SliverToBoxAdapter(child: SizedBox(height: 28)),

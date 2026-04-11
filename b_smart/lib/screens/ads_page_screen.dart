@@ -54,7 +54,8 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   static bool _persistViewedLoaded = false;
   static Future<void>? _persistViewedLoadFuture;
   Map<String, String>? _mediaHeaders;
-  final PopupVisibilityController _popupVisibility = PopupVisibilityController();
+  final PopupVisibilityController _popupVisibility =
+      PopupVisibilityController();
 
   List<AdCategory> _categories = [];
   String _selectedCategoryId = 'All';
@@ -1374,7 +1375,7 @@ class AdVideoItem extends StatefulWidget {
 
 class _AdVideoItemState extends State<AdVideoItem>
     with SingleTickerProviderStateMixin {
-  static const Duration _ctaRevealDelay = Duration(seconds: 5);
+  static const Duration _ctaRevealDelay = Duration(seconds: 3);
   VideoPlayerController? _controller;
   late final AnimationController _watchProgressController =
       AnimationController(vsync: this);
@@ -2312,12 +2313,12 @@ class _AdVideoItemState extends State<AdVideoItem>
   @override
   Widget build(BuildContext context) {
     const ctaBottomPadding = 10.0;
-    const ctaHeightEstimate = 48.0;
     final ctaBottom = widget.bottomInset + ctaBottomPadding;
-    final ctaTop = ctaBottom + ctaHeightEstimate;
 
-    final actionsBottom = 82.0 + widget.bottomInset;
-    final infoBottom = _ctaVisible ? (ctaTop + 10) : (6.0 + widget.bottomInset);
+    // Slightly higher so the column doesn't sit too low.
+    final actionsBottom = 96.0 + widget.bottomInset;
+    // Keep content aligned with the mute button line (mute is the last item in the actions column).
+    final infoBottom = actionsBottom;
     final media = Container(
       color: Colors.black,
       child: _isInitialized && _controller != null && _isVideoAd
@@ -2492,7 +2493,7 @@ class _AdVideoItemState extends State<AdVideoItem>
 
           // 3. Right Side Actions (always visible)
           Positioned(
-            right: 8,
+            right: 4,
             bottom: actionsBottom,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2552,240 +2553,215 @@ class _AdVideoItemState extends State<AdVideoItem>
             duration: const Duration(milliseconds: 240),
             curve: Curves.easeInOutCubic,
             left: 16,
-            right: 80,
+            right: 92,
             bottom: infoBottom,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+            child: Stack(
+              clipBehavior: Clip.none,
               children: [
-                // User/Company Info
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    InkWell(
-                      onTap: () {
-                        final uid = _adProfileId(widget.ad);
-                        if (uid == null || uid.isEmpty) return;
-                        unawaited(_trackAdClick(widget.ad.id));
-                        Navigator.of(context).pushNamed('/vendor/$uid/public');
-                      },
-                      borderRadius: BorderRadius.circular(10),
-                      child: _buildAdAvatarThumb(),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: InkWell(
-                                  onTap: () {
-                                    final uid = _adProfileId(widget.ad);
-                                    if (uid == null || uid.isEmpty) return;
-                                    unawaited(_trackAdClick(widget.ad.id));
-                                    Navigator.of(context)
-                                        .pushNamed('/vendor/$uid/public');
-                                  },
-                                  child: Text(
-                                    widget.ad.vendorBusinessName ??
-                                        widget.ad.userName ??
-                                        widget.ad.companyName,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                SizedBox(
+                  height: 36,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      InkWell(
+                        onTap: () {
+                          final uid = _adProfileId(widget.ad);
+                          if (uid == null || uid.isEmpty) return;
+                          unawaited(_trackAdClick(widget.ad.id));
+                          Navigator.of(context)
+                              .pushNamed('/vendor/$uid/public');
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: _buildAdAvatarThumb(),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  final uid = _adProfileId(widget.ad);
+                                  if (uid == null || uid.isEmpty) return;
+                                  unawaited(_trackAdClick(widget.ad.id));
+                                  Navigator.of(context)
+                                      .pushNamed('/vendor/$uid/public');
+                                },
+                                child: Text(
+                                  widget.ad.vendorBusinessName ??
+                                      widget.ad.userName ??
+                                      widget.ad.companyName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            if (widget.ad.totalBudgetCoins > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.2),
+                                  border: Border.all(
+                                    color: Colors.amber.withValues(alpha: 0.4),
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(LucideIcons.coins,
+                                        color: Colors.amber, size: 10),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _formatCount(widget.ad.totalBudgetCoins),
+                                      style: const TextStyle(
+                                        color: Colors.amberAccent,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
-                                    overflow: TextOverflow.ellipsis,
+                                  ],
+                                ),
+                              ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _isFollowing
+                                    ? Colors.green.withValues(alpha: 0.15)
+                                    : Colors.white.withValues(alpha: 0.1),
+                                border: Border.all(
+                                  color: _isFollowing
+                                      ? Colors.green.withValues(alpha: 0.45)
+                                      : Colors.white.withValues(alpha: 0.4),
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: GestureDetector(
+                                onTap: _isFollowLoading ? null : _toggleFollow,
+                                child: Text(
+                                  _isFollowLoading
+                                      ? '...'
+                                      : (_isFollowing
+                                          ? 'Following'
+                                          : 'Follow'),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              if (widget.ad.totalBudgetCoins > 0)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.amber.withValues(alpha: 0.2),
-                                    border: Border.all(
-                                        color: Colors.amber
-                                            .withValues(alpha: 0.4)),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(LucideIcons.coins,
-                                          color: Colors.amber, size: 10),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        _formatCount(
-                                            widget.ad.totalBudgetCoins),
-                                        style: const TextStyle(
-                                          color: Colors.amberAccent,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: 40,
+                  left: 42,
+                  right: 0,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Builder(builder: (context) {
+                        final cat = widget.ad.category?.trim() ?? '';
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Sponsored',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.65),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (cat.isNotEmpty) ...[
+                              Text(
+                                ' • ',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
                                 ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: _isFollowing
-                                      ? Colors.green.withValues(alpha: 0.15)
-                                      : Colors.white.withValues(alpha: 0.1),
-                                  border: Border.all(
-                                      color: _isFollowing
-                                          ? Colors.green.withValues(alpha: 0.45)
-                                          : Colors.white
-                                              .withValues(alpha: 0.4)),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: GestureDetector(
-                                  onTap:
-                                      _isFollowLoading ? null : _toggleFollow,
-                                  child: Text(
-                                    _isFollowLoading
-                                        ? '...'
-                                        : (_isFollowing
-                                            ? 'Following'
-                                            : 'Follow'),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                              ),
+                              Flexible(
+                                child: Text(
+                                  cat,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Sponsored',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.65),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (!_ctaVisible)
-                            Builder(builder: (context) {
-                              final caption =
-                                  (widget.ad.caption ?? widget.ad.description)
-                                      .trim();
-                              if (caption.isEmpty) {
-                                return const SizedBox.shrink();
-                              }
-                              final words =
-                                  caption.trim().split(RegExp(r'\s+'));
-                              final isLong = words.length > 5;
-                              final preview =
-                                  isLong ? words.take(5).join(' ') : caption;
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: RichText(
-                                  text: TextSpan(
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      height: 1.4,
-                                    ),
-                                    children: [
-                                      TextSpan(
-                                        text: isLong ? preview : caption,
-                                      ),
-                                      if (isLong)
-                                        WidgetSpan(
-                                          alignment:
-                                              PlaceholderAlignment.middle,
-                                          child: GestureDetector(
-                                            onTap: () =>
-                                                _showCaptionSheet(caption),
-                                            child: const Padding(
-                                              padding: EdgeInsets.only(left: 3),
-                                              child: Text(
-                                                '  Read more',
-                                                style: TextStyle(
-                                                  color: Color(0xCCFFFFFF),
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
+                          ],
+                        );
+                      }),
+                      if (!_ctaVisible)
+                        Builder(builder: (context) {
+                          final caption =
+                              (widget.ad.caption ?? widget.ad.description)
+                                  .trim();
+                          if (caption.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          final words = caption.trim().split(RegExp(r'\s+'));
+                          final isLong = words.length > 5;
+                          final preview =
+                              isLong ? words.take(5).join(' ') : caption;
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: RichText(
+                              text: TextSpan(
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  height: 1.4,
+                                ),
+                                children: [
+                                  TextSpan(text: isLong ? preview : caption),
+                                  if (isLong)
+                                    WidgetSpan(
+                                      alignment: PlaceholderAlignment.middle,
+                                      child: GestureDetector(
+                                        onTap: () =>
+                                            _showCaptionSheet(caption),
+                                        child: const Padding(
+                                          padding: EdgeInsets.only(left: 3),
+                                          child: Text(
+                                            '  Read more',
+                                            style: TextStyle(
+                                              color: Color(0xCCFFFFFF),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
                                             ),
                                           ),
                                         ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }),
-                          if (!_ctaVisible &&
-                              ((widget.ad.category ?? '').isNotEmpty ||
-                                  widget.ad.targetCategories.isNotEmpty)) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              widget.ad.targetCategories.isNotEmpty
-                                  ? widget.ad.targetCategories.join(' • ')
-                                  : (widget.ad.category ?? ''),
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.6),
-                                fontSize: 12,
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
-                          ],
-                          if (!_ctaVisible &&
-                              widget.ad.targetLanguages.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: [
-                                ...widget.ad.targetLanguages.take(3).map(
-                                      (lang) => _buildMetaPill(
-                                        icon: Icons.language,
-                                        label: lang,
-                                      ),
-                                    ),
-                                if (widget.ad.targetLanguages.length > 3)
-                                  _buildMetaPill(
-                                    label:
-                                        '+${widget.ad.targetLanguages.length - 3}',
-                                  ),
-                              ],
-                            ),
-                          ],
-                          if (!_ctaVisible &&
-                              widget.ad.targetLocations.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: [
-                                ...widget.ad.targetLocations.take(2).map(
-                                      (loc) => _buildMetaPill(
-                                        icon: Icons.place,
-                                        label: loc,
-                                      ),
-                                    ),
-                                if (widget.ad.targetLocations.length > 2)
-                                  _buildMetaPill(
-                                    label:
-                                        '+${widget.ad.targetLocations.length - 2} more',
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
+                          );
+                        }),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -2824,8 +2800,8 @@ class _AdVideoItemState extends State<AdVideoItem>
       child: Column(
         children: [
           SizedBox(
-            width: 44,
-            height: 44,
+            width: 36,
+            height: 36,
             child: Center(
               child: Transform.rotate(
                 angle: rotate,
@@ -4057,11 +4033,16 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                         ),
                       ],
                     ),
-                    Text(
-                      'Sponsored',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
+                    Builder(builder: (context) {
+                      final cat = ad.category?.trim() ?? '';
+                      return Text(
+                        cat.isEmpty ? 'Sponsored' : 'Sponsored • $cat',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      );
+                    }),
                   ],
                 ),
               ),
@@ -4076,23 +4057,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              if (ad.category != null && ad.category!.trim().isNotEmpty)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0x1A3B82F6),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: const Color(0x333B82F6)),
-                  ),
-                  child: Text(
-                    ad.category!.trim(),
-                    style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF2563EB)),
-                  ),
-                ),
+              // Removed: category pill (category is shown only next to Sponsored).
               if (ad.totalBudgetCoins > 0)
                 Container(
                   padding:
@@ -4126,25 +4091,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                         fontWeight: FontWeight.w600)),
             ],
           ),
-          if (ad.targetLocations.isNotEmpty ||
-              ad.targetLanguages.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            if (ad.targetLocations.isNotEmpty)
-              Text(
-                '📍 ${ad.targetLocations.join(', ')}',
-                style: TextStyle(
-                    fontSize: 12, color: muted, fontWeight: FontWeight.w600),
-              ),
-            if (ad.targetLanguages.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  '🌐 ${ad.targetLanguages.join(', ')}',
-                  style: TextStyle(
-                      fontSize: 12, color: muted, fontWeight: FontWeight.w600),
-                ),
-              ),
-          ],
+          // Removed: language/region text under caption.
         ],
       ),
     );
