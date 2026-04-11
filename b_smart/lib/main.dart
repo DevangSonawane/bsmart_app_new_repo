@@ -24,6 +24,7 @@ import 'screens/ad_public_detail_screen.dart';
 import 'screens/vendor_public_profile_react_screen.dart';
 import 'utils/system_ui.dart';
 import 'widgets/profile_setup_gate.dart';
+import 'utils/app_navigator.dart';
 
 void main() async {
   runZonedGuarded(() async {
@@ -159,6 +160,7 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
   bool _isInitialized = false;
   bool _isAuthenticated = false;
   int _routeVersion = 0;
+  bool _routeVersionUpdateQueued = false;
   late final _RouteChangeObserver _routeObserver;
 
   @override
@@ -167,8 +169,14 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _routeObserver = _RouteChangeObserver(() {
       if (!mounted) return;
-      setState(() {
-        _routeVersion++;
+      if (_routeVersionUpdateQueued) return;
+      _routeVersionUpdateQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _routeVersionUpdateQueued = false;
+        setState(() {
+          _routeVersion++;
+        });
       });
     });
     _checkAuthStatus();
@@ -245,6 +253,7 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
       theme: AppTheme.theme,
       darkTheme: AppTheme.darkTheme,
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+      navigatorKey: AppNavigator.key,
       home: _isAuthenticated ? const HomeDashboard() : const LoginScreen(),
       routes: staticRoutes,
       navigatorObservers: [_routeObserver, appRouteObserver],

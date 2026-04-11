@@ -19,6 +19,11 @@ import '../state/store.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/ad_cta_buttons.dart';
+import '../widgets/app_popups/app_modal_popup.dart';
+import '../widgets/app_popups/app_toast.dart';
+import '../widgets/app_popups/like_reward_popup_card.dart';
+import '../widgets/app_popups/popup_visibility_controller.dart';
+import '../widgets/app_popups/view_recorded_popup_card.dart';
 import 'ad_company_detail_screen.dart';
 import 'external_link_screen.dart';
 
@@ -40,6 +45,7 @@ class AdsPageScreen extends StatefulWidget {
 
 class _AdsPageScreenState extends State<AdsPageScreen> {
   final AdsService _adsService = AdsService();
+  static const bool _showViewRecordedPopupEnabled = false; // React parity
   static final Set<String> _sessionViewedAdIds = <String>{};
   static const String _viewedAdIdsPrefsKey = 'ads_viewed_ad_ids_v1';
   static const int _maxRememberedViewedAds = 600;
@@ -48,7 +54,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   static bool _persistViewedLoaded = false;
   static Future<void>? _persistViewedLoadFuture;
   Map<String, String>? _mediaHeaders;
-  final ValueNotifier<bool> _viewPopupVisible = ValueNotifier<bool>(false);
+  final PopupVisibilityController _popupVisibility = PopupVisibilityController();
 
   List<AdCategory> _categories = [];
   String _selectedCategoryId = 'All';
@@ -59,8 +65,6 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   bool _searchDropdownVisible = false;
   List<_SearchUser> _searchUsers = [];
   List<Ad> _searchAds = [];
-  _ViewRewardPopupData? _viewRewardPopup;
-  _ViewRecordedPopupData? _viewRecordedPopup;
   Timer? _searchDebounce;
   int _searchEpoch = 0;
   final TextEditingController _searchController = TextEditingController();
@@ -124,7 +128,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     _searchDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _viewPopupVisible.dispose();
+    _popupVisibility.dispose();
     super.dispose();
   }
 
@@ -455,13 +459,13 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     try {
       final res = await _adsService.recordAdView(adId: adId, userId: userId);
       if (!mounted) return;
-      _handleViewReward(res, ad);
+      await _handleViewReward(res, ad);
     } catch (_) {
       _sessionViewedAdIds.remove(adId);
     }
   }
 
-  void _handleViewReward(Map<String, dynamic> res, Ad ad) {
+  Future<void> _handleViewReward(Map<String, dynamic> res, Ad ad) async {
     final rewarded = res['rewarded'] == true;
     final coinsRaw = res['coins_rewarded'] ??
         res['coins'] ??
@@ -478,48 +482,36 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     if (rewarded) {
       final reward = (coins ?? (ad.coinReward > 0 ? ad.coinReward : 10));
       unawaited(_rememberAdViewed(ad.id));
-      _showViewRewardPopup(amount: reward);
+      await _showViewRewardPopup(amount: reward);
       return;
     }
     if (res.containsKey('rewarded') || res.containsKey('view_count')) {
-      _showViewRecordedPopup(viewCount: viewCount);
+      if (_showViewRecordedPopupEnabled) {
+        await _showViewRecordedPopup(viewCount: viewCount);
+      }
     }
   }
 
-  void _showViewRewardPopup({required int amount}) {
-    setState(() {
-      _viewRewardPopup = _ViewRewardPopupData(
-        id: DateTime.now().millisecondsSinceEpoch,
-        amount: amount,
-      );
-      _viewRecordedPopup = null;
-    });
-    _viewPopupVisible.value = true;
+  Future<void> _showViewRewardPopup({required int amount}) async {
+    if (!mounted) return;
+    await AppToast.showCoinEarned(
+      context: context,
+      amount: amount,
+      visibility: _popupVisibility,
+    );
   }
 
-  void _showViewRecordedPopup({int? viewCount}) {
-    setState(() {
-      _viewRecordedPopup = _ViewRecordedPopupData(
-        id: DateTime.now().millisecondsSinceEpoch,
-        viewCount: viewCount,
-      );
-      _viewRewardPopup = null;
-    });
-    _viewPopupVisible.value = true;
-  }
-
-  void _hideViewRewardPopup() {
-    setState(() {
-      _viewRewardPopup = null;
-    });
-    _viewPopupVisible.value = false;
-  }
-
-  void _hideViewRecordedPopup() {
-    setState(() {
-      _viewRecordedPopup = null;
-    });
-    _viewPopupVisible.value = false;
+  Future<void> _showViewRecordedPopup({int? viewCount}) async {
+    if (!mounted) return;
+    // React web keeps this disabled; show a subtle, dismissible popup in Flutter
+    // only when the backend explicitly reports a recorded view.
+    await AppModalPopup.show<void>(
+      context: context,
+      barrierDismissible: true,
+      visibility: _popupVisibility,
+      builder: (dialogContext, close) =>
+          ViewRecordedPopupCard(viewCount: viewCount, onOk: close),
+    );
   }
 
   Future<void> _openAdComments(Ad ad) async {
@@ -652,7 +644,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
               isActive: widget.isTabActive && index == _focusedIndex,
               bottomInset:
                   clipFeedBottomInsetForAndroid ? 0 : bottomSystemInset,
-              viewPopupVisibleListenable: _viewPopupVisible,
+              popupVisibility: _popupVisibility,
               onCompletedView: () => _recordViewForAd(ad),
               onAutoNext: () {
                 if (index + 1 < _ads.length) {
@@ -751,60 +743,6 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                 ),
               ),
             _buildSearchDropdown(isDesktop: isDesktop),
-            if (_viewRewardPopup != null)
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: _viewRewardPopup == null,
-                  child: Center(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      switchInCurve: Curves.easeOutBack,
-                      switchOutCurve: Curves.easeIn,
-                      transitionBuilder: (child, animation) {
-                        return FadeTransition(
-                          opacity: animation,
-                          child:
-                              ScaleTransition(scale: animation, child: child),
-                        );
-                      },
-                      child: _viewRewardPopup == null
-                          ? const SizedBox.shrink()
-                          : _ViewRewardPopupCard(
-                              key: ValueKey<int>(_viewRewardPopup!.id),
-                              data: _viewRewardPopup!,
-                              onOk: _hideViewRewardPopup,
-                            ),
-                    ),
-                  ),
-                ),
-              ),
-            if (_viewRecordedPopup != null)
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: _viewRecordedPopup == null,
-                  child: Center(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      switchInCurve: Curves.easeOutBack,
-                      switchOutCurve: Curves.easeIn,
-                      transitionBuilder: (child, animation) {
-                        return FadeTransition(
-                          opacity: animation,
-                          child:
-                              ScaleTransition(scale: animation, child: child),
-                        );
-                      },
-                      child: _viewRecordedPopup == null
-                          ? const SizedBox.shrink()
-                          : _ViewRecordedPopupCard(
-                              key: ValueKey<int>(_viewRecordedPopup!.id),
-                              data: _viewRecordedPopup!,
-                              onOk: _hideViewRecordedPopup,
-                            ),
-                    ),
-                  ),
-                ),
-              ),
             if (!_isLoading && _error == null && _ads.isNotEmpty && isDesktop)
               Positioned(
                 right: 20,
@@ -1414,7 +1352,7 @@ class AdVideoItem extends StatefulWidget {
   final Ad ad;
   final bool isActive;
   final double bottomInset;
-  final ValueListenable<bool> viewPopupVisibleListenable;
+  final PopupVisibilityController popupVisibility;
   final Future<void> Function() onCompletedView;
   final Future<void> Function() onOpenComments;
   final VoidCallback onAutoNext;
@@ -1424,7 +1362,7 @@ class AdVideoItem extends StatefulWidget {
     required this.ad,
     required this.isActive,
     required this.bottomInset,
-    required this.viewPopupVisibleListenable,
+    required this.popupVisibility,
     required this.onCompletedView,
     required this.onOpenComments,
     required this.onAutoNext,
@@ -1453,14 +1391,12 @@ class _AdVideoItemState extends State<AdVideoItem>
   bool _userPaused = false;
   bool _resumeAttemptInFlight = false;
   bool _loopRestartInFlight = false;
-  late bool _lastViewPopupVisible;
+  late bool _lastPopupVisible;
   Timer? _watchGateTimer;
   int _watchTotalMs = 15000;
   bool _watchProgressRunning = false;
   Map<String, String>? _mediaHeaders;
   bool _viewMarked = false;
-  Timer? _likeRewardTimer;
-  _LikeRewardPopupData? _likeRewardPopup;
   Timer? _ctaTimer;
   DateTime? _ctaCountdownStartedAt;
   Duration _ctaCountdownAccumulated = Duration.zero;
@@ -1627,9 +1563,8 @@ class _AdVideoItemState extends State<AdVideoItem>
     _isLiked = widget.ad.isLikedByMe;
     _isSaved = widget.ad.isSavedByMe;
     _likesCount = widget.ad.likesCount;
-    _lastViewPopupVisible = widget.viewPopupVisibleListenable.value;
-    widget.viewPopupVisibleListenable
-        .addListener(_onViewPopupVisibilityChanged);
+    _lastPopupVisible = widget.popupVisibility.isVisible;
+    widget.popupVisibility.addListener(_onPopupVisibilityChanged);
     _loadMediaHeaders();
     unawaited(_loadFollowState());
     _initializeVideo();
@@ -1640,13 +1575,10 @@ class _AdVideoItemState extends State<AdVideoItem>
   @override
   void didUpdateWidget(AdVideoItem oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.viewPopupVisibleListenable !=
-        widget.viewPopupVisibleListenable) {
-      oldWidget.viewPopupVisibleListenable
-          .removeListener(_onViewPopupVisibilityChanged);
-      _lastViewPopupVisible = widget.viewPopupVisibleListenable.value;
-      widget.viewPopupVisibleListenable
-          .addListener(_onViewPopupVisibilityChanged);
+    if (oldWidget.popupVisibility != widget.popupVisibility) {
+      oldWidget.popupVisibility.removeListener(_onPopupVisibilityChanged);
+      _lastPopupVisible = widget.popupVisibility.isVisible;
+      widget.popupVisibility.addListener(_onPopupVisibilityChanged);
     }
     if (oldWidget.ad.id != widget.ad.id) {
       _isLiked = widget.ad.isLikedByMe;
@@ -1687,17 +1619,15 @@ class _AdVideoItemState extends State<AdVideoItem>
     _controller?.dispose();
     _watchGateTimer?.cancel();
     _watchProgressController.dispose();
-    _likeRewardTimer?.cancel();
     _ctaTimer?.cancel();
-    widget.viewPopupVisibleListenable
-        .removeListener(_onViewPopupVisibilityChanged);
+    widget.popupVisibility.removeListener(_onPopupVisibilityChanged);
     super.dispose();
   }
 
-  void _onViewPopupVisibilityChanged() {
-    final visible = widget.viewPopupVisibleListenable.value;
-    final dismissed = _lastViewPopupVisible && !visible;
-    _lastViewPopupVisible = visible;
+  void _onPopupVisibilityChanged() {
+    final visible = widget.popupVisibility.isVisible;
+    final dismissed = _lastPopupVisible && !visible;
+    _lastPopupVisible = visible;
     if (!dismissed) return;
     if (!mounted || !widget.isActive) return;
     if (!_isVideoAd) return;
@@ -1714,29 +1644,16 @@ class _AdVideoItemState extends State<AdVideoItem>
     _updateWatchProgressRunning();
   }
 
-  void _showLikeRewardPopup({required bool isLike}) {
-    _likeRewardTimer?.cancel();
-    setState(() {
-      _likeRewardPopup = _LikeRewardPopupData(
-        id: DateTime.now().millisecondsSinceEpoch,
-        amount: 10,
-        isLike: isLike,
-      );
-    });
-    _likeRewardTimer = Timer(const Duration(milliseconds: 2200), () {
-      if (!mounted) return;
-      setState(() {
-        _likeRewardPopup = null;
-      });
-    });
-  }
-
-  void _hideLikeRewardPopup() {
-    _likeRewardTimer?.cancel();
+  Future<void> _showLikeRewardPopup({required bool isLike}) async {
     if (!mounted) return;
-    setState(() {
-      _likeRewardPopup = null;
-    });
+    await AppModalPopup.show<void>(
+      context: context,
+      barrierDismissible: true,
+      visibility: widget.popupVisibility,
+      builder: (dialogContext, close) {
+        return LikeRewardPopupCard(amount: 10, isLike: isLike, onOk: close);
+      },
+    );
   }
 
   Future<void> _initializeVideo() async {
@@ -1892,7 +1809,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     }
     if (_isVideoAd) {
       _setWatchProgressRunning(false);
-      if (!widget.viewPopupVisibleListenable.value) {
+      if (!widget.popupVisibility.isVisible) {
         _resetWatchProgressForLoop();
       }
       return;
@@ -2254,7 +2171,7 @@ class _AdVideoItemState extends State<AdVideoItem>
           });
         }
         if (mounted) {
-          _showLikeRewardPopup(isLike: true);
+          unawaited(_showLikeRewardPopup(isLike: true));
         }
       } else {
         final res =
@@ -2286,7 +2203,7 @@ class _AdVideoItemState extends State<AdVideoItem>
           });
         }
         if (mounted) {
-          _showLikeRewardPopup(isLike: false);
+          unawaited(_showLikeRewardPopup(isLike: false));
         }
       }
     } on ApiException catch (e) {
@@ -2889,31 +2806,6 @@ class _AdVideoItemState extends State<AdVideoItem>
               ),
             ),
           ),
-          Positioned.fill(
-            child: IgnorePointer(
-              ignoring: _likeRewardPopup == null,
-              child: Center(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  switchInCurve: Curves.easeOutBack,
-                  switchOutCurve: Curves.easeIn,
-                  transitionBuilder: (child, animation) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: ScaleTransition(scale: animation, child: child),
-                    );
-                  },
-                  child: _likeRewardPopup == null
-                      ? const SizedBox.shrink()
-                      : _LikeRewardPopupCard(
-                          key: ValueKey<int>(_likeRewardPopup!.id),
-                          data: _likeRewardPopup!,
-                          onOk: _hideLikeRewardPopup,
-                        ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -3049,387 +2941,6 @@ class _LikeRewardPopupData {
     required this.amount,
     required this.isLike,
   });
-}
-
-class _ViewRewardPopupData {
-  final int id;
-  final int amount;
-
-  const _ViewRewardPopupData({
-    required this.id,
-    required this.amount,
-  });
-}
-
-class _ViewRecordedPopupData {
-  final int id;
-  final int? viewCount;
-
-  const _ViewRecordedPopupData({
-    required this.id,
-    required this.viewCount,
-  });
-}
-
-class _LikeRewardPopupCard extends StatelessWidget {
-  final _LikeRewardPopupData data;
-  final VoidCallback onOk;
-
-  const _LikeRewardPopupCard(
-      {super.key, required this.data, required this.onOk});
-
-  @override
-  Widget build(BuildContext context) {
-    final borderColor =
-        data.isLike ? const Color(0xFFFCA5A5) : const Color(0xFFD1D5DB);
-    final pillTextColor =
-        data.isLike ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
-    final circleGradient = data.isLike
-        ? const LinearGradient(
-            colors: [Color(0xFFFB7185), Color(0xFFEC4899)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight)
-        : const LinearGradient(
-            colors: [Color(0xFF9CA3AF), Color(0xFF6B7280)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight);
-    final buttonGradient = data.isLike
-        ? const LinearGradient(
-            colors: [Color(0xFFFB7185), Color(0xFFEC4899)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight)
-        : const LinearGradient(
-            colors: [Color(0xFF9CA3AF), Color(0xFF4B5563)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight);
-
-    return Material(
-      color: Colors.transparent,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 260, maxWidth: 320),
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.94),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: borderColor),
-            boxShadow: const [
-              BoxShadow(
-                  color: Color(0x33000000),
-                  blurRadius: 30,
-                  offset: Offset(0, 18)),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle, gradient: circleGradient),
-                child: Icon(
-                  data.isLike ? Icons.favorite : LucideIcons.circleX,
-                  color: Colors.white,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                data.isLike ? '+${data.amount} Coins' : '-${data.amount} Coins',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: pillTextColor,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                data.isLike ? 'Thanks for liking!' : 'Dislike recorded',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF111827),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: buttonGradient,
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Color(0x22000000),
-                          blurRadius: 14,
-                          offset: Offset(0, 10)),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: onOk,
-                      borderRadius: BorderRadius.circular(20),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Center(
-                          child: Text(
-                            'Okay',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ViewRewardPopupCard extends StatelessWidget {
-  final _ViewRewardPopupData data;
-  final VoidCallback onOk;
-
-  const _ViewRewardPopupCard({
-    super.key,
-    required this.data,
-    required this.onOk,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const borderColor = Color(0xFFFDE68A);
-    const pillTextColor = Color(0xFFF59E0B);
-    const circleGradient = LinearGradient(
-      colors: [Color(0xFFFCD34D), Color(0xFFF59E0B)],
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-    );
-    const buttonGradient = LinearGradient(
-      colors: [Color(0xFFFBBF24), Color(0xFFF97316)],
-      begin: Alignment.centerLeft,
-      end: Alignment.centerRight,
-    );
-
-    return Material(
-      color: Colors.transparent,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 260, maxWidth: 320),
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.96),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: borderColor),
-            boxShadow: const [
-              BoxShadow(
-                  color: Color(0x33000000),
-                  blurRadius: 30,
-                  offset: Offset(0, 18)),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: circleGradient,
-                ),
-                child: const Icon(LucideIcons.coins,
-                    color: Colors.white, size: 36),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '+${data.amount} Coins',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: pillTextColor,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Earned for watching the full ad',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF111827),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: buttonGradient,
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Color(0x22000000),
-                          blurRadius: 14,
-                          offset: Offset(0, 10)),
-                    ],
-                  ),
-                  child: TextButton(
-                    onPressed: onOk,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
-                    ),
-                    child: const Text(
-                      'Awesome!',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ViewRecordedPopupCard extends StatelessWidget {
-  final _ViewRecordedPopupData data;
-  final VoidCallback onOk;
-
-  const _ViewRecordedPopupCard({
-    super.key,
-    required this.data,
-    required this.onOk,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const borderColor = Color(0xFFE5E7EB);
-    const circleGradient = LinearGradient(
-      colors: [Color(0xFF9CA3AF), Color(0xFF6B7280)],
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-    );
-    const buttonGradient = LinearGradient(
-      colors: [Color(0xFF6B7280), Color(0xFF374151)],
-      begin: Alignment.centerLeft,
-      end: Alignment.centerRight,
-    );
-
-    return Material(
-      color: Colors.transparent,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 260, maxWidth: 320),
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.96),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: borderColor),
-            boxShadow: const [
-              BoxShadow(
-                  color: Color(0x33000000),
-                  blurRadius: 30,
-                  offset: Offset(0, 18)),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: circleGradient,
-                ),
-                child: const Icon(Icons.remove_red_eye,
-                    color: Colors.white, size: 34),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'View Recorded',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF111827),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              if (data.viewCount != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Total views: ${data.viewCount}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF4B5563),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 6),
-              const Text(
-                'No coins rewarded for this view',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: buttonGradient,
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Color(0x22000000),
-                          blurRadius: 14,
-                          offset: Offset(0, 10)),
-                    ],
-                  ),
-                  child: TextButton(
-                    onPressed: onOk,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
-                    ),
-                    child: const Text(
-                      'OK',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _SearchUser {

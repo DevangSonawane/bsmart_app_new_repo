@@ -9,6 +9,8 @@ import '../services/ad_eligibility_service.dart';
 import '../models/ad_model.dart';
 import '../models/notification_model.dart';
 import '../utils/current_user.dart';
+import '../widgets/app_popups/app_modal_popup.dart';
+import '../widgets/app_popups/view_reward_popup_card.dart';
 import 'ad_company_detail_screen.dart';
 
 class WatchAdsScreenEnhanced extends StatefulWidget {
@@ -291,31 +293,28 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
 
       // Show success
       if (mounted) {
-        showDialog(
+        final earned = _currentAd!.coinReward;
+        await AppModalPopup.show<void>(
           context: context,
           barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Text('Success!'),
-            content: Text('You earned ${_currentAd!.coinReward} coins!'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  setState(() {
-                    _currentAd = null;
-                    _watchSession = null;
-                    _isPaused = false;
-                    _isMuted = false;
-                    _pauseCount = 0;
-                    _totalPauseDuration = 0;
-                  });
-                  _loadAds(); // Reload to update available ads
-                },
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
+          builder: (dialogContext, close) {
+            return ViewRewardPopupCard(
+              amount: earned,
+              subtitle: 'You earned $earned coins by watching an ad',
+              onOk: close,
+            );
+          },
         );
+        if (!mounted) return;
+        setState(() {
+          _currentAd = null;
+          _watchSession = null;
+          _isPaused = false;
+          _isMuted = false;
+          _pauseCount = 0;
+          _totalPauseDuration = 0;
+        });
+        _loadAds(); // Reload to update available ads
       }
     } else {
       _handleAdAbandoned('Failed to credit coins');

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
 import '../utils/current_user.dart';
+import '../widgets/app_popups/popup_visibility_controller.dart';
 import 'ads_page_screen.dart';
 
 class AdDetailScreen extends StatefulWidget {
@@ -15,7 +16,7 @@ class AdDetailScreen extends StatefulWidget {
 
 class _AdDetailScreenState extends State<AdDetailScreen> {
   final AdsService _adsService = AdsService();
-  final ValueNotifier<bool> _viewPopupVisible = ValueNotifier<bool>(false);
+  final PopupVisibilityController _popupVisibility = PopupVisibilityController();
   Ad? _ad;
   bool _loading = true;
   bool _viewRecorded = false;
@@ -28,7 +29,7 @@ class _AdDetailScreenState extends State<AdDetailScreen> {
 
   @override
   void dispose() {
-    _viewPopupVisible.dispose();
+    _popupVisibility.dispose();
     super.dispose();
   }
 
@@ -124,7 +125,7 @@ class _AdDetailScreenState extends State<AdDetailScreen> {
                   ad: _ad!,
                   isActive: true,
                   bottomInset: bottomSystemInset,
-                  viewPopupVisibleListenable: _viewPopupVisible,
+                  popupVisibility: _popupVisibility,
                   onCompletedView: _recordView,
                   onOpenComments: _openComments,
                   onAutoNext: () {},
