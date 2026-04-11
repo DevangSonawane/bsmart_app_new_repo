@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import 'dart:typed_data';
@@ -73,6 +74,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   late UploadMode _mode;
   _GallerySource _source = _GallerySource.recents;
   bool _showSourceMenu = false;
+  bool _isPreparingNext = false;
+  final Map<String, Future<File?>> _assetFileFutures = {};
   final GlobalKey _sourceBarKey = GlobalKey();
   Offset _sourceMenuPosition = const Offset(16, 328);
   final Map<UploadMode, _GalleryCache> _cache = {};
@@ -117,6 +120,42 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       galleryPermissionDenied: _galleryPermissionDenied,
       galleryPermissionLimited: _galleryPermissionLimited,
     );
+  }
+
+  void _prefetchAssetFile(AssetEntity? asset) {
+    if (asset == null) return;
+    _assetFileFutures.putIfAbsent(asset.id, () => _resolveAssetFile(asset));
+  }
+
+  Future<File?> _resolveAssetFile(AssetEntity asset) async {
+    // `originFile` can trigger an iCloud download and block for a long time.
+    // Prefer it only if it resolves quickly; otherwise fall back to `file`
+    // so the UI can move to the next screen faster.
+    final fileFuture = asset.file;
+
+    try {
+      final origin = await asset.originFile.timeout(
+        const Duration(milliseconds: 450),
+      );
+      if (origin != null) return origin;
+    } on TimeoutException {
+      // fall back
+    } catch (_) {
+      // fall back
+    }
+
+    try {
+      final f = await fileFuture;
+      if (f != null) return f;
+    } catch (_) {
+      // ignore
+    }
+
+    try {
+      return await asset.originFile;
+    } catch (_) {
+      return null;
+    }
   }
 
   bool _restoreFromCache(UploadMode mode) {
@@ -352,6 +391,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         }
       }
     });
+    _prefetchAssetFile(_currentAsset);
     _saveCache();
   }
 
@@ -409,6 +449,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           _currentAsset ??= asset;
         }
       });
+      _prefetchAssetFile(asset);
       _saveCache();
       return;
     }
@@ -432,102 +473,134 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           ..add(asset.id);
       }
     });
+    _prefetchAssetFile(asset);
     _saveCache();
   }
 
   Future<void> _handleNext() async {
+    if (_isPreparingNext) return;
     if (_assets.isEmpty && _currentAsset == null) return;
-    final selectedAssets = _selectedOrder.isNotEmpty
-        ? _selectedOrder
-            .map((id) => _assets.where((a) => a.id == id).toList())
-            .expand((e) => e)
-            .toList()
-        : (_selectedIds.isNotEmpty
-            ? _assets.where((a) => _selectedIds.contains(a.id)).toList()
-            : <AssetEntity>[]);
-    final primaryAsset =
-        _currentAsset ?? (_assets.isNotEmpty ? _assets.first : null);
-    if (selectedAssets.isEmpty && primaryAsset != null) {
-      selectedAssets.add(primaryAsset);
-    }
-    if (selectedAssets.isEmpty) return;
+    setState(() => _isPreparingNext = true);
+    // Yield a frame so the loading overlay can render immediately.
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    try {
+      final assetById = <String, AssetEntity>{
+        for (final a in _assets) a.id: a,
+      };
 
-    final mediaList = <MediaItem>[];
-    for (final asset in selectedAssets) {
-      final file = await asset.originFile;
-      if (file == null) continue;
-      final pathLower = file.path.toLowerCase();
-      final isVideo = asset.type == AssetType.video ||
-          (asset.mimeType?.toLowerCase().startsWith('video/') ?? false) ||
-          pathLower.endsWith('.mp4') ||
-          pathLower.endsWith('.mov') ||
-          pathLower.endsWith('.m4v') ||
-          pathLower.endsWith('.3gp') ||
-          pathLower.endsWith('.webm') ||
-          pathLower.endsWith('.mkv');
-      final media = MediaItem(
-        id: asset.id,
-        type: isVideo ? MediaType.video : MediaType.image,
-        filePath: file.path,
-        createdAt: asset.createDateTime,
-        duration: isVideo ? Duration(seconds: asset.duration) : null,
+      final selectedAssets = _selectedOrder.isNotEmpty
+          ? _selectedOrder
+              .map((id) => assetById[id])
+              .whereType<AssetEntity>()
+              .toList()
+          : (_selectedIds.isNotEmpty
+              ? _assets.where((a) => _selectedIds.contains(a.id)).toList()
+              : <AssetEntity>[]);
+
+      final primaryAsset =
+          _currentAsset ?? (_assets.isNotEmpty ? _assets.first : null);
+      if (selectedAssets.isEmpty && primaryAsset != null) {
+        selectedAssets.add(primaryAsset);
+      }
+      if (selectedAssets.isEmpty) return;
+
+      final mediaResults = await Future.wait<MediaItem?>(
+        selectedAssets.map((asset) async {
+          try {
+            final file = await _assetFileFutures.putIfAbsent(
+              asset.id,
+              () => _resolveAssetFile(asset),
+            );
+            if (file == null) return null;
+            final pathLower = file.path.toLowerCase();
+            final isVideo = asset.type == AssetType.video ||
+                (asset.mimeType?.toLowerCase().startsWith('video/') ?? false) ||
+                pathLower.endsWith('.mp4') ||
+                pathLower.endsWith('.mov') ||
+                pathLower.endsWith('.m4v') ||
+                pathLower.endsWith('.3gp') ||
+                pathLower.endsWith('.webm') ||
+                pathLower.endsWith('.mkv');
+            return MediaItem(
+              id: asset.id,
+              type: isVideo ? MediaType.video : MediaType.image,
+              filePath: file.path,
+              createdAt: asset.createDateTime,
+              duration: isVideo ? Duration(seconds: asset.duration) : null,
+            );
+          } catch (_) {
+            return null;
+          }
+        }),
       );
-      if (!_createService.validateMedia(media)) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Video must be 60 seconds or less')),
-          );
+
+      final mediaList = mediaResults.whereType<MediaItem>().toList();
+      if (mediaList.isEmpty) return;
+
+      for (final media in mediaList) {
+        if (!_createService.validateMedia(media)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Video must be 60 seconds or less')),
+            );
+          }
+          return;
         }
+      }
+
+      final media = mediaList.first;
+      if (!mounted) return;
+      if (widget.isAdFlow) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => AdvertiserCreateAdScreen(
+              initialContentType: _mode == UploadMode.reel ? 'reel' : 'post',
+              initialMediaPath: media.filePath!,
+              initialMediaIsVideo: media.type == MediaType.video,
+            ),
+          ),
+        );
         return;
       }
-      mediaList.add(media);
-    }
-    if (mediaList.isEmpty) return;
-
-    final media = mediaList.first;
-    if (!mounted) return;
-    if (widget.isAdFlow) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => AdvertiserCreateAdScreen(
-            initialContentType: _mode == UploadMode.reel ? 'reel' : 'post',
-            initialMediaPath: media.filePath!,
-            initialMediaIsVideo: media.type == MediaType.video,
+      final shouldGoReelFlow = _mode == UploadMode.reel ||
+          (!widget.isAdFlow &&
+              _mode == UploadMode.post &&
+              mediaList.length == 1 &&
+              media.type == MediaType.video);
+      if (shouldGoReelFlow) {
+        final created = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (context) => CreateEditPreviewScreen(
+              media: media,
+              isReelFlow: true,
+            ),
           ),
-        ),
-      );
-      return;
-    }
-    final shouldGoReelFlow = _mode == UploadMode.reel ||
-        (!widget.isAdFlow &&
-            _mode == UploadMode.post &&
-            mediaList.length == 1 &&
-            media.type == MediaType.video);
-    if (shouldGoReelFlow) {
-      final created = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (context) => CreateEditPreviewScreen(
-            media: media,
-            isReelFlow: true,
+        );
+        if (created == true && mounted) {
+          Navigator.of(context).pop(true);
+        }
+      } else {
+        final created = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (context) => CreateEditPreviewScreen(
+              media: mediaList.first,
+              mediaList: mediaList,
+              isPostFlow: true,
+            ),
           ),
-        ),
-      );
-      if (created == true && mounted) {
-        Navigator.of(context).pop(true);
+        );
+        if (created == true && mounted) {
+          Navigator.of(context).pop(true);
+        }
       }
-    } else {
-      final created = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (context) => CreateEditPreviewScreen(
-            media: mediaList.first,
-            mediaList: mediaList,
-            isPostFlow: true,
-          ),
-        ),
-      );
-      if (created == true && mounted) {
-        Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to continue: $e')),
+        );
       }
+    } finally {
+      if (mounted) setState(() => _isPreparingNext = false);
     }
   }
 
@@ -613,7 +686,9 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
               actions: [
                 if (_mode != UploadMode.reel)
                   TextButton(
-                    onPressed: _hasSelection ? _handleNext : null,
+                    onPressed: (_hasSelection && !_isPreparingNext)
+                        ? _handleNext
+                        : null,
                     child: Text(
                       'Next',
                       style: TextStyle(
@@ -712,7 +787,9 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                             ),
                           ),
                         ),
-                        onNext: _hasSelection ? _handleNext : null,
+                        onNext: (_hasSelection && !_isPreparingNext)
+                            ? _handleNext
+                            : null,
                         onClearSelection: () {
                           setState(() {
                             _selectedIds.clear();
@@ -783,6 +860,35 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+              ),
+            ),
+          if (_isPreparingNext)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.55),
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'Preparing…',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

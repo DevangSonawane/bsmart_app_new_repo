@@ -43,7 +43,10 @@ class MediaAspectCache {
   }
 
   double _clamp(double raw) {
-    const minPortrait = 0.8; // 4:5
+    // Allow reel/story portrait aspect ratios (9:16) without forcing 4:5.
+    // The previous 4:5 clamp caused portrait video thumbnails to be laid out
+    // with the wrong aspect ratio, resulting in cropping/blur when scaled.
+    const minPortrait = 9 / 16; // 0.5625
     const maxLandscape = 1.91; // 1.91:1
     if (raw.isNaN || raw <= 0) return 1.0;
     return raw.clamp(minPortrait, maxLandscape);

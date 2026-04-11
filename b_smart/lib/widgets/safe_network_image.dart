@@ -17,6 +17,7 @@ class SafeNetworkImage extends StatelessWidget {
   final String url;
   final Map<String, String>? headers;
   final BoxFit fit;
+  final FilterQuality filterQuality;
   final double? width;
   final double? height;
   final Widget? placeholder;
@@ -29,6 +30,7 @@ class SafeNetworkImage extends StatelessWidget {
     required this.url,
     this.headers,
     this.fit = BoxFit.cover,
+    this.filterQuality = FilterQuality.medium,
     this.width,
     this.height,
     this.placeholder,
@@ -108,6 +110,14 @@ class SafeNetworkImage extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
+      imageBuilder: (context, imageProvider) => Image(
+        image: imageProvider,
+        width: width,
+        height: height,
+        fit: fit,
+        filterQuality: filterQuality,
+        gaplessPlayback: true,
+      ),
       placeholder: (_, __) => _placeholder(),
       errorWidget: (_, __, error) {
         assert(() {

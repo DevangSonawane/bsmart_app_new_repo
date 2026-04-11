@@ -9,7 +9,7 @@ import 'package:photo_manager/photo_manager.dart';
 import '../models/media_model.dart';
 import '../services/supabase_service.dart';
 import '../api/upload_api.dart';
-import '../api/posts_api.dart';
+import '../api/reels_api.dart';
 import '../api/users_api.dart';
 import '../config/api_config.dart';
 import '../utils/current_user.dart';
@@ -33,7 +33,8 @@ class CreateReelDetailsScreen extends StatefulWidget {
   });
 
   @override
-  State<CreateReelDetailsScreen> createState() => _CreateReelDetailsScreenState();
+  State<CreateReelDetailsScreen> createState() =>
+      _CreateReelDetailsScreenState();
 }
 
 class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
@@ -50,7 +51,11 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   Map<String, dynamic>? _currentUserProfile;
   final List<Map<String, dynamic>> _peopleTags = [];
   String? _draggingTagId;
-  String? _selectedThumbnailPath; // User-selected thumbnail
+  String? _selectedThumbnailPath; // User-selected thumbnail (gallery)
+  Uint8List?
+      _selectedThumbnailBytes; // User-selected or frame-picked thumbnail (bytes)
+  double?
+      _selectedThumbnailTimeSec; // For API parity with React (video_meta.thumbnail_time)
 
   VideoPlayerController? _videoController;
   Future<void>? _videoInit;
@@ -101,15 +106,17 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   Future<void> _pickCustomThumbnail() async {
     final PermissionState ps = await PhotoManager.requestPermissionExtend();
     if (!ps.isAuth) return;
-    
+
     final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
       type: RequestType.image,
       filterOption: FilterOptionGroup(
-        orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+        orders: [
+          const OrderOption(type: OrderOptionType.createDate, asc: false)
+        ],
       ),
     );
     if (paths.isEmpty) return;
-    
+
     // Simple picker using modal bottom sheet
     if (!mounted) return;
     final AssetEntity? selected = await showModalBottomSheet<AssetEntity>(
@@ -118,15 +125,56 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       backgroundColor: Colors.black,
       builder: (ctx) => _ThumbnailPickerSheet(assetsPath: paths.first),
     );
-    
+
     if (selected != null) {
       final file = await selected.file;
       if (file != null) {
+        Uint8List? bytes;
+        try {
+          bytes = await file.readAsBytes();
+        } catch (_) {
+          bytes = null;
+        }
         setState(() {
           _selectedThumbnailPath = file.path;
+          _selectedThumbnailBytes = bytes;
+          _selectedThumbnailTimeSec = 0;
         });
       }
     }
+  }
+
+  Future<void> _pickThumbnailFromVideoFrame() async {
+    final videoPath = widget.media.filePath;
+    final controller = _videoController;
+    if (widget.media.type != MediaType.video ||
+        videoPath == null ||
+        controller == null) return;
+
+    if (controller.value.isInitialized != true) {
+      try {
+        await _videoInit;
+      } catch (_) {}
+    }
+    if (controller.value.isInitialized != true) return;
+
+    final picked = await showModalBottomSheet<_PickedVideoFrame>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black,
+      builder: (ctx) => _VideoFramePickerSheet(
+        controller: controller,
+        videoPath: videoPath,
+        initialMs: controller.value.position.inMilliseconds,
+      ),
+    );
+
+    if (!mounted || picked == null) return;
+    setState(() {
+      _selectedThumbnailBytes = picked.bytes;
+      _selectedThumbnailTimeSec = picked.timeSec;
+      _selectedThumbnailPath = null;
+    });
   }
 
   Future<Map<String, dynamic>?> _uploadThumbnailForVideo({
@@ -135,45 +183,50 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
     required int endMs,
   }) async {
     try {
-      Uint8List? bytes;
-      
-      // 1. Use user-selected thumbnail if available
-      if (_selectedThumbnailPath != null) {
+      Uint8List? bytes = _selectedThumbnailBytes;
+      double thumbnailTimeSec = (_selectedThumbnailTimeSec ?? 0).toDouble();
+
+      // 1) Try gallery-selected thumbnail file if bytes are missing.
+      if ((bytes == null || bytes.isEmpty) && _selectedThumbnailPath != null) {
         final file = File(_selectedThumbnailPath!);
         if (await file.exists()) {
           bytes = await file.readAsBytes();
+          thumbnailTimeSec = 0;
         }
       }
-      
-      // 2. Fallback to generating from video
-      if (bytes == null) {
-        final durationMs = endMs > startMs ? endMs - startMs : (endMs > 0 ? endMs : startMs);
-        final midOffset = durationMs > 0 ? durationMs ~/ 2 : 0;
-        final captureMs = startMs + midOffset;
+
+      // 2) Fallback: generate from video mid-point of selected window (React parity: a deterministic frame).
+      if (bytes == null || bytes.isEmpty) {
+        final windowMs = endMs > startMs ? (endMs - startMs) : 0;
+        final captureMs = startMs + (windowMs > 0 ? (windowMs ~/ 2) : 0);
         bytes = await VideoThumbnail.thumbnailData(
           video: videoPath,
           imageFormat: ImageFormat.JPEG,
           timeMs: captureMs,
           quality: 85,
         );
+        thumbnailTimeSec = captureMs / 1000.0;
       }
-      
+
       if (bytes == null || bytes.isEmpty) return null;
-      
+
       final filename = 'thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final res = await UploadApi().uploadThumbnailBytes(bytes: bytes, filename: filename);
+      final res = await UploadApi()
+          .uploadThumbnailBytes(bytes: bytes, filename: filename);
       final rawThumbs = res['thumbnails'];
       if (rawThumbs == null) return null;
       List<Map<String, dynamic>>? thumbs;
       if (rawThumbs is List) {
-        thumbs = rawThumbs.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        thumbs =
+            rawThumbs.map((e) => Map<String, dynamic>.from(e as Map)).toList();
       } else if (rawThumbs is Map) {
         thumbs = [Map<String, dynamic>.from(rawThumbs)];
       }
       if (thumbs == null || thumbs.isEmpty) return null;
       return {
-        'thumbs': thumbs,
-        'timeMs': 0, // Should be actual time if auto-generated, but 0 is fine for custom
+        // React web uses `thumbnails` on the media object and `video_meta.thumbnail_time`.
+        'thumbnails': thumbs,
+        'thumbnailTimeSec': thumbnailTimeSec,
       };
     } catch (_) {
       return null;
@@ -224,13 +277,18 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       }
       final bytes = await file.readAsBytes();
       final ext = filePath.split('.').last;
-      final filename = '$userId/${DateTime.now().millisecondsSinceEpoch}_reel.$ext';
-      final uploaded = await UploadApi().uploadFileBytes(bytes: bytes, filename: filename);
-      final serverFileName = (uploaded['fileName'] ?? uploaded['filename'] ?? filename).toString();
-      String? fileUrl = uploaded['fileUrl']?.toString();
+      final filename =
+          '$userId/${DateTime.now().millisecondsSinceEpoch}_reel.$ext';
+      final uploaded =
+          await UploadApi().uploadFileBytes(bytes: bytes, filename: filename);
+      final serverFileName =
+          (uploaded['fileName'] ?? uploaded['filename'] ?? filename).toString();
+      String? fileUrl = (uploaded['url'] ?? uploaded['fileUrl'])?.toString();
+
       if (fileUrl != null && fileUrl.isNotEmpty) {
         fileUrl = fileUrl.replaceAll('\\', '/');
-        final isAbs = fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
+        final isAbs =
+            fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
         if (!isAbs) {
           final base = ApiConfig.baseUrl;
           final baseUri = Uri.parse(base);
@@ -258,16 +316,23 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         }
       }
 
-      // Build media payload matching web client's reel structure as closely as possible.
-      final Duration videoDuration =
-          widget.media.duration ?? widget.trimEnd ?? const Duration(seconds: 0);
+      // React web creates reels via `POST /api/posts/reels` and uses a specific media schema.
+      final Duration videoDuration = widget.media.duration ??
+          _videoController?.value.duration ??
+          widget.trimEnd ??
+          Duration.zero;
       final Duration start = widget.trimStart ?? Duration.zero;
-      final Duration end =
-          widget.trimEnd != null && widget.trimEnd! > start ? widget.trimEnd! : videoDuration;
+      final Duration end = widget.trimEnd != null && widget.trimEnd! > start
+          ? widget.trimEnd!
+          : videoDuration;
+
       final int startMs = start.inMilliseconds;
       final int endMs = end.inMilliseconds;
-      final int totalMs = videoDuration.inMilliseconds;
-      final int finalLenMs = endMs > startMs ? (endMs - startMs) : totalMs;
+      final double durationSec = videoDuration.inMilliseconds / 1000.0;
+      final double startSec = startMs / 1000.0;
+      final double endSec = endMs / 1000.0;
+      final double finalDurationSec =
+          (endMs > startMs) ? ((endMs - startMs) / 1000.0) : durationSec;
 
       final thumbMeta = await _uploadThumbnailForVideo(
         videoPath: filePath,
@@ -275,41 +340,59 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         endMs: endMs,
       );
 
+      final uploadedThumbs = thumbMeta?['thumbnails'];
+      final double thumbnailTimeSec = (thumbMeta?['thumbnailTimeSec'] is num)
+          ? (thumbMeta?['thumbnailTimeSec'] as num).toDouble()
+          : 0.0;
+
       final mediaItem = <String, dynamic>{
         'fileName': serverFileName,
-        'type': 'video',
         if (fileUrl != null && fileUrl.isNotEmpty) 'fileUrl': fileUrl,
-        // Timing information (ms, mirroring JS payload which uses numeric values)
-        'timing': {
-          'start': startMs,
-          'end': endMs,
+        if (fileUrl != null && fileUrl.isNotEmpty) 'url': fileUrl,
+        'media_type': 'video',
+        'video_meta': <String, dynamic>{
+          'original_length_seconds': durationSec,
+          'selected_start': startSec,
+          'selected_end': endSec,
+          'final_duration': finalDurationSec,
+          'thumbnail_time': thumbnailTimeSec,
         },
-        'videoLength': totalMs,
-        'totalLenght': totalMs,
-        'finalLength-start': startMs,
-        'finallength-end': endMs,
-        'finalLength': finalLenMs,
-        'finallength': finalLenMs,
-        if (thumbMeta != null && thumbMeta['thumbs'] != null) 'thumbnail': thumbMeta['thumbs'],
-        if (thumbMeta != null && thumbMeta['timeMs'] != null) 'thumbail-time': thumbMeta['timeMs'],
-        'soundOn': _soundOn,
-        'isMuted': !_soundOn,
-        'volume': 1.0,
-        if (widget.selectedMusic != null) 'musicId': widget.selectedMusic,
-        if (widget.selectedMusic != null) 'musicVolume': widget.musicVolume,
+        'timing_window': <String, dynamic>{
+          'start': startSec,
+          'end': endSec,
+        },
+        if (uploadedThumbs != null) 'thumbnails': uploadedThumbs,
+        'crop_settings': <String, dynamic>{
+          'mode': 'original',
+          'aspect_ratio': 'original',
+          'zoom': 1,
+          'x': 0,
+          'y': 0,
+        },
       };
 
       // Extract hashtags
       final captionText = _captionCtl.text.trim();
-      final tags = RegExp(r'#(\w+)').allMatches(captionText).map((m) => m.group(0)!).toList();
+      final tags = RegExp(r'#(\w+)')
+          .allMatches(captionText)
+          .map((m) => m.group(0)!)
+          .toList();
 
-      await PostsApi().createPost(
+      final peopleTags = _peopleTags
+          .map((t) => <String, dynamic>{
+                'user_id': t['user_id'],
+                'username': t['username'],
+                'x': t['x'],
+                'y': t['y'],
+              })
+          .toList();
+
+      await ReelsApi().createReel(
         media: [mediaItem],
         caption: captionText.isEmpty ? null : captionText,
         location: _location.isEmpty ? null : _location,
         tags: tags,
-        type: 'reel',
-        peopleTags: _peopleTags,
+        peopleTags: peopleTags,
         hideLikesCount: _hideLikes,
         turnOffCommenting: _turnOffCommenting,
       );
@@ -357,12 +440,14 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   }
 
   Widget _buildThumbnailSection() {
+    final hasCustomThumb = _selectedThumbnailBytes != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text('Cover', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          child: Text('Cover',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ),
         SizedBox(
           height: 120,
@@ -370,9 +455,11 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
-              // Current selection preview
+              // Current selection preview (tap to pick a frame if video, else upload)
               GestureDetector(
-                onTap: _pickCustomThumbnail,
+                onTap: widget.media.type == MediaType.video
+                    ? _pickThumbnailFromVideoFrame
+                    : _pickCustomThumbnail,
                 child: Container(
                   width: 80,
                   height: 120,
@@ -380,18 +467,22 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.grey.shade300),
                     borderRadius: BorderRadius.circular(8),
-                    image: _selectedThumbnailPath != null
+                    image: hasCustomThumb
                         ? DecorationImage(
-                            image: FileImage(File(_selectedThumbnailPath!)),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
+                            image: MemoryImage(_selectedThumbnailBytes!),
+                            fit: BoxFit.cover)
+                        : (_selectedThumbnailPath != null
+                            ? DecorationImage(
+                                image: FileImage(File(_selectedThumbnailPath!)),
+                                fit: BoxFit.cover)
+                            : null),
                   ),
-                  child: _selectedThumbnailPath == null
+                  child: (!hasCustomThumb && _selectedThumbnailPath == null)
                       ? Stack(
                           fit: StackFit.expand,
                           children: [
-                            if (_videoController != null && _videoController!.value.isInitialized)
+                            if (_videoController != null &&
+                                _videoController!.value.isInitialized)
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(7),
                                 child: FittedBox(
@@ -404,7 +495,9 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                                 ),
                               )
                             else
-                              const Center(child: Icon(LucideIcons.image, color: Colors.grey)),
+                              const Center(
+                                  child: Icon(LucideIcons.image,
+                                      color: Colors.grey)),
                             Container(
                               color: Colors.black26,
                               child: const Center(
@@ -416,6 +509,32 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                       : null,
                 ),
               ),
+              // Option to pick a frame from the video
+              if (widget.media.type == MediaType.video)
+                GestureDetector(
+                  onTap: _pickThumbnailFromVideoFrame,
+                  child: Container(
+                    width: 80,
+                    height: 120,
+                    margin: const EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.movie_filter_outlined,
+                            color: Colors.black54),
+                        SizedBox(height: 4),
+                        Text('Frames',
+                            style:
+                                TextStyle(fontSize: 12, color: Colors.black54)),
+                      ],
+                    ),
+                  ),
+                ),
               // Option to pick from gallery
               GestureDetector(
                 onTap: _pickCustomThumbnail,
@@ -430,9 +549,12 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                   child: const Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.add_photo_alternate_outlined, color: Colors.black54),
+                      Icon(Icons.add_photo_alternate_outlined,
+                          color: Colors.black54),
                       SizedBox(height: 4),
-                      Text('Upload', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                      Text('Upload',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.black54)),
                     ],
                   ),
                 ),
@@ -458,7 +580,9 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Share', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                : const Text('Share',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: Colors.blue)),
           ),
         ],
       ),
@@ -479,7 +603,8 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                       color: Colors.black,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: _videoController != null && _videoController!.value.isInitialized
+                    child: _videoController != null &&
+                            _videoController!.value.isInitialized
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(8),
                             child: FittedBox(
@@ -491,7 +616,9 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                               ),
                             ),
                           )
-                        : const Center(child: CircularProgressIndicator(color: Colors.white)),
+                        : const Center(
+                            child:
+                                CircularProgressIndicator(color: Colors.white)),
                   ),
                   const SizedBox(width: 16),
                   // Caption Input
@@ -508,10 +635,10 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                 ],
               ),
             ),
-            
+
             _buildThumbnailSection(),
             const Divider(height: 32),
-            
+
             // ... (rest of the settings: Tag People, Location, etc.)
             ListTile(
               leading: const Icon(LucideIcons.userPlus),
@@ -540,9 +667,12 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Advanced Settings',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w500)),
                       Icon(
-                        _advancedOpen ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                        _advancedOpen
+                            ? LucideIcons.chevronUp
+                            : LucideIcons.chevronDown,
                         color: Colors.grey[600],
                         size: 20,
                       ),
@@ -553,7 +683,8 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
             ),
             if (_advancedOpen) ...[
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Column(
                   children: [
                     Row(
@@ -574,7 +705,8 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                         ),
                         Switch(
                           value: _turnOffCommenting,
-                          onChanged: (v) => setState(() => _turnOffCommenting = v),
+                          onChanged: (v) =>
+                              setState(() => _turnOffCommenting = v),
                         ),
                       ],
                     ),
@@ -626,7 +758,8 @@ class _ThumbnailPickerSheetState extends State<_ThumbnailPickerSheet> {
       child: Column(
         children: [
           AppBar(
-            title: const Text('Select Cover', style: TextStyle(color: Colors.black)),
+            title: const Text('Select Cover',
+                style: TextStyle(color: Colors.black)),
             backgroundColor: Colors.white,
             elevation: 0,
             leading: IconButton(
@@ -638,7 +771,8 @@ class _ThumbnailPickerSheetState extends State<_ThumbnailPickerSheet> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
                       crossAxisSpacing: 1,
                       mainAxisSpacing: 1,
@@ -649,10 +783,12 @@ class _ThumbnailPickerSheetState extends State<_ThumbnailPickerSheet> {
                       return GestureDetector(
                         onTap: () => Navigator.pop(context, asset),
                         child: FutureBuilder<Uint8List?>(
-                          future: asset.thumbnailDataWithSize(const ThumbnailSize(200, 200)),
+                          future: asset.thumbnailDataWithSize(
+                              const ThumbnailSize(200, 200)),
                           builder: (context, snapshot) {
                             if (snapshot.hasData) {
-                              return Image.memory(snapshot.data!, fit: BoxFit.cover);
+                              return Image.memory(snapshot.data!,
+                                  fit: BoxFit.cover);
                             }
                             return Container(color: Colors.grey[300]);
                           },
@@ -662,6 +798,166 @@ class _ThumbnailPickerSheetState extends State<_ThumbnailPickerSheet> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PickedVideoFrame {
+  final Uint8List bytes;
+  final double timeSec;
+  const _PickedVideoFrame({required this.bytes, required this.timeSec});
+}
+
+class _VideoFramePickerSheet extends StatefulWidget {
+  final VideoPlayerController controller;
+  final String videoPath;
+  final int initialMs;
+
+  const _VideoFramePickerSheet({
+    required this.controller,
+    required this.videoPath,
+    required this.initialMs,
+  });
+
+  @override
+  State<_VideoFramePickerSheet> createState() => _VideoFramePickerSheetState();
+}
+
+class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
+  late double _posMs;
+  bool _seeking = false;
+
+  int get _durationMs {
+    final d = widget.controller.value.duration.inMilliseconds;
+    return d <= 0 ? 1 : d;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _posMs = widget.initialMs.clamp(0, _durationMs).toDouble();
+    try {
+      widget.controller.pause();
+    } catch (_) {}
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await widget.controller.seekTo(Duration(milliseconds: _posMs.toInt()));
+      } catch (_) {}
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    try {
+      widget.controller.play();
+    } catch (_) {}
+    super.dispose();
+  }
+
+  Future<void> _seekTo(double ms) async {
+    if (_seeking) return;
+    setState(() => _seeking = true);
+    try {
+      await widget.controller.seekTo(Duration(milliseconds: ms.toInt()));
+    } catch (_) {}
+    if (mounted) setState(() => _seeking = false);
+  }
+
+  Future<void> _useThisFrame() async {
+    final ms = _posMs.toInt();
+    final bytes = await VideoThumbnail.thumbnailData(
+      video: widget.videoPath,
+      imageFormat: ImageFormat.JPEG,
+      timeMs: ms,
+      quality: 85,
+    );
+    if (!mounted) return;
+    if (bytes == null || bytes.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
+    Navigator.pop(
+      context,
+      _PickedVideoFrame(bytes: bytes, timeSec: ms / 1000.0),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.controller;
+    return SafeArea(
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.8,
+        color: Colors.black,
+        child: Column(
+          children: [
+            AppBar(
+              title: const Text('Select Frame',
+                  style: TextStyle(color: Colors.white)),
+              backgroundColor: Colors.black,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _useThisFrame,
+                  child: const Text('Use',
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            Expanded(
+              child: Center(
+                child: c.value.isInitialized
+                    ? AspectRatio(
+                        aspectRatio: c.value.aspectRatio == 0
+                            ? (9 / 16)
+                            : c.value.aspectRatio,
+                        child: VideoPlayer(c),
+                      )
+                    : const CircularProgressIndicator(),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text('Frame',
+                          style: TextStyle(color: Colors.white70)),
+                      const Spacer(),
+                      Text(
+                        '${(_posMs / 1000.0).toStringAsFixed(2)}s',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    min: 0,
+                    max: _durationMs.toDouble(),
+                    value: _posMs.clamp(0, _durationMs.toDouble()),
+                    onChanged: (v) => setState(() => _posMs = v),
+                    onChangeEnd: (v) => _seekTo(v),
+                  ),
+                  if (_seeking)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text('Seeking…',
+                          style:
+                              TextStyle(color: Colors.white54, fontSize: 12)),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -769,14 +1065,16 @@ class _TagSearchSheetState extends State<_TagSearchSheet> {
                         itemBuilder: (context, index) {
                           final user = _results[index];
                           final avatar = user['avatar_url'] as String?;
-                          final username = (user['username'] as String?) ?? 'User';
+                          final username =
+                              (user['username'] as String?) ?? 'User';
                           final fullName = (user['full_name'] as String?) ?? '';
                           return ListTile(
                             leading: CircleAvatar(
                               backgroundColor: Colors.grey[200],
-                              backgroundImage: avatar != null && avatar.isNotEmpty
-                                  ? NetworkImage(avatar)
-                                  : null,
+                              backgroundImage:
+                                  avatar != null && avatar.isNotEmpty
+                                      ? NetworkImage(avatar)
+                                      : null,
                               child: (avatar == null || avatar.isEmpty)
                                   ? Text(
                                       username.substring(0, 1).toUpperCase(),
@@ -787,7 +1085,8 @@ class _TagSearchSheetState extends State<_TagSearchSheet> {
                                   : null,
                             ),
                             title: Text(username),
-                            subtitle: fullName.isNotEmpty ? Text(fullName) : null,
+                            subtitle:
+                                fullName.isNotEmpty ? Text(fullName) : null,
                             onTap: () => widget.onSelect(user),
                           );
                         },

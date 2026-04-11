@@ -445,6 +445,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   ImageProvider? _cachedTextEditorBackground;
   double? _imageAspectRatio;
   Size? _imagePixelSize;
+  Completer<Size>? _imagePixelSizeCompleter;
   double? _postFixedAspect;
   double? _autoPostAspect;
   ImageStream? _imageStream;
@@ -456,6 +457,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   final GlobalKey _previewRepaintKey = GlobalKey();
   Key _imageKey = const ValueKey('img_0_0');
   Size? _postViewportSize;
+  bool _isProceedingToNext = false;
+  Size? _lastCompositePixelSize;
   late final AnimationController _trashAnimController;
   late final Animation<double> _trashScaleAnim;
   Map<String, int> _imageAdjustments = <String, int>{
@@ -1110,10 +1113,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       final provider = FileImage(File(_currentMedia.filePath!));
       final stream = provider.resolve(const ImageConfiguration());
       _imageStream = stream;
+      _imagePixelSizeCompleter = Completer<Size>();
       _imageStreamListener = ImageStreamListener((info, _) {
         final w = info.image.width.toDouble();
         final h = info.image.height.toDouble();
         if (!mounted || h == 0) return;
+        if (_imagePixelSizeCompleter != null &&
+            !_imagePixelSizeCompleter!.isCompleted) {
+          _imagePixelSizeCompleter!.complete(Size(w, h));
+        }
         setState(() {
           _imageAspectRatio = w / h;
           _imagePixelSize = Size(w, h);
@@ -1164,6 +1172,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     _imageStreamListener = null;
     _imageAspectRatio = null;
     _imagePixelSize = null;
+    _imagePixelSizeCompleter = null;
 
     setState(() {
       _currentIndex = index;
@@ -1186,10 +1195,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       final provider = FileImage(File(media.filePath!));
       final stream2 = provider.resolve(const ImageConfiguration());
       _imageStream = stream2;
+      _imagePixelSizeCompleter = Completer<Size>();
       _imageStreamListener = ImageStreamListener((info, _) {
         final w = info.image.width.toDouble();
         final h = info.image.height.toDouble();
         if (!mounted || h == 0) return;
+        if (_imagePixelSizeCompleter != null &&
+            !_imagePixelSizeCompleter!.isCompleted) {
+          _imagePixelSizeCompleter!.complete(Size(w, h));
+        }
         setState(() {
           _imageAspectRatio = w / h;
           _imagePixelSize = Size(w, h);
@@ -1197,6 +1211,18 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         });
       });
       stream2.addListener(_imageStreamListener!);
+    }
+  }
+
+  Future<Size?> _awaitCurrentImagePixelSize({
+    Duration timeout = const Duration(milliseconds: 800),
+  }) async {
+    final c = _imagePixelSizeCompleter;
+    if (c == null) return null;
+    try {
+      return await c.future.timeout(timeout);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -2207,229 +2233,258 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
 
   // ── Proceed to post details, passing trim values along
   Future<void> _proceedToPostDetails() async {
+    if (_isProceedingToNext) return;
+    if (mounted) {
+      setState(() {
+        _isProceedingToNext = true;
+      });
+      // Ensure the loading overlay is painted before heavy work begins.
+      await WidgetsBinding.instance.endOfFrame;
+    }
     final isVideo = _currentMedia.type == app_models.MediaType.video;
     final hasOverlays = _textOverlays.isNotEmpty || _stickerOverlays.isNotEmpty;
-    if (_videoController?.value.isInitialized == true) {
-      await _videoController?.pause();
-      if (mounted) {
-        setState(() => _isPlaying = false);
-      }
-    }
-
-    app_models.MediaItem nextMedia = _currentMedia;
-    double nextAspect = 1.0;
-    bool usedComposite = false;
-    final filePath = _currentMedia.filePath;
-    if (widget.isPostFlow && !isVideo && hasOverlays) {
-      final compositePath = await _exportPreviewCompositeToFile();
-      if (compositePath != null && compositePath.isNotEmpty) {
-        nextMedia = app_models.MediaItem(
-          id: _currentMedia.id,
-          type: _currentMedia.type,
-          filePath: compositePath,
-          thumbnailPath: _currentMedia.thumbnailPath,
-          duration: _currentMedia.duration,
-          createdAt: _currentMedia.createdAt,
-        );
-        final size = await _readImagePixelSizeFromFile(compositePath);
-        if (size != null) {
-          nextAspect = _clampInstagramPostAspect(size.width / size.height);
+    try {
+      if (_videoController?.value.isInitialized == true) {
+        await _videoController?.pause();
+        if (mounted) {
+          setState(() => _isPlaying = false);
         }
-        usedComposite = true;
       }
-    }
-    if (widget.isPostFlow && isVideo) {
-      final cover = _coverPathFor(_currentMedia);
-      if (cover != null && cover.isNotEmpty) {
-        nextMedia = app_models.MediaItem(
-          id: _currentMedia.id,
-          type: _currentMedia.type,
-          filePath: _currentMedia.filePath,
-          thumbnailPath: cover,
-          duration: _currentMedia.duration,
-          createdAt: _currentMedia.createdAt,
-        );
-      }
-    }
-    if (!usedComposite && !isVideo && filePath != null) {
-      final imagePx =
-          _imagePixelSize ?? await _readImagePixelSizeFromFile(filePath);
-      if (imagePx != null) {
-        Rect? cropRect;
-        final zoomState = _zoomPanState;
-        if (zoomState != null) {
-          final s = zoomState._scale;
-          final o = zoomState._offset;
-          final vW =
-              _postViewportSize?.width ?? MediaQuery.of(context).size.width;
-          final vH = _postViewportSize?.height ?? vW;
 
-          final left = (-o.dx / s).clamp(0.0, imagePx.width);
-          final top = (-o.dy / s).clamp(0.0, imagePx.height);
-          final right = ((vW - o.dx) / s).clamp(0.0, imagePx.width);
-          final bottom = ((vH - o.dy) / s).clamp(0.0, imagePx.height);
-
-          cropRect = Rect.fromLTRB(left, top, right, bottom);
-        }
-
-        if (cropRect != null) {
-          nextAspect =
-              _clampInstagramPostAspect(cropRect.width / cropRect.height);
-          final croppedPath = await _writeCroppedImageFile(
-            sourcePath: filePath,
-            cropRect: cropRect,
+      app_models.MediaItem nextMedia = _currentMedia;
+      double nextAspect = 1.0;
+      bool usedComposite = false;
+      final filePath = _currentMedia.filePath;
+      if (widget.isPostFlow && !isVideo && hasOverlays) {
+        final compositePath = await _exportPreviewCompositeToFile();
+        if (compositePath != null && compositePath.isNotEmpty) {
+          nextMedia = app_models.MediaItem(
+            id: _currentMedia.id,
+            type: _currentMedia.type,
+            filePath: compositePath,
+            thumbnailPath: _currentMedia.thumbnailPath,
+            duration: _currentMedia.duration,
+            createdAt: _currentMedia.createdAt,
           );
-          if (croppedPath != null && croppedPath.isNotEmpty) {
-            nextMedia = app_models.MediaItem(
-              id: _currentMedia.id,
-              type: _currentMedia.type,
-              filePath: croppedPath,
-              thumbnailPath: _currentMedia.thumbnailPath,
-              duration: _currentMedia.duration,
-              createdAt: _currentMedia.createdAt,
+          final size = _lastCompositePixelSize;
+          if (size != null && size.height != 0) {
+            nextAspect = _clampInstagramPostAspect(size.width / size.height);
+          }
+          usedComposite = true;
+        }
+      }
+      if (widget.isPostFlow && isVideo) {
+        final cover = _coverPathFor(_currentMedia);
+        if (cover != null && cover.isNotEmpty) {
+          nextMedia = app_models.MediaItem(
+            id: _currentMedia.id,
+            type: _currentMedia.type,
+            filePath: _currentMedia.filePath,
+            thumbnailPath: cover,
+            duration: _currentMedia.duration,
+            createdAt: _currentMedia.createdAt,
+          );
+        }
+      }
+      if (!usedComposite && !isVideo && filePath != null) {
+        final imagePx = _imagePixelSize ??
+            await _awaitCurrentImagePixelSize() ??
+            await _readImagePixelSizeFromFile(filePath);
+        if (imagePx != null) {
+          Rect? cropRect;
+          final zoomState = _zoomPanState;
+          if (zoomState != null) {
+            final s = zoomState._scale;
+            final o = zoomState._offset;
+            final vW =
+                _postViewportSize?.width ?? MediaQuery.of(context).size.width;
+            final vH = _postViewportSize?.height ?? vW;
+
+            final left = (-o.dx / s).clamp(0.0, imagePx.width);
+            final top = (-o.dy / s).clamp(0.0, imagePx.height);
+            final right = ((vW - o.dx) / s).clamp(0.0, imagePx.width);
+            final bottom = ((vH - o.dy) / s).clamp(0.0, imagePx.height);
+
+            cropRect = Rect.fromLTRB(left, top, right, bottom);
+          }
+
+          if (cropRect != null) {
+            nextAspect =
+                _clampInstagramPostAspect(cropRect.width / cropRect.height);
+            final croppedPath = await _writeCroppedImageFile(
+              sourcePath: filePath,
+              cropRect: cropRect,
             );
+            if (croppedPath != null && croppedPath.isNotEmpty) {
+              nextMedia = app_models.MediaItem(
+                id: _currentMedia.id,
+                type: _currentMedia.type,
+                filePath: croppedPath,
+                thumbnailPath: _currentMedia.thumbnailPath,
+                duration: _currentMedia.duration,
+                createdAt: _currentMedia.createdAt,
+              );
+            }
           }
         }
       }
-    }
 
-    if (!usedComposite && !isVideo && nextMedia.filePath != null) {
-      final hasFilter = _effectiveFilterIds(nextMedia).isNotEmpty;
-      final hasAdjustments =
-          _effectiveAdjustments(nextMedia).values.any((v) => v != 0);
-      if (hasFilter || hasAdjustments) {
-        final processedPath = await _writeProcessedImageFile(
-          sourcePath: nextMedia.filePath!,
-          filterIds: _effectiveFilterIds(nextMedia),
-          adjustments: _effectiveAdjustments(nextMedia),
-        );
-        if (processedPath != null && processedPath.isNotEmpty) {
-          nextMedia = app_models.MediaItem(
-            id: nextMedia.id,
-            type: nextMedia.type,
-            filePath: processedPath,
-            thumbnailPath: nextMedia.thumbnailPath,
-            duration: nextMedia.duration,
-            createdAt: nextMedia.createdAt,
+      if (!usedComposite && !isVideo && nextMedia.filePath != null) {
+        final hasFilter = _effectiveFilterIds(nextMedia).isNotEmpty;
+        final hasAdjustments =
+            _effectiveAdjustments(nextMedia).values.any((v) => v != 0);
+        if (hasFilter || hasAdjustments) {
+          final processedPath = await _writeProcessedImageFile(
+            sourcePath: nextMedia.filePath!,
+            filterIds: _effectiveFilterIds(nextMedia),
+            adjustments: _effectiveAdjustments(nextMedia),
           );
-          nextAspect = 0.0;
+          if (processedPath != null && processedPath.isNotEmpty) {
+            nextMedia = app_models.MediaItem(
+              id: nextMedia.id,
+              type: nextMedia.type,
+              filePath: processedPath,
+              thumbnailPath: nextMedia.thumbnailPath,
+              duration: nextMedia.duration,
+              createdAt: nextMedia.createdAt,
+            );
+            nextAspect = 0.0;
+          }
         }
       }
-    }
 
-    if (!mounted) return;
-    final processedList =
-        widget.isPostFlow ? await _buildProcessedMediaList() : null;
-    final globalFilterName = _filterNameForId(_selectedFilter);
-    final perMediaFilterNames = <String, String>{};
-    final listForFilters = _mediaList;
-    final perMediaAdjustments = <String, Map<String, int>>{};
-    for (final media in listForFilters) {
-      final perId = _mediaFilters[media.id];
-      final name = _filterNameForId(perId);
-      if (name != null && name.isNotEmpty) {
-        perMediaFilterNames[media.id] = name;
+      if (!mounted) return;
+      final processedList =
+          widget.isPostFlow ? await _buildProcessedMediaList() : null;
+      final globalFilterName = _filterNameForId(_selectedFilter);
+      final perMediaFilterNames = <String, String>{};
+      final listForFilters = _mediaList;
+      final perMediaAdjustments = <String, Map<String, int>>{};
+      for (final media in listForFilters) {
+        final perId = _mediaFilters[media.id];
+        final name = _filterNameForId(perId);
+        if (name != null && name.isNotEmpty) {
+          perMediaFilterNames[media.id] = name;
+        }
+        perMediaAdjustments[media.id] = Map<String, int>.from(
+          _effectiveAdjustments(media),
+        );
+        assert(() {
+          debugPrint(
+            '[CreateEditPreview] media id=${media.id} type=${media.type} '
+            'filterId=$perId filterName=$name '
+            'adjustments=${perMediaAdjustments[media.id]}',
+          );
+          return true;
+        }());
       }
-      perMediaAdjustments[media.id] = Map<String, int>.from(
-        _effectiveAdjustments(media),
+      assert(() {
+        debugPrint(
+          '[CreateEditPreview] globalFilterId=$_selectedFilter '
+          'globalFilterName=$globalFilterName',
+        );
+        return true;
+      }());
+      if (!widget.isPostFlow && _mediaList.length > 1) {
+        final renderer = ReelTimelineRenderer(
+          outputSize: const Size(1080, 1920),
+        );
+        final clips = _mediaList
+            .map<ReelClip>((m) {
+              final isVideo = _isVideoMedia(m);
+              return ReelClip(
+                id: m.id,
+                type: isVideo ? ReelClipType.video : ReelClipType.image,
+                path: m.filePath ?? '',
+                duration: isVideo
+                    ? (m.duration ?? const Duration(seconds: 1))
+                    : const Duration(seconds: 3),
+                trimStart: _trimStartFor(m),
+                trimEnd: _trimEndFor(m),
+                colorMatrix: _buildReelColorMatrixForMedia(m),
+                textOverlays: _buildReelTextOverlaysFor(m),
+                stickerOverlays: _buildReelStickerOverlaysFor(m),
+              );
+            })
+            .where((c) => c.path.isNotEmpty)
+            .toList();
+        final stitchedPath = await renderer.renderTimeline(clips);
+        if (stitchedPath != null && stitchedPath.isNotEmpty) {
+          nextMedia = app_models.MediaItem(
+            id: 'timeline_${DateTime.now().millisecondsSinceEpoch}',
+            type: app_models.MediaType.video,
+            filePath: stitchedPath,
+            createdAt: DateTime.now(),
+            duration: clips.fold<Duration>(
+              Duration.zero,
+              (sum, c) => sum + c.duration,
+            ),
+          );
+        }
+      }
+
+      final result = await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => widget.isPostFlow
+              ? CreatePostScreen(
+                  initialMedia: nextMedia,
+                  initialMediaList: processedList,
+                  initialAspect: nextAspect,
+                  initialFilterName: globalFilterName,
+                  initialAdjustments: null,
+                  initialMediaFilters:
+                      perMediaFilterNames.isEmpty ? null : perMediaFilterNames,
+                  initialMediaAdjustments:
+                      perMediaAdjustments.isEmpty ? null : perMediaAdjustments,
+                  initialMediaTrims: () {
+                    final out = <String, Map<String, int>>{};
+                    for (final media in listForFilters) {
+                      final start = _trimStartFor(media);
+                      final end = _trimEndFor(media);
+                      if (start != null || end != null) {
+                        out[media.id] = {
+                          if (start != null) 'start_ms': start.inMilliseconds,
+                          if (end != null) 'end_ms': end.inMilliseconds,
+                        };
+                      }
+                    }
+                    return out.isEmpty ? null : out;
+                  }(),
+                )
+              : CreateReelDetailsScreen(
+                  media: nextMedia,
+                  trimStart: nextMedia.id == _currentMedia.id
+                      ? _trimStartFor(_currentMedia)
+                      : null,
+                  trimEnd: nextMedia.id == _currentMedia.id
+                      ? _trimEndFor(_currentMedia)
+                      : null,
+                ),
+        ),
       );
-      debugPrint(
-        '[CreateEditPreview] media id=${media.id} type=${media.type} '
-        'filterId=$perId filterName=$name '
-        'adjustments=${perMediaAdjustments[media.id]}',
-      );
-    }
-    debugPrint(
-      '[CreateEditPreview] globalFilterId=$_selectedFilter '
-      'globalFilterName=$globalFilterName',
-    );
-    if (!widget.isPostFlow && _mediaList.length > 1) {
-      final renderer = ReelTimelineRenderer(
-        outputSize: const Size(1080, 1920),
-      );
-      final clips = _mediaList
-          .map<ReelClip>((m) {
-            final isVideo = _isVideoMedia(m);
-            return ReelClip(
-              id: m.id,
-              type: isVideo ? ReelClipType.video : ReelClipType.image,
-              path: m.filePath ?? '',
-              duration: isVideo
-                  ? (m.duration ?? const Duration(seconds: 1))
-                  : const Duration(seconds: 3),
-              trimStart: _trimStartFor(m),
-              trimEnd: _trimEndFor(m),
-              colorMatrix: _buildReelColorMatrixForMedia(m),
-              textOverlays: _buildReelTextOverlaysFor(m),
-              stickerOverlays: _buildReelStickerOverlaysFor(m),
-            );
-          })
-          .where((c) => c.path.isNotEmpty)
-          .toList();
-      final stitchedPath = await renderer.renderTimeline(clips);
-      if (stitchedPath != null && stitchedPath.isNotEmpty) {
-        nextMedia = app_models.MediaItem(
-          id: 'timeline_${DateTime.now().millisecondsSinceEpoch}',
-          type: app_models.MediaType.video,
-          filePath: stitchedPath,
-          createdAt: DateTime.now(),
-          duration: clips.fold<Duration>(
-            Duration.zero,
-            (sum, c) => sum + c.duration,
-          ),
+      if (!mounted) return;
+      if (result == true) {
+        Navigator.of(context).pop(true);
+        return;
+      }
+      // Resume preview only when user comes back from next screen.
+      if (_videoController != null && _videoController!.value.isInitialized) {
+        await _videoController!.play();
+        if (mounted) {
+          setState(() => _isPlaying = true);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
         );
       }
-    }
-
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => widget.isPostFlow
-            ? CreatePostScreen(
-                initialMedia: nextMedia,
-                initialMediaList: processedList,
-                initialAspect: nextAspect,
-                initialFilterName: globalFilterName,
-                initialAdjustments: null,
-                initialMediaFilters:
-                    perMediaFilterNames.isEmpty ? null : perMediaFilterNames,
-                initialMediaAdjustments:
-                    perMediaAdjustments.isEmpty ? null : perMediaAdjustments,
-                initialMediaTrims: () {
-                  final out = <String, Map<String, int>>{};
-                  for (final media in listForFilters) {
-                    final start = _trimStartFor(media);
-                    final end = _trimEndFor(media);
-                    if (start != null || end != null) {
-                      out[media.id] = {
-                        if (start != null) 'start_ms': start.inMilliseconds,
-                        if (end != null) 'end_ms': end.inMilliseconds,
-                      };
-                    }
-                  }
-                  return out.isEmpty ? null : out;
-                }(),
-              )
-            : CreateReelDetailsScreen(
-                media: nextMedia,
-                trimStart: nextMedia.id == _currentMedia.id
-                    ? _trimStartFor(_currentMedia)
-                    : null,
-                trimEnd: nextMedia.id == _currentMedia.id
-                    ? _trimEndFor(_currentMedia)
-                    : null,
-              ),
-      ),
-    );
-    if (!mounted) return;
-    if (result == true) {
-      Navigator.of(context).pop(true);
-      return;
-    }
-    // Resume preview only when user comes back from next screen.
-    if (_videoController != null && _videoController!.value.isInitialized) {
-      await _videoController!.play();
+    } finally {
       if (mounted) {
-        setState(() => _isPlaying = true);
+        setState(() {
+          _isProceedingToNext = false;
+        });
       }
     }
   }
@@ -2761,6 +2816,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       if (boundary is RenderRepaintBoundary) {
         final pixelRatio = math.min(3.0, View.of(context).devicePixelRatio);
         final image = await boundary.toImage(pixelRatio: pixelRatio);
+        _lastCompositePixelSize =
+            Size(image.width.toDouble(), image.height.toDouble());
         final data = await image.toByteData(format: ui.ImageByteFormat.png);
         if (data == null) return null;
         final bytes = data.buffer.asUint8List();
@@ -3982,6 +4039,25 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                     ],
                   ),
                 ),
+              if (_isProceedingToNext)
+                Positioned.fill(
+                  child: AbsorbPointer(
+                    absorbing: true,
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -4617,6 +4693,25 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                 ),
               ),
             ),
+            if (_isProceedingToNext)
+              Positioned.fill(
+                child: AbsorbPointer(
+                  absorbing: true,
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
