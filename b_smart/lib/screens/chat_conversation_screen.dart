@@ -29,6 +29,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   final _scrollController = ScrollController();
   final _inputController = TextEditingController();
 
+  static const bool _showCallButtons = false;
+
   String? _currentUserId;
   Map<String, dynamic>? _conversation;
   Map<String, dynamic>? _otherProfile;
@@ -332,22 +334,24 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Calling coming soon')),
-              );
-            },
-            icon: const Icon(LucideIcons.phone),
-          ),
-          IconButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Video call coming soon')),
-              );
-            },
-            icon: const Icon(LucideIcons.video),
-          ),
+          if (_showCallButtons)
+            IconButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Calling coming soon')),
+                );
+              },
+              icon: const Icon(LucideIcons.phone),
+            ),
+          if (_showCallButtons)
+            IconButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Video call coming soon')),
+                );
+              },
+              icon: const Icon(LucideIcons.video),
+            ),
           IconButton(
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(

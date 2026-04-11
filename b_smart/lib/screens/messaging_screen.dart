@@ -140,21 +140,48 @@ class _MessagingScreenState extends State<MessagingScreen> {
   Widget _buildTopTabs(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final requestColor = (theme.textTheme.bodySmall?.color ??
+            (isDark ? Colors.white : Colors.black))
+        .withValues(alpha: 0.55);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            _tabButton(context, label: 'All', index: 0),
-            _tabButton(context, label: 'Unread', index: 1),
-            _tabButton(context, label: 'Community', index: 2),
-          ],
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                _tabButton(context, label: 'All', index: 0),
+                _tabButton(context, label: 'Unread', index: 1),
+                _tabButton(context, label: 'Community', index: 2),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Expanded(child: SizedBox.shrink()),
+              const Expanded(child: SizedBox.shrink()),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    'Requests',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: requestColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

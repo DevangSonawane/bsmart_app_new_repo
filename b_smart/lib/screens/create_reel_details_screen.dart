@@ -10,6 +10,8 @@ import '../models/media_model.dart';
 import '../services/supabase_service.dart';
 import '../api/upload_api.dart';
 import '../api/reels_api.dart';
+import '../models/notification_model.dart';
+import '../services/notification_service.dart';
 import '../api/users_api.dart';
 import '../config/api_config.dart';
 import '../utils/current_user.dart';
@@ -387,7 +389,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
               })
           .toList();
 
-      await ReelsApi().createReel(
+      final created = await ReelsApi().createReel(
         media: [mediaItem],
         caption: captionText.isEmpty ? null : captionText,
         location: _location.isEmpty ? null : _location,
@@ -395,6 +397,27 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         peopleTags: peopleTags,
         hideLikesCount: _hideLikes,
         turnOffCommenting: _turnOffCommenting,
+      );
+
+      String? pickId(dynamic v) {
+        if (v == null) return null;
+        if (v is Map) return pickId(v['id'] ?? v['_id'] ?? v['reel_id']);
+        final s = v.toString().trim();
+        return s.isEmpty ? null : s;
+      }
+
+      final createdId =
+          pickId(created['id'] ?? created['_id'] ?? created['reel'] ?? created['data']);
+      NotificationService().addNotification(
+        NotificationItem(
+          id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+          typeKey: 'reel_posted',
+          title: 'Reel shared',
+          message: 'Your reel is now live',
+          timestamp: DateTime.now(),
+          isRead: false,
+          relatedId: createdId,
+        ),
       );
 
       if (mounted) {

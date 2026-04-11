@@ -100,7 +100,8 @@ class ReelsService {
         _string(item['_id']) ?? _string(item['id']) ?? _string(item['post_id']);
     if (id == null || id.isEmpty) return null;
 
-    final userField = item['user_id'];
+    final userField =
+        item['user_id'] ?? item['userId'] ?? item['user'] ?? item['author'];
     final userMap = userField is Map
         ? Map<String, dynamic>.from(userField)
         : item['users'] is Map
@@ -164,6 +165,8 @@ class ReelsService {
 
     final userId = _string(userMap['_id']) ??
         _string(userMap['id']) ??
+        _string(item['userId']) ??
+        _string(item['user_id']) ??
         (userField is String || userField is num ? _string(userField) : null) ??
         '';
     final userName = _string(userMap['username']) ??

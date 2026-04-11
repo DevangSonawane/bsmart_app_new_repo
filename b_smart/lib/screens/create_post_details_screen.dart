@@ -6,6 +6,8 @@ import '../services/create_service.dart';
 import '../services/content_moderation_service.dart';
 import 'content_moderation_dialog.dart';
 import '../api/posts_api.dart';
+import '../models/notification_model.dart';
+import '../services/notification_service.dart';
 import '../api/upload_api.dart';
 import '../utils/current_user.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -263,7 +265,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
           'trimEndMs': widget.trimEnd!.inMilliseconds,
       };
 
-      await PostsApi().createPost(
+      final created = await PostsApi().createPost(
         media: [mediaItem],
         caption: _captionController.text.trim(),
         location: _location,
@@ -271,6 +273,29 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
         hideLikesCount: false,
         turnOffCommenting: !_commentsEnabled,
         type: widget.media.type == MediaType.video ? 'reel' : 'post',
+      );
+
+      String? pickId(dynamic v) {
+        if (v == null) return null;
+        if (v is Map) return pickId(v['id'] ?? v['_id'] ?? v['post_id']);
+        final s = v.toString().trim();
+        return s.isEmpty ? null : s;
+      }
+
+      final createdId = pickId(
+        created['id'] ?? created['_id'] ?? created['post'] ?? created['data'],
+      );
+      final isReel = widget.media.type == MediaType.video;
+      NotificationService().addNotification(
+        NotificationItem(
+          id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+          typeKey: isReel ? 'reel_posted' : 'post_posted',
+          title: isReel ? 'Reel shared' : 'Post shared',
+          message: isReel ? 'Your reel is now live' : 'Your post is now live',
+          timestamp: DateTime.now(),
+          isRead: false,
+          relatedId: createdId,
+        ),
       );
 
       if (mounted) {

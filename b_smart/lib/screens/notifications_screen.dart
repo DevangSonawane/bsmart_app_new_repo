@@ -829,6 +829,18 @@ const _memberTypeConfig = {
     iconColor: Color(0xFF2563EB),
     label: 'Ad',
   ),
+  'post_posted': _TypeConfig(
+    icon: LucideIcons.image,
+    bgColor: Color(0xFFECFDF5),
+    iconColor: Color(0xFF16A34A),
+    label: 'Post',
+  ),
+  'reel_posted': _TypeConfig(
+    icon: LucideIcons.video,
+    bgColor: Color(0xFFFDF2F8),
+    iconColor: Color(0xFFEC4899),
+    label: 'Reel',
+  ),
 };
 
 const _vendorTypeConfig = {
@@ -891,6 +903,18 @@ const _vendorTypeConfig = {
     bgColor: Color(0xFFFEF3C7),
     iconColor: Color(0xFFF59E0B),
     label: 'Ad Spend',
+  ),
+  'post_posted': _TypeConfig(
+    icon: LucideIcons.image,
+    bgColor: Color(0xFFECFDF5),
+    iconColor: Color(0xFF16A34A),
+    label: 'Post',
+  ),
+  'reel_posted': _TypeConfig(
+    icon: LucideIcons.video,
+    bgColor: Color(0xFFFDF2F8),
+    iconColor: Color(0xFFEC4899),
+    label: 'Reel',
   ),
   'refund': _TypeConfig(
     icon: LucideIcons.wallet,

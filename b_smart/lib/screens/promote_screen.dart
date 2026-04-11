@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/design_tokens.dart';
 import '../services/promote_service.dart';
+import 'package:b_smart/widgets/glass_action_button.dart';
 
 class PromoteScreen extends StatefulWidget {
   const PromoteScreen({super.key});
@@ -200,45 +201,50 @@ class _PromoteScreenState extends State<PromoteScreen> {
                     ),
                   ),
                 ),
-                // Top left: mute/unmute
-                Positioned(
-                  top: MediaQuery.of(context).padding.top + 8,
-                  left: 12,
-                  child: _ActionIcon(
-                    icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                    onTap: () {
-                      setState(() {
-                        _isMuted = !_isMuted;
-                        final c = _controllers[_currentIndex];
-                        if (c != null) c.setVolume(_isMuted ? 0.0 : 1.0);
-                      });
-                    },
-                  ),
-                ),
                 // Right side actions (aligned with Ads layout)
                 Positioned(
-                  right: 8,
-                  bottom: 160.0 + bottomSystemInset,
+                  right: 4,
+                  bottom: 96.0 + bottomSystemInset,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _RightAction(
-                          icon: LucideIcons.heart,
-                          label: (item['likes'] as String?) ?? '0',
-                          onTap: () {}),
+                      GlassActionButton(
+                        icon: LucideIcons.heart,
+                        label: (item['likes'] as String?) ?? '0',
+                        onTap: () {},
+                      ),
                       const SizedBox(height: 16),
-                      _RightAction(
-                          icon: LucideIcons.messageCircle,
-                          label: (item['comments'] as String?) ?? '0',
-                          onTap: () {}),
+                      GlassActionButton(
+                        icon: LucideIcons.messageCircle,
+                        label: (item['comments'] as String?) ?? '0',
+                        onTap: () {},
+                      ),
                       const SizedBox(height: 16),
-                      _RightAction(
-                          icon: LucideIcons.send, label: null, onTap: () {}),
+                      GlassActionButton(
+                        icon: LucideIcons.send,
+                        label: '',
+                        rotate: -0.2,
+                        onTap: () {},
+                      ),
                       const SizedBox(height: 16),
-                      _RightAction(
-                          icon: LucideIcons.ellipsis,
-                          label: null,
-                          onTap: () {}),
+                      GlassActionButton(
+                        icon: LucideIcons.ellipsis,
+                        label: '',
+                        onTap: () {},
+                      ),
+                      const SizedBox(height: 16),
+                      GlassActionButton(
+                        icon:
+                            _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                        label: '',
+                        onTap: () {
+                          setState(() {
+                            _isMuted = !_isMuted;
+                            final c = _controllers[_currentIndex];
+                            if (c != null) c.setVolume(_isMuted ? 0.0 : 1.0);
+                          });
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -260,7 +266,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
                         ],
                       ),
                     ),
-                    padding: const EdgeInsets.fromLTRB(16, 40, 56, 8),
+                    padding: const EdgeInsets.fromLTRB(16, 40, 92, 8),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -469,49 +475,5 @@ class _PromoteScreenState extends State<PromoteScreen> {
         ),
       ),
     ).then((_) => setState(() {}));
-  }
-}
-
-class _RightAction extends StatelessWidget {
-  final IconData icon;
-  final String? label;
-  final VoidCallback onTap;
-
-  const _RightAction({required this.icon, this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _ActionIcon(icon: icon, onTap: onTap),
-        if (label != null)
-          Text(label!,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500)),
-      ],
-    );
-  }
-}
-
-class _ActionIcon extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _ActionIcon({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        alignment: Alignment.center,
-        child: Icon(icon, color: Colors.white, size: 22),
-      ),
-    );
   }
 }

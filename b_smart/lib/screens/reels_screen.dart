@@ -13,8 +13,10 @@ import '../config/api_config.dart';
 import '../models/reel_model.dart';
 import '../services/reels_service.dart';
 import '../services/supabase_service.dart';
+import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/comments_sheet.dart';
+import 'package:b_smart/widgets/glass_action_button.dart';
 
 class ReelsScreen extends StatefulWidget {
   final bool isActive;
@@ -49,6 +51,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   bool _isNavigating = false;
   bool _isLoadingMore = false;
   bool _hasMore = true;
+  String? _currentUserId;
   Timer? _navigationUnlockTimer;
   String? _error;
   Map<String, String>? _mediaHeaders;
@@ -93,6 +96,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   void initState() {
     super.initState();
     _pageController.addListener(_onPageScrollForAudioGate);
+    unawaited(_loadCurrentUserId());
     final cached = _reelsService.getReels();
     final initialId = widget.initialReelId?.trim();
     if (cached.isNotEmpty) {
@@ -120,6 +124,19 @@ class _ReelsScreenState extends State<ReelsScreen>
       });
     }
     _loadReels();
+  }
+
+  Future<void> _loadCurrentUserId() async {
+    try {
+      final id = await CurrentUser.id;
+      final trimmed = id?.trim() ?? '';
+      if (!mounted) return;
+      setState(() {
+        _currentUserId = trimmed.isEmpty ? null : trimmed;
+      });
+    } catch (_) {
+      // ignore
+    }
   }
 
   @override
@@ -640,6 +657,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     final reel = _reels[_currentIndex];
     final userId = reel.userId;
     if (userId.trim().isEmpty) return;
+    if (_currentUserId != null && userId.trim() == _currentUserId) return;
 
     final wasFollowing = reel.isFollowing;
     setState(() {
@@ -950,28 +968,8 @@ class _ReelsScreenState extends State<ReelsScreen>
                       right: 12,
                       top: topSystemInset + 8,
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          IconButton(
-                            icon: Icon(
-                              _isMuted
-                                  ? LucideIcons.volumeX
-                                  : LucideIcons.volume2,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _isMuted = !_isMuted;
-                              });
-                              final volume = _isMuted ? 0.0 : 1.0;
-                              for (final controller
-                                  in _videoControllers.values) {
-                                unawaited(_setControllerVolumeSafely(
-                                    controller, volume));
-                              }
-                            },
-                          ),
                           IconButton(
                             icon: const Icon(LucideIcons.search,
                                 color: Colors.white, size: 24),
@@ -994,6 +992,14 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Widget _buildVideoCard({required bool isDesktop}) {
     final current = _reels[_currentIndex];
+    const actionsBottomMobile = 50.0;
+    const actionsBottomDesktop = 20.0;
+    // The actions column has a squared avatar below the mute button:
+    // SizedBox(12) + avatar(36). Align the username/content row with the mute slot.
+    const actionsAvatarGap = 12.0;
+    const actionsAvatarSize = 36.0;
+    const infoBottomMobile =
+        actionsBottomMobile + actionsAvatarGap + actionsAvatarSize;
 
     return ClipRRect(
       borderRadius: isDesktop ? BorderRadius.circular(20) : BorderRadius.zero,
@@ -1038,14 +1044,18 @@ class _ReelsScreenState extends State<ReelsScreen>
             ),
             if (!isDesktop)
               Positioned(
-                right: 10,
-                bottom: 10,
+                right: 4,
+                // `bottomSystemInset` is already accounted for by the outer Padding
+                // in `build()`, so don't add it again here.
+                bottom: actionsBottomMobile,
                 child: _buildMobileActions(current),
               ),
-            Positioned(
-              left: 12,
-              right: isDesktop ? 14 : 66,
-              bottom: isDesktop ? 20 : 18,
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeInOutCubic,
+              left: 16,
+              right: isDesktop ? 14 : 92,
+              bottom: isDesktop ? actionsBottomDesktop : infoBottomMobile,
               child: _buildBottomInfo(current),
             ),
             // Progress Bar — keep as the top-most overlay so the bottom gradient/info
@@ -1104,57 +1114,53 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget _buildMobileActions(Reel reel) {
     return Column(
       children: [
-        _buildMobileAction(
+        GlassActionButton(
           icon: LucideIcons.eye,
-          count: _formatCount(reel.views),
+          label: _formatCount(reel.views),
           onTap: () {},
         ),
-        const SizedBox(height: 18),
-        _buildMobileAction(
+        const SizedBox(height: 16),
+        GlassActionButton(
           icon: reel.isLiked ? Icons.favorite : LucideIcons.heart,
-          count: _formatCount(reel.likes),
-          color: reel.isLiked ? Colors.red : Colors.white,
+          label: _formatCount(reel.likes),
+          iconColor: reel.isLiked ? Colors.red : Colors.white,
           onTap: _toggleLike,
         ),
-        const SizedBox(height: 18),
-        _buildMobileAction(
+        const SizedBox(height: 16),
+        GlassActionButton(
           icon: LucideIcons.messageCircle,
-          count: _formatCount(reel.comments),
+          label: _formatCount(reel.comments),
           onTap: () => unawaited(_openComments()),
         ),
-        const SizedBox(height: 18),
-        IconButton(
-          onPressed: () => unawaited(_shareCurrent()),
-          icon: const Icon(LucideIcons.send, color: Colors.white, size: 24),
+        const SizedBox(height: 16),
+        GlassActionButton(
+          icon: LucideIcons.send,
+          label: '',
+          rotate: -0.2,
+          onTap: () => unawaited(_shareCurrent()),
         ),
-        const SizedBox(height: 8),
-        const Icon(LucideIcons.ellipsis, color: Colors.white, size: 24),
+        const SizedBox(height: 16),
+        GlassActionButton(
+          icon: LucideIcons.ellipsis,
+          label: '',
+          onTap: () {},
+        ),
+        const SizedBox(height: 16),
+        GlassActionButton(
+          icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+          label: '',
+          onTap: () {
+            setState(() {
+              _isMuted = !_isMuted;
+            });
+            final volume = _isMuted ? 0.0 : 1.0;
+            for (final controller in _videoControllers.values) {
+              unawaited(_setControllerVolumeSafely(controller, volume));
+            }
+          },
+        ),
         const SizedBox(height: 12),
         _buildAvatarThumb(reel, size: 36),
-      ],
-    );
-  }
-
-  Widget _buildMobileAction({
-    required IconData icon,
-    required String count,
-    required VoidCallback onTap,
-    Color color = Colors.white,
-  }) {
-    return Column(
-      children: [
-        IconButton(
-          onPressed: onTap,
-          icon: Icon(icon, color: color, size: 26),
-        ),
-        Text(
-          count,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
       ],
     );
   }
@@ -1162,85 +1168,61 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget _buildDesktopActions() {
     final reel = _reels[_currentIndex];
 
-    Widget circleButton({
-      required VoidCallback onTap,
-      required Widget child,
-      bool active = false,
-    }) {
-      return GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: active
-                ? const Color(0xFF3B82F6)
-                : Colors.white.withValues(alpha: 0.10),
-            border: Border.all(
-              color: active
-                  ? const Color(0xFF60A5FA)
-                  : Colors.white.withValues(alpha: 0.22),
-            ),
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Center(child: child),
-        ),
-      );
-    }
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        circleButton(
+        GlassActionButton(
+          icon: LucideIcons.eye,
+          label: _formatCount(reel.views),
           onTap: () {},
-          child: const Icon(LucideIcons.eye, size: 21, color: Colors.white),
         ),
-        const SizedBox(height: 4),
-        Text(_formatCount(reel.views),
-            style: const TextStyle(color: Colors.white, fontSize: 12)),
-        const SizedBox(height: 14),
-        circleButton(
+        const SizedBox(height: 16),
+        GlassActionButton(
+          icon: reel.isLiked ? Icons.favorite : LucideIcons.heart,
+          label: _formatCount(reel.likes),
+          iconColor: reel.isLiked ? Colors.red : Colors.white,
           onTap: _toggleLike,
-          child: Icon(
-            reel.isLiked ? Icons.favorite : LucideIcons.heart,
-            size: 21,
-            color: reel.isLiked ? Colors.red : Colors.white,
-          ),
         ),
-        const SizedBox(height: 4),
-        Text(_formatCount(reel.likes),
-            style: const TextStyle(color: Colors.white, fontSize: 12)),
-        const SizedBox(height: 14),
-        circleButton(
+        const SizedBox(height: 16),
+        GlassActionButton(
+          icon: LucideIcons.messageCircle,
+          label: _formatCount(reel.comments),
           onTap: () => unawaited(_openComments()),
-          child: const Icon(LucideIcons.messageCircle,
-              size: 21, color: Colors.white),
         ),
-        const SizedBox(height: 4),
-        Text(_formatCount(reel.comments),
-            style: const TextStyle(color: Colors.white, fontSize: 12)),
-        const SizedBox(height: 14),
-        circleButton(
+        const SizedBox(height: 16),
+        GlassActionButton(
+          icon: LucideIcons.send,
+          label: '',
+          rotate: -0.2,
           onTap: () => unawaited(_shareCurrent()),
-          child: const Icon(LucideIcons.send, size: 21, color: Colors.white),
         ),
-        const SizedBox(height: 14),
-        circleButton(
+        const SizedBox(height: 16),
+        GlassActionButton(
+          icon: reel.isSaved ? Icons.bookmark : Icons.bookmark_border,
+          label: '',
           onTap: _toggleSave,
-          child: Icon(
-            reel.isSaved ? Icons.bookmark : Icons.bookmark_border,
-            size: 21,
-            color: Colors.white,
-          ),
         ),
-        const SizedBox(height: 14),
-        circleButton(
+        const SizedBox(height: 16),
+        GlassActionButton(
+          icon: LucideIcons.ellipsis,
+          label: '',
           onTap: () {},
-          child:
-              const Icon(LucideIcons.ellipsis, size: 21, color: Colors.white),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 16),
+        GlassActionButton(
+          icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+          label: '',
+          onTap: () {
+            setState(() {
+              _isMuted = !_isMuted;
+            });
+            final volume = _isMuted ? 0.0 : 1.0;
+            for (final controller in _videoControllers.values) {
+              unawaited(_setControllerVolumeSafely(controller, volume));
+            }
+          },
+        ),
+        const SizedBox(height: 12),
         _buildAvatarThumb(reel, size: 36),
       ],
     );
@@ -1282,6 +1264,9 @@ class _ReelsScreenState extends State<ReelsScreen>
   }
 
   Widget _buildBottomInfo(Reel reel) {
+    final isOwn =
+        _currentUserId != null && reel.userId.trim() == _currentUserId;
+    final canShowFollow = reel.userId.trim().isNotEmpty && !isOwn;
     final isExpanded = _captionExpanded[reel.id] ?? false;
     final caption = reel.caption ?? '';
     final words = caption.trim().isEmpty
@@ -1290,130 +1275,159 @@ class _ReelsScreenState extends State<ReelsScreen>
     final isLong = words.length > 5;
     final preview = isLong ? words.take(5).join(' ') : caption;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        Row(
-          children: [
-            GestureDetector(
-              onTap: () => unawaited(_openUserProfile(reel.userId)),
-              child: CircleAvatar(
-                radius: 15,
-                backgroundColor: Colors.grey[700],
-                backgroundImage: reel.userAvatarUrl != null &&
-                        reel.userAvatarUrl!.isNotEmpty
-                    ? CachedNetworkImageProvider(
-                        UrlHelper.absoluteUrl(reel.userAvatarUrl!))
-                    : null,
-                child: reel.userAvatarUrl == null || reel.userAvatarUrl!.isEmpty
-                    ? Text(
-                        (reel.userName.isEmpty ? 'U' : reel.userName[0])
-                            .toUpperCase(),
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold),
-                      )
-                    : null,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
+        SizedBox(
+          height: 36,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              InkWell(
                 onTap: () => unawaited(_openUserProfile(reel.userId)),
-                child: Text(
-                  reel.userName,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
+                borderRadius: BorderRadius.circular(999),
+                child: CircleAvatar(
+                  radius: 15,
+                  backgroundColor: Colors.grey[700],
+                  backgroundImage: reel.userAvatarUrl != null &&
+                          reel.userAvatarUrl!.isNotEmpty
+                      ? CachedNetworkImageProvider(
+                          UrlHelper.absoluteUrl(reel.userAvatarUrl!))
+                      : null,
+                  child:
+                      reel.userAvatarUrl == null || reel.userAvatarUrl!.isEmpty
+                          ? Text(
+                              (reel.userName.isEmpty ? 'U' : reel.userName[0])
+                                  .toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : null,
                 ),
               ),
-            ),
-            GestureDetector(
-              onTap: _isFollowLoading ? null : () => unawaited(_toggleFollow()),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: reel.isFollowing ? Colors.white30 : Colors.white54,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-                child: Text(
-                  _isFollowLoading
-                      ? '...'
-                      : (reel.isFollowing ? 'Following' : 'Follow'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (caption.isNotEmpty)
-          RichText(
-            text: TextSpan(
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 13, height: 1.35),
-              children: [
-                TextSpan(text: isExpanded || !isLong ? caption : preview),
-                if (isLong)
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _captionExpanded[reel.id] = !isExpanded;
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 5),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => unawaited(_openUserProfile(reel.userId)),
                         child: Text(
-                          isExpanded ? 'less' : '... more',
+                          reel.userName,
                           style: const TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600),
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-          ),
-        if (reel.hashtags.isNotEmpty) ...[
-          const SizedBox(height: 5),
-          Text(
-            reel.hashtags.map((t) => '#$t').join(' '),
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            const Icon(LucideIcons.music2, color: Colors.white, size: 11),
-            const SizedBox(width: 5),
-            Expanded(
-              child: Text(
-                'Original Audio - ${reel.userName}',
-                style: const TextStyle(color: Colors.white, fontSize: 11),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                    const SizedBox(width: 6),
+                    if (canShowFollow)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.10),
+                          border: Border.all(
+                            color: reel.isFollowing
+                                ? Colors.white30
+                                : Colors.white54,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: GestureDetector(
+                          onTap: _isFollowLoading
+                              ? null
+                              : () => unawaited(_toggleFollow()),
+                          child: Text(
+                            _isFollowLoading
+                                ? '...'
+                                : (reel.isFollowing ? 'Following' : 'Follow'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
+        ),
+        Positioned(
+          top: 40,
+          left: 42,
+          right: 0,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (caption.isNotEmpty)
+                RichText(
+                  text: TextSpan(
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 13, height: 1.35),
+                    children: [
+                      TextSpan(text: isExpanded || !isLong ? caption : preview),
+                      if (isLong)
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _captionExpanded[reel.id] = !isExpanded;
+                              });
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 5),
+                              child: Text(
+                                isExpanded ? 'less' : '... more',
+                                style: const TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (reel.hashtags.isNotEmpty) ...[
+                const SizedBox(height: 5),
+                Text(
+                  reel.hashtags.map((t) => '#$t').join(' '),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 40),
+              Row(
+                children: [
+                  const Icon(LucideIcons.music2, color: Colors.white, size: 11),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      'Original Audio - ${reel.userName}',
+                      style: const TextStyle(color: Colors.white, fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ],
     );

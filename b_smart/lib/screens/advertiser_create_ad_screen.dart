@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/ads_api.dart';
+import '../models/notification_model.dart';
+import '../services/notification_service.dart';
 import '../api/auth_api.dart';
 import '../api/upload_api.dart';
 import '../config/api_config.dart';
@@ -773,7 +775,27 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
         'total_budget_coins': budgetCoins,
       };
 
-      await _adsApi.createAd(payload);
+      final created = await _adsApi.createAd(payload);
+      String? pickId(dynamic v) {
+        if (v == null) return null;
+        if (v is Map) return pickId(v['id'] ?? v['_id']);
+        final s = v.toString().trim();
+        return s.isEmpty ? null : s;
+      }
+
+      final createdId =
+          pickId(created['id'] ?? created['_id'] ?? created['ad'] ?? created['data']);
+      NotificationService().addNotification(
+        NotificationItem(
+          id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+          typeKey: 'ad_submitted',
+          title: 'Ad submitted',
+          message: 'Your ad has been submitted for review',
+          timestamp: DateTime.now(),
+          isRead: false,
+          relatedId: createdId,
+        ),
+      );
 
       if (!mounted) return;
       setState(() {

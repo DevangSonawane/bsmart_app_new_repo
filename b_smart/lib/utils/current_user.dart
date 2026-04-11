@@ -13,6 +13,12 @@ class CurrentUser {
 
   static String? _cachedId;
 
+  static String? _asString(dynamic value) {
+    if (value == null) return null;
+    final s = value.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
   /// Get the current user ID.
   ///
   /// 1. Checks for a REST API JWT and decodes `user_id` (or `id` / `sub`).
@@ -25,9 +31,11 @@ class CurrentUser {
     if (token != null) {
       try {
         final payload = JwtDecoder.decode(token);
-        final userId = payload['user_id'] as String? ??
-            payload['id'] as String? ??
-            payload['sub'] as String?;
+        final userId = _asString(payload['user_id']) ??
+            _asString(payload['userId']) ??
+            _asString(payload['id']) ??
+            _asString(payload['_id']) ??
+            _asString(payload['sub']);
         if (userId != null) {
           _cachedId = userId;
           return userId;
@@ -36,7 +44,10 @@ class CurrentUser {
       // Fallback: ask the server who we are
       try {
         final me = await AuthApi().me();
-        final userId = me['id'] as String? ?? me['_id'] as String?;
+        final userId = _asString(me['id']) ??
+            _asString(me['_id']) ??
+            _asString(me['user_id']) ??
+            _asString(me['userId']);
         if (userId != null && userId.isNotEmpty) {
           _cachedId = userId;
           return userId;

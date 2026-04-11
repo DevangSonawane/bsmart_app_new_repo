@@ -11,6 +11,8 @@ import '../utils/current_user.dart';
 import '../config/api_config.dart';
 import '../api/upload_api.dart';
 import '../api/posts_api.dart';
+import '../models/notification_model.dart';
+import '../services/notification_service.dart';
 import '../models/media_model.dart';
 import 'tag_people_screen.dart';
 
@@ -953,6 +955,30 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         peopleTags: peopleTags.cast<Map<String, dynamic>>(),
         type: 'post',
       );
+      if (created.isNotEmpty) {
+        String? pickId(dynamic v) {
+          if (v == null) return null;
+          if (v is Map) return pickId(v['id'] ?? v['_id'] ?? v['post_id']);
+          final s = v.toString().trim();
+          return s.isEmpty ? null : s;
+        }
+
+        final createdId = pickId(created['id'] ??
+            created['_id'] ??
+            created['post'] ??
+            created['data']);
+        NotificationService().addNotification(
+          NotificationItem(
+            id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+            typeKey: 'post_posted',
+            title: 'Post shared',
+            message: 'Your post is now live',
+            timestamp: DateTime.now(),
+            isRead: false,
+            relatedId: createdId,
+          ),
+        );
+      }
       if (created.isNotEmpty && mounted) {
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post shared successfully!')));
