@@ -34,6 +34,7 @@ import '../api/auth_api.dart';
 import '../api/api_exceptions.dart';
 import '../api/api_client.dart';
 import '../api/follows_api.dart';
+import '../api/users_api.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/url_helper.dart';
 import '../widgets/dynamic_media_widget.dart';
@@ -331,6 +332,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   final WalletService _walletService = WalletService();
   final ReelsService _reelsService = ReelsService();
   final FollowsApi _followsApi = FollowsApi();
+  final UsersApi _usersApi = UsersApi();
   String? _currentLocation;
   bool _locationLoading = false;
 
@@ -555,12 +557,18 @@ class _HomeDashboardState extends State<HomeDashboard>
     final rawUsername = u['username'] ?? u['userName'];
     final username = rawUsername == null ? '' : rawUsername.toString().trim();
     if (username.isNotEmpty) return username;
-    final name = (u['full_name'] ?? u['name'] ?? u['fullName'])?.toString() ?? '';
+    final name =
+        (u['full_name'] ?? u['name'] ?? u['fullName'])?.toString() ?? '';
     return name.trim().isNotEmpty ? name.trim() : 'user';
   }
 
   String _suggestionAvatarOf(Map<String, dynamic> u) {
-    final raw = u['avatar_url'] ?? u['profilePicture'] ?? u['avatar'];
+    final raw = u['avatar_url'] ??
+        u['avatarUrl'] ??
+        u['profile_pic'] ??
+        u['profilePic'] ??
+        u['profilePicture'] ??
+        u['avatar'];
     return raw == null ? '' : raw.toString();
   }
 
@@ -586,16 +594,15 @@ class _HomeDashboardState extends State<HomeDashboard>
         });
       }
 
-      final res = await _followsApi.getSuggestions(limit: 30);
-      final raw = (res is Map)
-          ? (res['users'] ?? res['vendors'] ?? res['data'] ?? res)
-          : res;
-      final list = raw is List
-          ? raw
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList()
-          : <Map<String, dynamic>>[];
+      final users = await _usersApi.search('');
+      final list = users
+          .map((e) => Map<String, dynamic>.from(e))
+          .where((u) => _suggestionIdOf(u).trim().isNotEmpty)
+          .toList();
+      list.shuffle();
+      if (list.length > 80) {
+        list.removeRange(80, list.length);
+      }
 
       final ids = list.map(_suggestionIdOf).where((e) => e.isNotEmpty).toList();
       if (ids.isNotEmpty && (_currentUserId?.isNotEmpty ?? false)) {
@@ -617,7 +624,8 @@ class _HomeDashboardState extends State<HomeDashboard>
             list[i] = <String, dynamic>{
               ...u,
               ...s,
-              'isFollowing': (s['isFollowing'] as bool?) ?? _suggestionIsFollowingOf(u),
+              'isFollowing':
+                  (s['isFollowing'] as bool?) ?? _suggestionIsFollowingOf(u),
             };
           }
         } catch (_) {
@@ -2584,7 +2592,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final row = rows[index];
-                                if (row.type == _FeedRenderRowType.suggestions) {
+                                if (row.type ==
+                                    _FeedRenderRowType.suggestions) {
                                   final isLoading = _followSuggestionsLoading ||
                                       _followSuggestions.isEmpty;
                                   final users = isLoading
@@ -2597,9 +2606,10 @@ class _HomeDashboardState extends State<HomeDashboard>
                                     key: ValueKey(
                                         'follow-suggestions-${row.suggestionBlockIndex}'),
                                     isLoading: isLoading,
-                                    imageHeaders: _suggestionImageHeaders.isEmpty
-                                        ? null
-                                        : _suggestionImageHeaders,
+                                    imageHeaders:
+                                        _suggestionImageHeaders.isEmpty
+                                            ? null
+                                            : _suggestionImageHeaders,
                                     sections: [
                                       SuggestionFollowSection(
                                         title:

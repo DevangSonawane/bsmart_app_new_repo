@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../api/auth_api.dart';
+import '../api/api_client.dart';
 import '../api/chat_api.dart';
+import '../services/supabase_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
@@ -16,10 +20,14 @@ class MessagingScreen extends StatefulWidget {
 }
 
 class _MessagingScreenState extends State<MessagingScreen> {
-  int _selectedTab = 0; // 0=All, 1=Unread, 2=Community
+  int _selectedFilter = 0; // 0=Primary, 1=Unread, 2=Community, 3=Requests
 
   final _chatApi = ChatApi();
+  final _supabase = SupabaseService();
   String? _currentUserId;
+  String? _currentUserName;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _conversations = const [];
@@ -28,13 +36,18 @@ class _MessagingScreenState extends State<MessagingScreen> {
   void initState() {
     super.initState();
     _init();
+    _searchController.addListener(() {
+      final q = _searchController.text.trim();
+      if (q == _searchQuery) return;
+      setState(() => _searchQuery = q);
+    });
   }
 
   Future<void> _init() async {
     final uid = await CurrentUser.id;
     if (!mounted) return;
     setState(() => _currentUserId = uid);
-    await _load();
+    await Future.wait([_loadMe(), _load()]);
     if (!mounted) return;
     final cid = widget.initialConversationId;
     if (cid != null && cid.isNotEmpty) {
@@ -48,6 +61,88 @@ class _MessagingScreenState extends State<MessagingScreen> {
     }
   }
 
+  Future<void> _loadMe() async {
+    try {
+      final token = await ApiClient().getToken();
+      if (token != null && token.isNotEmpty) {
+        final payload = JwtDecoder.decode(token);
+        final fromToken = (payload['username'] ??
+                payload['user_name'] ??
+                payload['userName'] ??
+                payload['handle'] ??
+                payload['name'] ??
+                payload['full_name'] ??
+                payload['fullName'])
+            ?.toString()
+            .trim();
+        if (fromToken != null && fromToken.isNotEmpty) {
+          if (!mounted) return;
+          setState(() => _currentUserName = fromToken);
+        }
+      }
+    } catch (_) {
+      // Ignore.
+    }
+
+    try {
+      final raw = await AuthApi().me();
+      if (!mounted) return;
+      final me = _normalizeMe(raw);
+      final name = (me['username'] ??
+              me['user_name'] ??
+              me['userName'] ??
+              me['handle'] ??
+              me['full_name'] ??
+              me['fullName'] ??
+              me['name'])
+          ?.toString()
+          .trim();
+      if (name != null && name.isNotEmpty) {
+        setState(() => _currentUserName = name);
+      }
+    } catch (_) {
+      // Ignore and fall back to a generic title.
+    }
+
+    final uid = _currentUserId?.trim();
+    if (uid != null &&
+        uid.isNotEmpty &&
+        (_currentUserName == null || _currentUserName!.trim().isEmpty)) {
+      try {
+        final me = await _supabase.getUserById(uid);
+        if (!mounted) return;
+        final name = (me?['username'] ??
+                me?['user_name'] ??
+                me?['userName'] ??
+                me?['handle'] ??
+                me?['full_name'] ??
+                me?['fullName'] ??
+                me?['name'])
+            ?.toString()
+            .trim();
+        if (name != null && name.isNotEmpty) {
+          setState(() => _currentUserName = name);
+        }
+      } catch (_) {}
+    }
+  }
+
+  Map<String, dynamic> _normalizeMe(dynamic raw) {
+    if (raw is! Map) return const <String, dynamic>{};
+    final map = Map<String, dynamic>.from(raw);
+    if (map['user'] is Map) {
+      return Map<String, dynamic>.from(map['user'] as Map);
+    }
+    if (map['data'] is Map) {
+      final data = Map<String, dynamic>.from(map['data'] as Map);
+      if (data['user'] is Map) {
+        return Map<String, dynamic>.from(data['user'] as Map);
+      }
+      return data;
+    }
+    return map;
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -57,8 +152,10 @@ class _MessagingScreenState extends State<MessagingScreen> {
       final data = await _chatApi.getConversations();
       if (!mounted) return;
       data.sort((a, b) {
-        final aAt = DateTime.tryParse((a['lastMessageAt'] ?? '').toString()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final bAt = DateTime.tryParse((b['lastMessageAt'] ?? '').toString()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final aAt = DateTime.tryParse((a['lastMessageAt'] ?? '').toString()) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bAt = DateTime.tryParse((b['lastMessageAt'] ?? '').toString()) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
         return bAt.compareTo(aAt);
       });
       setState(() {
@@ -75,34 +172,62 @@ class _MessagingScreenState extends State<MessagingScreen> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final title = _currentUserName?.trim().isNotEmpty == true
+        ? _currentUserName!.trim()
+        : '...';
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Messaging'),
+        title: Text(title),
         centerTitle: true,
       ),
       body: Column(
         children: [
-          _buildTopTabs(context),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildSearchBar(context),
+                ),
+                const SizedBox(height: 12),
+                _buildActiveUsersRow(context),
+                const SizedBox(height: 12),
+                _buildFilterToggles(context),
+              ],
+            ),
+          ),
           const Divider(height: 1),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _load,
               child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: DesignTokens.instaPink))
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                          color: DesignTokens.instaPink))
                   : _error != null
                       ? ListView(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.all(16),
                           children: [
-                            const Icon(LucideIcons.circleAlert, color: Colors.redAccent),
+                            const Icon(LucideIcons.circleAlert,
+                                color: Colors.redAccent),
                             const SizedBox(height: 8),
                             Text(_error!, textAlign: TextAlign.center),
                             const SizedBox(height: 12),
                             Center(
                               child: TextButton.icon(
                                 onPressed: _load,
-                                icon: const Icon(LucideIcons.refreshCw, size: 16),
+                                icon:
+                                    const Icon(LucideIcons.refreshCw, size: 16),
                                 label: const Text('Retry'),
                               ),
                             ),
@@ -110,7 +235,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
                         )
                       : ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                          padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
                           itemCount: _filteredConversations().length,
                           itemBuilder: (context, index) {
                             final conv = _filteredConversations()[index];
@@ -125,95 +250,278 @@ class _MessagingScreenState extends State<MessagingScreen> {
   }
 
   List<Map<String, dynamic>> _filteredConversations() {
-    final list = _conversations;
-    if (_selectedTab == 1) {
-      return list
+    var list = _conversations;
+
+    if (_selectedFilter == 0) {
+      list = list.where((c) => !_isCommunity(c) && !_isRequest(c)).toList();
+    } else if (_selectedFilter == 1) {
+      list = list
           .where((c) => ((c['unreadCount'] as num?)?.toInt() ?? 0) > 0)
           .toList();
+    } else if (_selectedFilter == 2) {
+      list = list.where(_isCommunity).toList();
+    } else if (_selectedFilter == 3) {
+      list = list.where(_isRequest).toList();
     }
-    if (_selectedTab == 2) {
-      return list.where((c) => c['isCommunity'] == true || c['type']?.toString() == 'community').toList();
+
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      list = list.where((c) => _conversationSearchText(c).contains(q)).toList();
     }
+
     return list;
   }
 
-  Widget _buildTopTabs(BuildContext context) {
+  bool _isCommunity(Map<String, dynamic> conversation) {
+    return conversation['isCommunity'] == true ||
+        conversation['type']?.toString().toLowerCase() == 'community';
+  }
+
+  bool _isRequest(Map<String, dynamic> conversation) {
+    final type = conversation['type']?.toString().toLowerCase();
+    final folder = conversation['folder']?.toString().toLowerCase();
+    final category = conversation['category']?.toString().toLowerCase();
+    final isRequest = conversation['isRequest'] == true ||
+        conversation['is_request'] == true ||
+        conversation['request'] == true ||
+        type == 'request' ||
+        folder == 'requests' ||
+        category == 'requests';
+    if (isRequest) return true;
+    final approved = conversation['isApproved'];
+    if (approved is bool && approved == false) return true;
+    return false;
+  }
+
+  String _conversationSearchText(Map<String, dynamic> conversation) {
+    final isCommunity = _isCommunity(conversation);
+    final other = _otherParticipant(conversation);
+    final name = isCommunity
+        ? (conversation['name']?.toString() ?? 'Community')
+        : _userName(other);
+    final lastMessage = conversation['lastMessage'] is Map
+        ? Map<String, dynamic>.from(conversation['lastMessage'] as Map)
+        : null;
+    final text = lastMessage?['text']?.toString() ?? '';
+    return '$name $text'.toLowerCase();
+  }
+
+  Widget _buildSearchBar(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final requestColor = (theme.textTheme.bodySmall?.color ??
-            (isDark ? Colors.white : Colors.black))
-        .withValues(alpha: 0.55);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+    final bg = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2);
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                _tabButton(context, label: 'All', index: 0),
-                _tabButton(context, label: 'Unread', index: 1),
-                _tabButton(context, label: 'Community', index: 2),
-              ],
-            ),
-          ),
-          const SizedBox(height: 15),
-          Row(
-            children: [
-              const Expanded(child: SizedBox.shrink()),
-              const Expanded(child: SizedBox.shrink()),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Requests',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: requestColor,
-                    ),
-                  ),
-                ),
+          Icon(LucideIcons.search,
+              size: 18, color: theme.iconTheme.color?.withValues(alpha: 0.7)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                hintText: 'Search',
+                border: InputBorder.none,
+                isCollapsed: true,
               ),
-            ],
+            ),
           ),
+          if (_searchQuery.trim().isNotEmpty)
+            InkWell(
+              onTap: () => _searchController.clear(),
+              borderRadius: BorderRadius.circular(999),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(LucideIcons.x,
+                    size: 16,
+                    color: theme.iconTheme.color?.withValues(alpha: 0.7)),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _tabButton(
-    BuildContext context, {
-    required String label,
-    required int index,
-  }) {
-    final theme = Theme.of(context);
-    final isSelected = _selectedTab == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedTab = index),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? DesignTokens.instaPink : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.white : theme.textTheme.bodyMedium?.color,
+  List<Map<String, dynamic>> _activeUsers() {
+    final uid = _currentUserId;
+    final seen = <String>{};
+    final users = <Map<String, dynamic>>[];
+    for (final conv in _conversations) {
+      if (_isCommunity(conv) || _isRequest(conv)) continue;
+      final other = _otherParticipant(conv);
+      if (other == null) continue;
+      final id = (other['_id'] ?? other['id'] ?? other['user_id'])?.toString();
+      if (id == null || id.isEmpty) continue;
+      if (uid != null && uid.isNotEmpty && id == uid) continue;
+      if (seen.add(id)) users.add(other);
+      if (users.length >= 12) break;
+    }
+    return users;
+  }
+
+  Widget _buildActiveUsersRow(BuildContext context) {
+    final users = _activeUsers();
+    if (users.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 78,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: users.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          final user = users[index];
+          final name = _userName(user);
+          final avatarUrl = _avatar(user);
+          return InkWell(
+            onTap: () {
+              final userId =
+                  (user['_id'] ?? user['id'] ?? user['user_id'])?.toString();
+              if (userId == null || userId.isEmpty) return;
+              final existing = _conversations.firstWhere(
+                (c) {
+                  final other = _otherParticipant(c);
+                  final oid =
+                      (other?['_id'] ?? other?['id'] ?? other?['user_id'])
+                          ?.toString();
+                  return oid == userId;
+                },
+                orElse: () => const <String, dynamic>{},
+              );
+              if (existing.isNotEmpty) _openConversation(existing);
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              width: 62,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      if (avatarUrl != null && avatarUrl.trim().isNotEmpty)
+                        ClipOval(
+                          child: SafeNetworkImage(
+                            url: avatarUrl,
+                            width: 44,
+                            height: 44,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      else
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundColor: DesignTokens.instaPink,
+                          child: Text(
+                            name.characters.first.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        right: -1,
+                        bottom: -1,
+                        child: Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2ECC71),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(context).scaffoldBackgroundColor,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ],
               ),
             ),
-          ),
-        ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFilterToggles(BuildContext context) {
+    const labels = ['Primary', 'Unread', 'Community', 'Requests'];
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final track = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2);
+
+    return SizedBox(
+      height: 34,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var index = 0; index < labels.length; index++) ...[
+                      if (index > 0) const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => setState(() => _selectedFilter = index),
+                        borderRadius: BorderRadius.circular(999),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _selectedFilter == index
+                                ? DesignTokens.instaPink
+                                : track,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            labels[index],
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                              color: _selectedFilter == index
+                                  ? Colors.white
+                                  : theme.textTheme.bodyMedium?.color,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -229,7 +537,9 @@ class _MessagingScreenState extends State<MessagingScreen> {
     for (final p in participants) {
       if (p is! Map) continue;
       final id = (p['_id'] ?? p['id'] ?? p['user_id'])?.toString();
-      if (id != null && id.isNotEmpty && id != uid) return Map<String, dynamic>.from(p);
+      if (id != null && id.isNotEmpty && id != uid) {
+        return Map<String, dynamic>.from(p);
+      }
     }
     final p0 = participants.first;
     return p0 is Map ? Map<String, dynamic>.from(p0) : null;
@@ -237,12 +547,17 @@ class _MessagingScreenState extends State<MessagingScreen> {
 
   String _userName(Map<String, dynamic>? user) {
     if (user == null) return 'User';
-    return (user['full_name'] ?? user['name'] ?? user['username'] ?? 'User').toString();
+    return (user['full_name'] ?? user['name'] ?? user['username'] ?? 'User')
+        .toString();
   }
 
   String? _avatar(Map<String, dynamic>? user) {
     if (user == null) return null;
-    return (user['avatar_url'] ?? user['avatarUrl'] ?? user['profile_pic'] ?? user['profilePic'])?.toString();
+    return (user['avatar_url'] ??
+            user['avatarUrl'] ??
+            user['profile_pic'] ??
+            user['profilePic'])
+        ?.toString();
   }
 
   String _preview(Map<String, dynamic>? lastMessage, bool mine, String name) {
@@ -251,7 +566,9 @@ class _MessagingScreenState extends State<MessagingScreen> {
     final text = lastMessage['text']?.toString() ?? '';
     if (text.isNotEmpty) return mine ? 'You: $text' : text;
     final mediaUrl = lastMessage['mediaUrl']?.toString() ?? '';
-    if (mediaUrl.isNotEmpty) return mine ? 'You sent an attachment.' : '$name sent an attachment.';
+    if (mediaUrl.isNotEmpty) {
+      return mine ? 'You sent an attachment.' : '$name sent an attachment.';
+    }
     return 'Start chatting';
   }
 
@@ -270,9 +587,11 @@ class _MessagingScreenState extends State<MessagingScreen> {
 
   Widget _conversationTile(Map<String, dynamic> conversation) {
     final unread = (conversation['unreadCount'] as num?)?.toInt() ?? 0;
-    final isCommunity = conversation['isCommunity'] == true || conversation['type']?.toString() == 'community';
+    final isCommunity = _isCommunity(conversation);
     final other = _otherParticipant(conversation);
-    final name = isCommunity ? (conversation['name']?.toString() ?? 'Community') : _userName(other);
+    final name = isCommunity
+        ? (conversation['name']?.toString() ?? 'Community')
+        : _userName(other);
     final avatarUrl = isCommunity ? null : _avatar(other);
 
     final lastMessage = conversation['lastMessage'] is Map
@@ -280,7 +599,10 @@ class _MessagingScreenState extends State<MessagingScreen> {
         : null;
     final uid = _currentUserId ?? '';
     final sender = lastMessage?['sender'];
-    final senderId = (sender is Map ? (sender['_id'] ?? sender['id'] ?? sender['user_id']) : sender)?.toString();
+    final senderId = (sender is Map
+            ? (sender['_id'] ?? sender['id'] ?? sender['user_id'])
+            : sender)
+        ?.toString();
     final mine = senderId != null && senderId.isNotEmpty && senderId == uid;
 
     return Padding(
@@ -297,15 +619,22 @@ class _MessagingScreenState extends State<MessagingScreen> {
               children: [
                 if (avatarUrl != null && avatarUrl.trim().isNotEmpty)
                   ClipOval(
-                    child: SafeNetworkImage(url: avatarUrl, width: 44, height: 44, fit: BoxFit.cover),
+                    child: SafeNetworkImage(
+                        url: avatarUrl,
+                        width: 44,
+                        height: 44,
+                        fit: BoxFit.cover),
                   )
                 else
                   CircleAvatar(
                     radius: 22,
-                    backgroundColor: isCommunity ? DesignTokens.instaOrange : DesignTokens.instaPink,
+                    backgroundColor: isCommunity
+                        ? DesignTokens.instaOrange
+                        : DesignTokens.instaPink,
                     child: Text(
                       name.characters.first.toUpperCase(),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w700),
                     ),
                   ),
                 const SizedBox(width: 12),
@@ -342,7 +671,8 @@ class _MessagingScreenState extends State<MessagingScreen> {
                       _formatTime(conversation['lastMessageAt']?.toString()),
                       style: TextStyle(
                         fontSize: 11,
-                        color: Theme.of(context).textTheme.bodySmall?.color ?? Colors.grey,
+                        color: Theme.of(context).textTheme.bodySmall?.color ??
+                            Colors.grey,
                       ),
                     ),
                     if (unread > 0) ...[
@@ -380,7 +710,9 @@ class _MessagingScreenState extends State<MessagingScreen> {
     if (dt == null) return '';
     final local = dt.toLocal();
     final now = DateTime.now();
-    if (local.year == now.year && local.month == now.month && local.day == now.day) {
+    if (local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day) {
       final h = local.hour % 12 == 0 ? 12 : local.hour % 12;
       final m = local.minute.toString().padLeft(2, '0');
       final ap = local.hour >= 12 ? 'PM' : 'AM';

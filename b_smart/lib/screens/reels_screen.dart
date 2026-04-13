@@ -1160,7 +1160,12 @@ class _ReelsScreenState extends State<ReelsScreen>
           },
         ),
         const SizedBox(height: 12),
-        _buildAvatarThumb(reel, size: 36),
+        ExcludeSemantics(
+          child: Opacity(
+            opacity: 0,
+            child: _buildAvatarThumb(reel, size: 36),
+          ),
+        ),
       ],
     );
   }
@@ -1223,7 +1228,12 @@ class _ReelsScreenState extends State<ReelsScreen>
           },
         ),
         const SizedBox(height: 12),
-        _buildAvatarThumb(reel, size: 36),
+        ExcludeSemantics(
+          child: Opacity(
+            opacity: 0,
+            child: _buildAvatarThumb(reel, size: 36),
+          ),
+        ),
       ],
     );
   }
@@ -1412,19 +1422,26 @@ class _ReelsScreenState extends State<ReelsScreen>
                 ),
               ],
               const SizedBox(height: 40),
-              Row(
-                children: [
-                  const Icon(LucideIcons.music2, color: Colors.white, size: 11),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(
-                      'Original Audio - ${reel.userName}',
-                      style: const TextStyle(color: Colors.white, fontSize: 11),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+              ExcludeSemantics(
+                child: Opacity(
+                  opacity: 0,
+                  child: Row(
+                    children: [
+                      const Icon(LucideIcons.music2,
+                          color: Colors.white, size: 11),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          'Original Audio - ${reel.userName}',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ],
           ),

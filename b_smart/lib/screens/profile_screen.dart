@@ -16,6 +16,7 @@ import '../widgets/posts_grid.dart';
 import '../widgets/post_detail_modal.dart';
 import '../models/feed_post_model.dart';
 import '../models/ad_model.dart';
+import '../models/ad_category_model.dart';
 import 'ad_detail_screen.dart';
 import '../theme/design_tokens.dart';
 import '../state/app_state.dart';
@@ -79,6 +80,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, String>? _adsMediaHeaders;
   bool _isOwnProfile = false;
   bool _isFavoriteProfile = false;
+  bool _favoriteCategoriesLoading = false;
+  List<AdCategory> _favoriteCategories = <AdCategory>[];
+  String _selectedFavoriteCategoryId = 'All';
   bool _avatarUploading = false;
   StreamSubscription<AppState>? _storeSub;
 
@@ -143,13 +147,140 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _toggleFavoriteProfile(String username) {
-    setState(() => _isFavoriteProfile = !_isFavoriteProfile);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          _isFavoriteProfile
-              ? 'Added @$username to favorites'
-              : 'Removed @$username from favorites',
+    final next = !_isFavoriteProfile;
+    setState(() => _isFavoriteProfile = next);
+    if (next && _favoriteCategories.isEmpty) {
+      unawaited(_loadFavoriteCategories());
+    }
+  }
+
+  Future<void> _loadFavoriteCategories() async {
+    if (_favoriteCategoriesLoading) return;
+    setState(() => _favoriteCategoriesLoading = true);
+    try {
+      final categories = await _adsService.fetchCategories();
+      if (!mounted) return;
+      setState(() {
+        _favoriteCategories = categories;
+        if (_favoriteCategories.isNotEmpty) {
+          final all = _favoriteCategories.firstWhere(
+            (c) => c.id.toLowerCase() == 'all' || c.name.toLowerCase() == 'all',
+            orElse: () => _favoriteCategories.first,
+          );
+          _selectedFavoriteCategoryId = all.id;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _favoriteCategories = _adsService.getFallbackCategories();
+        _selectedFavoriteCategoryId = _favoriteCategories.isNotEmpty
+            ? _favoriteCategories.first.id
+            : 'All';
+      });
+    } finally {
+      if (mounted) setState(() => _favoriteCategoriesLoading = false);
+    }
+  }
+
+  Widget _buildFavoriteCategoryStrip(BuildContext context) {
+    if (!_isFavoriteProfile) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final track = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2);
+    final surface = theme.cardColor;
+
+    final showLoading =
+        _favoriteCategoriesLoading && _favoriteCategories.isEmpty;
+    final categories = _favoriteCategories;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: SizedBox(
+        height: 56,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: showLoading ? 6 : categories.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            if (showLoading) {
+              return Container(
+                width: 132,
+                decoration: BoxDecoration(
+                  color: track,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              );
+            }
+            final c = categories[index];
+            final selected = _selectedFavoriteCategoryId == c.id;
+            return InkWell(
+              onTap: () => setState(() => _selectedFavoriteCategoryId = c.id),
+              borderRadius: BorderRadius.circular(16),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                width: 132,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: selected ? null : surface,
+                  gradient: selected
+                      ? const LinearGradient(
+                          colors: [
+                            DesignTokens.instaPurple,
+                            DesignTokens.instaPink,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : null,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: selected
+                        ? Colors.transparent
+                        : theme.dividerColor.withValues(alpha: 0.6),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.white.withValues(alpha: 0.18)
+                            : track,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        LucideIcons.tag,
+                        size: 16,
+                        color: selected
+                            ? Colors.white
+                            : theme.iconTheme.color?.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        c.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: selected
+                              ? Colors.white
+                              : theme.textTheme.bodyMedium?.color,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1620,6 +1751,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               )
                           : null,
                     ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: isMe
+                        ? _buildFavoriteCategoryStrip(context)
+                        : const SizedBox.shrink(),
                   ),
                   SliverToBoxAdapter(
                     child: profileUserId.isEmpty || isVendor
