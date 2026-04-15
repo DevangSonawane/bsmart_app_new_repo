@@ -304,11 +304,21 @@ export default function AdsManagement() {
             <Play className="w-4 h-4" />
           </button>
         )}
-        <button onClick={() => handleDeleteAd(ad.id)}
-          className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 disabled:opacity-50`}
-          title="Delete" disabled={isBusy("delete")}>
-          <Trash2 className="w-4 h-4" />
-        </button>
+        {ad.status === "pending" && (
+          <button onClick={() => handleDeleteAd(ad.id)}
+            className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 disabled:opacity-50`}
+            title="Delete (only allowed for Pending ads)" disabled={isBusy("delete")}>
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+        {ad.status !== "pending" && (
+          <button
+            className={`${btn} text-gray-300 dark:text-gray-700 cursor-not-allowed`}
+            title={`Cannot delete ${ad.status} ads — only Pending ads can be deleted`}
+            disabled>
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
       </>
     );
   };

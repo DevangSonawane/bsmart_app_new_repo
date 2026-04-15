@@ -85,6 +85,17 @@ class _HighlightStoryPickerScreenState
   }
 
   Future<List<Story>> _loadActiveStoryItems(String userId) async {
+    // Prefer the same backend flow as the React web app:
+    // 1) GET /stories/user/{userId}  -> list of stories
+    // 2) For each story, GET /stories/{storyId}/items -> selectable items
+    try {
+      final stories = await _storiesApi.userStories(userId);
+      final items = await _loadItemsForStories(stories);
+      if (items.isNotEmpty) return items;
+    } catch (_) {
+      // Backend may not support /stories/user; fallback to feed logic below.
+    }
+
     final groups = await _feedService.fetchStoriesFeed();
     final group = groups.firstWhere(
       (g) => g.userId == userId,
@@ -107,18 +118,53 @@ class _HighlightStoryPickerScreenState
 
   Future<List<Story>> _loadArchivedStoryItems() async {
     final rawStories = await _storiesApi.archive();
-    final items = <Map<String, dynamic>>[];
-    for (final raw in rawStories) {
-      final rawItems = raw['items'];
-      if (rawItems is List && rawItems.isNotEmpty) {
-        for (final item in rawItems.whereType<Map>()) {
-          items.add(Map<String, dynamic>.from(item));
-        }
-      } else {
-        items.add(Map<String, dynamic>.from(raw));
-      }
+    if (rawStories.isEmpty) return const [];
+
+    // Archive endpoint often returns Story documents; fetch their items for selection.
+    final items = await _loadItemsForStories(rawStories);
+    if (items.isNotEmpty) return items;
+
+    // Fallback: some backends may already return item maps in archive.
+    final directItems = rawStories
+        .where((m) => m['media'] != null)
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+    if (directItems.isEmpty) return const [];
+    return _highlightService.mapHighlightItems(
+      directItems,
+      ownerUserName: widget.userName,
+      ownerAvatar: widget.userAvatar,
+    );
+  }
+
+  Future<List<Story>> _loadItemsForStories(
+    List<Map<String, dynamic>> stories,
+  ) async {
+    if (stories.isEmpty) return const [];
+    String _storyId(Map<String, dynamic> m) {
+      final v = m['_id'] ?? m['id'] ?? m['story_id'] ?? m['storyId'];
+      return v == null ? '' : v.toString().trim();
     }
+
+    final ids = stories.map(_storyId).where((s) => s.isNotEmpty).toList();
+    if (ids.isEmpty) return const [];
+
+    final itemLists = await Future.wait(
+      ids.map((id) async {
+        try {
+          return await _storiesApi.items(id);
+        } catch (_) {
+          return const <Map<String, dynamic>>[];
+        }
+      }),
+    );
+    final items = itemLists
+        .expand((l) => l)
+        .whereType<Map<String, dynamic>>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
     if (items.isEmpty) return const [];
+
     return _highlightService.mapHighlightItems(
       items,
       ownerUserName: widget.userName,

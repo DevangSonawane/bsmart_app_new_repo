@@ -21,6 +21,7 @@ class ProfileHeader extends StatelessWidget {
   final bool isValidated;
   final bool isFollowing;
   final bool isFavorite;
+  final bool isSuggestionsOpen;
   final bool hasStory;
   final VoidCallback? onEdit;
   final VoidCallback? onFollow;
@@ -50,6 +51,7 @@ class ProfileHeader extends StatelessWidget {
     this.isValidated = false,
     this.isFollowing = false,
     this.isFavorite = false,
+    this.isSuggestionsOpen = false,
     this.hasStory = false,
     this.onEdit,
     this.onFollow,
@@ -282,6 +284,7 @@ class ProfileHeader extends StatelessWidget {
                 _actionIconButton(
                   context,
                   icon: isFavorite ? Icons.star : Icons.star_border,
+                  selected: isFavorite,
                   onTap: onFavorite ?? () {},
                 ),
                 const SizedBox(width: 12),
@@ -293,7 +296,9 @@ class ProfileHeader extends StatelessWidget {
                 const SizedBox(width: 12),
                 _actionIconButton(
                   context,
-                  icon: LucideIcons.users,
+                  icon: isSuggestionsOpen
+                      ? Icons.people_alt
+                      : Icons.people_alt_outlined,
                   onTap: onUser ?? () {},
                 ),
               ],
@@ -331,7 +336,9 @@ class ProfileHeader extends StatelessWidget {
                 const SizedBox(width: 8),
                 _actionIconButton(
                   context,
-                  icon: LucideIcons.users,
+                  icon: isSuggestionsOpen
+                      ? Icons.people_alt
+                      : Icons.people_alt_outlined,
                   onTap: onUser ?? () {},
                 ),
                 const SizedBox(width: 8),
@@ -453,9 +460,13 @@ class ProfileHeader extends StatelessWidget {
     required IconData icon,
     required VoidCallback onTap,
     bool useFloatingStyle = false,
+    bool selected = false,
   }) {
     final theme = Theme.of(context);
-    final fgColor = theme.colorScheme.onSurface;
+    final isDark = theme.brightness == Brightness.dark;
+    final fgColor = selected
+        ? (isDark ? Colors.white : Colors.black87)
+        : theme.colorScheme.onSurface;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -464,7 +475,7 @@ class ProfileHeader extends StatelessWidget {
         child: Container(
           width: 38,
           height: 38,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.transparent,
           ),

@@ -42,6 +42,9 @@ import '../utils/url_helper.dart';
 import '../widgets/profile_highlights_row.dart';
 import '../services/ads_service.dart';
 import 'follow_list_screen.dart';
+import '../api/users_api.dart';
+import '../api/follows_api.dart';
+import '../widgets/suggestion_follow.dart';
 
 /// Heroicons badge-check (same as React web app verified badge)
 const String _verifiedBadgeSvg = r'''
@@ -61,6 +64,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final SupabaseService _svc = SupabaseService();
   final AdsService _adsService = AdsService();
+  final UsersApi _usersApi = UsersApi();
+  final FollowsApi _followsApi = FollowsApi();
   Map<String, dynamic>? _profile;
   List<FeedPost> _posts = [];
   List<FeedPost> _saved = [];
@@ -85,6 +90,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _selectedFavoriteCategoryId = 'All';
   bool _avatarUploading = false;
   StreamSubscription<AppState>? _storeSub;
+  bool _showFollowSuggestions = false;
+  bool _followSuggestionsLoading = false;
+  List<SuggestionUser> _followSuggestions = const <SuggestionUser>[];
+  final Set<String> _dismissedFollowSuggestionUserIds = <String>{};
+  final Set<String> _followSuggestionOpsInFlight = <String>{};
 
   @override
   void initState() {
@@ -152,6 +162,176 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (next && _favoriteCategories.isEmpty) {
       unawaited(_loadFavoriteCategories());
     }
+  }
+
+  bool? _parseBoolLike(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      if (v == 'true' || v == '1' || v == 'yes') return true;
+      if (v == 'false' || v == '0' || v == 'no') return false;
+    }
+    return null;
+  }
+
+  String _suggestionIdOf(Map<String, dynamic> u) {
+    final raw = u['_id'] ?? u['id'] ?? u['userId'] ?? u['user_id'];
+    return raw == null ? '' : raw.toString().trim();
+  }
+
+  String _suggestionTitleOf(Map<String, dynamic> u) {
+    final rawUsername = u['username'] ?? u['userName'];
+    final username = rawUsername == null ? '' : rawUsername.toString().trim();
+    if (username.isNotEmpty) return username;
+    final name =
+        (u['full_name'] ?? u['name'] ?? u['fullName'])?.toString() ?? '';
+    return name.trim().isNotEmpty ? name.trim() : 'user';
+  }
+
+  String _suggestionAvatarOf(Map<String, dynamic> u) {
+    final raw = u['avatar_url'] ??
+        u['avatarUrl'] ??
+        u['profile_pic'] ??
+        u['profilePic'] ??
+        u['profilePicture'] ??
+        u['avatar'];
+    return raw == null ? '' : raw.toString().trim();
+  }
+
+  bool _suggestionIsFollowingOf(Map<String, dynamic> u) =>
+      _parseBoolLike(u['isFollowing']) ??
+      _parseBoolLike(u['is_followed_by_me']) ??
+      false;
+
+  void _toggleFollowSuggestions() {
+    final next = !_showFollowSuggestions;
+    setState(() => _showFollowSuggestions = next);
+    if (next && _followSuggestions.isEmpty) {
+      unawaited(_loadFollowSuggestions());
+    }
+  }
+
+  Future<void> _loadFollowSuggestions({bool force = false}) async {
+    if (_followSuggestionsLoading) return;
+    if (!force && _followSuggestions.isNotEmpty) return;
+    setState(() => _followSuggestionsLoading = true);
+    try {
+      final meId = await CurrentUser.id;
+      final users = await _usersApi.search('');
+      final list = users
+          .map((e) => Map<String, dynamic>.from(e))
+          .where((u) => _suggestionIdOf(u).isNotEmpty)
+          .toList();
+      list.shuffle();
+      if (list.length > 80) {
+        list.removeRange(80, list.length);
+      }
+
+      final ids = list.map(_suggestionIdOf).where((e) => e.isNotEmpty).toList();
+      if (ids.isNotEmpty && meId != null && meId.isNotEmpty) {
+        try {
+          final statuses = await _followsApi.bulkCheckFollowStatus(ids);
+          final statusMap = <String, Map<String, dynamic>>{};
+          for (final s in statuses) {
+            final sid = (s['userId'] as String?) ??
+                (s['_id'] as String?) ??
+                (s['id'] as String?) ??
+                '';
+            if (sid.isNotEmpty) statusMap[sid] = s;
+          }
+          for (var i = 0; i < list.length; i++) {
+            final u = list[i];
+            final uid = _suggestionIdOf(u);
+            final s = statusMap[uid];
+            if (s == null) continue;
+            list[i] = <String, dynamic>{
+              ...u,
+              ...s,
+              'isFollowing':
+                  (s['isFollowing'] as bool?) ?? _suggestionIsFollowingOf(u),
+            };
+          }
+        } catch (_) {
+          // ignore
+        }
+      }
+
+      final parsed = <SuggestionUser>[];
+      for (final u in list) {
+        final id = _suggestionIdOf(u);
+        if (id.isEmpty) continue;
+        if (meId != null && meId.isNotEmpty && id == meId) continue;
+        if (_suggestionIsFollowingOf(u)) continue;
+        final avatar = _suggestionAvatarOf(u);
+        parsed.add(
+          SuggestionUser(
+            id: id,
+            title: _suggestionTitleOf(u),
+            avatarUrl: avatar.isEmpty ? null : UrlHelper.absoluteUrl(avatar),
+          ),
+        );
+      }
+
+      if (!mounted) return;
+      setState(() => _followSuggestions = parsed);
+    } catch (_) {
+      // ignore
+    } finally {
+      if (mounted) {
+        setState(() => _followSuggestionsLoading = false);
+      } else {
+        _followSuggestionsLoading = false;
+      }
+    }
+  }
+
+  void _dismissFollowSuggestionUser(String userId) {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    setState(() => _dismissedFollowSuggestionUserIds.add(id));
+  }
+
+  Future<void> _followSuggestionUser(SuggestionUser user) async {
+    if (_followSuggestionOpsInFlight.contains(user.id)) return;
+    _followSuggestionOpsInFlight.add(user.id);
+    _dismissFollowSuggestionUser(user.id);
+    final ok = await _svc.followUser(user.id);
+    if (!ok && mounted) {
+      setState(() => _dismissedFollowSuggestionUserIds.remove(user.id));
+    }
+    _followSuggestionOpsInFlight.remove(user.id);
+  }
+
+  Widget _buildFollowSuggestionsBlock(BuildContext context) {
+    if (!_showFollowSuggestions) return const SizedBox.shrink();
+    final visible = _followSuggestions
+        .where((u) => !_dismissedFollowSuggestionUserIds.contains(u.id))
+        .take(14)
+        .toList();
+
+    final section = SuggestionFollowSection(
+      title: 'Suggestions',
+      users: visible,
+    );
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      child: SuggestionFollowBlock(
+        sections: [section],
+        isLoading: _followSuggestionsLoading,
+        imageHeaders: _reelImageHeaders,
+        compact: true,
+        onDismissUser: _dismissFollowSuggestionUser,
+        onUserTap: (id) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => ProfileScreen(userId: id)),
+          );
+        },
+        onFollow: _followSuggestionUser,
+      ),
+    );
   }
 
   Future<void> _loadFavoriteCategories() async {
@@ -1529,9 +1709,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final fullName = displayProfile?['full_name'] as String?;
         final bio = displayProfile?['bio'] as String?;
         final avatar = displayProfile?['avatar_url'] as String?;
-        final profileUserId = (displayProfile?['id'] as String?) ??
-            (displayProfile?['_id'] as String?) ??
-            '';
+        String _asId(dynamic v) {
+          if (v == null) return '';
+          final s = v.toString().trim();
+          return s;
+        }
+
+        final profileUserId = [
+          displayProfile?['_id'],
+          displayProfile?['id'],
+          displayProfile?['user_id'],
+          displayProfile?['userId'],
+          displayProfile?['uid'],
+        ].map(_asId).firstWhere((s) => s.isNotEmpty, orElse: () => '');
         final postsCount =
             (displayProfile?['posts_count'] as int?) ?? _posts.length;
         final followers = (displayProfile?['followers_count'] as int?) ?? 0;
@@ -1717,6 +1907,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           (displayProfile?['is_followed_by_me'] as bool?) ??
                               false,
                       isFavorite: _isFavoriteProfile,
+                      isSuggestionsOpen: _showFollowSuggestions,
                       hasStory: _hasStory,
                       onEdit: isMe ? _onEdit : null,
                       onFollow: isMe ? null : _onFollow,
@@ -1724,6 +1915,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onFavorite: () => _toggleFavoriteProfile(username),
                       onMore: () => _showProfileMoreActions(displayProfile),
                       onMessage: _openMessaging,
+                      onUser: _toggleFollowSuggestions,
                       onAvatarTap: _openStoriesFromProfile,
                       onAvatarEdit: isMe && !_avatarUploading
                           ? _showAvatarOptionsSheet
@@ -1756,6 +1948,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: isMe
                         ? _buildFavoriteCategoryStrip(context)
                         : const SizedBox.shrink(),
+                  ),
+                  SliverToBoxAdapter(
+                    child: _buildFollowSuggestionsBlock(context),
                   ),
                   SliverToBoxAdapter(
                     child: profileUserId.isEmpty || isVendor

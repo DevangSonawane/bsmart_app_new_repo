@@ -2207,7 +2207,7 @@ export default function AdDetails() {
                 {/* Likes & Dislikes list */}
                 <Card title={`Likes (${ad.likes_count || 0})`}
                   action={likesList.length > 8 && (
-                    <button onClick={() => setShowAllLikes(v => !v)} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+                    <button onClick={() => setShowAllLikes(v => !v)} className="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">
                       {showAllLikes ? "Show Less" : `View All ${likesList.length}`}
                     </button>
                   )}>

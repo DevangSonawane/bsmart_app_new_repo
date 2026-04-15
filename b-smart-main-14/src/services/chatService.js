@@ -27,14 +27,27 @@ export const markMessageSeen = async (messageId) => {
   return response.data;
 };
 
+export const addMessageReaction = async (messageId, emoji) => {
+  const response = await api.post(`/chat/messages/${messageId}/reaction`, { emoji });
+  return response.data;
+};
+
+export const removeMessageReaction = async (messageId) => {
+  const response = await api.delete(`/chat/messages/${messageId}/reaction`);
+  return response.data;
+};
+
 export const deleteMessage = async (messageId) => {
   const response = await api.delete(`/chat/messages/${messageId}`);
   return response.data;
 };
 
-export const uploadChatMedia = async (conversationId, file) => {
+export const uploadChatMedia = async (conversationId, files) => {
   const formData = new FormData();
-  formData.append('media', file);
+  const fileList = Array.isArray(files) ? files : [files];
+  fileList.filter(Boolean).forEach((file) => {
+    formData.append('media', file);
+  });
 
   const response = await api.post(`/chat/conversations/${conversationId}/media`, formData, {
     headers: {

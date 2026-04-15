@@ -37,7 +37,19 @@ class HighlightsApi {
   /// Returns highlights sorted by order ascending.
   Future<List<Map<String, dynamic>>> userHighlights(String userId) async {
     final res = await _client.get(_path('/highlights/user/$userId'));
-    return List<Map<String, dynamic>>.from(res as List);
+    if (res is List) {
+      return res.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+    }
+    if (res is Map) {
+      final dynamic list = res['highlights'] ?? res['data'] ?? res['items'];
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList();
+      }
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   // ── 3. Add Story Items to Highlight ─────────────────────────────────────
@@ -99,7 +111,19 @@ class HighlightsApi {
   /// NOTE: use _itemId (not _id) for delete-item calls.
   Future<List<Map<String, dynamic>>> items(String highlightId) async {
     final res = await _client.get(_path('/highlights/$highlightId/items'));
-    return List<Map<String, dynamic>>.from(res as List);
+    if (res is List) {
+      return res.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+    }
+    if (res is Map) {
+      final dynamic list = res['items'] ?? res['data'];
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList();
+      }
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   // ── 5. Update Highlight ──────────────────────────────────────────────────

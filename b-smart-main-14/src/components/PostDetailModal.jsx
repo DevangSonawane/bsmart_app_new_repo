@@ -59,13 +59,13 @@ const CoinIcon = ({ size = 13 }) => (
 const Avatar = ({ src, username, size = 'md' }) => {
   const dim = size === 'sm' ? 'w-8 h-8 text-xs' : 'w-9 h-9 text-sm';
   return (
-    <div className={`${dim} rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[1.5px] flex-shrink-0`}>
-      <div className="w-full h-full rounded-full bg-white dark:bg-black overflow-hidden flex items-center justify-center">
-        {src
-          ? <img src={src} alt={username || 'user'} className="w-full h-full object-cover" />
-          : <span className="font-bold text-gray-800 dark:text-white">{(username || 'U')[0].toUpperCase()}</span>
-        }
-      </div>
+    <div className={`${dim} rounded-full bg-gray-100 dark:bg-gray-800 flex-shrink-0 overflow-hidden`}>
+      {src
+        ? <img src={src} alt={username || 'user'} className="w-full h-full object-cover" />
+        : <div className="w-full h-full flex items-center justify-center font-bold text-gray-500 bg-gray-200 dark:bg-gray-700">
+            {(username || 'U')[0].toUpperCase()}
+          </div>
+      }
     </div>
   );
 };

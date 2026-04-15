@@ -129,8 +129,8 @@ const StoryRail = () => {
                     ${isYourStory
                       ? 'border-2 border-dashed border-gray-300 dark:border-gray-600 p-[2px]'
                       : hasStory && !hasSeen
-                        ? 'bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-600'
-                        : 'bg-gradient-to-tr from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-700'
+                        ? 'bg-orange-500'
+                        : 'bg-gray-200 dark:bg-gray-800'
                     }
                   `}>
                     <div className="w-full h-full rounded-full bg-white dark:bg-black p-[2px]">
@@ -141,7 +141,7 @@ const StoryRail = () => {
                           className="w-full h-full rounded-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-600 flex items-center justify-center text-sm font-bold text-white">
+                        <div className="w-full h-full rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-sm font-bold text-gray-500">
                           {username.charAt(0).toUpperCase()}
                         </div>
                       )}

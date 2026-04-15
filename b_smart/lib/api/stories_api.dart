@@ -12,6 +12,28 @@ class StoriesApi {
 
   String _path(String suffix) => '$_basePath$suffix';
 
+  /// GET /api/stories/user/{userId}
+  /// Returns a list of Story documents (not items). Used by highlights picker.
+  Future<List<Map<String, dynamic>>> userStories(String userId) async {
+    final res = await _client.get(_path('/stories/user/$userId'));
+    if (res is List) {
+      return res
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+    }
+    if (res is Map) {
+      final dynamic list = res['stories'] ?? res['data'] ?? res['items'];
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList();
+      }
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
   Future<Map<String, dynamic>> upload(List<int> bytes) async {
     final res = await _client.multipartPostBytes(
       _path('/stories/upload'),
@@ -54,12 +76,20 @@ class StoriesApi {
 
   Future<List<Map<String, dynamic>>> feed() async {
     final res = await _client.get(_path('/stories/feed'));
-    return List<Map<String, dynamic>>.from(res as List);
+    if (res is List) return List<Map<String, dynamic>>.from(res);
+    if (res is Map && res['stories'] is List) {
+      return List<Map<String, dynamic>>.from(res['stories'] as List);
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   Future<List<Map<String, dynamic>>> items(String storyId) async {
     final res = await _client.get(_path('/stories/$storyId/items'));
-    return List<Map<String, dynamic>>.from(res as List);
+    if (res is List) return List<Map<String, dynamic>>.from(res);
+    if (res is Map && res['items'] is List) {
+      return List<Map<String, dynamic>>.from(res['items'] as List);
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   Future<void> viewItem(String itemId) async {
@@ -68,7 +98,11 @@ class StoriesApi {
 
   Future<List<Map<String, dynamic>>> viewers(String storyId) async {
     final res = await _client.get(_path('/stories/$storyId/views'));
-    return List<Map<String, dynamic>>.from(res as List);
+    if (res is List) return List<Map<String, dynamic>>.from(res);
+    if (res is Map && res['views'] is List) {
+      return List<Map<String, dynamic>>.from(res['views'] as List);
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   Future<List<Map<String, dynamic>>> archive() async {

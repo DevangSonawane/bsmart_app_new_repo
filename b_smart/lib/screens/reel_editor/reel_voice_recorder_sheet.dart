@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:record/record.dart';
 
 class ReelVoiceRecorderSheet extends StatefulWidget {
   final ValueChanged<({String path, String filterId})> onConfirm;
@@ -16,35 +17,53 @@ class ReelVoiceRecorderSheet extends StatefulWidget {
 }
 
 class _ReelVoiceRecorderSheetState extends State<ReelVoiceRecorderSheet> {
+  final AudioRecorder _recorder = AudioRecorder();
   bool _recording = false;
   Timer? _waveTimer;
   final List<double> _bars = List<double>.filled(20, 4);
   String? _recordedPath;
   Duration _recordedDuration = Duration.zero;
   String _selectedFilter = 'None';
+  DateTime? _recordingStartedAt;
 
   @override
   void dispose() {
     _waveTimer?.cancel();
+    _recorder.dispose();
     super.dispose();
   }
 
-  void _toggleRecord() async {
+  Future<void> _toggleRecord() async {
     if (_recording) {
-      _stopRecording();
+      await _stopRecording();
     } else {
-      _startRecording();
+      await _startRecording();
     }
   }
 
-  void _startRecording() {
+  Future<void> _startRecording() async {
+    final hasPerms = await _recorder.hasPermission();
+    if (!hasPerms) return;
+    final path =
+        '${Directory.systemTemp.path}/voice_${DateTime.now().millisecondsSinceEpoch}.aac';
     setState(() {
       _recording = true;
       _recordedPath = null;
       _recordedDuration = Duration.zero;
+      _recordingStartedAt = DateTime.now();
     });
+    await _recorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
+    _waveTimer?.cancel();
     _waveTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      if (!mounted) return;
+      final startedAt = _recordingStartedAt;
       setState(() {
+        if (startedAt != null) {
+          _recordedDuration = DateTime.now().difference(startedAt);
+        }
         for (int i = 0; i < _bars.length; i++) {
           _bars[i] = 4 + (i % 5) * 4 + (DateTime.now().millisecond % 10);
           if (_bars[i] > 28) _bars[i] = 28;
@@ -55,15 +74,15 @@ class _ReelVoiceRecorderSheetState extends State<ReelVoiceRecorderSheet> {
 
   Future<void> _stopRecording() async {
     _waveTimer?.cancel();
+    final path = await _recorder.stop();
     setState(() {
       _recording = false;
       _bars.fillRange(0, _bars.length, 4);
+      _recordingStartedAt = null;
     });
-    // Simulated 3s recording
-    _recordedDuration = const Duration(seconds: 3);
-    final path =
-        '${Directory.systemTemp.path}/voice_${DateTime.now().millisecondsSinceEpoch}.aac';
-    await File(path).writeAsBytes([], flush: true);
+    if (path == null || path.isEmpty) return;
+    if (!await File(path).exists()) return;
+    if (!mounted) return;
     setState(() => _recordedPath = path);
   }
 

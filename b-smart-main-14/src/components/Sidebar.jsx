@@ -883,13 +883,11 @@ const Sidebar = ({ onOpenCreateModal }) => {
                       }}
                       className="w-full flex items-center gap-3 px-6 py-3 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors text-left"
                     >
-                      <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[2px] shrink-0">
-                        <div className="w-full h-full rounded-full bg-white dark:bg-black overflow-hidden flex items-center justify-center">
-                          {u.avatar_url || u.profile_picture
-                            ? <img src={u.avatar_url || u.profile_picture} alt="" className="w-full h-full object-cover" />
-                            : <span className="text-sm font-bold text-gray-700 dark:text-white">{(u.username || u.full_name || '?')[0].toUpperCase()}</span>
-                          }
-                        </div>
+                      <div className="w-11 h-11 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0 flex items-center justify-center">
+                        {u.avatar_url || u.profile_picture
+                          ? <img src={u.avatar_url || u.profile_picture} alt="" className="w-full h-full object-cover" />
+                          : <span className="text-sm font-bold text-gray-500">{(u.username || u.full_name || '?')[0].toUpperCase()}</span>
+                        }
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.full_name || u.name || u.username}</p>

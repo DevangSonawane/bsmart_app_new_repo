@@ -42,13 +42,13 @@ const formatTimeAgo = (dateString) => {
 const Avatar = ({ src, username, size = 'md' }) => {
   const dim = size === 'xs' ? 'w-7 h-7 text-[10px]' : size === 'sm' ? 'w-8 h-8 text-xs' : 'w-9 h-9 text-sm';
   return (
-    <div className={`${dim} rounded-full overflow-hidden bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[1.5px] flex-shrink-0`}>
-      <div className="w-full h-full rounded-full bg-white dark:bg-[#1c1c1e] flex items-center justify-center overflow-hidden">
-        {src
-          ? <img src={src} alt={username || 'user'} className="w-full h-full object-cover" />
-          : <span className="text-gray-800 dark:text-white font-bold">{(username || 'U')[0].toUpperCase()}</span>
-        }
-      </div>
+    <div className={`${dim} rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0 flex items-center justify-center`}>
+      {src
+        ? <img src={src} alt={username || 'user'} className="w-full h-full object-cover" />
+        : <div className="w-full h-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 font-bold text-gray-500">
+            {(username || 'U')[0].toUpperCase()}
+          </div>
+      }
     </div>
   );
 };
@@ -515,7 +515,7 @@ const Caption = ({ text }) => {
         <>
           {text}
           {expanded && isLong && (
-            <button onClick={() => setExpanded(false)} className="text-white/60 ml-1.5 hover:text-white transition-colors text-xs font-semibold">
+            <button onClick={() => setExpanded(false)} className="text-white/60 ml-1.5 hover:text-white transition-colors text-sm font-semibold">
               less
             </button>
           )}
@@ -983,9 +983,6 @@ const Ads = ({ feedMode = 'user' }) => {
   }, [currentIndex, trackView]);
 
   // ── Imperatively play/pause videos when currentIndex or ads list changes ──────
-  // autoPlay={isCurrent} only fires on initial mount and is blocked by browsers for
-  // unmuted video. We must call .play() imperatively every time the current ad changes,
-  // including the very first load when ads arrive from the API (currentIndex stays 0).
   useEffect(() => {
     if (ads.length === 0) return;
     const currentAd = ads[currentIndex];
@@ -994,31 +991,54 @@ const Ads = ({ feedMode = 'user' }) => {
 
     // Pause all other videos immediately
     Object.entries(videoRefs.current).forEach(([idx, vid]) => {
-      if (vid && Number(idx) !== currentIndex && !vid.paused) vid.pause();
+      if (vid && Number(idx) !== currentIndex) {
+        vid.pause();
+        // Reset non-current videos so they're ready to play from start if revisited
+        try { vid.currentTime = 0; } catch { /* ignore */ }
+      }
     });
 
     if (!isVideo) return;
-
-    // Don't auto-play if user explicitly paused
     if (isPausedByUser) return;
 
-    // Small delay to ensure the <video> element is in the DOM after React render
-    const timer = setTimeout(() => {
+    // Use requestAnimationFrame to play as soon as the browser is ready
+    // (avoids the 100ms stutter from setTimeout)
+    let rafId;
+    let attempts = 0;
+    const tryPlay = () => {
       const vid = videoRefs.current[currentIndex];
       if (!vid) return;
       const m = currentAd.media?.[0];
       const start = m?.timing_window?.start ?? m?.video_meta?.selected_start ?? 0;
-      vid.currentTime = start > 0 ? start : 0;
-      const playPromise = vid.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          // Browser blocked autoplay — user must interact first; silently ignore
+      if (start > 0 && vid.currentTime < start) {
+        try { vid.currentTime = start; } catch { /* ignore */ }
+      }
+      const promise = vid.play();
+      if (promise !== undefined) {
+        promise.catch(() => {
+          // Retry up to 5 times with rAF if browser blocks autoplay
+          if (attempts < 5) {
+            attempts++;
+            rafId = requestAnimationFrame(tryPlay);
+          }
         });
       }
-    }, 100);
+    };
+    rafId = requestAnimationFrame(tryPlay);
 
-    return () => clearTimeout(timer);
+    return () => cancelAnimationFrame(rafId);
   }, [currentIndex, ads, isPausedByUser]);
+
+  // ── 3-second timer to show CTA buttons ──────────────────────────────────────
+  const ctaTimerRef = useRef(null);
+  useEffect(() => {
+    clearTimeout(ctaTimerRef.current);
+    setShowCtaButtons(false);
+    ctaTimerRef.current = setTimeout(() => {
+      setShowCtaButtons(true);
+    }, 3000);
+    return () => clearTimeout(ctaTimerRef.current);
+  }, [currentIndex]);
 
   // ── Navigation ───────────────────────────────────────────────────────────────
   const goToIndex = useCallback((index) => {
@@ -1028,8 +1048,7 @@ const Ads = ({ feedMode = 'user' }) => {
     isAnimatingRef.current = true;
     const curVid = videoRefs.current[currentIndex];
     if (curVid) curVid.pause();
-    setIsPausedByUser(false); // reset pause state when navigating
-    setShowCtaButtons(false); // reset CTA on navigation
+    setIsPausedByUser(false);
     setCurrentIndex(next);
     setTimeout(() => { isAnimatingRef.current = false; }, 500);
   }, [currentIndex, ads.length]);
@@ -1383,13 +1402,11 @@ const Ads = ({ feedMode = 'user' }) => {
                           onMouseLeave={() => setHoveredUserId((current) => (current === previewUserId ? null : current))}
                           className="relative w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
                         >
-                          <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[1.5px] shrink-0">
-                            <div className="w-full h-full rounded-full bg-white dark:bg-[#1c1c1e] overflow-hidden flex items-center justify-center">
-                              {u.avatar_url
-                                ? <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
-                                : <span className="text-xs font-bold text-gray-700 dark:text-white">{(u.username || u.full_name || '?')[0].toUpperCase()}</span>
-                              }
-                            </div>
+                          <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0 flex items-center justify-center">
+                            {u.avatar_url
+                              ? <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
+                              : <span className="text-xs font-bold text-gray-500">{(u.username || u.full_name || '?')[0].toUpperCase()}</span>
+                            }
                           </div>
                           <div className="min-w-0">
                             <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.full_name || u.username}</div>
@@ -1533,7 +1550,7 @@ const Ads = ({ feedMode = 'user' }) => {
               </button>
               {/* Compact wallet pill */}
               <Link to="/wallet" className="flex items-center gap-1 bg-black/40 backdrop-blur-md border border-white/20 rounded-full px-2 py-1">
-                <div className="w-4 h-4 rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 flex items-center justify-center shrink-0">
+                <div className="w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>
                   </svg>
@@ -1583,13 +1600,11 @@ const Ads = ({ feedMode = 'user' }) => {
                     if (item._type === 'user') return (
                       <button key={item._id || item.id} onClick={() => handleSearchResultClick(item)}
                         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-left">
-                        <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[1.5px] shrink-0">
-                          <div className="w-full h-full rounded-full bg-black overflow-hidden flex items-center justify-center">
-                            {item.avatar_url
-                              ? <img src={item.avatar_url} alt="" className="w-full h-full object-cover" />
-                              : <span className="text-[10px] font-bold text-white">{(item.username || '?')[0].toUpperCase()}</span>
-                            }
-                          </div>
+                        <div className="w-8 h-8 rounded-full overflow-hidden bg-white/10 shrink-0 flex items-center justify-center">
+                          {item.avatar_url
+                            ? <img src={item.avatar_url} alt="" className="w-full h-full object-cover" />
+                            : <span className="text-[10px] font-bold text-white/70">{(item.username || '?')[0].toUpperCase()}</span>
+                          }
                         </div>
                         <div className="min-w-0">
                           <div className="text-sm font-semibold text-white truncate">{item.full_name || item.username}</div>
@@ -1672,14 +1687,14 @@ const Ads = ({ feedMode = 'user' }) => {
               md:w-[360px] md:h-[90vh] md:rounded-2xl md:shadow-2xl
             ">
 
-              {/* ── Progress bar ── */}
-              <div className="absolute top-0 left-0 right-0 z-40 h-1 bg-white/20">
+              {/* ── Progress bar — bottom of card ── */}
+              <div className="absolute bottom-0 left-0 right-0 z-40 h-[3px] bg-white/20">
                 <div className="h-full bg-white transition-none" style={{ width: `${progress}%` }} />
               </div>
 
               {/* Slides */}
               <div className="h-full w-full transition-transform duration-500 ease-out"
-                style={{ transform: `translateY(-${currentIndex * 100}%)` }}>
+                style={{ transform: `translateY(-${currentIndex * 100}%)`, willChange: 'transform' }}>
 
                 {ads.map((a, index) => {
                   const src = mediaUrl(a);
@@ -1699,14 +1714,21 @@ const Ads = ({ feedMode = 'user' }) => {
                             className="w-full h-full object-cover"
                             muted={isMuted}
                             playsInline
-                            autoPlay={isCurrent}
+                            preload={isCurrent ? 'auto' : 'metadata'}
                             loop={false}
+                            onCanPlay={e => {
+                              // As soon as video can play and it's current, start immediately
+                              if (isCurrent && !isPausedByUser && e.target.paused) {
+                                e.target.play().catch(() => {});
+                              }
+                            }}
                             onLoadedMetadata={e => {
                               const m = a.media?.[0];
                               const start = m?.timing_window?.start ?? m?.video_meta?.selected_start ?? 0;
-                              if (start > 0) e.target.currentTime = start;
-                              // Fallback: if this is the current video and it's not playing yet, play it
-                              if (isCurrent && e.target.paused && !isPausedByUser) {
+                              if (start > 0) {
+                                try { e.target.currentTime = start; } catch { /* ignore */ }
+                              }
+                              if (isCurrent && !isPausedByUser) {
                                 e.target.play().catch(() => {});
                               }
                             }}
@@ -1739,7 +1761,6 @@ const Ads = ({ feedMode = 'user' }) => {
                                 pct = (ct / vid.duration) * 100;
                               }
                               setProgress(pct);
-                              if (pct >= 50) setShowCtaButtons(true);
                             }}
                             onEnded={() => {
                               if (!isCurrent) return;

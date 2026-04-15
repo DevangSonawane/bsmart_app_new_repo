@@ -200,7 +200,7 @@ const ExpandCaption = ({ username, userId, text, isAd }) => {
         <>
           {text}
           {expanded && isLong && (
-            <button onClick={() => setExpanded(false)} className="text-gray-400 ml-1.5 text-xs font-semibold">less</button>
+            <button onClick={() => setExpanded(false)} className="text-gray-400 ml-1.5 text-sm font-semibold">less</button>
           )}
         </>
       ) : (
@@ -607,14 +607,14 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
     <div className="relative isolate overflow-hidden bg-white dark:bg-black mb-4 border-b border-gray-200 dark:border-gray-800 pb-4 md:rounded-lg md:border max-w-[470px] mx-auto">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between p-3">
+      <div className="relative z-10 flex items-center justify-between bg-white dark:bg-black p-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <Link to={profilePath} className="flex-shrink-0 w-9 h-9 rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[2px] block">
-            <div className="w-full h-full rounded-full bg-white dark:bg-black p-[1px]">
+          <Link to={profilePath} className="flex-shrink-0 w-9 h-9 rounded-full block">
+            <div className="w-full h-full rounded-full bg-gray-100 dark:bg-gray-800">
               {avatar ? (
                 <img src={avatar} alt={username} className="w-full h-full rounded-full object-cover" />
               ) : (
-                <div className="w-full h-full rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 flex items-center justify-center text-xs font-bold text-white">
+                <div className="w-full h-full rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center text-xs font-bold text-gray-600 dark:text-gray-300">
                   {username.charAt(0).toUpperCase()}
                 </div>
               )}

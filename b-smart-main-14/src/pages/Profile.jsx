@@ -8,6 +8,7 @@ import PostDetailModal from '../components/PostDetailModal';
 import AvatarCropModal from '../components/AvatarCropModal';
 import FollowersModal from '../components/FollowersModal';
 import FollowingModal from '../components/FollowingModal';
+import HighlightsRail from '../components/HighlightsRail';
 import { setUser } from '../store/authSlice';
 import { createOrGetConversation } from '../services/chatService';
 import {
@@ -55,6 +56,20 @@ const Profile = () => {
     const [favoriteProfile, setFavoriteProfile] = useState(false);
     const [followersModalOpen, setFollowersModalOpen] = useState(false);
     const [followingModalOpen, setFollowingModalOpen] = useState(false);
+    const [showUserOptionsMenu, setShowUserOptionsMenu] = useState(false);
+    const userOptionsMenuRef = useRef(null);
+
+    // Close user options menu when clicking outside
+    useEffect(() => {
+        if (!showUserOptionsMenu) return;
+        const handler = (e) => {
+            if (userOptionsMenuRef.current && !userOptionsMenuRef.current.contains(e.target)) {
+                setShowUserOptionsMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showUserOptionsMenu]);
 
     const profileRewardMsRef = useRef(0);
     const profileRewardTickRef = useRef(null);
@@ -722,18 +737,41 @@ const Profile = () => {
                                     )}
                                 </div>
 
-                                {/* Row 3: Settings icon / Vendor Badge */}
+                                {/* Row 3: Settings icon / Vendor Badge / 3-dot menu */}
                                 <div className="mb-4">
                                     {isOwnProfile ? (
                                         <Link to="/settings" className="inline-flex p-1 text-gray-900 dark:text-white hover:opacity-70 transition-opacity">
                                             <Settings size={24} />
                                         </Link>
-                                    ) : isVendor ? (
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] font-bold bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded-full uppercase tracking-wider">Vendor</span>
-                                            <ValidationStatusBadge validated={vendorValidated} compact />
+                                    ) : (
+                                        <div className="relative" ref={userOptionsMenuRef}>
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setShowUserOptionsMenu(!showUserOptionsMenu)} 
+                                                className="p-1 text-gray-900 dark:text-white hover:opacity-70 transition-opacity"
+                                            >
+                                                <MoreHorizontal size={24} />
+                                            </button>
+                                            {showUserOptionsMenu && (
+                                                <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[180px]">
+                                                    <button
+                                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                        onClick={() => { setShowUserOptionsMenu(false); alert('Report submitted'); }}
+                                                    >
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                                                        Report
+                                                    </button>
+                                                    <button
+                                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800"
+                                                        onClick={() => { setShowUserOptionsMenu(false); alert('Notifications turned on'); }}
+                                                    >
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                                                        Turn On Notification
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
-                                    ) : null}
+                                    )}
                                 </div>
 
                                 {/* Row 4: Stats */}
@@ -777,6 +815,14 @@ const Profile = () => {
                                     )}
                                 </div>
                             </div>
+                        </div>
+
+                        <div className="pb-4">
+                            <HighlightsRail
+                                users={profileUser ? [profileUser] : []}
+                                variant="profile"
+                                allowCreate={isOwnProfile}
+                            />
                         </div>
 
                         {/* Vendor Business Info (mobile) */}
@@ -925,26 +971,45 @@ const Profile = () => {
                                         >
                                             <MessageCircle size={20} />
                                         </button>
-                                       <Link to="/settings" className="inline-flex p-1 text-gray-900 dark:text-white hover:opacity-70 transition-opacity">
-                                        <Settings size={28} />
-                                    </Link>
                                     </>
                                 )}
                             </div>
 
-                            {/* Row 3: Settings icon (own) / Vendor badge (other vendor) / empty spacer for layout parity */}
+                            {/* Row 3: Settings icon (own) / 3-dot menu (other) / empty spacer for layout parity */}
                             <div className="mb-6">
                                 {isOwnProfile ? (
                                     <Link to="/settings" className="inline-flex p-1 text-gray-900 dark:text-white hover:opacity-70 transition-opacity">
                                         <Settings size={28} />
                                     </Link>
-                                ) : isVendor ? (
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-xs font-bold bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 px-3 py-1 rounded-full uppercase tracking-wider">Vendor</span>
-                                        <ValidationStatusBadge validated={vendorValidated} />
-                                    </div>
                                 ) : (
-                                   <></>/* spacer to keep stats row at same vertical position */
+                                    <div className="relative" ref={userOptionsMenuRef}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowUserOptionsMenu(v => !v)}
+                                            className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors shadow-sm"
+                                            aria-label="More options"
+                                        >
+                                            <MoreHorizontal size={22} />
+                                        </button>
+                                        {showUserOptionsMenu && (
+                                            <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[200px]">
+                                                <button
+                                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                    onClick={() => { setShowUserOptionsMenu(false); alert('Report submitted'); }}
+                                                >
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                                                    Report
+                                                </button>
+                                                <button
+                                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800"
+                                                    onClick={() => { setShowUserOptionsMenu(false); alert('Notifications turned on'); }}
+                                                >
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                                                    Turn On Notification
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
 
@@ -994,6 +1059,14 @@ const Profile = () => {
                         </div>
                     </div>
 
+                    <div className="px-4 pb-8">
+                        <HighlightsRail
+                            users={profileUser ? [profileUser] : []}
+                            variant="profile"
+                            allowCreate={isOwnProfile}
+                        />
+                    </div>
+
                     {/* Vendor Business Info */}
                     <VendorBusinessCard />
 
@@ -1022,7 +1095,7 @@ const Profile = () => {
                 {/* Floating Wallet */}
                 <div className="fixed bottom-8 right-8 z-50 hover:scale-105 transition-transform cursor-pointer">
                     <Link to="/wallet" className="flex items-center gap-2 bg-white dark:bg-gray-900 rounded-full shadow-xl border border-gray-100 dark:border-gray-800 p-1 pr-4">
-                        <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 flex items-center justify-center text-white shadow">
+                        <div className="w-11 h-11 rounded-full bg-orange-500 flex items-center justify-center text-white shadow">
                             <Wallet size={20} />
                         </div>
                         <div className="flex flex-col">

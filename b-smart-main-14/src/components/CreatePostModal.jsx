@@ -1929,6 +1929,41 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       <textarea placeholder="Describe what you're promoting..." value={adDescription} onChange={(e) => setAdDescription(e.target.value)} rows={3}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all resize-none placeholder-gray-400" />
                     </div>
+                    {/* ── Ad Media Upload ── */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Media <span className="text-gray-400 font-normal">(image or video)</span></label>
+                      <div
+                        className="w-full rounded-xl border-2 border-dashed border-orange-200 dark:border-orange-900/40 bg-orange-50/50 dark:bg-orange-950/10 flex flex-col items-center justify-center gap-2 py-5 cursor-pointer hover:border-orange-400 dark:hover:border-orange-600 transition-colors"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {media.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 px-3 justify-center">
+                            {media.slice(0, 4).map((m, i) => (
+                              <div key={m.id} className="relative w-16 h-16 rounded-lg overflow-hidden border-2 border-orange-300">
+                                {m.type === 'video'
+                                  ? <video src={m.url} className="w-full h-full object-cover" muted playsInline />
+                                  : <img src={m.url} className="w-full h-full object-cover" alt="" />}
+                                <span className="absolute bottom-0 left-0 right-0 text-center bg-black/50 text-white text-[9px] font-bold px-1 py-0.5">{m.type === 'video' ? '▶ Video' : '🖼 Image'}</span>
+                              </div>
+                            ))}
+                            {media.length > 4 && <div className="w-16 h-16 rounded-lg border-2 border-orange-200 flex items-center justify-center bg-orange-50 dark:bg-orange-900/20 text-orange-500 text-xs font-bold">+{media.length - 4}</div>}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                              <Images size={20} className="text-orange-500" />
+                            </div>
+                            <p className="text-xs font-semibold text-orange-600 dark:text-orange-400">Click to upload image or video</p>
+                            <p className="text-[10px] text-gray-400">JPG, PNG, MP4 supported</p>
+                          </>
+                        )}
+                      </div>
+                      {media.length > 0 && (
+                        <button className="mt-1.5 text-xs text-orange-500 font-semibold hover:text-orange-600 transition-colors" onClick={() => fileInputRef.current?.click()}>
+                          + Add more media
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -2133,34 +2168,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                   </div>
                 </div>
 
-                {/* ── Section 6: Tracking & UTM ── */}
-                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
-                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-orange-50 to-orange-50/0 dark:from-orange-950/30 dark:to-transparent">
-                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0">
-                      <Globe size={12} className="text-white" />
-                    </div>
-                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Tracking & UTM</span>
-                    <span className="ml-auto text-[10px] text-gray-400 font-medium">optional</span>
-                  </div>
-                  <div className="p-4 space-y-2.5">
-                    {[
-                      { label: 'UTM Source',        value: utmSource,         setter: setUtmSource,         placeholder: 'e.g. bsmart' },
-                      { label: 'UTM Medium',         value: utmMedium,         setter: setUtmMedium,         placeholder: 'e.g. paid_ad' },
-                      { label: 'UTM Campaign',       value: utmCampaign,       setter: setUtmCampaign,       placeholder: 'e.g. summer_sale_2025' },
-                      { label: 'UTM Term',           value: utmTerm,           setter: setUtmTerm,           placeholder: 'e.g. fashion' },
-                      { label: 'UTM Content',        value: utmContent,        setter: setUtmContent,        placeholder: 'e.g. banner_v1' },
-                      { label: 'Conversion Pixel ID',value: conversionPixelId, setter: setConversionPixelId, placeholder: 'e.g. px_abc123' },
-                    ].map(field => (
-                      <div key={field.label}>
-                        <label className="text-[11px] font-semibold text-gray-400 mb-1 block">{field.label}</label>
-                        <input type="text" value={field.value} onChange={e => field.setter(e.target.value)} placeholder={field.placeholder}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all placeholder-gray-400" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* ── Section 7: Review & Submit ── */}
+                {/* ── Section 6: Review & Submit ── */}
                 <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
                   <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-orange-50 to-orange-50/0 dark:from-orange-950/30 dark:to-transparent">
                     <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart, Search, Wallet } from 'lucide-react';
+import { Heart, MessageCircle, Wallet } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useNotificationSocket } from '../hooks/useNotificationSocket';
@@ -78,13 +78,13 @@ const TopBar = () => {
           )}
         </button>
 
-        {/* Search → goes to /search page */}
+        {/* Chat → goes to /messages page */}
         <button
-          onClick={() => navigate('/search')}
+          onClick={() => navigate('/messages')}
           className="p-1.5 rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-          aria-label="Search"
+          aria-label="Chat"
         >
-          <Search size={22} className="text-black dark:text-white" />
+          <MessageCircle size={22} className="text-black dark:text-white" />
         </button>
 
         {userObject?.role !== 'vendor' && (

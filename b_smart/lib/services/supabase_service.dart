@@ -189,7 +189,10 @@ class SupabaseService {
     try {
       final me = await AuthApi().me();
       // Only return if it matches the requested id or no public profile existed
-      final meId = me['id'] as String? ?? me['_id'] as String?;
+      final meId = (me['id'] as String?) ??
+          (me['_id'] as String?) ??
+          (me['user_id'] as String?) ??
+          (me['userId'] as String?);
       if (meId != null && meId == userId) {
         return me;
       }

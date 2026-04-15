@@ -51,11 +51,11 @@ const SideStoryCard = ({ story, side, onClick }) => {
         {/* bottom user info */}
         <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
           <div className="flex items-center gap-1.5 mb-1">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-600 p-[1.5px] flex-shrink-0">
+            <div className="w-6 h-6 rounded-full bg-gray-700 p-[1px] flex-shrink-0">
               <div className="w-full h-full rounded-full bg-black overflow-hidden">
                 {story.avatarUrl
                   ? <img src={story.avatarUrl} alt={story.username} className="w-full h-full object-cover" />
-                  : <div className="w-full h-full flex items-center justify-center text-[8px] font-bold text-white bg-gradient-to-br from-orange-400 to-pink-600">{story.username?.charAt(0).toUpperCase()}</div>
+                  : <div className="w-full h-full flex items-center justify-center text-[8px] font-bold text-white bg-gray-600">{story.username?.charAt(0).toUpperCase()}</div>
                 }
               </div>
             </div>
@@ -296,7 +296,7 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
         <div className="absolute top-7 left-3 right-3 flex items-center justify-between z-30 pointer-events-none">
           {/* Left: avatar + username + time */}
           <div className="flex items-center gap-2.5 pointer-events-auto">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-600 p-[1.5px] flex-shrink-0">
+            <div className="w-9 h-9 rounded-full bg-gray-700 p-[1px] flex-shrink-0">
               <div className="w-full h-full rounded-full bg-black overflow-hidden">
                 {currentStory?.avatarUrl
                   ? <img src={currentStory.avatarUrl} alt={currentStory.username} className="w-full h-full object-cover" />

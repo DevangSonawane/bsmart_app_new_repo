@@ -23,8 +23,15 @@ class Highlight {
   });
 
   factory Highlight.fromMap(Map<String, dynamic> m) {
-    final id = (m['_id'] as String?) ?? (m['id'] as String?) ?? '';
-    final rawCover = (m['cover_url'] as String?) ?? '';
+    final id = (m['_id'] ?? m['id'] ?? m['highlightId'] ?? m['highlight_id'])
+            ?.toString() ??
+        '';
+    final rawCover =
+        (m['cover_url'] as String?) ?? (m['coverUrl'] as String?) ?? '';
+    final createdRaw =
+        (m['createdAt'] as String?) ?? (m['created_at'] as String?) ?? '';
+    final updatedRaw =
+        (m['updatedAt'] as String?) ?? (m['updated_at'] as String?) ?? '';
     return Highlight(
       id: id,
       userId: (m['user_id'] as String?) ??
@@ -32,14 +39,14 @@ class Highlight {
           (m['owner_id'] as String?) ??
           (m['ownerId'] as String?) ??
           '',
-      title: (m['title'] as String?) ?? '',
+      title: (m['title'] as String?) ?? (m['name'] as String?) ?? '',
       coverUrl: rawCover.isNotEmpty ? UrlHelper.absoluteUrl(rawCover) : null,
-      itemsCount: (m['items_count'] as num?)?.toInt() ?? 0,
+      itemsCount: (m['items_count'] as num?)?.toInt() ??
+          (m['itemsCount'] as num?)?.toInt() ??
+          0,
       order: (m['order'] as num?)?.toInt() ?? 0,
-      createdAt:
-          DateTime.tryParse(m['createdAt'] as String? ?? '') ?? DateTime.now(),
-      updatedAt:
-          DateTime.tryParse(m['updatedAt'] as String? ?? '') ?? DateTime.now(),
+      createdAt: DateTime.tryParse(createdRaw) ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(updatedRaw) ?? DateTime.now(),
     );
   }
 

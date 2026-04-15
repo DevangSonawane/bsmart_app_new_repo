@@ -46,6 +46,7 @@ class SuggestionFollowBlock extends StatelessWidget {
   final List<SuggestionFollowSection> sections;
   final bool isLoading;
   final Map<String, String>? imageHeaders;
+  final bool compact;
   final void Function(String userId)? onDismissUser;
   final void Function(String userId)? onUserTap;
   final void Function(SuggestionUser user)? onFollow;
@@ -55,6 +56,7 @@ class SuggestionFollowBlock extends StatelessWidget {
     required this.sections,
     this.isLoading = false,
     this.imageHeaders,
+    this.compact = false,
     this.onDismissUser,
     this.onUserTap,
     this.onFollow,
@@ -69,15 +71,19 @@ class SuggestionFollowBlock extends StatelessWidget {
         (isDark ? Colors.white : theme.colorScheme.onSurface);
     final subColor = theme.textTheme.bodySmall?.color ??
         (isDark ? Colors.white60 : theme.colorScheme.onSurfaceVariant);
+    final textScale =
+        MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.4);
+    final baseHeight = compact ? 216.0 : 248.0;
+    final listHeight = baseHeight + ((textScale - 1.0) * 40.0);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: EdgeInsets.symmetric(vertical: compact ? 8 : 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (final section in sections) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 14),
               child: _SectionHeader(
                 title: section.title,
                 helperText: section.helperText,
@@ -87,11 +93,11 @@ class SuggestionFollowBlock extends StatelessWidget {
                 onOverflow: section.onOverflow,
               ),
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: compact ? 8 : 10),
             SizedBox(
-              height: 248,
+              height: listHeight,
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+                padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 14),
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
                 itemCount: (isLoading || section.users.isEmpty)
@@ -100,13 +106,17 @@ class SuggestionFollowBlock extends StatelessWidget {
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (context, index) {
                   if (isLoading || section.users.isEmpty) {
-                    return _SuggestionCard.loading(isDark: isDark);
+                    return _SuggestionCard.loading(
+                      isDark: isDark,
+                      compact: compact,
+                    );
                   }
                   final user = section.users[index];
                   return _SuggestionCard(
                     user: user,
                     isDark: isDark,
                     imageHeaders: imageHeaders,
+                    compact: compact,
                     onDismiss: onDismissUser == null
                         ? null
                         : () => onDismissUser!(user.id),
@@ -116,7 +126,7 @@ class SuggestionFollowBlock extends StatelessWidget {
                 },
               ),
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: compact ? 10 : 14),
           ],
         ],
       ),
@@ -204,6 +214,7 @@ class _SuggestionCard extends StatelessWidget {
   final SuggestionUser user;
   final bool isDark;
   final Map<String, String>? imageHeaders;
+  final bool compact;
   final VoidCallback? onDismiss;
   final VoidCallback? onTap;
   final VoidCallback? onFollow;
@@ -213,12 +224,13 @@ class _SuggestionCard extends StatelessWidget {
     required this.user,
     required this.isDark,
     required this.imageHeaders,
+    required this.compact,
     required this.onDismiss,
     required this.onTap,
     required this.onFollow,
   }) : _loading = false;
 
-  const _SuggestionCard.loading({required this.isDark})
+  const _SuggestionCard.loading({required this.isDark, this.compact = false})
       : user = const SuggestionUser(
           id: '',
           title: '',
@@ -241,14 +253,18 @@ class _SuggestionCard extends StatelessWidget {
     final titleColor =
         theme.textTheme.titleSmall?.color ?? (isDark ? Colors.white : Colors.black87);
     const primary = Color(0xFF3B82F6);
-    const w = 190.0;
+    final w = compact ? 168.0 : 190.0;
+    final avatarSize = compact ? 92.0 : 104.0;
+    final avatarRadius = avatarSize / 2;
+    final gapSm = compact ? 8.0 : 12.0;
+    final gapXs = compact ? 4.0 : 6.0;
 
     Widget circleAvatar() {
       final url = user.avatarUrl?.trim() ?? '';
       if (_loading) {
         return Container(
-          width: 104,
-          height: 104,
+          width: avatarSize,
+          height: avatarSize,
           decoration: const BoxDecoration(
             color: Color(0xFF3A3D42),
             shape: BoxShape.circle,
@@ -258,7 +274,7 @@ class _SuggestionCard extends StatelessWidget {
       if (url.isEmpty) {
         final ch = user.title.isEmpty ? 'U' : user.title[0].toUpperCase();
         return CircleAvatar(
-          radius: 52,
+          radius: avatarRadius,
           backgroundColor: const Color(0xFFF97316),
           child: Text(
             ch,
@@ -271,7 +287,7 @@ class _SuggestionCard extends StatelessWidget {
         );
       }
       final fallback = CircleAvatar(
-        radius: 52,
+        radius: avatarRadius,
         backgroundColor: const Color(0xFFF97316),
         child: Text(
           user.title.isEmpty ? 'U' : user.title[0].toUpperCase(),
@@ -286,13 +302,13 @@ class _SuggestionCard extends StatelessWidget {
         child: CachedNetworkImage(
           imageUrl: url,
           httpHeaders: imageHeaders,
-          width: 104,
-          height: 104,
+          width: avatarSize,
+          height: avatarSize,
           fit: BoxFit.cover,
-          placeholder: (_, __) => const SizedBox(
-            width: 104,
-            height: 104,
-            child: DecoratedBox(
+          placeholder: (_, __) => SizedBox(
+            width: avatarSize,
+            height: avatarSize,
+            child: const DecoratedBox(
               decoration: BoxDecoration(color: Color(0xFF1B1B1F)),
             ),
           ),
@@ -304,7 +320,7 @@ class _SuggestionCard extends StatelessWidget {
     Widget followButton() {
       if (_loading) {
         return Container(
-          height: 40,
+          height: compact ? 36 : 40,
           decoration: BoxDecoration(
             color: primary.withValues(alpha: 0.45),
             borderRadius: BorderRadius.circular(10),
@@ -312,7 +328,7 @@ class _SuggestionCard extends StatelessWidget {
         );
       }
       return SizedBox(
-        height: 40,
+        height: compact ? 36 : 40,
         width: double.infinity,
         child: ElevatedButton(
           onPressed: onFollow,
@@ -341,12 +357,17 @@ class _SuggestionCard extends StatelessWidget {
           onTap: _loading ? null : onTap,
           borderRadius: BorderRadius.circular(14),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            padding: EdgeInsets.fromLTRB(
+              12,
+              compact ? 8 : 10,
+              12,
+              compact ? 10 : 12,
+            ),
+            child: Stack(
               children: [
-                Align(
-                  alignment: Alignment.topRight,
+                Positioned(
+                  top: 0,
+                  right: 0,
                   child: _loading
                       ? const SizedBox(height: 24, width: 24)
                       : IconButton(
@@ -355,36 +376,53 @@ class _SuggestionCard extends StatelessWidget {
                           color: titleColor.withValues(alpha: 0.72),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints.tightFor(
-                              width: 28, height: 28),
+                            width: 28,
+                            height: 28,
+                          ),
                         ),
                 ),
-                const SizedBox(height: 6),
-                circleAvatar(),
-                const SizedBox(height: 12),
-                if (_loading)
-                  Container(
-                    height: 14,
-                    width: 140,
-                    decoration: BoxDecoration(
-                      color: (isDark ? Colors.white : Colors.black)
-                          .withValues(alpha: isDark ? 0.10 : 0.06),
-                      borderRadius: BorderRadius.circular(999),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Reserve space for the top-right close button so the
+                    // avatar can sit at the very top without overlapping.
+                    const SizedBox(height: 22),
+                    SizedBox(height: compact ? 2 : gapXs),
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: circleAvatar(),
+                      ),
                     ),
-                  )
-                else
-                  Text(
-                    user.title,
-                    style: TextStyle(
-                      color: titleColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                  ),
-                const SizedBox(height: 12),
-                followButton(),
+                    SizedBox(height: gapSm),
+                    if (_loading)
+                      Container(
+                        height: 14,
+                        width: 140,
+                        decoration: BoxDecoration(
+                          color: (isDark ? Colors.white : Colors.black)
+                              .withValues(alpha: isDark ? 0.10 : 0.06),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      )
+                    else
+                      Text(
+                        user.title,
+                        style: TextStyle(
+                          color: titleColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    SizedBox(height: gapSm),
+                    followButton(),
+                  ],
+                ),
               ],
             ),
           ),

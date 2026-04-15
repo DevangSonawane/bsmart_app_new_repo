@@ -59,14 +59,14 @@ class ReelTimelineStrip extends StatefulWidget {
 }
 
 class _ReelTimelineStripState extends State<ReelTimelineStrip> {
-  static const double _tileGap = 8;
-  static const double _dotSlot = 16;
+  static const double _tileGap = 0;
+  static const double _separatorSlot = 14;
   static const double _leftPad = 16;
   static const double _rightPad = 16;
   static const double _handleWidth = 10;
-  static const double _rulerHeight = 20;
-  static const double _tileHeight = 60;
-  static const double _overlayHeight = 20;
+  static const double _rulerHeight = 18;
+  static const double _tileHeight = 58;
+  static const double _trackHeight = 12;
 
   final GlobalKey _stripKey = GlobalKey();
   double _trackWidth = 0;
@@ -119,11 +119,11 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
     for (int i = 0; i < widget.clips.length; i++) {
       w += _clipWidth(widget.clips[i]);
       if (i != widget.clips.length - 1) {
-        w += _tileGap + _dotSlot + _tileGap;
+        w += _tileGap + _separatorSlot + _tileGap;
       }
     }
-    if (widget.clips.isNotEmpty) w += _tileGap;
-    w += 36;
+    if (widget.clips.isNotEmpty) w += 8;
+    w += 32;
     setState(() {
       _trackWidth = w;
       _scrollOffset = _scrollOffset.clamp(0.0, _maxScroll);
@@ -173,7 +173,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
       if (dx >= start && dx <= end) return i;
       cursor = end;
       if (i != widget.clips.length - 1) {
-        cursor += _tileGap + _dotSlot + _tileGap;
+        cursor += _tileGap + _separatorSlot + _tileGap;
       }
     }
     return widget.clips.isEmpty ? 0 : widget.clips.length - 1;
@@ -184,7 +184,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
     for (int i = 0; i < index; i++) {
       cursor += _clipWidth(widget.clips[i]);
       if (i != widget.clips.length - 1) {
-        cursor += _tileGap + _dotSlot + _tileGap;
+        cursor += _tileGap + _separatorSlot + _tileGap;
       }
     }
     return cursor;
@@ -276,8 +276,8 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
 
     return Container(
       key: _stripKey,
-      height: _rulerHeight + _tileHeight + _overlayHeight,
-      color: Colors.black,
+      height: _rulerHeight + _tileHeight + _trackHeight,
+      color: const Color(0xFF1C1C1E),
       child: RawGestureDetector(
         gestures: <Type, GestureRecognizerFactory>{
           HorizontalDragGestureRecognizer:
@@ -344,40 +344,36 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                     ),
                   ),
                   SizedBox(
-                    height: _overlayHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: _leftPad),
-                      child: Stack(
-                        children: [
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Container(
-                              width: double.infinity,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[700],
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                          ),
-                          if (_trackWidth > 0)
-                            ...widget.overlaySpans.map((span) {
-                              final left = _leftPad + (span.startMs / totalMs) * _trackWidth - _scrollOffset;
-                              final width = ((span.endMs - span.startMs) / totalMs) * _trackWidth;
-                              return Positioned(
-                                left: left,
-                                top: 6,
-                                child: Container(
-                                  width: width.clamp(4.0, _trackWidth),
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: span.color,
-                                    borderRadius: BorderRadius.circular(4),
+                    height: _trackHeight,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        color: const Color(0xFF2C2C2E),
+                        child: Stack(
+                          children: [
+                            if (_trackWidth > 0)
+                              ...widget.overlaySpans.map((span) {
+                                final left = _leftPad +
+                                    (span.startMs / totalMs) * _trackWidth -
+                                    _scrollOffset;
+                                final width =
+                                    ((span.endMs - span.startMs) / totalMs) *
+                                        _trackWidth;
+                                return Positioned(
+                                  left: left,
+                                  top: 2,
+                                  child: Container(
+                                    width: width.clamp(2.0, _trackWidth),
+                                    height: _trackHeight - 4,
+                                    decoration: BoxDecoration(
+                                      color: span.color,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
                                   ),
-                                ),
-                              );
-                            }),
-                        ],
+                                );
+                              }),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -391,12 +387,12 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                   children: [
                     CustomPaint(
                       size: const Size(8, 6),
-                      painter: _TrianglePainter(color: const Color(0xFFFF3B30)),
+                      painter: _TrianglePainter(color: Colors.white),
                     ),
                     Container(
-                      width: 1.5,
-                      height: _rulerHeight + _tileHeight + _overlayHeight - 6,
-                      color: const Color(0xFFFF3B30),
+                      width: 2,
+                      height: _rulerHeight + _tileHeight + _trackHeight - 6,
+                      color: Colors.white,
                     ),
                   ],
                 ),
@@ -410,7 +406,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.grey[900],
+                      color: const Color(0xFF2C2C2E),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -446,29 +442,29 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
         tiles.add(Positioned(
           left: cursor,
           top: 0,
-          width: _dotSlot,
+          width: _separatorSlot,
           height: _tileHeight,
-          child: _buildTransitionDot(i + 1),
+          child: _buildTransitionDivider(i + 1),
         ));
-        cursor += _dotSlot + _tileGap;
+        cursor += _separatorSlot + _tileGap;
       } else {
-        cursor += _tileGap;
+        cursor += 8;
       }
     }
     tiles.add(
       Positioned(
         left: cursor,
-        top: 12,
-        width: 36,
-        height: 36,
+        top: 13,
+        width: 32,
+        height: 32,
         child: GestureDetector(
           onTap: widget.onAddClip,
           child: Container(
             decoration: const BoxDecoration(
-              color: Colors.white,
+              color: Color(0xFF3A3A3C),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.add, color: Colors.black, size: 18),
+            child: const Icon(Icons.add, color: Colors.white, size: 18),
           ),
         ),
       ),
@@ -476,7 +472,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
     return tiles;
   }
 
-  Widget _buildTransitionDot(int clipIndex) {
+  Widget _buildTransitionDivider(int clipIndex) {
     final clip = widget.clips[clipIndex];
     final hasTransition = clip.transitionIn != null && clip.transitionIn != 'none';
     return GestureDetector(
@@ -484,11 +480,11 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
       child: Container(
         alignment: Alignment.center,
         child: Container(
-          width: 10,
-          height: 10,
+          width: 2,
+          height: 18,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: hasTransition ? const Color(0xFF0095F6) : Colors.white24,
+            color: hasTransition ? Colors.white : const Color(0xFF3A3A3C),
+            borderRadius: BorderRadius.circular(2),
           ),
         ),
       ),
@@ -498,20 +494,18 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
   List<Widget> _buildRulerTicks(double totalMs) {
     final widgets = <Widget>[];
     final totalSeconds = (totalMs / 1000).ceil();
-    for (int s = 1; s <= totalSeconds; s += 2) {
+    for (int s = 0; s <= totalSeconds; s += 5) {
       final left = _leftPad + (s * 1000 * widget.pxPerMs) - _scrollOffset;
       widgets.add(Positioned(
         left: left,
         top: 2,
-        child: Row(
-          children: [
-            Text(
-              '${s}s',
-              style: const TextStyle(color: Colors.white54, fontSize: 10),
-            ),
-            const SizedBox(width: 6),
-            const Text('•', style: TextStyle(color: Colors.white38, fontSize: 10)),
-          ],
+        child: Text(
+          '${s}s',
+          style: const TextStyle(
+            color: Color(0xFF636366),
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ));
     }
@@ -563,9 +557,9 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
         },
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(4),
             border: Border.all(
-              color: showTrimHandles ? Colors.white : Colors.transparent,
+              color: isSelected ? Colors.white : Colors.transparent,
               width: 2,
             ),
           ),
@@ -691,41 +685,162 @@ class _ClipThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return clip.type == ReelClipType.video
-        ? FutureBuilder<Uint8List?>(
-            future: VideoThumbnail.thumbnailData(
-              video: clip.path,
-              imageFormat: ImageFormat.JPEG,
-              quality: 60,
-            ),
-            builder: (context, snap) {
-              if (snap.connectionState != ConnectionState.done || snap.data == null) {
-                return Container(color: Colors.grey[850]);
-              }
-              return Container(
-                width: width,
-                height: height,
-                decoration: BoxDecoration(
-                  image: DecorationImage(
-                    image: MemoryImage(snap.data!),
-                    fit: BoxFit.cover,
-                    repeat: ImageRepeat.repeatX,
-                  ),
-                ),
-              );
-            },
-          )
-        : Container(
-            width: width,
-            height: height,
-            decoration: BoxDecoration(
-              image: DecorationImage(
-                image: FileImage(File(clip.path)),
+    return _ClipThumbStrip(
+      clip: clip,
+      width: width,
+      height: height,
+    );
+  }
+}
+
+class _ClipThumbStrip extends StatefulWidget {
+  final ReelClip clip;
+  final double width;
+  final double height;
+
+  const _ClipThumbStrip({
+    required this.clip,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  State<_ClipThumbStrip> createState() => _ClipThumbStripState();
+}
+
+class _ClipThumbStripState extends State<_ClipThumbStrip> {
+  static const double _tileSize = 44;
+  List<Uint8List?>? _frames;
+  int _frameCount = 0;
+  String? _forPath;
+
+  int _desiredFrameCount() {
+    final raw = (widget.width / _tileSize).ceil();
+    return raw < 3 ? 3 : raw;
+  }
+
+  int _clipSourceStartMs() => (widget.clip.trimStart ?? Duration.zero).inMilliseconds;
+
+  int _clipSourceDurationMs() {
+    final start = _clipSourceStartMs();
+    final end = (widget.clip.trimEnd ?? widget.clip.duration).inMilliseconds;
+    final total = end - start;
+    return total <= 0 ? 1 : total;
+  }
+
+  Future<void> _loadFramesIfNeeded() async {
+    if (widget.clip.type != ReelClipType.video) return;
+    final nextCount = _desiredFrameCount();
+    if (_forPath == widget.clip.path && _frameCount == nextCount && _frames != null) {
+      return;
+    }
+    _forPath = widget.clip.path;
+    _frameCount = nextCount;
+    _frames = null;
+
+    final startMs = _clipSourceStartMs();
+    final durMs = _clipSourceDurationMs();
+    final futures = <Future<Uint8List?>>[];
+    for (int i = 0; i < nextCount; i++) {
+      final timeMs = nextCount == 3
+          ? (i == 0
+              ? startMs
+              : i == 1
+                  ? startMs + (durMs / 3).round()
+                  : startMs + ((durMs * 2) / 3).round())
+          : startMs + ((durMs / nextCount) * i).round();
+      futures.add(
+        VideoThumbnail.thumbnailData(
+          video: widget.clip.path,
+          imageFormat: ImageFormat.JPEG,
+          quality: 60,
+          timeMs: timeMs,
+        ),
+      );
+    }
+    final frames = await Future.wait(futures);
+    if (!mounted) return;
+    if (_forPath != widget.clip.path) return;
+    setState(() => _frames = frames);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadFramesIfNeeded());
+  }
+
+  @override
+  void didUpdateWidget(covariant _ClipThumbStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.clip.path != widget.clip.path ||
+        oldWidget.width != widget.width ||
+        oldWidget.clip.trimStart != widget.clip.trimStart ||
+        oldWidget.clip.trimEnd != widget.clip.trimEnd) {
+      unawaited(_loadFramesIfNeeded());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = widget.clip.type == ReelClipType.video ? _desiredFrameCount() : _desiredFrameCount();
+    final widths = <double>[];
+    final fullTiles = count - 1;
+    final remaining = widget.width - (fullTiles * _tileSize);
+    for (int i = 0; i < count; i++) {
+      widths.add(i == count - 1 ? (remaining <= 0 ? _tileSize : remaining) : _tileSize);
+    }
+
+    if (widget.clip.type != ReelClipType.video) {
+      return ClipRect(
+        child: Row(
+          children: List.generate(count, (i) {
+            return SizedBox(
+              width: widths[i],
+              height: widget.height,
+              child: Image.file(
+                File(widget.clip.path),
                 fit: BoxFit.cover,
-                repeat: ImageRepeat.repeatX,
               ),
-            ),
+            );
+          }),
+        ),
+      );
+    }
+
+    final frames = _frames;
+    if (frames == null) {
+      return ClipRect(
+        child: Row(
+          children: List.generate(count, (i) {
+            return SizedBox(
+              width: widths[i],
+              height: widget.height,
+              child: Container(color: Colors.grey[850]),
+            );
+          }),
+        ),
+      );
+    }
+
+    return ClipRect(
+      child: Row(
+        children: List.generate(count, (i) {
+          final data = frames[i % frames.length];
+          return SizedBox(
+            width: widths[i],
+            height: widget.height,
+            child: data == null
+                ? Container(color: Colors.grey[850])
+                : Image.memory(
+                    data,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                  ),
           );
+        }),
+      ),
+    );
   }
 }
 

@@ -31,11 +31,9 @@ const getMediaUrl = (item) => {
 };
 
 const Avatar = ({ src, name, size = 44 }) => (
-  <div className="rounded-full overflow-hidden bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 flex-shrink-0" style={{ width: size, height: size, padding: 2 }}>
-    <div className="w-full h-full rounded-full bg-white dark:bg-black overflow-hidden flex items-center justify-center">
-      {src ? <img src={src} alt="" className="w-full h-full object-cover" />
-            : <span className="text-sm font-bold text-gray-700 dark:text-white">{(name || '?')[0].toUpperCase()}</span>}
-    </div>
+  <div className="rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0 flex items-center justify-center" style={{ width: size, height: size }}>
+    {src ? <img src={src} alt="" className="w-full h-full object-cover" />
+          : <span className="text-sm font-bold text-gray-500">{(name || '?')[0].toUpperCase()}</span>}
   </div>
 );
 
@@ -61,7 +59,7 @@ const PostCard = ({ post, onClick }) => {
         <div className="flex items-center gap-1.5">
           {avatarUrl
             ? <img src={avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover border border-white/50 shrink-0" />
-            : <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-orange-400 to-pink-500 shrink-0" />}
+            : <div className="w-5 h-5 rounded-full bg-gray-600 shrink-0" />}
           {username && <span className="text-white text-[10px] font-bold truncate">@{username}</span>}
         </div>
         {/* Stats */}

@@ -18,6 +18,7 @@ const subscribers = {
   'user-typing': new Set(),
   'user-stop-typing': new Set(),
   'message-seen-update': new Set(),
+  'message-reaction-update': new Set(),
   'message-removed': new Set(),
 };
 
@@ -43,6 +44,7 @@ export const initChatSocket = (token, callbacks = {}, registeredUserId = null) =
     onUserTyping: 'user-typing',
     onUserStopTyping: 'user-stop-typing',
     onMessageSeenUpdate: 'message-seen-update',
+    onMessageReactionUpdate: 'message-reaction-update',
     onMessageRemoved: 'message-removed',
   };
 
@@ -94,6 +96,7 @@ export const removeChatSocketCallbacks = (callbacks = {}) => {
     onUserTyping: 'user-typing',
     onUserStopTyping: 'user-stop-typing',
     onMessageSeenUpdate: 'message-seen-update',
+    onMessageReactionUpdate: 'message-reaction-update',
     onMessageRemoved: 'message-removed',
   };
   Object.entries(callbackMap).forEach(([key, eventName]) => {
@@ -146,5 +149,18 @@ export const emitMessageSeen = (conversationId, messageId, uid, seenAt = null) =
 export const emitMessageDeleted = (conversationId, messageId) => {
   if (socket && conversationId && messageId) {
     socket.emit('message-deleted', { conversationId, messageId });
+  }
+};
+
+export const emitMessageReactionUpdate = (conversationId, messageId, action, emoji, reactions = [], uid = null) => {
+  if (socket && conversationId && messageId) {
+    socket.emit('message-reaction-update', {
+      conversationId,
+      messageId,
+      action,
+      emoji,
+      reactions,
+      ...(uid ? { userId: uid } : {}),
+    });
   }
 };

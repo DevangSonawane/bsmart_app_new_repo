@@ -80,7 +80,7 @@ const Caption = ({ text }) => {
         <>
           {text}
           {expanded && isLong && (
-            <button onClick={() => setExpanded(false)} className="text-white/60 ml-1.5 hover:text-white transition-colors text-xs font-semibold">less</button>
+            <button onClick={() => setExpanded(false)} className="text-white/60 ml-1.5 hover:text-white transition-colors text-sm font-semibold">less</button>
           )}
         </>
       ) : (
@@ -208,13 +208,13 @@ const Avatar = ({ src, username, size = 'md' }) => {
     size === 'sm' ? 'w-8 h-8 text-xs' :
     'w-9 h-9 text-sm';
   return (
-    <div className={`${dim} rounded-full overflow-hidden bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500 p-[1.5px] flex-shrink-0`}>
-      <div className="w-full h-full rounded-full bg-white dark:bg-[#1c1c1e] flex items-center justify-center overflow-hidden">
-        {src
-          ? <img src={src} alt={username || 'user'} className="w-full h-full object-cover" />
-          : <span className="text-gray-800 dark:text-white font-bold">{(username || 'U')[0].toUpperCase()}</span>
-        }
-      </div>
+    <div className={`${dim} rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0 flex items-center justify-center`}>
+      {src
+        ? <img src={src} alt={username || 'user'} className="w-full h-full object-cover" />
+        : <div className="w-full h-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 font-bold text-gray-500">
+            {(username || 'U')[0].toUpperCase()}
+          </div>
+      }
     </div>
   );
 };
@@ -525,7 +525,7 @@ const CommentsPopup = ({ reel, onClose, userObject, anchorRight }) => (
     }}
   >
     {/* Arrow pointing LEFT towards the action buttons */}
-    <div style={{ position: 'absolute', left: -10, top: '45%', transform: 'translateY(-50%)', width: 0, height: 0, borderTop: '10px solid transparent', borderBottom: '10px solid transparent', borderRight: '10px solid #262626' }} />
+    <div style={{ position: 'absolute', left: -10, top: '45%', transform: 'translateY(-50%)', width: 0, height: 0, borderTop: '10px solid transparent', borderBottom: '10px solid transparent' }} className="border-r-[10px] border-r-white dark:border-r-[#262626]" />
     <div
       className="rounded-2xl shadow-2xl overflow-hidden flex flex-col bg-white dark:bg-[#262626] border border-gray-200 dark:border-white/10"
       style={{ width: 340, height: '78vh', maxHeight: 640 }}
@@ -559,6 +559,8 @@ const Reels = () => {
   const [reportReel, setReportReel] = useState(null);
   const [editReel, setEditReel] = useState(null);
   const [ownerOptionsReel, setOwnerOptionsReel] = useState(null);
+  const [isPausedByUser, setIsPausedByUser] = useState(false);
+  const [reelProgress, setReelProgress] = useState(0);
   const isAnimatingRef = useRef(false);
   const videoRefs = useRef({});
   const actionPanelRef = useRef(null);
@@ -626,10 +628,17 @@ const Reels = () => {
   }, []);
 
   useEffect(() => {
+    setReelProgress(0);
+    setIsPausedByUser(false);
     Object.entries(videoRefs.current).forEach(([index, video]) => {
       if (!video) return;
-      if (parseInt(index) === currentIndex) video.play().catch(() => {});
-      else { video.pause(); video.currentTime = 0; }
+      if (parseInt(index) === currentIndex) {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+        video.currentTime = 0;
+      }
     });
   }, [currentIndex, reels]);
 
@@ -640,8 +649,22 @@ const Reels = () => {
     isAnimatingRef.current = true;
     setCurrentIndex(next);
     setCommentsOpen(false);
+    setIsPausedByUser(false);
+    setReelProgress(0);
     setTimeout(() => { isAnimatingRef.current = false; }, 500);
   }, [currentIndex, reels.length]);
+
+  const handleVideoTap = useCallback((index) => {
+    const vid = videoRefs.current[index];
+    if (!vid) return;
+    if (vid.paused) {
+      vid.play().catch(() => {});
+      setIsPausedByUser(false);
+    } else {
+      vid.pause();
+      setIsPausedByUser(true);
+    }
+  }, []);
 
   const handleWheel = (e) => {
     if (commentsOpen) return;
@@ -756,62 +779,90 @@ const Reels = () => {
 
   return (
     <>
-      <div className={`w-full ${pageHeightClass} overflow-hidden flex flex-col dark:bg-black`}>
-        <div className="shrink-0 relative flex items-center px-3 py-2.5 md:px-4 md:py-3 border-b border-white/10">
-          <button onClick={() => navigate(-1)} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 dark:text-white">
+      <div className={`w-full ${pageHeightClass} overflow-hidden flex flex-col dark:bg-black bg-white`}>
+        <div className="shrink-0 relative flex items-center px-3 py-2.5 md:px-4 md:py-3 border-b border-gray-200 dark:border-white/10 bg-white dark:bg-black">
+          <button onClick={() => navigate(-1)} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-white/10 text-gray-900 dark:text-white transition-colors">
             <ChevronLeft size={22} />
           </button>
-          <div className="absolute left-1/2 -translate-x-1/2 dark:text-white font-bold text-sm md:text-base">
+          <div className="absolute left-1/2 -translate-x-1/2 text-gray-900 dark:text-white font-bold text-sm md:text-base">
             Reels
           </div>
           <div className="w-9 h-9" />
         </div>
 
-        <div className="flex-1 min-h-0 flex items-end justify-center lg:py-2 py-0 gap-4 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden relative flex items-center justify-center">
+          {/* ── inner centering wrapper (mirrors Ads layout) ── */}
+          <div className="flex-1 flex items-center justify-center relative overflow-hidden h-full bg-gray-50 dark:bg-black">
 
-          {/* ── Video card ── */}
+          {/* ── Video card — same dimensions as Ads carousel ── */}
           <div
-            className="relative bg-black flex-shrink-0 overflow-hidden
-              w-full h-full
-              md:w-[380px] md:h-full md:max-h-[760px] md:rounded-2xl
-              md:shadow-[0_24px_80px_rgba(0,0,0,0.8)]"
+            className="relative overflow-hidden bg-black
+              w-full max-w-[430px] h-full
+              md:w-[360px] md:h-[90vh] md:rounded-2xl md:shadow-2xl"
             onWheel={handleWheel}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
+            {/* Progress bar — bottom of card */}
+            <div className="absolute bottom-0 left-0 right-0 z-40 h-[3px] bg-white/20">
+              <div
+                className="h-full bg-white transition-none"
+                style={{ width: `${reelProgress}%` }}
+              />
+            </div>
+
             <div
               className="h-full w-full transition-transform duration-500 ease-out"
-              style={{ transform: `translateY(-${currentIndex * 100}%)` }}
+              style={{ transform: `translateY(-${currentIndex * 100}%)`, willChange: 'transform' }}
             >
               {reels.map((reel, index) => {
                 const reelId = reel._id || reel.post_id;
                 const videoUrl = getVideoUrl(reel);
                 const thumbnail = getThumbnail(reel);
                 const hasError = videoErrors[reelId];
-                const aspectClass = getAspectClass(reel);
                 const isCurrent = index === currentIndex;
 
                 return (
                   <div key={reelId || index} className="relative w-full h-full bg-black flex items-center justify-center">
-                    <div className={`relative w-full max-h-full ${aspectClass} md:aspect-auto md:w-full md:h-full`}>
+                    {/* Full-size video with object-cover for proper fit */}
+                    <div className="absolute inset-0 w-full h-full">
                       {videoUrl && !hasError ? (
                         <video
                           ref={el => { videoRefs.current[index] = el; }}
                           src={videoUrl}
                           poster={thumbnail || undefined}
-                          className="w-full h-full object-contain"
-                          loop muted={isMuted} playsInline
+                          className="w-full h-full object-cover"
+                          loop
+                          muted={isMuted}
+                          playsInline
                           onError={() => setVideoErrors(prev => ({ ...prev, [reelId]: true }))}
+                          onClick={() => isCurrent && handleVideoTap(index)}
+                          onTimeUpdate={e => {
+                            if (!isCurrent) return;
+                            const vid = e.target;
+                            if (vid.duration > 0) {
+                              setReelProgress((vid.currentTime / vid.duration) * 100);
+                            }
+                          }}
                         />
                       ) : (
                         <div
                           className="w-full h-full bg-gray-900 flex items-center justify-center"
-                          style={thumbnail ? { backgroundImage: `url(${thumbnail})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' } : {}}
+                          style={thumbnail ? { backgroundImage: `url(${thumbnail})`, backgroundSize: 'cover', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' } : {}}
                         >
                           {!thumbnail && <Music2 size={48} className="text-white/30" />}
                         </div>
                       )}
                     </div>
+
+                    {/* Tap-to-pause overlay */}
+                    {isCurrent && isPausedByUser && (
+                      <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                        <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="absolute inset-0 pointer-events-none"
                       style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, transparent 30%, transparent 55%, rgba(0,0,0,0.85) 100%)' }}
@@ -820,14 +871,14 @@ const Reels = () => {
                     {videoUrl && !hasError && isCurrent && (
                       <button
                         onClick={() => setIsMuted(m => !m)}
-                        className="absolute bottom-[10px] md:bottom-5 right-[55px] md:right-4 bg-black/50 p-2 rounded-full text-white backdrop-blur-sm hover:bg-black/70 z-20"
+                        className="absolute bottom-[18px] md:bottom-8 right-[55px] md:right-4 bg-black/50 p-2 rounded-full text-white backdrop-blur-sm hover:bg-black/70 z-20"
                       >
                         {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                       </button>
                     )}
 
                     {isCurrent && (
-                      <div className="md:hidden absolute right-3 bottom-[10px] z-30">
+                      <div className="md:hidden absolute right-3 bottom-[18px] z-30">
                         <ActionButtons
                           reel={reel}
                           mobile
@@ -841,7 +892,7 @@ const Reels = () => {
                     )}
 
                     {/* Bottom info */}
-                    <div className="absolute lg:bottom-[0%] bottom-[0%] left-0 z-20 px-4 pb-6 pr-16" style={{ maxWidth: 'calc(100% - 56px)' }}>
+                    <div className="absolute bottom-0 left-0 z-20 px-4 pb-8 pr-16" style={{ maxWidth: 'calc(100% - 56px)' }}>
                       <div className="flex items-center gap-2 mb-2">
                         <Link to={`/profile/${reel.user_id?._id || reel.user_id?.id || reel.user_id}`} className="w-8 h-8 rounded-full border-2 border-white/50 overflow-hidden flex-shrink-0">
                           {reel.user_id?.avatar_url
@@ -885,23 +936,24 @@ const Reels = () => {
               />
             </div>
           )}
-        </div>
+          </div>{/* end inner centering wrapper */}
+        </div>{/* end flex-1 min-h-0 */}
 
         {/* Nav arrows */}
         <div className="hidden md:flex fixed right-5 top-1/2 -translate-y-1/2 z-40 flex-col gap-3">
           <button
             onClick={() => goToIndex(currentIndex - 1)}
             disabled={currentIndex === 0}
-            className="w-12 h-12 rounded-full dark:bg-white/10 border border-white/20 backdrop-blur-md shadow-2xl flex items-center justify-center hover:bg-white/25 hover:scale-110 active:scale-95 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+            className="w-12 h-12 rounded-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/20 backdrop-blur-md shadow-2xl flex items-center justify-center hover:bg-gray-50 dark:hover:bg-white/25 hover:scale-110 active:scale-95 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-900 dark:text-white"><polyline points="18 15 12 9 6 15" /></svg>
           </button>
           <button
             onClick={() => goToIndex(currentIndex + 1)}
             disabled={currentIndex === reels.length - 1}
-            className="w-12 h-12 rounded-full bg-white/10 border border-white/20 backdrop-blur-md shadow-2xl flex items-center justify-center hover:bg-white/25 hover:scale-110 active:scale-95 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+            className="w-12 h-12 rounded-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/20 backdrop-blur-md shadow-2xl flex items-center justify-center hover:bg-gray-50 dark:hover:bg-white/25 hover:scale-110 active:scale-95 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-900 dark:text-white"><polyline points="6 9 12 15 18 9" /></svg>
           </button>
         </div>
       </div>

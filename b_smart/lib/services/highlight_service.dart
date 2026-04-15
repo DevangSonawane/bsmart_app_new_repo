@@ -101,7 +101,10 @@ class HighlightService {
 
       return Story(
         id: resolvedId.isNotEmpty ? resolvedId : 'item',
-        userId: (m['user_id'] as String?) ?? '',
+        userId: (m['user_id'] as String?) ??
+            (m['userId'] as String?) ??
+            (m['owner_id'] as String?) ??
+            '',
         userName: ownerUserName ?? '',
         userAvatar: ownerAvatar,
         mediaUrl: mediaUrl,

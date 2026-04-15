@@ -17,6 +17,8 @@ class ReelTimelineRenderer {
     if (clips.isEmpty) return null;
     final tmpDir = await Directory.systemTemp.createTemp('bsmart_reel_timeline_');
     final segmentPaths = <String>[];
+    final renderedClips = <ReelClip>[];
+    final segmentDurationsSec = <double>[];
 
     for (int i = 0; i < clips.length; i++) {
       final clip = clips[i];
@@ -27,24 +29,49 @@ class ReelTimelineRenderer {
       );
       final segPath = '${tmpDir.path}/seg_$i.mp4';
       final ok = await _renderClipSegment(clip, segPath, overlayPath);
-      if (ok) segmentPaths.add(segPath);
+      if (ok) {
+        segmentPaths.add(segPath);
+        renderedClips.add(clip);
+        segmentDurationsSec.add(_segmentDurationSec(clip));
+      }
     }
     if (segmentPaths.isEmpty) return null;
 
-    final listPath = '${tmpDir.path}/concat.txt';
-    final listFile = File(listPath);
-    final buf = StringBuffer();
-    for (final p in segmentPaths) {
-      buf.writeln("file '$p'");
-    }
-    await listFile.writeAsString(buf.toString(), flush: true);
-
     final outPath = '${tmpDir.path}/reel_${DateTime.now().millisecondsSinceEpoch}.mp4';
-    final args = [
-      '-y',
-      '-f', 'concat',
-      '-safe', '0',
-      '-i', listPath,
+    final hasAnyTransition = renderedClips.length >= 2 &&
+        renderedClips.skip(1).any((c) => (c.transitionIn ?? 'none') != 'none');
+
+    final args = <String>['-y'];
+    if (!hasAnyTransition) {
+      final listPath = '${tmpDir.path}/concat.txt';
+      final listFile = File(listPath);
+      final buf = StringBuffer();
+      for (final p in segmentPaths) {
+        buf.writeln("file '$p'");
+      }
+      await listFile.writeAsString(buf.toString(), flush: true);
+      args.addAll([
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', listPath,
+      ]);
+    } else {
+      for (final p in segmentPaths) {
+        args.addAll(['-i', p]);
+      }
+      final filter = _buildTransitionFilterComplex(
+        clips: renderedClips,
+        durationsSec: segmentDurationsSec,
+      );
+      args.addAll([
+        '-filter_complex',
+        filter,
+        '-map',
+        '[v]',
+      ]);
+    }
+
+    args.addAll([
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-crf', '23',
@@ -52,13 +79,90 @@ class ReelTimelineRenderer {
       '-r', '$fps',
       '-movflags', '+faststart',
       outPath,
-    ];
+    ]);
+
     final session = await FFmpegKit.executeWithArguments(args);
     final rc = await session.getReturnCode();
     if (!ReturnCode.isSuccess(rc)) {
       return null;
     }
     return outPath;
+  }
+
+  double _segmentDurationSec(ReelClip clip) {
+    final startMs = (clip.trimStart ?? Duration.zero).inMilliseconds;
+    final endMs = (clip.trimEnd ?? clip.duration).inMilliseconds;
+    final rawMs = clip.type == ReelClipType.image
+        ? clip.duration.inMilliseconds
+        : (endMs - startMs);
+    final ms = rawMs <= 0 ? 1 : rawMs;
+    return ms / 1000.0;
+  }
+
+  String _xfadeTransitionName(String? id) {
+    final t = (id ?? 'none').trim();
+    if (t.isEmpty || t == 'none') return 'fade';
+    // Allow passing through FFmpeg xfade names; default to fade.
+    const known = <String>{
+      'fade',
+      'wipeleft',
+      'wiperight',
+      'wipeup',
+      'wipedown',
+      'slideleft',
+      'slideright',
+      'slideup',
+      'slidedown',
+      'circleopen',
+      'circleclose',
+      'rectcrop',
+      'distance',
+      'fadeblack',
+      'fadewhite',
+      'radial',
+      'smoothleft',
+      'smoothright',
+      'smoothup',
+      'smoothdown',
+    };
+    return known.contains(t) ? t : 'fade';
+  }
+
+  String _buildTransitionFilterComplex({
+    required List<ReelClip> clips,
+    required List<double> durationsSec,
+  }) {
+    assert(clips.length == durationsSec.length);
+    var outDur = durationsSec.first;
+    var prev = '[0:v]';
+    final sb = StringBuffer();
+    for (int i = 1; i < clips.length; i++) {
+      final next = '[$i:v]';
+      final transId = (clips[i].transitionIn ?? 'none');
+      final wantsTransition = transId != 'none';
+      final transDur = wantsTransition
+          ? (clips[i].transitionInDurationMs / 1000.0)
+              .clamp(0.0, 5.0)
+          : 0.0;
+      final label = (i == clips.length - 1) ? '[v]' : '[v$i]';
+      if (wantsTransition && transDur > 0.0) {
+        final safeDur = transDur.clamp(0.01, outDur * 0.5).toDouble();
+        final offset = (outDur - safeDur).clamp(0.0, double.infinity);
+        final tName = _xfadeTransitionName(transId);
+        sb.write(
+          '${prev}${next}'
+          'xfade=transition=$tName:duration=${safeDur.toStringAsFixed(3)}:offset=${offset.toStringAsFixed(3)}'
+          '$label;',
+        );
+        outDur = outDur + durationsSec[i] - safeDur;
+      } else {
+        sb.write('${prev}${next}concat=n=2:v=1:a=0$label;');
+        outDur = outDur + durationsSec[i];
+      }
+      prev = label;
+    }
+    final s = sb.toString();
+    return s.endsWith(';') ? s.substring(0, s.length - 1) : s;
   }
 
   Future<bool> _renderClipSegment(
