@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Outlet, useLocation, Link } from 'react-router-dom';
+import { Outlet, useLocation, Link, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import BottomNav from './BottomNav';
 import TopBar from './TopBar';
@@ -8,6 +8,21 @@ import CreatePostModal from './CreatePostModal';
 import api from '../lib/api';
 import { fetchMe, setUser } from '../store/authSlice';
 import { fetchWallet } from '../store/walletSlice';
+
+const BASE_URL = 'https://api.bebsmart.in';
+
+const adAuthHeaders = () => {
+  const token = localStorage.getItem('token');
+  return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+};
+
+const normalizeArr = (v) => {
+  if (Array.isArray(v)) return v;
+  if (!v || typeof v !== 'object') return [];
+  const keys = ['data','users','suggestions','results','items'];
+  for (const k of keys) { if (Array.isArray(v[k])) return v[k]; if (v.data && Array.isArray(v.data[k])) return v.data[k]; }
+  return [];
+};
 
 const Layout = () => {
   const location = useLocation();
@@ -207,16 +222,20 @@ const Layout = () => {
       <div className="md:pl-20 min-h-screen transition-all duration-300">
         {showTopBar && <TopBar />}
 
-
-
         <div className={`
-          ${showTopBar ? 'pt-16 md:pt-4' : 'pt-0 md:pt-0'}
-          w-full
-          ${isMessagesPage ? 'md:max-w-none lg:max-w-none' : 'md:max-w-[calc(100%-80px)] lg:max-w-4xl'}
-          mx-auto
-          ${isMessagesPage ? 'px-0 md:px-0' : 'px-0 md:px-8'}
+          ${showTopBar ? 'pt-16 md:pt-0' : 'pt-0 md:pt-0'}
+          w-full flex justify-center
+          ${isMessagesPage ? 'md:max-w-none lg:max-w-none' : 'lg:max-w-[850px] mx-auto'}
+          ${isMessagesPage ? 'px-0 md:px-0' : 'px-0 md:px-0'}
         `}>
-          <Outlet />
+          {/* Main content */}
+          <div className={`
+            flex-1 min-w-0
+            ${!isExcludedPage && !isFullScreenPage ? 'max-w-[1000px]' : ''}
+            ${isMessagesPage ? 'w-full' : ''}
+          `}>
+            <Outlet />
+          </div>
         </div>
       </div>
 

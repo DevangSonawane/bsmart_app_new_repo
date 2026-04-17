@@ -57,6 +57,9 @@ const Profile = () => {
     const [followersModalOpen, setFollowersModalOpen] = useState(false);
     const [followingModalOpen, setFollowingModalOpen] = useState(false);
     const [showUserOptionsMenu, setShowUserOptionsMenu] = useState(false);
+    const [notificationEnabled, setNotificationEnabled] = useState(false);
+    const [notifLoading, setNotifLoading] = useState(false);
+    const [isBioExpanded, setIsBioExpanded] = useState(false);
     const userOptionsMenuRef = useRef(null);
 
     // Close user options menu when clicking outside
@@ -104,6 +107,43 @@ const Profile = () => {
         };
         fetchProfileUser();
     }, [userId, currentUser, isOwnProfile]);
+
+    // ── Fetch notification preference status ────────────────────────────────
+    useEffect(() => {
+        if (!profileTargetUserId || isOwnProfile) return;
+
+        const fetchNotifStatus = async () => {
+            try {
+                const res = await api.get(`/notification-preferences/users/${profileTargetUserId}/status`);
+                setNotificationEnabled(res.data?.enabled || false);
+            } catch (err) {
+                console.error('Error fetching notification status:', err);
+            }
+        };
+        fetchNotifStatus();
+    }, [profileTargetUserId, isOwnProfile]);
+
+    const handleToggleNotifications = async () => {
+        if (!profileTargetUserId || notifLoading) return;
+        setNotifLoading(true);
+        try {
+            const res = await api.post(`/notification-preferences/users/${profileTargetUserId}/toggle`);
+            setNotificationEnabled(res.data?.enabled || false);
+            setRewardToast({
+                type: 'success',
+                message: `Notifications turned ${res.data?.enabled ? 'on' : 'off'} for this user.`,
+            });
+        } catch (err) {
+            console.error('Error toggling notifications:', err);
+            setRewardToast({
+                type: 'error',
+                message: 'Failed to update notification settings.',
+            });
+        } finally {
+            setNotifLoading(false);
+            setShowUserOptionsMenu(false);
+        }
+    };
 
     // Set default tab based on role
     useEffect(() => {
@@ -626,7 +666,7 @@ const Profile = () => {
     return (
         <div className="min-h-screen bg-white dark:bg-black md:bg-gray-50 md:dark:bg-black">
             {rewardToast && (
-                <div className={`fixed top-20 left-1/2 z-[80] -translate-x-1/2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
+                <div className={`fixed top-20 right-4 z-[80] rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg animate-in fade-in slide-in-from-right-4 duration-300 ${
                     rewardToast.type === 'success'
                         ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
                         : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
@@ -710,6 +750,9 @@ const Profile = () => {
                                             <button type="button" onClick={handleOpenMessages} className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm" aria-label="Chat">
                                                 <MessageCircle size={18} />
                                             </button>
+                                            <Link to="/settings" className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm hover:opacity-70 transition-opacity">
+                                                <Settings size={20} />
+                                            </Link>
                                         </>
                                     ) : (
                                         <>
@@ -718,10 +761,6 @@ const Profile = () => {
                                                 {followLoading && <Loader2 size={14} className="animate-spin" />}
                                                 {followed ? 'Following' : 'Follow'}
                                             </button>
-                                            {/* <button onClick={handleOpenMessages} disabled={messageLoading}
-                                                className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-bold rounded-xl disabled:opacity-60">
-                                                {messageLoading ? '...' : 'Message'}
-                                            </button> */}
                                             <button type="button" onClick={handleShareProfile} className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm" aria-label="Share profile">
                                                 <Share2 size={18} />
                                             </button>
@@ -733,44 +772,40 @@ const Profile = () => {
                                             <button type="button" onClick={handleOpenMessages} disabled={messageLoading} className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm" aria-label="Chat">
                                                 <MessageCircle size={18} />
                                             </button>
-                                        </>
-                                    )}
-                                </div>
 
-                                {/* Row 3: Settings icon / Vendor Badge / 3-dot menu */}
-                                <div className="mb-4">
-                                    {isOwnProfile ? (
-                                        <Link to="/settings" className="inline-flex p-1 text-gray-900 dark:text-white hover:opacity-70 transition-opacity">
-                                            <Settings size={24} />
-                                        </Link>
-                                    ) : (
-                                        <div className="relative" ref={userOptionsMenuRef}>
-                                            <button 
-                                                type="button" 
-                                                onClick={() => setShowUserOptionsMenu(!showUserOptionsMenu)} 
-                                                className="p-1 text-gray-900 dark:text-white hover:opacity-70 transition-opacity"
-                                            >
-                                                <MoreHorizontal size={24} />
-                                            </button>
-                                            {showUserOptionsMenu && (
-                                                <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[180px]">
-                                                    <button
-                                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                                                        onClick={() => { setShowUserOptionsMenu(false); alert('Report submitted'); }}
-                                                    >
-                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-                                                        Report
-                                                    </button>
-                                                    <button
-                                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800"
-                                                        onClick={() => { setShowUserOptionsMenu(false); alert('Notifications turned on'); }}
-                                                    >
-                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                                                        Turn On Notification
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
+                                            <div className="relative" ref={userOptionsMenuRef}>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setShowUserOptionsMenu(!showUserOptionsMenu)} 
+                                                    className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm hover:opacity-70 transition-opacity"
+                                                >
+                                                    <MoreHorizontal size={20} />
+                                                </button>
+                                                {showUserOptionsMenu && (
+                                                    <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[180px]">
+                                                        <button
+                                                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                            onClick={() => { setShowUserOptionsMenu(false); setRewardToast({ type: 'success', message: 'Report submitted successfully.' }); }}
+                                                        >
+                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                                                            Report
+                                                        </button>
+                                                        <button
+                                                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800 disabled:opacity-50"
+                                                            onClick={handleToggleNotifications}
+                                                            disabled={notifLoading}
+                                                        >
+                                                            {notifLoading ? (
+                                                                <Loader2 size={16} className="animate-spin" />
+                                                            ) : (
+                                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                                                            )}
+                                                            {notificationEnabled ? 'Turn Off Notifications' : 'Turn On Notifications'}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </>
                                     )}
                                 </div>
 
@@ -811,7 +846,19 @@ const Profile = () => {
                                 <div className="min-w-0">
                                     <div className="font-bold text-base text-gray-900 dark:text-white">{profileUser.full_name || profileUser.username}</div>
                                     {profileUser.bio && (
-                                        <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap mt-0.5 leading-relaxed">{profileUser.bio}</div>
+                                        <div className="mt-0.5">
+                                            <div className={`text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed ${!isBioExpanded ? 'line-clamp-1' : ''}`}>
+                                                {profileUser.bio}
+                                            </div>
+                                            {profileUser.bio.includes('\n') || profileUser.bio.length > 40 ? (
+                                                <button 
+                                                    onClick={() => setIsBioExpanded(!isBioExpanded)}
+                                                    className="text-[12px] font-bold text-gray-500 dark:text-gray-400 mt-0.5 hover:underline"
+                                                >
+                                                    {isBioExpanded ? 'Show less' : 'Read more'}
+                                                </button>
+                                            ) : null}
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -928,6 +975,9 @@ const Profile = () => {
                                         >
                                             <MessageCircle size={20} />
                                         </button>
+                                        <Link to="/settings" className="w-12 h-12 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors shadow-sm hover:opacity-70 transition-opacity">
+                                            <Settings size={24} />
+                                        </Link>
                                     </>
                                 ) : (
                                     <>
@@ -936,13 +986,6 @@ const Profile = () => {
                                             {followLoading && <Loader2 size={14} className="animate-spin" />}
                                             {followed ? 'Following' : 'Follow'}
                                         </button>
-                                        {/* <button
-                                            onClick={handleOpenMessages}
-                                            disabled={messageLoading}
-                                            className="px-10 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white font-bold rounded-xl text-sm hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-60"
-                                        >
-                                            {messageLoading ? 'Opening...' : 'Message'}
-                                        </button> */}
                                         <button
                                             type="button"
                                             onClick={handleShareProfile}
@@ -971,45 +1014,41 @@ const Profile = () => {
                                         >
                                             <MessageCircle size={20} />
                                         </button>
-                                    </>
-                                )}
-                            </div>
 
-                            {/* Row 3: Settings icon (own) / 3-dot menu (other) / empty spacer for layout parity */}
-                            <div className="mb-6">
-                                {isOwnProfile ? (
-                                    <Link to="/settings" className="inline-flex p-1 text-gray-900 dark:text-white hover:opacity-70 transition-opacity">
-                                        <Settings size={28} />
-                                    </Link>
-                                ) : (
-                                    <div className="relative" ref={userOptionsMenuRef}>
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowUserOptionsMenu(v => !v)}
-                                            className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors shadow-sm"
-                                            aria-label="More options"
-                                        >
-                                            <MoreHorizontal size={22} />
-                                        </button>
-                                        {showUserOptionsMenu && (
-                                            <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[200px]">
-                                                <button
-                                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                                                    onClick={() => { setShowUserOptionsMenu(false); alert('Report submitted'); }}
-                                                >
-                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-                                                    Report
-                                                </button>
-                                                <button
-                                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800"
-                                                    onClick={() => { setShowUserOptionsMenu(false); alert('Notifications turned on'); }}
-                                                >
-                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                                                    Turn On Notification
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
+                                        <div className="relative" ref={userOptionsMenuRef}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowUserOptionsMenu(v => !v)}
+                                                className="w-12 h-12 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors shadow-sm"
+                                                aria-label="More options"
+                                            >
+                                                <MoreHorizontal size={22} />
+                                            </button>
+                                            {showUserOptionsMenu && (
+                                                <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[200px]">
+                                                    <button
+                                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                        onClick={() => { setShowUserOptionsMenu(false); setRewardToast({ type: 'success', message: 'Report submitted successfully.' }); }}
+                                                    >
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                                                        Report
+                                                    </button>
+                                                    <button
+                                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800 disabled:opacity-50"
+                                                        onClick={handleToggleNotifications}
+                                                        disabled={notifLoading}
+                                                    >
+                                                        {notifLoading ? (
+                                                            <Loader2 size={16} className="animate-spin" />
+                                                        ) : (
+                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                                                        )}
+                                                        {notificationEnabled ? 'Turn Off Notifications' : 'Turn On Notifications'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
                                 )}
                             </div>
 
@@ -1053,7 +1092,19 @@ const Profile = () => {
                                     </div>
                                 )}
                                 {profileUser.bio && (
-                                    <div className="text-[15px] text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">{profileUser.bio}</div>
+                                    <div className="mt-1">
+                                        <div className={`text-[15px] text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed ${!isBioExpanded ? 'line-clamp-1' : ''}`}>
+                                            {profileUser.bio}
+                                        </div>
+                                        {profileUser.bio.includes('\n') || profileUser.bio.length > 60 ? (
+                                            <button 
+                                                onClick={() => setIsBioExpanded(!isBioExpanded)}
+                                                className="text-[13px] font-bold text-gray-500 dark:text-gray-400 mt-1 hover:underline"
+                                            >
+                                                {isBioExpanded ? 'Show less' : 'Read more'}
+                                            </button>
+                                        ) : null}
+                                    </div>
                                 )}
                             </div>
                         </div>

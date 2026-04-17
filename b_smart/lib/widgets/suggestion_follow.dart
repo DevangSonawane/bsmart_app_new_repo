@@ -2,25 +2,31 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../utils/url_helper.dart';
+
 class SuggestionUser {
   final String id;
   final String title;
+  final String? subtitle;
   final String? avatarUrl;
 
   const SuggestionUser({
     required this.id,
     required this.title,
+    required this.subtitle,
     required this.avatarUrl,
   });
 
   SuggestionUser copyWith({
     String? id,
     String? title,
+    String? subtitle,
     String? avatarUrl,
   }) {
     return SuggestionUser(
       id: id ?? this.id,
       title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
       avatarUrl: avatarUrl ?? this.avatarUrl,
     );
   }
@@ -73,8 +79,8 @@ class SuggestionFollowBlock extends StatelessWidget {
         (isDark ? Colors.white60 : theme.colorScheme.onSurfaceVariant);
     final textScale =
         MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.4);
-    final baseHeight = compact ? 216.0 : 248.0;
-    final listHeight = baseHeight + ((textScale - 1.0) * 40.0);
+    final baseHeight = compact ? 200.0 : 210.0;
+    final listHeight = baseHeight + ((textScale - 1.0) * 36.0);
 
     return Padding(
       padding: EdgeInsets.symmetric(vertical: compact ? 8 : 12),
@@ -234,6 +240,7 @@ class _SuggestionCard extends StatelessWidget {
       : user = const SuggestionUser(
           id: '',
           title: '',
+          subtitle: null,
           avatarUrl: null,
         ),
         imageHeaders = null,
@@ -247,17 +254,20 @@ class _SuggestionCard extends StatelessWidget {
     final theme = Theme.of(context);
     final baseSurface = theme.colorScheme.surface;
     final overlay = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.04);
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.03);
     final cardBg = Color.alphaBlend(overlay, baseSurface);
-    final titleColor =
-        theme.textTheme.titleSmall?.color ?? (isDark ? Colors.white : Colors.black87);
+    final titleColor = theme.textTheme.titleSmall?.color ??
+        (isDark ? Colors.white : Colors.black87);
+    final subColor = isDark
+        ? Colors.white.withValues(alpha: 0.55)
+        : Colors.black.withValues(alpha: 0.45);
     const primary = Color(0xFF3B82F6);
-    final w = compact ? 168.0 : 190.0;
-    final avatarSize = compact ? 92.0 : 104.0;
+    final w = compact ? 160.0 : 160.0;
+    final avatarSize = compact ? 56.0 : 56.0;
     final avatarRadius = avatarSize / 2;
-    final gapSm = compact ? 8.0 : 12.0;
-    final gapXs = compact ? 4.0 : 6.0;
+    final gapSm = compact ? 10.0 : 10.0;
+    final gapXs = compact ? 4.0 : 4.0;
 
     Widget circleAvatar() {
       final url = user.avatarUrl?.trim() ?? '';
@@ -273,46 +283,76 @@ class _SuggestionCard extends StatelessWidget {
       }
       if (url.isEmpty) {
         final ch = user.title.isEmpty ? 'U' : user.title[0].toUpperCase();
-        return CircleAvatar(
-          radius: avatarRadius,
-          backgroundColor: const Color(0xFFF97316),
-          child: Text(
-            ch,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-              fontSize: 22,
+        return Container(
+          width: avatarSize,
+          height: avatarSize,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFEC4899), Color(0xFF8B5CF6)],
+            ),
+          ),
+          child: Center(
+            child: Text(
+              ch,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
             ),
           ),
         );
       }
       final fallback = CircleAvatar(
         radius: avatarRadius,
-        backgroundColor: const Color(0xFFF97316),
+        backgroundColor: const Color(0xFFEC4899),
         child: Text(
           user.title.isEmpty ? 'U' : user.title[0].toUpperCase(),
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w800,
-            fontSize: 22,
+            fontSize: 18,
           ),
         ),
       );
-      return ClipOval(
-        child: CachedNetworkImage(
-          imageUrl: url,
-          httpHeaders: imageHeaders,
-          width: avatarSize,
-          height: avatarSize,
-          fit: BoxFit.cover,
-          placeholder: (_, __) => SizedBox(
+      return Container(
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFEC4899), Color(0xFF8B5CF6), Color(0xFFF59E0B)],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 12,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipOval(
+          child: CachedNetworkImage(
+            imageUrl: url,
+            httpHeaders: UrlHelper.shouldAttachAuthHeader(url)
+                ? imageHeaders
+                : null,
             width: avatarSize,
             height: avatarSize,
-            child: const DecoratedBox(
-              decoration: BoxDecoration(color: Color(0xFF1B1B1F)),
+            fit: BoxFit.cover,
+            placeholder: (_, __) => SizedBox(
+              width: avatarSize,
+              height: avatarSize,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(color: Color(0xFF1B1B1F)),
+              ),
             ),
+            errorWidget: (_, __, ___) => fallback,
           ),
-          errorWidget: (_, __, ___) => fallback,
         ),
       );
     }
@@ -320,7 +360,7 @@ class _SuggestionCard extends StatelessWidget {
     Widget followButton() {
       if (_loading) {
         return Container(
-          height: compact ? 36 : 40,
+          height: 36,
           decoration: BoxDecoration(
             color: primary.withValues(alpha: 0.45),
             borderRadius: BorderRadius.circular(10),
@@ -328,7 +368,7 @@ class _SuggestionCard extends StatelessWidget {
         );
       }
       return SizedBox(
-        height: compact ? 36 : 40,
+        height: 36,
         width: double.infinity,
         child: ElevatedButton(
           onPressed: onFollow,
@@ -336,13 +376,24 @@ class _SuggestionCard extends StatelessWidget {
             backgroundColor: primary,
             foregroundColor: Colors.white,
             elevation: 0,
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
           ),
-          child: const Text(
-            'Follow',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(LucideIcons.userPlus, size: 12),
+              SizedBox(width: 6),
+              Text(
+                'Follow',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+              ),
+            ],
           ),
         ),
       );
@@ -359,9 +410,9 @@ class _SuggestionCard extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               12,
-              compact ? 8 : 10,
               12,
-              compact ? 10 : 12,
+              12,
+              12,
             ),
             child: Stack(
               children: [
@@ -372,12 +423,15 @@ class _SuggestionCard extends StatelessWidget {
                       ? const SizedBox(height: 24, width: 24)
                       : IconButton(
                           onPressed: onDismiss,
-                          icon: const Icon(Icons.close, size: 18),
-                          color: titleColor.withValues(alpha: 0.72),
+                          icon: const Icon(Icons.close, size: 14),
+                          color: titleColor.withValues(alpha: 0.70),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 28,
-                            height: 28,
+                          constraints:
+                              const BoxConstraints.tightFor(width: 26, height: 26),
+                          style: IconButton.styleFrom(
+                            backgroundColor: isDark
+                                ? Colors.white.withValues(alpha: 0.10)
+                                : Colors.black.withValues(alpha: 0.06),
                           ),
                         ),
                 ),
@@ -387,7 +441,7 @@ class _SuggestionCard extends StatelessWidget {
                   children: [
                     // Reserve space for the top-right close button so the
                     // avatar can sit at the very top without overlapping.
-                    const SizedBox(height: 22),
+                    const SizedBox(height: 18),
                     SizedBox(height: compact ? 2 : gapXs),
                     Align(
                       alignment: Alignment.topCenter,
@@ -412,13 +466,29 @@ class _SuggestionCard extends StatelessWidget {
                         user.title,
                         style: TextStyle(
                           color: titleColor,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                       ),
+                    if (!_loading &&
+                        user.subtitle != null &&
+                        user.subtitle!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        user.subtitle!,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: subColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                     SizedBox(height: gapSm),
                     followButton(),
                   ],

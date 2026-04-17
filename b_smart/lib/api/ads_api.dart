@@ -47,6 +47,30 @@ class AdsApi {
     return endsWithApi ? '' : '/api';
   }
 
+  List<Map<String, dynamic>> _parseAdsList(dynamic res) {
+    List<dynamic> rawList = const [];
+    if (res is List) {
+      rawList = res;
+    } else if (res is Map) {
+      if (res['data'] is List) {
+        rawList = res['data'] as List;
+      } else if (res['data'] is Map && (res['data'] as Map)['ads'] is List) {
+        rawList = (res['data'] as Map)['ads'] as List;
+      } else if (res['ads'] is List) {
+        rawList = res['ads'] as List;
+      } else if (res['items'] is List) {
+        rawList = res['items'] as List;
+      } else if (res['results'] is List) {
+        rawList = res['results'] as List;
+      }
+    }
+
+    return rawList
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
   Future<List<String>> getCategories() async {
     final res = await _client.get('$_basePath/ads/categories');
     if (res is Map<String, dynamic>) {
@@ -82,23 +106,7 @@ class AdsApi {
         : <String, String>{'category': normalizedCategory};
     final res = await _client.get('$_basePath/ads/feed', queryParams: query);
 
-    List<dynamic> rawList = const [];
-    if (res is List) {
-      rawList = res;
-    } else if (res is Map) {
-      if (res['data'] is List) {
-        rawList = res['data'] as List;
-      } else if (res['data'] is Map && (res['data'] as Map)['ads'] is List) {
-        rawList = (res['data'] as Map)['ads'] as List;
-      } else if (res['ads'] is List) {
-        rawList = res['ads'] as List;
-      }
-    }
-
-    return rawList
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
+    return _parseAdsList(res);
   }
 
   Future<List<Map<String, dynamic>>> getUserAds(
@@ -119,45 +127,89 @@ class AdsApi {
     final res =
         await _client.get('$_basePath/ads/user/$uid', queryParams: query);
 
-    List<dynamic> rawList = const [];
-    if (res is List) {
-      rawList = res;
-    } else if (res is Map) {
-      if (res['data'] is List) {
-        rawList = res['data'] as List;
-      } else if (res['data'] is Map && (res['data'] as Map)['ads'] is List) {
-        rawList = (res['data'] as Map)['ads'] as List;
-      } else if (res['ads'] is List) {
-        rawList = res['ads'] as List;
+    return _parseAdsList(res);
+  }
+
+  /// Fetch ads for a vendor/user id with React-parity fallbacks.
+  ///
+  /// React uses multiple endpoints depending on backend version:
+  /// - `GET /ads/user/:userId`
+  /// - `GET /ads?vendor_id=:id`
+  /// - `GET /ads/feed?vendor_id=:id`
+  /// - `GET /users/:id/ads`
+  /// - `GET /vendors/:id/ads`
+  Future<List<Map<String, dynamic>>> getVendorAdsAny(
+    String id, {
+    String? category,
+  }) async {
+    final uid = id.trim();
+    if (uid.isEmpty) {
+      throw ArgumentError('id cannot be empty');
+    }
+
+    final normalizedCategory = category?.trim();
+    final categoryQuery = (normalizedCategory == null ||
+            normalizedCategory.isEmpty ||
+            normalizedCategory.toLowerCase() == 'all')
+        ? null
+        : normalizedCategory;
+
+    final attempts = <Future<dynamic> Function()>[
+      () => _client.get(
+            '$_basePath/ads/user/$uid',
+            queryParams:
+                categoryQuery == null ? null : {'category': categoryQuery},
+          ),
+      () => _client.get(
+            '$_basePath/ads',
+            queryParams: {
+              'vendor_id': uid,
+              'status': 'active',
+              'limit': '50',
+              if (categoryQuery != null) 'category': categoryQuery,
+            },
+          ),
+      () => _client.get(
+            '$_basePath/ads/feed',
+            queryParams: {
+              'vendor_id': uid,
+              'limit': '50',
+              if (categoryQuery != null) 'category': categoryQuery,
+            },
+          ),
+      () => _client.get(
+            '$_basePath/users/$uid/ads',
+            queryParams:
+                categoryQuery == null ? null : {'category': categoryQuery},
+          ),
+      () => _client.get(
+            '$_basePath/vendors/$uid/ads',
+            queryParams:
+                categoryQuery == null ? null : {'category': categoryQuery},
+          ),
+    ];
+
+    ApiException? lastError;
+    for (final attempt in attempts) {
+      try {
+        final res = await attempt();
+        final list = _parseAdsList(res);
+        if (list.isNotEmpty) return list;
+        // if it succeeds but empty, keep trying only if backend variant stores under a different id type
+      } on ApiException catch (e) {
+        lastError = e;
+      } catch (_) {
+        // ignore and keep trying
       }
     }
 
-    return rawList
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
+    if (lastError != null) throw lastError;
+    return const <Map<String, dynamic>>[];
   }
 
   Future<List<Map<String, dynamic>>> getAllAds() async {
     final res = await _client.get('$_basePath/ads');
-
-    List<dynamic> rawList = const [];
-    if (res is List) {
-      rawList = res;
-    } else if (res is Map) {
-      if (res['data'] is List) {
-        rawList = res['data'] as List;
-      } else if (res['data'] is Map && (res['data'] as Map)['ads'] is List) {
-        rawList = (res['data'] as Map)['ads'] as List;
-      } else if (res['ads'] is List) {
-        rawList = res['ads'] as List;
-      }
-    }
-
-    return rawList
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
+    return _parseAdsList(res);
   }
 
   Future<Map<String, dynamic>> searchAds({

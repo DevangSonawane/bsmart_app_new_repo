@@ -111,8 +111,9 @@ export default function OwnerContentOptionsModal({
   const actionClass = 'w-full border-b border-white/10 px-6 py-[15px] text-center text-[15px] font-medium text-white hover:bg-white/[0.04] transition-colors';
 
   return (
-    <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
-      <div className="w-full max-w-[620px] overflow-hidden rounded-[28px] border border-white/10 bg-[#26272c] shadow-2xl">
+    <div className="fixed inset-0 z-[85] flex items-start justify-center bg-black/55 backdrop-blur-sm p-4 overflow-y-auto pt-16 md:pt-24">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative w-full max-w-[620px] overflow-hidden rounded-[28px] border border-white/10 bg-[#26272c] shadow-2xl mt-4">
         <button className={`${actionClass} text-[#ff4d67] font-semibold`} onClick={onDelete}>
           {labels.delete}
         </button>

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../api/vendors_api.dart';
+import '../api/notification_preferences_api.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
 import '../widgets/ad_cta_buttons.dart';
@@ -24,10 +25,12 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
     with SingleTickerProviderStateMixin {
   final VendorsApi _vendorsApi = VendorsApi();
   final AdsService _adsService = AdsService();
+  final NotificationPreferencesApi _prefsApi = NotificationPreferencesApi();
 
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _data;
+  String? _vendorUserId;
 
   late final TabController _tabController;
 
@@ -63,13 +66,34 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
       _loading = true;
       _error = null;
       _data = null;
+      _vendorUserId = null;
     });
 
     try {
       final data = await _vendorsApi.getVendorPublicProfile(uid);
       if (!mounted) return;
+      final vendor = _map(data['vendor']);
+      final user = _map(
+        data['user_id'] ??
+            data['userId'] ??
+            data['user'] ??
+            data['vendor_user'] ??
+            data['vendorUser'] ??
+            vendor['user_id'] ??
+            vendor['userId'] ??
+            vendor['user'],
+      );
+      final rawUserId =
+          data['user_id'] ?? data['userId'] ?? vendor['user_id'] ?? vendor['userId'];
+      final vendorUserId = (user['_id'] ??
+              user['id'] ??
+              ((rawUserId is String || rawUserId is num) ? rawUserId : null) ??
+              uid)
+          .toString()
+          .trim();
       setState(() {
         _data = data;
+        _vendorUserId = vendorUserId.isEmpty ? uid : vendorUserId;
         _loading = false;
       });
       unawaited(_loadAds());
@@ -84,17 +108,33 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
 
   Future<void> _loadAds() async {
     if (_adsLoading) return;
-    final uid = widget.userId.trim();
-    if (uid.isEmpty) return;
+    final primary = (_vendorUserId ?? '').trim();
+    final secondary = widget.userId.trim();
+    final candidates = <String>{
+      if (primary.isNotEmpty) primary,
+      if (secondary.isNotEmpty) secondary,
+    }.toList();
+    if (candidates.isEmpty) return;
     setState(() {
       _adsLoading = true;
       _adsError = null;
     });
     try {
-      final list = await _adsService.fetchUserAds(userId: uid);
+      List<Ad> list = const [];
+      var hadSuccess = false;
+      for (final id in candidates) {
+        try {
+          list = await _adsService.fetchUserAds(userId: id);
+          hadSuccess = true;
+          if (list.isNotEmpty) break;
+        } catch (_) {
+          // keep trying other id candidates
+        }
+      }
       if (!mounted) return;
       setState(() {
         _ads = list;
+        _adsError = hadSuccess ? null : 'Could not load ads.';
         _adsLoading = false;
       });
     } catch (_) {
@@ -105,6 +145,121 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
         _adsLoading = false;
       });
     }
+  }
+
+  void _showMoreActions({
+    required String companyName,
+    required String vendorId,
+  }) {
+    final id = vendorId.trim();
+    if (id.isEmpty) return;
+
+    bool started = false;
+    bool loading = true;
+    bool toggling = false;
+    bool? enabled;
+    String? error;
+
+    Future<void> loadStatus(StateSetter setSheetState) async {
+      try {
+        enabled = await _prefsApi.vendorStatus(id);
+        error = null;
+      } catch (_) {
+        error = 'Could not load notification status';
+      } finally {
+        loading = false;
+        if (mounted) setSheetState(() {});
+      }
+    }
+
+    Future<void> toggle(BuildContext sheetCtx, StateSetter setSheetState) async {
+      if (toggling) return;
+      toggling = true;
+      error = null;
+      setSheetState(() {});
+      try {
+        final res = await _prefsApi.toggleVendor(id);
+        enabled = (res['enabled'] as bool?) ?? enabled ?? false;
+        final message = (res['message'] as String?)?.trim();
+        if (message != null && message.isNotEmpty && mounted) {
+          Navigator.of(sheetCtx).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+          return;
+        }
+      } catch (_) {
+        error = 'Failed to update notification setting';
+      } finally {
+        toggling = false;
+        if (mounted) setSheetState(() {});
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: StatefulBuilder(
+          builder: (sheetCtx, setSheetState) {
+            if (!started) {
+              started = true;
+              unawaited(loadStatus(setSheetState));
+            }
+
+            final notifTitle = enabled == true
+                ? 'Turn off notifications'
+                : 'Turn on notifications';
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.notifications_active_outlined),
+                  title: Text(notifTitle),
+                  subtitle: loading
+                      ? const Text('Checking status…')
+                      : (error != null ? Text(error!) : null),
+                  trailing: toggling
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : null,
+                  onTap: loading ? null : () => toggle(sheetCtx, setSheetState),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.report_outlined),
+                  title: const Text('Report vendor'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Report submitted')),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.block),
+                  title: Text('Block $companyName'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Vendor blocked')),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Map<String, dynamic> _map(dynamic raw) {
@@ -280,6 +435,29 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                       onPressed: () => Navigator.of(context).maybePop(),
                       icon: const Icon(Icons.arrow_back, size: 18),
                       label: const Text('Back'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.black.withValues(alpha: 0.35),
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () {
+                        final vendorId = (_data?['_id'] ??
+                                _data?['id'] ??
+                                widget.userId)
+                            .toString()
+                            .trim();
+                        _showMoreActions(
+                          companyName: companyName,
+                          vendorId: vendorId,
+                        );
+                      },
+                      icon: const Icon(Icons.more_horiz, size: 18),
+                      label: const Text('More'),
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.black.withValues(alpha: 0.35),
                         foregroundColor: Colors.white,

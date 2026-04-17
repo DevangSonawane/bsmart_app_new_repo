@@ -19,6 +19,7 @@ import '../widgets/sidebar.dart';
 import '../theme/design_tokens.dart';
 import '../models/story_model.dart';
 import '../models/feed_post_model.dart';
+import '../models/reel_model.dart';
 import '../models/media_model.dart';
 import '../widgets/post_detail_modal.dart';
 import '../widgets/comments_sheet.dart';
@@ -35,11 +36,13 @@ import '../api/api_exceptions.dart';
 import '../api/api_client.dart';
 import '../api/follows_api.dart';
 import '../api/users_api.dart';
+import '../api/suggestions_api.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/url_helper.dart';
 import '../widgets/dynamic_media_widget.dart';
 import '../widgets/floating_message_overlay.dart';
 import '../widgets/suggestion_follow.dart';
+import '../widgets/suggested_reels_card.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -158,7 +161,7 @@ class _FeedHeader extends StatelessWidget {
   }
 }
 
-enum _FeedRenderRowType { post, suggestions }
+enum _FeedRenderRowType { post, suggestions, reelsSuggestions }
 
 class _FeedRenderRow {
   final _FeedRenderRowType type;
@@ -184,6 +187,14 @@ class _FeedRenderRow {
       type: _FeedRenderRowType.suggestions,
       post: null,
       suggestionBlockIndex: blockIndex,
+    );
+  }
+
+  factory _FeedRenderRow.reelsSuggestions() {
+    return const _FeedRenderRow._(
+      type: _FeedRenderRowType.reelsSuggestions,
+      post: null,
+      suggestionBlockIndex: -1,
     );
   }
 }
@@ -333,6 +344,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   final ReelsService _reelsService = ReelsService();
   final FollowsApi _followsApi = FollowsApi();
   final UsersApi _usersApi = UsersApi();
+  final SuggestionsApi _suggestionsApi = SuggestionsApi();
   String? _currentLocation;
   bool _locationLoading = false;
 
@@ -393,6 +405,9 @@ class _HomeDashboardState extends State<HomeDashboard>
   final Set<String> _dismissedSuggestionUserIds = <String>{};
   final Set<String> _suggestionFollowOpsInFlight = <String>{};
   Map<String, String> _suggestionImageHeaders = const <String, String>{};
+
+  bool _reelSuggestionsLoading = false;
+  List<Reel> _suggestedReels = const <Reel>[];
 
   /// Current user profile from `users` table (same source as React web app) for header avatar.
   Map<String, dynamic>? _currentUserProfile;
@@ -544,16 +559,27 @@ class _HomeDashboardState extends State<HomeDashboard>
       _loadData(store);
       _loadInitialFeed(forceNetwork: true);
       unawaited(_loadFollowSuggestions());
+      unawaited(_loadReelSuggestions(force: true));
       _fetchCurrentLocation();
     });
   }
 
   String _suggestionIdOf(Map<String, dynamic> u) {
+    final embedded = u['user'];
+    if (embedded is Map) {
+      final e = Map<String, dynamic>.from(embedded);
+      final raw = e['_id'] ?? e['id'] ?? e['userId'];
+      return raw == null ? '' : raw.toString();
+    }
     final raw = u['_id'] ?? u['id'] ?? u['userId'];
     return raw == null ? '' : raw.toString();
   }
 
   String _suggestionTitleOf(Map<String, dynamic> u) {
+    final embedded = u['user'];
+    if (embedded is Map) {
+      return _suggestionTitleOf(Map<String, dynamic>.from(embedded));
+    }
     final rawUsername = u['username'] ?? u['userName'];
     final username = rawUsername == null ? '' : rawUsername.toString().trim();
     if (username.isNotEmpty) return username;
@@ -563,8 +589,13 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   String _suggestionAvatarOf(Map<String, dynamic> u) {
+    final embedded = u['user'];
+    if (embedded is Map) {
+      return _suggestionAvatarOf(Map<String, dynamic>.from(embedded));
+    }
     final raw = u['avatar_url'] ??
         u['avatarUrl'] ??
+        u['profile_picture'] ??
         u['profile_pic'] ??
         u['profilePic'] ??
         u['profilePicture'] ??
@@ -575,7 +606,27 @@ class _HomeDashboardState extends State<HomeDashboard>
   bool _suggestionIsFollowingOf(Map<String, dynamic> u) =>
       _parseBoolLike(u['isFollowing']) ??
       _parseBoolLike(u['is_followed_by_me']) ??
-      false;
+      (u['user'] is Map
+          ? _suggestionIsFollowingOf(Map<String, dynamic>.from(u['user']))
+          : false);
+
+  String? _suggestionReasonOf(Map<String, dynamic> u) {
+    final embedded = u['user'];
+    final source =
+        embedded is Map ? Map<String, dynamic>.from(embedded) : u;
+    final mutual = source['mutual_friends_count'] ?? source['mutualCount'];
+    if (mutual is num && mutual.toInt() > 0) return '${mutual.toInt()} mutual';
+    final followedBy =
+        (source['followed_by'] ?? source['followedBy'])?.toString().trim();
+    if (followedBy != null && followedBy.isNotEmpty) {
+      return 'Followed by $followedBy';
+    }
+    final reason = (u['reason'] ?? u['message'] ?? u['subtitle'])
+        ?.toString()
+        .trim();
+    if (reason != null && reason.isNotEmpty) return reason;
+    return 'Suggested for you';
+  }
 
   Future<void> _loadFollowSuggestions({bool force = false}) async {
     if (_followSuggestionsLoading) return;
@@ -594,11 +645,18 @@ class _HomeDashboardState extends State<HomeDashboard>
         });
       }
 
-      final users = await _usersApi.search('');
-      final list = users
-          .map((e) => Map<String, dynamic>.from(e))
-          .where((u) => _suggestionIdOf(u).trim().isNotEmpty)
-          .toList();
+      List<Map<String, dynamic>> list = const <Map<String, dynamic>>[];
+      try {
+        // React parity: GET /api/suggestions/users?limit=...
+        list = await _suggestionsApi.getUserSuggestions(limit: 80);
+      } catch (_) {
+        // Fallback to older behavior: fetch all users and shuffle client-side.
+        final users = await _usersApi.search('');
+        list = users
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((u) => _suggestionIdOf(u).trim().isNotEmpty)
+            .toList();
+      }
       list.shuffle();
       if (list.length > 80) {
         list.removeRange(80, list.length);
@@ -647,6 +705,7 @@ class _HomeDashboardState extends State<HomeDashboard>
           SuggestionUser(
             id: id,
             title: _suggestionTitleOf(u),
+            subtitle: _suggestionReasonOf(u),
             avatarUrl: avatar.isEmpty ? null : UrlHelper.absoluteUrl(avatar),
           ),
         );
@@ -664,6 +723,166 @@ class _HomeDashboardState extends State<HomeDashboard>
           _followSuggestionsLoading = false;
         });
       }
+    }
+  }
+
+  Reel? _parseSuggestedReel(Map<String, dynamic> item) {
+    String? str(dynamic v) {
+      if (v == null) return null;
+      final s = v.toString().trim();
+      return s.isEmpty ? null : s;
+    }
+
+    int toInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v?.toString() ?? '') ?? 0;
+    }
+
+    bool toBool(dynamic v) {
+      final parsed = _parseBoolLike(v);
+      return parsed ?? false;
+    }
+
+    final id = str(item['_id']) ?? str(item['id']) ?? str(item['post_id']);
+    if (id == null || id.isEmpty) return null;
+
+    final userField =
+        item['user_id'] ?? item['userId'] ?? item['user'] ?? item['author'];
+    final user = userField is Map
+        ? Map<String, dynamic>.from(userField)
+        : item['users'] is Map
+            ? Map<String, dynamic>.from(item['users'])
+            : <String, dynamic>{};
+
+    final userId = str(user['_id']) ??
+        str(user['id']) ??
+        str(item['userId']) ??
+        str(item['user_id']) ??
+        ((userField is String || userField is num) ? str(userField) : null) ??
+        '';
+    final userName = str(user['username']) ?? str(user['full_name']) ?? 'reel';
+    final userAvatar = UrlHelper.normalizeUrl(str(user['avatar_url']));
+
+    final mediaList = item['media'] is List ? (item['media'] as List) : const [];
+    String? videoUrl;
+    String? thumbnailUrl;
+    String? aspectRatio;
+    if (mediaList.isNotEmpty) {
+      final first = mediaList.first;
+      if (first is String) {
+        videoUrl = str(first);
+      } else if (first is Map) {
+        final media = Map<String, dynamic>.from(first);
+        videoUrl = str(media['fileUrl']) ??
+            str(media['url']) ??
+            str(media['videoUrl']) ??
+            str(media['file_url']);
+
+        final thumbField =
+            media['thumbnails'] ?? media['thumbnail'] ?? media['thumbnailUrl'] ?? media['thumb'];
+        if (thumbField is String) {
+          thumbnailUrl = str(thumbField);
+        } else if (thumbField is Map) {
+          final m = Map<String, dynamic>.from(thumbField);
+          thumbnailUrl = str(m['fileUrl']) ?? str(m['url']) ?? str(m['file_url']);
+        } else if (thumbField is List && thumbField.isNotEmpty) {
+          final t0 = thumbField.first;
+          if (t0 is String) {
+            thumbnailUrl = str(t0);
+          } else if (t0 is Map) {
+            final m = Map<String, dynamic>.from(t0);
+            thumbnailUrl =
+                str(m['fileUrl']) ?? str(m['fileName']) ?? str(m['url']);
+          }
+        }
+
+        final crop = media['crop'] is Map
+            ? Map<String, dynamic>.from(media['crop'])
+            : const <String, dynamic>{};
+        aspectRatio = str(crop['aspect_ratio']) ?? str(media['aspect_ratio']);
+      }
+    }
+
+    final reelCrop = item['crop'] is Map
+        ? Map<String, dynamic>.from(item['crop'])
+        : const <String, dynamic>{};
+    aspectRatio = aspectRatio ?? str(reelCrop['aspect_ratio']) ?? str(item['aspect_ratio']);
+
+    final caption = str(item['caption']);
+    final createdAtRaw = str(item['created_at']) ?? str(item['createdAt']);
+    final createdAt = DateTime.tryParse(createdAtRaw ?? '') ?? DateTime.now();
+
+    final normalizedVideo = UrlHelper.normalizeUrl(videoUrl ?? '');
+    if (normalizedVideo.isEmpty) return null;
+
+    final normalizedThumb = UrlHelper.normalizeUrl(thumbnailUrl);
+    final normalizedAvatar = UrlHelper.normalizeUrl(userAvatar);
+
+    return Reel(
+      id: id,
+      userId: userId,
+      userName: userName,
+      userAvatarUrl: normalizedAvatar.isEmpty
+          ? null
+          : UrlHelper.absoluteUrl(normalizedAvatar),
+      videoUrl: UrlHelper.absoluteUrl(normalizedVideo),
+      thumbnailUrl: normalizedThumb == null || normalizedThumb.isEmpty
+          ? null
+          : UrlHelper.absoluteUrl(normalizedThumb),
+      aspectRatio: aspectRatio,
+      caption: caption,
+      hashtags: const <String>[],
+      likes: toInt(item['likes_count'] ?? item['likesCount']),
+      comments: toInt(item['comments_count'] ?? item['commentsCount']),
+      shares: toInt(item['shares_count'] ?? item['sharesCount']),
+      views: toInt(item['views_count'] ?? item['viewsCount']),
+      isLiked: toBool(item['is_liked_by_me'] ?? item['isLiked']),
+      isSaved: toBool(item['is_saved_by_me'] ?? item['isSaved']),
+      isFollowing: toBool(item['is_followed_by_me'] ?? item['isFollowing']),
+      createdAt: createdAt,
+      isSponsored: toBool(item['is_ad'] ?? item['isAd']),
+      sponsorBrand: str(item['ad_company_name']),
+      sponsorLogoUrl: null,
+      productTags: null,
+      remixEnabled: true,
+      audioReuseEnabled: true,
+      originalReelId: null,
+      originalCreatorId: null,
+      originalCreatorName: null,
+      isRisingCreator: false,
+      isTrending: false,
+      duration: const Duration(seconds: 30),
+    );
+  }
+
+  Future<void> _loadReelSuggestions({bool force = false}) async {
+    if (_reelSuggestionsLoading) return;
+    if (!force && _suggestedReels.isNotEmpty) return;
+    setState(() => _reelSuggestionsLoading = true);
+    try {
+      final token = await ApiClient().getToken();
+      if (token != null && token.isNotEmpty && _suggestionImageHeaders.isEmpty && mounted) {
+        setState(() {
+          _suggestionImageHeaders = <String, String>{'Authorization': 'Bearer $token'};
+        });
+      }
+
+      final raw = await _suggestionsApi.getReelSuggestions(limit: 10);
+      final parsed = raw
+          .map((e) => _parseSuggestedReel(e))
+          .whereType<Reel>()
+          .where((r) => r.id.isNotEmpty)
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _suggestedReels = parsed;
+      });
+    } catch (_) {
+      // ignore
+    } finally {
+      if (mounted) setState(() => _reelSuggestionsLoading = false);
     }
   }
 
@@ -692,6 +911,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     _dismissSuggestionUser(user.id);
     try {
       await _followsApi.follow(user.id);
+      unawaited(_supabase.syncFollowStatus(user.id, true));
     } catch (_) {
       if (!mounted) return;
       setState(() => _dismissedSuggestionUserIds.remove(user.id));
@@ -728,6 +948,21 @@ class _HomeDashboardState extends State<HomeDashboard>
         rows.add(_FeedRenderRow.suggestions(suggestionBlockIndex));
         suggestionBlockIndex++;
       }
+    }
+
+    // React parity: insert suggested reels near the top on mobile.
+    if (_suggestedReels.isNotEmpty) {
+      var insertAt = rows.length;
+      var postCount = 0;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].type != _FeedRenderRowType.post) continue;
+        postCount++;
+        if (postCount >= 2) {
+          insertAt = i + 1;
+          break;
+        }
+      }
+      rows.insert(insertAt, _FeedRenderRow.reelsSuggestions());
     }
     return rows;
   }
@@ -952,6 +1187,7 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   Future<void> _loadInitialFeed({bool forceNetwork = false}) async {
     await primeMediaAuthHeaders(); // ensure auth headers ready before any image loads
+    unawaited(_loadReelSuggestions(force: forceNetwork));
     final store = StoreProvider.of<AppState>(context);
     final isFirstLoad = store.state.feedState.posts.isEmpty || forceNetwork;
     if (isFirstLoad) {
@@ -2593,6 +2829,24 @@ class _HomeDashboardState extends State<HomeDashboard>
                               (context, index) {
                                 final row = rows[index];
                                 if (row.type ==
+                                    _FeedRenderRowType.reelsSuggestions) {
+                                  return SuggestedReelsCard(
+                                    reels: _suggestedReels,
+                                    imageHeaders: _suggestionImageHeaders.isEmpty
+                                        ? null
+                                        : _suggestionImageHeaders,
+                                    onOpenReel: (reel) {
+                                      if (reel.id.isEmpty) return;
+                                      Navigator.of(context).pushNamed(
+                                        '/reels',
+                                        arguments: {
+                                          'initialReelId': reel.id,
+                                        },
+                                      );
+                                    },
+                                  );
+                                }
+                                if (row.type ==
                                     _FeedRenderRowType.suggestions) {
                                   final isLoading = _followSuggestionsLoading ||
                                       _followSuggestions.isEmpty;
@@ -2659,8 +2913,9 @@ class _HomeDashboardState extends State<HomeDashboard>
                                         isOwnPost: isOwnPost,
                                         onUserTap: p.userId.isNotEmpty
                                             ? () => Navigator.of(context)
-                                                .pushNamed(
-                                                    '/profile/${p.userId}')
+                                                .pushNamed(p.isAd
+                                                    ? '/vendor/${p.userId}/public'
+                                                    : '/profile/${p.userId}')
                                             : null,
                                         onLike: () => _onLikePost(p),
                                         onDoubleTapLike: () =>

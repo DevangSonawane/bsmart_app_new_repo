@@ -661,7 +661,11 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
           Expanded(
             child: InkWell(
               onTap: post.userId.isNotEmpty
-                  ? () => Navigator.of(context).pushNamed('/profile/${post.userId}')
+                  ? () => Navigator.of(context).pushNamed(
+                        post.isAd
+                            ? '/vendor/${post.userId}/public'
+                            : '/profile/${post.userId}',
+                      )
                   : null,
               borderRadius: BorderRadius.circular(24),
               child: Row(

@@ -189,7 +189,7 @@ const CompletionBar = ({ pct }) => (
 );
 
 const ValidationStatusBadge = ({ validated, status }) => {
-  const label = validated ? "Validated" : (status ? String(status).replaceAll("_", " ") : "Not Validated");
+  const label = validated ? "Verified" : (status ? String(status).replaceAll("_", " ") : "Not Verified");
   const classes = validated
     ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
     : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800";

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/vendors_api.dart';
+import '../api/notification_preferences_api.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
 import '../widgets/ad_cta_buttons.dart';
@@ -28,6 +29,7 @@ class _VendorPublicProfileReactScreenState
     with SingleTickerProviderStateMixin {
   final VendorsApi _vendorsApi = VendorsApi();
   final AdsService _adsService = AdsService();
+  final NotificationPreferencesApi _prefsApi = NotificationPreferencesApi();
 
   bool _loading = true;
   String? _error;
@@ -95,12 +97,22 @@ class _VendorPublicProfileReactScreenState
     try {
       final data = await _vendorsApi.getVendorPublicProfile(uid);
       if (!mounted) return;
-      final user = _map(data['user_id']);
+      final vendor = _map(data['vendor']);
+      final user = _map(
+        data['user_id'] ??
+            data['userId'] ??
+            data['user'] ??
+            data['vendor_user'] ??
+            data['vendorUser'] ??
+            vendor['user_id'] ??
+            vendor['userId'] ??
+            vendor['user'],
+      );
+      final rawUserId =
+          data['user_id'] ?? data['userId'] ?? vendor['user_id'] ?? vendor['userId'];
       final vendorUserId = (user['_id'] ??
               user['id'] ??
-              ((data['user_id'] is String || data['user_id'] is num)
-                  ? data['user_id']
-                  : null) ??
+              ((rawUserId is String || rawUserId is num) ? rawUserId : null) ??
               uid)
           .toString()
           .trim();
@@ -122,17 +134,33 @@ class _VendorPublicProfileReactScreenState
 
   Future<void> _loadAds() async {
     if (_adsLoading) return;
-    final uid = (_vendorUserId ?? widget.userId).trim();
-    if (uid.isEmpty) return;
+    final primary = (_vendorUserId ?? '').trim();
+    final secondary = widget.userId.trim();
+    final candidates = <String>{
+      if (primary.isNotEmpty) primary,
+      if (secondary.isNotEmpty) secondary,
+    }.toList();
+    if (candidates.isEmpty) return;
     setState(() {
       _adsLoading = true;
       _adsError = null;
     });
     try {
-      final list = await _adsService.fetchUserAds(userId: uid);
+      List<Ad> list = const [];
+      var hadSuccess = false;
+      for (final id in candidates) {
+        try {
+          list = await _adsService.fetchUserAds(userId: id);
+          hadSuccess = true;
+          if (list.isNotEmpty) break;
+        } catch (e) {
+          // keep trying other id candidates
+        }
+      }
       if (!mounted) return;
       setState(() {
         _ads = list;
+        _adsError = hadSuccess ? null : 'Could not load ads.';
         _adsLoading = false;
       });
     } catch (_) {
@@ -143,6 +171,121 @@ class _VendorPublicProfileReactScreenState
         _adsLoading = false;
       });
     }
+  }
+
+  void _showMoreActions({
+    required String companyName,
+    required String vendorId,
+  }) {
+    final id = vendorId.trim();
+    if (id.isEmpty) return;
+
+    bool started = false;
+    bool loading = true;
+    bool toggling = false;
+    bool? enabled;
+    String? error;
+
+    Future<void> loadStatus(StateSetter setSheetState) async {
+      try {
+        enabled = await _prefsApi.vendorStatus(id);
+        error = null;
+      } catch (_) {
+        error = 'Could not load notification status';
+      } finally {
+        loading = false;
+        if (mounted) setSheetState(() {});
+      }
+    }
+
+    Future<void> toggle(BuildContext sheetCtx, StateSetter setSheetState) async {
+      if (toggling) return;
+      toggling = true;
+      error = null;
+      setSheetState(() {});
+      try {
+        final res = await _prefsApi.toggleVendor(id);
+        enabled = (res['enabled'] as bool?) ?? enabled ?? false;
+        final message = (res['message'] as String?)?.trim();
+        if (message != null && message.isNotEmpty && mounted) {
+          Navigator.of(sheetCtx).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+          return;
+        }
+      } catch (_) {
+        error = 'Failed to update notification setting';
+      } finally {
+        toggling = false;
+        if (mounted) setSheetState(() {});
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: StatefulBuilder(
+          builder: (sheetCtx, setSheetState) {
+            if (!started) {
+              started = true;
+              unawaited(loadStatus(setSheetState));
+            }
+
+            final notifTitle = enabled == true
+                ? 'Turn off notifications'
+                : 'Turn on notifications';
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.notifications_active_outlined),
+                  title: Text(notifTitle),
+                  subtitle: loading
+                      ? const Text('Checking status…')
+                      : (error != null ? Text(error!) : null),
+                  trailing: toggling
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : null,
+                  onTap: loading ? null : () => toggle(sheetCtx, setSheetState),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.report_outlined),
+                  title: const Text('Report vendor'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Report submitted')),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(LucideIcons.userX),
+                  title: Text('Block $companyName'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Vendor blocked')),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            );
+          },
+        ),
+      ),
+    );
   }
 
   void _startCoverAutoplayIfNeeded() {
@@ -412,6 +555,10 @@ class _VendorPublicProfileReactScreenState
     final country = _country(data);
     final user = _map(data['user_id']);
     final username = (user['username'] ?? '').toString().trim();
+    final vendorDocId =
+        (data['_id'] ?? data['id'])?.toString().trim() ?? '';
+    final notificationTargetId =
+        vendorDocId.isNotEmpty ? vendorDocId : (_vendorUserId ?? widget.userId);
 
     return Scaffold(
       backgroundColor: background,
@@ -433,6 +580,10 @@ class _VendorPublicProfileReactScreenState
                   coverIndex: _coverIndex,
                   onCoverChanged: (i) => setState(() => _coverIndex = i),
                   onBack: () => Navigator.of(context).maybePop(),
+                  onMore: () => _showMoreActions(
+                    companyName: companyName,
+                    vendorId: notificationTargetId,
+                  ),
                   companyName: companyName,
                   verified: verified,
                   avatarUrl: avatarUrl,
@@ -516,6 +667,7 @@ class _VendorHeader extends StatelessWidget {
   final int coverIndex;
   final ValueChanged<int> onCoverChanged;
   final VoidCallback onBack;
+  final VoidCallback onMore;
   final String companyName;
   final bool verified;
   final String? avatarUrl;
@@ -538,6 +690,7 @@ class _VendorHeader extends StatelessWidget {
     required this.coverIndex,
     required this.onCoverChanged,
     required this.onBack,
+    required this.onMore,
     required this.companyName,
     required this.verified,
     required this.avatarUrl,
@@ -626,6 +779,29 @@ class _VendorHeader extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: safeTop + 12,
+                right: 16,
+                child: InkWell(
+                  onTap: onMore,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.10),
+                      ),
+                    ),
+                    child: const Icon(
+                      LucideIcons.ellipsis,
+                      color: Colors.white,
+                      size: 18,
                     ),
                   ),
                 ),
@@ -1365,14 +1541,20 @@ class _StatGrid extends StatelessWidget {
       builder: (_, constraints) {
         final width = constraints.maxWidth;
         final columns = width >= 720 ? 3 : 2;
-        return GridView.count(
+        final ts = MediaQuery.textScaleFactorOf(context);
+        final clampedTs = ts < 1 ? 1.0 : (ts > 1.2 ? 1.2 : ts);
+        final mainAxisExtent = 118.0 * clampedTs;
+        return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: columns,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 1.65,
-          children: items,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            mainAxisExtent: mainAxisExtent,
+          ),
+          itemCount: items.length,
+          itemBuilder: (_, i) => items[i],
         );
       },
     );

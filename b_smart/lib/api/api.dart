@@ -14,3 +14,5 @@ export 'stories_api.dart';
 export 'follows_api.dart';
 export 'ads_api.dart';
 export 'highlights_api.dart';
+export 'notification_preferences_api.dart';
+export 'suggestions_api.dart';

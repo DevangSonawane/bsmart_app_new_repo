@@ -104,7 +104,7 @@ class AdsService {
     required String userId,
     String? category,
   }) async {
-    final rawList = await _adsApi.getUserAds(userId, category: category);
+    final rawList = await _adsApi.getVendorAdsAny(userId, category: category);
     return rawList.map(Ad.fromApi).where((ad) => ad.id.isNotEmpty).toList();
   }
 

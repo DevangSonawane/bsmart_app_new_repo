@@ -335,8 +335,9 @@ class ApiClient {
 
   MediaType? _contentTypeForFilename(String name) {
     final n = name.toLowerCase();
-    if (n.endsWith('.jpg') || n.endsWith('.jpeg'))
+    if (n.endsWith('.jpg') || n.endsWith('.jpeg')) {
       return MediaType('image', 'jpeg');
+    }
     if (n.endsWith('.png')) return MediaType('image', 'png');
     if (n.endsWith('.gif')) return MediaType('image', 'gif');
     if (n.endsWith('.mp4')) return MediaType('video', 'mp4');

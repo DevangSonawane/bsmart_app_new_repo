@@ -13,6 +13,7 @@ import {
   Tag, Briefcase, Info, Megaphone, UserCheck,
   Image as ImageIcon, AlertCircle, Heart, MessageCircle,
   Eye, Play, BadgeCheck, ShieldCheck, X, ExternalLink,
+  MoreHorizontal, Loader2, Bell, Flag
 } from "lucide-react";
 
 const BASE_URL = "https://api.bebsmart.in";
@@ -478,6 +479,23 @@ export default function VendorPublicProfile() {
   const [error, setError]       = useState("");
   const [activeTab, setActiveTab]     = useState("information");
   const [avatarOpen, setAvatarOpen]   = useState(false);
+  const [showMenu, setShowMenu]       = useState(false);
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [toast, setToast]             = useState(null);
+  const menuRef = useRef(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showMenu]);
 
   useEffect(() => {
     if (!userId) return;
@@ -488,6 +506,56 @@ export default function VendorPublicProfile() {
       .catch(() => setError("Failed to load vendor profile. Please try again."))
       .finally(() => setLoading(false));
   }, [userId]);
+
+  // Fetch notification preference status for vendor
+  useEffect(() => {
+    if (!userId) return;
+    const fetchNotifStatus = async () => {
+      try {
+        const res = await api.get(`/notification-preferences/vendors/${userId}/status`);
+        setNotificationEnabled(res.data?.enabled || false);
+      } catch (err) {
+        console.error("Error fetching vendor notification status:", err);
+      }
+    };
+    fetchNotifStatus();
+  }, [userId]);
+
+  const handleToggleNotifications = async () => {
+    if (!userId || notifLoading) return;
+    setNotifLoading(true);
+    try {
+      const res = await api.post(`/notification-preferences/vendors/${userId}/toggle`);
+      setNotificationEnabled(res.data?.enabled || false);
+      setToast({
+        type: "success",
+        message: `Notifications turned ${res.data?.enabled ? "on" : "off"} for this vendor.`,
+      });
+    } catch (err) {
+      console.error("Error toggling vendor notifications:", err);
+      setToast({
+        type: "error",
+        message: "Failed to update notification settings.",
+      });
+    } finally {
+      setNotifLoading(false);
+      setShowMenu(false);
+    }
+  };
+
+  const handleReport = () => {
+    setShowMenu(false);
+    setToast({
+      type: "success",
+      message: "Report submitted successfully.",
+    });
+  };
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   if (loading) return (
     <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col items-center justify-center gap-4">
@@ -515,6 +583,16 @@ export default function VendorPublicProfile() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-black font-sans">
+      {/* ── Toast ── */}
+      {toast && (
+        <div className={`fixed top-20 right-4 z-[110] rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg animate-in fade-in slide-in-from-right-4 duration-300 ${
+          toast.type === "success"
+            ? "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400"
+            : "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400"
+        }`}>
+          {toast.message}
+        </div>
+      )}
 
       {/* ── Avatar Lightbox ── */}
       {avatarOpen && (
@@ -523,12 +601,46 @@ export default function VendorPublicProfile() {
 
       {/* ── Cover image ── */}
       <div className="relative">
-        <button
-          onClick={() => navigate(-1)}
-          className="absolute top-4 left-4 z-30 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/40 backdrop-blur-sm text-white text-xs font-bold hover:bg-black/60 transition-all shadow-lg"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
+        <div className="absolute top-4 left-4 right-4 z-30 flex justify-between items-center">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/40 backdrop-blur-sm text-white text-xs font-bold hover:bg-black/60 transition-all shadow-lg"
+          >
+            <ArrowLeft size={14} /> Back
+          </button>
+
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="w-9 h-9 flex items-center justify-center rounded-xl bg-black/40 backdrop-blur-sm text-white hover:bg-black/60 transition-all shadow-lg"
+            >
+              <MoreHorizontal size={20} />
+            </button>
+
+            {showMenu && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                <button
+                  onClick={handleReport}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                >
+                  <Flag size={16} /> Report
+                </button>
+                <button
+                  onClick={handleToggleNotifications}
+                  disabled={notifLoading}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 border-t border-gray-100 dark:border-gray-800 transition-colors disabled:opacity-50"
+                >
+                  {notifLoading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Bell size={16} />
+                  )}
+                  {notificationEnabled ? "Turn Off Notifs" : "Turn On Notifs"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
 
         <div className="h-52 md:h-72 bg-gray-200 dark:bg-gray-800 overflow-hidden">
           {coverUrls.length > 0 ? (

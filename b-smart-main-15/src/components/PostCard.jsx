@@ -35,8 +35,9 @@ const adAuthHeaders = () => {
 const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 dark:border-gray-800">
+    <div className="fixed inset-0 z-[150] flex items-start justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 overflow-y-auto">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 dark:border-gray-800 mt-4 md:mt-8">
         {isDeleting ? (
           <div className="flex flex-col items-center justify-center py-8">
             <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-red-500 rounded-full mb-4" />
@@ -604,7 +605,7 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
   const profilePath = isAd ? `/vendor/${userId}/public` : `/profile/${userId}`;
 
   return (
-    <div className="relative isolate overflow-hidden bg-white dark:bg-black mb-4 border-b border-gray-200 dark:border-gray-800 pb-4 md:rounded-lg md:border max-w-[470px] mx-auto">
+    <div className="relative overflow-hidden bg-white dark:bg-black mb-4 border-b border-gray-200 dark:border-gray-800 pb-4 md:rounded-lg md:border max-w-[470px] mx-auto">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="relative z-10 flex items-center justify-between bg-white dark:bg-black p-3">

@@ -29,6 +29,7 @@ import '../services/wallet_service.dart';
 import '../api/auth_api.dart';
 import '../api/api_client.dart';
 import '../api/chat_api.dart';
+import '../api/notification_preferences_api.dart';
 import '../config/api_config.dart';
 import '../services/feed_service.dart';
 import '../services/auth/auth_service.dart';
@@ -95,6 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<SuggestionUser> _followSuggestions = const <SuggestionUser>[];
   final Set<String> _dismissedFollowSuggestionUserIds = <String>{};
   final Set<String> _followSuggestionOpsInFlight = <String>{};
+  Map<String, dynamic>? _vendorInfo;
 
   @override
   void initState() {
@@ -192,6 +194,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _suggestionAvatarOf(Map<String, dynamic> u) {
     final raw = u['avatar_url'] ??
         u['avatarUrl'] ??
+        u['profile_picture'] ??
         u['profile_pic'] ??
         u['profilePic'] ??
         u['profilePicture'] ??
@@ -268,6 +271,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SuggestionUser(
             id: id,
             title: _suggestionTitleOf(u),
+            subtitle: null,
             avatarUrl: avatar.isEmpty ? null : UrlHelper.absoluteUrl(avatar),
           ),
         );
@@ -507,6 +511,64 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showProfileMoreActions(Map<String, dynamic>? profile) {
     if (profile == null) return;
     final username = (profile['username'] as String?)?.trim() ?? 'user';
+    final targetUserId =
+        (profile['id'] ?? profile['_id'])?.toString().trim() ?? '';
+    final isVendorProfile =
+        (profile['role'] as String?)?.toLowerCase() == 'vendor';
+    final vendorId = isVendorProfile
+        ? ((_vendorInfo?['_id'] ?? _vendorInfo?['id'])?.toString().trim() ?? '')
+        : '';
+    final canToggleNotifications = !_isOwnProfile && targetUserId.isNotEmpty;
+    final prefsApi = NotificationPreferencesApi();
+
+    bool started = false;
+    bool loading = canToggleNotifications;
+    bool toggling = false;
+    bool? enabled;
+    String? error;
+
+    Future<void> loadStatus(StateSetter setSheetState) async {
+      if (!canToggleNotifications) return;
+      try {
+        final v = isVendorProfile && vendorId.isNotEmpty
+            ? await prefsApi.vendorStatus(vendorId)
+            : await prefsApi.userStatus(targetUserId);
+        enabled = v;
+        error = null;
+      } catch (_) {
+        error = 'Could not load notification status';
+      } finally {
+        loading = false;
+        if (mounted) setSheetState(() {});
+      }
+    }
+
+    Future<void> toggle(BuildContext sheetCtx, StateSetter setSheetState) async {
+      if (!canToggleNotifications || toggling) return;
+      toggling = true;
+      error = null;
+      setSheetState(() {});
+      try {
+        final res = isVendorProfile && vendorId.isNotEmpty
+            ? await prefsApi.toggleVendor(vendorId)
+            : await prefsApi.toggleUser(targetUserId);
+        enabled = (res['enabled'] as bool?) ?? enabled ?? false;
+        final message = (res['message'] as String?)?.trim();
+        if (message != null && message.isNotEmpty && mounted) {
+          Navigator.of(sheetCtx).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+          return;
+        }
+      } catch (_) {
+        error = 'Failed to update notification setting';
+      } finally {
+        toggling = false;
+        if (mounted) setSheetState(() {});
+      }
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -515,31 +577,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       builder: (ctx) => SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.report_outlined),
-              title: const Text('Report user'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Report submitted')),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.userX),
-              title: Text('Block @$username'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('User blocked')),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+        child: StatefulBuilder(
+          builder: (sheetCtx, setSheetState) {
+            if (!started) {
+              started = true;
+              unawaited(loadStatus(setSheetState));
+            }
+
+            final notifTitle = enabled == true
+                ? 'Turn off notifications'
+                : 'Turn on notifications';
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (canToggleNotifications)
+                  ListTile(
+                    leading: const Icon(Icons.notifications_active_outlined),
+                    title: Text(notifTitle),
+                    subtitle: loading
+                        ? const Text('Checking status…')
+                        : (error != null ? Text(error!) : null),
+                    trailing: toggling
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : null,
+                    onTap: loading ? null : () => toggle(sheetCtx, setSheetState),
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.report_outlined),
+                  title:
+                      Text(isVendorProfile ? 'Report vendor' : 'Report user'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Report submitted')),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(LucideIcons.userX),
+                  title: Text('Block @$username'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('User blocked')),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1109,6 +1201,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _saved = saved;
         _tagged = tagged;
         _vendorAds = vendorAds;
+        _vendorInfo = vendorInfo;
         _userReels = combinedReels.values.toList();
         _storyGroups = const [];
         _loading = false;

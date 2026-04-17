@@ -865,8 +865,20 @@ class _PostDetailModalState extends State<PostDetailModal> {
                         _extractId(_post?['user']) ??
                         _extractId(_post?['users']);
                     if (userId != null && userId.isNotEmpty) {
+                      final itemType = (_post?['item_type'] ??
+                              _post?['itemType'] ??
+                              '')
+                          .toString()
+                          .toLowerCase();
+                      final isAdItem = itemType == 'ad' ||
+                          _post?['vendor_id'] != null ||
+                          _post?['vendorId'] != null ||
+                          _post?['is_ad'] == true ||
+                          _post?['isAd'] == true;
                       Navigator.of(context).pop();
-                      Navigator.of(context).pushNamed('/profile/$userId');
+                      Navigator.of(context).pushNamed(isAdItem
+                          ? '/vendor/$userId/public'
+                          : '/profile/$userId');
                     }
                   },
                   borderRadius: BorderRadius.circular(24),

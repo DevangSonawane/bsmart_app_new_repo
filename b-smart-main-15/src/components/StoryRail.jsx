@@ -106,8 +106,8 @@ const StoryRail = () => {
   return (
     <>
       {/* ── Story Rail ── */}
-      <div className="bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 py-3">
-        <div className="flex gap-3 overflow-x-auto px-4 no-scrollbar pb-1">
+      <div className="bg-white dark:bg-black py-3">
+        <div className="flex gap-3 overflow-x-auto px-4 no-scrollbar pb-1 xl:px-0">
           {stories.map((story, index) => {
             const isYourStory  = story.isUser && (!story.itemsCount || story.itemsCount === 0);
             const hasSeen      = story.seen;

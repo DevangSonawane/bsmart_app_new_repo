@@ -33,8 +33,17 @@ void main() async {
     // don't bring down the app during debug/testing of plugin failures.
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
+      final message = details.exceptionAsString();
+      final isRenderFlexOverflow = message.contains('A RenderFlex overflowed by');
+      if (isRenderFlexOverflow) {
+        // Layout overflow warnings are common during development and should not
+        // be promoted to "uncaught errors" (they otherwise spam `flutter logs`).
+        return;
+      }
       Zone.current.handleUncaughtError(
-          details.exception, details.stack ?? StackTrace.current);
+        details.exception,
+        details.stack ?? StackTrace.current,
+      );
     };
     // Catch asynchronous engine/platform errors that don't go through FlutterError
     PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
@@ -50,32 +59,49 @@ void main() async {
         home: Scaffold(
           backgroundColor: Colors.white,
           body: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        color: DesignTokens.instaPink, size: 48),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Something went wrong',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            color: DesignTokens.instaPink,
+                            size: 48,
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Something went wrong',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            details.exceptionAsString(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.black54,
+                            ),
+                            maxLines: 12,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      details.exceptionAsString(),
-                      textAlign: TextAlign.center,
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
           ),
         ),

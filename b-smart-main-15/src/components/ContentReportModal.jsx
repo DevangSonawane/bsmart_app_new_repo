@@ -105,10 +105,10 @@ const ContentReportModal = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[140] flex items-start justify-center bg-black/75 px-4 py-20 backdrop-blur-sm overflow-y-auto">
       <div className="absolute inset-0" onClick={onClose} />
 
-      <div className="relative w-full max-w-[520px] overflow-hidden rounded-[24px] border border-white/10 bg-[#26272b] text-white shadow-[0_32px_96px_rgba(0,0,0,0.6)]">
+      <div className="relative w-full max-w-[520px] overflow-hidden rounded-[24px] border border-white/10 bg-[#26272b] text-white shadow-[0_32px_96px_rgba(0,0,0,0.6)] mt-4 md:mt-8">
         {step === 'menu' && (
           <div>
             <div className="border-b border-white/10 px-5 py-4 text-center text-[22px] font-semibold tracking-tight md:text-[24px]">
