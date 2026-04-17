@@ -417,6 +417,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   Future<void>? _videoInit;
   bool _isPlaying = false;
   bool _autoPlayQueued = false;
+  bool _isSeeking = false;
   Duration? _trimStart;
   Duration? _trimEnd;
   final Map<String, Duration?> _mediaTrimStart = {};
@@ -1147,6 +1148,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     _trashAnimController.dispose();
     _videoController?.removeListener(_handlePreviewVideoTick);
     _videoController?.dispose();
+    _isSeeking = false;
     final stream = _imageStream;
     final listener = _imageStreamListener;
     if (stream != null && listener != null) {
@@ -1157,6 +1159,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
 
   Future<void> _setCurrentMedia(app_models.MediaItem media, int index) async {
     if (_currentMedia.id == media.id && _currentIndex == index) return;
+    _isSeeking = false;
     _videoController?.removeListener(_handlePreviewVideoTick);
     await _videoController?.dispose();
     _videoController = null;
@@ -1238,29 +1241,61 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
 
   void _handlePreviewVideoTick() {
     final controller = _videoController;
-    if (controller == null || !controller.value.isInitialized) return;
-    final pos = controller.value.position;
-    final duration = controller.value.duration;
+    if (controller == null) return;
+    final value = controller.value;
+    if (!value.isInitialized) return;
+    final pos = value.position;
+    final duration = value.duration;
     final start = _trimStartFor(_currentMedia);
     final end = _trimEndFor(_currentMedia);
+
+    Duration? seekTarget;
+    bool shouldPlay = false;
     if (start != null && end != null && end > start) {
       if (pos < start) {
-        controller.seekTo(start);
+        if (_isSeeking) return;
+        seekTarget = start;
       }
       if (pos >= end) {
-        controller.seekTo(start);
-        if (!controller.value.isPlaying) {
-          controller.play();
-        }
+        if (_isSeeking) return;
+        seekTarget = start;
+        if (!value.isPlaying) shouldPlay = true;
       }
-      return;
+    } else if (duration != Duration.zero && pos >= duration) {
+      if (_isSeeking) return;
+      seekTarget = Duration.zero;
+      if (!value.isPlaying) shouldPlay = true;
     }
-    if (duration != Duration.zero && pos >= duration) {
-      controller.seekTo(Duration.zero);
-      if (!controller.value.isPlaying) {
-        controller.play();
+
+    if (seekTarget == null && !shouldPlay) return;
+
+    // Never call seekTo()/play() directly from a controller listener callback
+    // (can cause ExoPlayer/Android deadlocks). Schedule work out-of-band.
+    if (seekTarget != null) _isSeeking = true;
+    scheduleMicrotask(() {
+      final c = _videoController;
+      if (c == null) {
+        _isSeeking = false;
+        return;
       }
-    }
+      final v = c.value;
+      if (!v.isInitialized) {
+        _isSeeking = false;
+        return;
+      }
+
+      if (seekTarget != null) {
+        c.seekTo(seekTarget!).then((_) {
+          _isSeeking = false;
+        }).catchError((_) {
+          _isSeeking = false;
+        });
+      }
+      if (shouldPlay) {
+        // Fire-and-forget; playback state is driven elsewhere.
+        unawaited(c.play().catchError((_) {}));
+      }
+    });
   }
 
   // ── Navigate to EditVideoScreen and capture the returned trim values
@@ -1283,6 +1318,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       });
 
       if (result.outputPath != null && result.outputPath!.isNotEmpty) {
+        _isSeeking = false;
         _videoController?.removeListener(_handlePreviewVideoTick);
         await _videoController?.dispose();
         _videoController = null;
@@ -1572,6 +1608,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         }
       });
       if (_currentIndex == index && _isVideoMedia(updated)) {
+        _isSeeking = false;
         _videoController?.removeListener(_handlePreviewVideoTick);
         await _videoController?.dispose();
         _videoController = null;

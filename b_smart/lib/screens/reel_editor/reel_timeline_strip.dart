@@ -1,9 +1,9 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../features/reel_timeline/reel_timeline_models.dart';
@@ -22,7 +22,8 @@ class ReelTimelineStrip extends StatefulWidget {
   final ValueChanged<int> onClipDoubleTap;
   final ValueChanged<int> onClipLongPress;
   final void Function(int from, int to) onClipReorder;
-  final void Function(int index, Duration trimStart, Duration trimEnd) onClipTrimmed;
+  final void Function(int index, Duration trimStart, Duration trimEnd)
+      onClipTrimmed;
   final ValueChanged<double> onPlayheadScrub;
   final VoidCallback onScrubStart;
   final VoidCallback onScrubEnd;
@@ -82,6 +83,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
   bool _showZoomIndicator = false;
   Timer? _hideZoomTimer;
   _TimelineMode _mode = _TimelineMode.scroll;
+  bool _trimFromStartHandle = false;
 
   double _clipBaseDurationMs(ReelClip clip) {
     final start = clip.trimStart ?? Duration.zero;
@@ -141,7 +143,8 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
   @override
   void didUpdateWidget(covariant ReelTimelineStrip oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.clips != widget.clips || oldWidget.pxPerMs != widget.pxPerMs) {
+    if (oldWidget.clips != widget.clips ||
+        oldWidget.pxPerMs != widget.pxPerMs) {
       _updateTrackWidth();
     }
   }
@@ -193,7 +196,8 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
   void _beginTrim(int index) {
     final clip = widget.clips[index];
     _trimmingIndex = index;
-    _draftTrimStartMs = (clip.trimStart ?? Duration.zero).inMilliseconds.toDouble();
+    _draftTrimStartMs =
+        (clip.trimStart ?? Duration.zero).inMilliseconds.toDouble();
     _draftTrimEndMs = (clip.trimEnd ?? clip.duration).inMilliseconds.toDouble();
   }
 
@@ -202,7 +206,8 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
     final clip = widget.clips[index];
     if (clip.type == ReelClipType.image) {
       final endMs = _draftTrimEndMs!.clamp(500.0, 10000.0);
-      widget.onClipTrimmed(index, Duration.zero, Duration(milliseconds: endMs.round()));
+      widget.onClipTrimmed(
+          index, Duration.zero, Duration(milliseconds: endMs.round()));
     } else {
       final start = Duration(milliseconds: _draftTrimStartMs!.round());
       final end = Duration(milliseconds: _draftTrimEndMs!.round());
@@ -213,13 +218,25 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
 
   void _setMode(_TimelineMode mode) {
     if (_mode == mode) return;
+    if (mode == _TimelineMode.scrub) {
+      unawaited(HapticFeedback.selectionClick());
+    }
     setState(() => _mode = mode);
   }
 
-  void _handlePanStart(DragStartDetails details) {
-    final localDx = _localDx(details.globalPosition);
+  void _handleScaleStart(ScaleStartDetails details) {
+    if (details.pointerCount > 1) {
+      _setMode(_TimelineMode.scroll);
+      _scaleStart = widget.pxPerMs;
+      _hideZoomTimer?.cancel();
+      setState(() => _showZoomIndicator = true);
+      return;
+    }
+
+    final localDx = _localDx(details.focalPoint);
     final totalMs = widget.totalDurationMs <= 0 ? 1.0 : widget.totalDurationMs;
-    final playheadLeft = _leftPad + (widget.playheadMs / totalMs) * _trackWidth - _scrollOffset;
+    final playheadLeft =
+        _leftPad + (widget.playheadMs / totalMs) * _trackWidth - _scrollOffset;
     if ((localDx - playheadLeft).abs() <= 16) {
       _setMode(_TimelineMode.scrub);
       widget.onScrubStart();
@@ -231,13 +248,18 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
         final clip = widget.clips[idx];
         final clipStart = _clipStartDx(idx);
         final clipEnd = clipStart + _clipWidth(clip);
-        if ((localDx - clipStart).abs() <= _handleWidth && clip.type == ReelClipType.video) {
+        if ((localDx - clipStart).abs() <= _handleWidth &&
+            clip.type == ReelClipType.video) {
           _setMode(_TimelineMode.trim);
+          _trimFromStartHandle = true;
+          unawaited(HapticFeedback.lightImpact());
           _beginTrim(idx);
           return;
         }
         if ((localDx - clipEnd).abs() <= _handleWidth) {
           _setMode(_TimelineMode.trim);
+          _trimFromStartHandle = false;
+          unawaited(HapticFeedback.lightImpact());
           _beginTrim(idx);
           return;
         }
@@ -246,25 +268,75 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
     _setMode(_TimelineMode.scroll);
   }
 
-  void _handlePanUpdate(DragUpdateDetails details) {
+  void _handleScaleUpdate(ScaleUpdateDetails details) {
+    if (details.pointerCount > 1) {
+      final next = (_scaleStart * details.scale).clamp(0.04, 2.0);
+      widget.onZoomChanged(next);
+      _hideZoomTimer?.cancel();
+      _hideZoomTimer = Timer(const Duration(milliseconds: 1500), () {
+        if (mounted) setState(() => _showZoomIndicator = false);
+      });
+      return;
+    }
+
     if (_mode == _TimelineMode.scroll) {
-      _scrollOffset = (_scrollOffset - details.delta.dx).clamp(0.0, _maxScroll);
+      _scrollOffset =
+          (_scrollOffset - details.focalPointDelta.dx).clamp(0.0, _maxScroll);
       widget.onScrollOffsetChanged?.call(_scrollOffset);
       setState(() {});
       return;
     }
     if (_mode == _TimelineMode.scrub) {
       if (_trackWidth <= 0) return;
-      final local = _localDx(details.globalPosition);
-      final ms = ((local + _scrollOffset - _leftPad) / _trackWidth) * (widget.totalDurationMs <= 0 ? 1.0 : widget.totalDurationMs);
+      final local = _localDx(details.focalPoint);
+      final ms = ((local + _scrollOffset - _leftPad) / _trackWidth) *
+          (widget.totalDurationMs <= 0 ? 1.0 : widget.totalDurationMs);
       widget.onPlayheadScrub(ms.clamp(0.0, widget.totalDurationMs));
+      return;
+    }
+    if (_mode == _TimelineMode.trim) {
+      final index = _trimmingIndex;
+      if (index == null || index < 0 || index >= widget.clips.length) return;
+      final clip = widget.clips[index];
+      final deltaMs = details.focalPointDelta.dx / widget.pxPerMs;
+
+      if (_trimFromStartHandle) {
+        if (clip.type != ReelClipType.video) return;
+        final clipStart =
+            (clip.trimStart ?? Duration.zero).inMilliseconds.toDouble();
+        final clipEnd =
+            (clip.trimEnd ?? clip.duration).inMilliseconds.toDouble();
+        final next = (_draftTrimStartMs ?? clipStart) + deltaMs;
+        _draftTrimStartMs = next.clamp(0.0, clipEnd - 500.0);
+      } else {
+        if (clip.type == ReelClipType.image) {
+          final current =
+              _draftTrimEndMs ?? clip.duration.inMilliseconds.toDouble();
+          final next = current + deltaMs;
+          _draftTrimEndMs = next.clamp(500.0, 10000.0);
+        } else {
+          final clipStart =
+              (clip.trimStart ?? Duration.zero).inMilliseconds.toDouble();
+          final clipEnd =
+              (clip.trimEnd ?? clip.duration).inMilliseconds.toDouble();
+          final next = (_draftTrimEndMs ?? clipEnd) + deltaMs;
+          _draftTrimEndMs = next.clamp(
+            clipStart + 500.0,
+            clip.duration.inMilliseconds.toDouble(),
+          );
+        }
+      }
+      setState(() {});
       return;
     }
   }
 
-  void _handlePanEnd(DragEndDetails details) {
+  void _handleScaleEnd(ScaleEndDetails details) {
     if (_mode == _TimelineMode.scrub) {
       widget.onScrubEnd();
+    }
+    if (_mode == _TimelineMode.trim && _trimmingIndex != null) {
+      _commitTrim(_trimmingIndex!);
     }
     _setMode(_TimelineMode.scroll);
   }
@@ -272,46 +344,18 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
   @override
   Widget build(BuildContext context) {
     final totalMs = widget.totalDurationMs <= 0 ? 1.0 : widget.totalDurationMs;
-    final playheadLeft = _leftPad + (widget.playheadMs / totalMs) * _trackWidth - _scrollOffset;
+    final playheadLeft =
+        _leftPad + (widget.playheadMs / totalMs) * _trackWidth - _scrollOffset;
 
     return Container(
       key: _stripKey,
       height: _rulerHeight + _tileHeight + _trackHeight,
       color: const Color(0xFF1C1C1E),
-      child: RawGestureDetector(
-        gestures: <Type, GestureRecognizerFactory>{
-          HorizontalDragGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<HorizontalDragGestureRecognizer>(
-            () => HorizontalDragGestureRecognizer(),
-            (recognizer) {
-              recognizer.onStart = _handlePanStart;
-              recognizer.onUpdate = _handlePanUpdate;
-              recognizer.onEnd = _handlePanEnd;
-            },
-          ),
-          ScaleGestureRecognizer: GestureRecognizerFactoryWithHandlers<ScaleGestureRecognizer>(
-            () => ScaleGestureRecognizer(),
-            (recognizer) {
-              recognizer.onStart = (d) {
-                if (d.pointerCount > 1) {
-                  _scaleStart = widget.pxPerMs;
-                  _hideZoomTimer?.cancel();
-                  setState(() => _showZoomIndicator = true);
-                }
-              };
-              recognizer.onUpdate = (d) {
-                if (d.pointerCount > 1) {
-                  final next = (_scaleStart * d.scale).clamp(0.04, 2.0);
-                  widget.onZoomChanged(next);
-                  _hideZoomTimer?.cancel();
-                  _hideZoomTimer = Timer(const Duration(milliseconds: 1500), () {
-                    if (mounted) setState(() => _showZoomIndicator = false);
-                  });
-                }
-              };
-            },
-          ),
-        },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onScaleStart: _handleScaleStart,
+        onScaleUpdate: _handleScaleUpdate,
+        onScaleEnd: _handleScaleEnd,
         child: NotificationListener<ScrollNotification>(
           onNotification: (n) => _mode != _TimelineMode.scroll,
           child: Stack(
@@ -404,7 +448,8 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                   opacity: _showZoomIndicator ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 200),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFF2C2C2E),
                       borderRadius: BorderRadius.circular(6),
@@ -458,7 +503,10 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
         width: 32,
         height: 32,
         child: GestureDetector(
-          onTap: widget.onAddClip,
+          onTap: () {
+            unawaited(HapticFeedback.lightImpact());
+            widget.onAddClip();
+          },
           child: Container(
             decoration: const BoxDecoration(
               color: Color(0xFF3A3A3C),
@@ -474,7 +522,8 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
 
   Widget _buildTransitionDivider(int clipIndex) {
     final clip = widget.clips[clipIndex];
-    final hasTransition = clip.transitionIn != null && clip.transitionIn != 'none';
+    final hasTransition =
+        clip.transitionIn != null && clip.transitionIn != 'none';
     return GestureDetector(
       onTap: () => widget.onTransitionTap(clipIndex),
       child: Container(
@@ -516,7 +565,8 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
     final isSelected = widget.selectedClipIndex == index;
     final showTrimHandles = widget.trimMode && isSelected;
     final isGrouped = clip.groupId != null;
-    final isFirstInGroup = isGrouped && (index == 0 || widget.clips[index - 1].groupId != clip.groupId);
+    final isFirstInGroup = isGrouped &&
+        (index == 0 || widget.clips[index - 1].groupId != clip.groupId);
     final opacity = _isDragging && _dragIndex != index ? 0.85 : 1.0;
     return Opacity(
       opacity: opacity,
@@ -524,6 +574,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
         onTap: () => widget.onClipSelected(index),
         onDoubleTap: () => widget.onClipDoubleTap(index),
         onLongPressStart: (d) {
+          unawaited(HapticFeedback.mediumImpact());
           _dragIndex = index;
           _dragTargetIndex = index;
           _didMove = false;
@@ -550,6 +601,7 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
             _dragTargetIndex = null;
           });
           if (_didMove && from != to) {
+            unawaited(HapticFeedback.selectionClick());
             widget.onClipReorder(from, to);
           } else {
             widget.onClipLongPress(from);
@@ -567,7 +619,8 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              _ClipThumb(clip: clip, width: _clipWidth(clip), height: _tileHeight),
+              _ClipThumb(
+                  clip: clip, width: _clipWidth(clip), height: _tileHeight),
               if (isGrouped)
                 Positioned(
                   left: 0,
@@ -580,12 +633,14 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                   left: 4,
                   top: 4,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFCC00),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: const Text('G', style: TextStyle(color: Colors.black, fontSize: 9)),
+                    child: const Text('G',
+                        style: TextStyle(color: Colors.black, fontSize: 9)),
                   ),
                 ),
               if (clip.type == ReelClipType.image)
@@ -593,7 +648,8 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                   right: 4,
                   bottom: 4,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
@@ -610,25 +666,25 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                   top: 0,
                   bottom: 0,
                   width: _handleWidth,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragStart: (_) => _beginTrim(index),
-                    onHorizontalDragUpdate: (d) {
+                  child: _TrimHandle(
+                    isLeft: true,
+                    height: _tileHeight,
+                    onDragStart: () => _beginTrim(index),
+                    onDeltaMs: (deltaMs) {
                       if (_trimmingIndex != index) return;
-                      final clipStart = (clip.trimStart ?? Duration.zero).inMilliseconds.toDouble();
-                      final clipEnd = (clip.trimEnd ?? clip.duration).inMilliseconds.toDouble();
-                      final deltaMs = d.delta.dx / widget.pxPerMs;
+                      final clipStart = (clip.trimStart ?? Duration.zero)
+                          .inMilliseconds
+                          .toDouble();
+                      final clipEnd = (clip.trimEnd ?? clip.duration)
+                          .inMilliseconds
+                          .toDouble();
                       final next = (_draftTrimStartMs ?? clipStart) + deltaMs;
                       _draftTrimStartMs = next.clamp(0.0, clipEnd - 500.0);
+                    },
+                    onDragEnd: () {
+                      _commitTrim(index);
                       setState(() {});
                     },
-                    onHorizontalDragEnd: (_) => _commitTrim(index),
-                    child: Container(
-                      color: Colors.white,
-                      child: Center(
-                        child: Container(width: 2, height: 24, color: Colors.black),
-                      ),
-                    ),
                   ),
                 ),
               if (showTrimHandles)
@@ -637,34 +693,122 @@ class _ReelTimelineStripState extends State<ReelTimelineStrip> {
                   top: 0,
                   bottom: 0,
                   width: _handleWidth,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragStart: (_) => _beginTrim(index),
-                    onHorizontalDragUpdate: (d) {
+                  child: _TrimHandle(
+                    isLeft: false,
+                    height: _tileHeight,
+                    onDragStart: () => _beginTrim(index),
+                    onDeltaMs: (deltaMs) {
                       if (_trimmingIndex != index) return;
-                      final deltaMs = d.delta.dx / widget.pxPerMs;
                       if (clip.type == ReelClipType.image) {
-                        final current = _draftTrimEndMs ?? clip.duration.inMilliseconds.toDouble();
+                        final current = _draftTrimEndMs ??
+                            clip.duration.inMilliseconds.toDouble();
                         final next = current + deltaMs;
                         _draftTrimEndMs = next.clamp(500.0, 10000.0);
                       } else {
-                        final clipStart = (clip.trimStart ?? Duration.zero).inMilliseconds.toDouble();
-                        final clipEnd = (clip.trimEnd ?? clip.duration).inMilliseconds.toDouble();
+                        final clipStart = (clip.trimStart ?? Duration.zero)
+                            .inMilliseconds
+                            .toDouble();
+                        final clipEnd = (clip.trimEnd ?? clip.duration)
+                            .inMilliseconds
+                            .toDouble();
                         final next = (_draftTrimEndMs ?? clipEnd) + deltaMs;
-                        _draftTrimEndMs = next.clamp(clipStart + 500.0, clip.duration.inMilliseconds.toDouble());
+                        _draftTrimEndMs = next.clamp(
+                          clipStart + 500.0,
+                          clip.duration.inMilliseconds.toDouble(),
+                        );
                       }
+                    },
+                    onDragEnd: () {
+                      _commitTrim(index);
                       setState(() {});
                     },
-                    onHorizontalDragEnd: (_) => _commitTrim(index),
-                    child: Container(
-                      color: Colors.white,
-                      child: Center(
-                        child: Container(width: 2, height: 24, color: Colors.black),
-                      ),
-                    ),
                   ),
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrimHandle extends StatefulWidget {
+  final bool isLeft;
+  final VoidCallback onDragStart;
+  final ValueChanged<double> onDeltaMs;
+  final VoidCallback onDragEnd;
+  final double height;
+
+  const _TrimHandle({
+    required this.isLeft,
+    required this.onDragStart,
+    required this.onDeltaMs,
+    required this.onDragEnd,
+    required this.height,
+  });
+
+  @override
+  State<_TrimHandle> createState() => _TrimHandleState();
+}
+
+class _TrimHandleState extends State<_TrimHandle> {
+  double _visualDeltaMs = 0.0;
+  double _lastReportedDelta = 0.0;
+
+  double _pxPerMs(BuildContext context) {
+    final reel = context.findAncestorWidgetOfExactType<ReelTimelineStrip>();
+    final v = reel?.pxPerMs ?? 0.12;
+    return v <= 0 ? 0.12 : v;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dx = _visualDeltaMs * _pxPerMs(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragStart: (_) {
+        unawaited(HapticFeedback.selectionClick());
+        widget.onDragStart();
+      },
+      onHorizontalDragUpdate: (d) {
+        final deltaMs = d.delta.dx / _pxPerMs(context);
+        setState(() => _visualDeltaMs += deltaMs);
+        final current = _visualDeltaMs;
+        final diff = current - _lastReportedDelta;
+        if (diff.abs() > 8) {
+          _lastReportedDelta = current;
+          widget.onDeltaMs(diff);
+        }
+      },
+      onHorizontalDragEnd: (_) {
+        final current = _visualDeltaMs;
+        final diff = current - _lastReportedDelta;
+        if (diff.abs() > 0) widget.onDeltaMs(diff);
+        widget.onDragEnd();
+        setState(() {
+          _visualDeltaMs = 0.0;
+          _lastReportedDelta = 0.0;
+        });
+      },
+      onHorizontalDragCancel: () {
+        final current = _visualDeltaMs;
+        final diff = current - _lastReportedDelta;
+        if (diff.abs() > 0) widget.onDeltaMs(diff);
+        widget.onDragEnd();
+        setState(() {
+          _visualDeltaMs = 0.0;
+          _lastReportedDelta = 0.0;
+        });
+      },
+      child: Transform.translate(
+        offset: Offset(dx, 0),
+        child: SizedBox(
+          height: widget.height,
+          child: Container(
+            color: Colors.white,
+            child: Center(
+              child: Container(width: 2, height: 24, color: Colors.black),
+            ),
           ),
         ),
       ),
@@ -710,16 +854,39 @@ class _ClipThumbStrip extends StatefulWidget {
 
 class _ClipThumbStripState extends State<_ClipThumbStrip> {
   static const double _tileSize = 44;
+  static final LinkedHashMap<String, List<Uint8List?>> _frameCache =
+      LinkedHashMap<String, List<Uint8List?>>();
+  static const int _cacheMaxSize = 15;
+
   List<Uint8List?>? _frames;
   int _frameCount = 0;
   String? _forPath;
+  Timer? _debounceTimer;
+
+  static List<Uint8List?>? _getCachedFrames(String key) {
+    final cached = _frameCache.remove(key);
+    if (cached != null) {
+      // Reinsert to mark as most recently used (LRU).
+      _frameCache[key] = cached;
+    }
+    return cached;
+  }
+
+  static void _putCachedFrames(String key, List<Uint8List?> frames) {
+    _frameCache.remove(key);
+    _frameCache[key] = frames;
+    while (_frameCache.length > _cacheMaxSize) {
+      _frameCache.remove(_frameCache.keys.first);
+    }
+  }
 
   int _desiredFrameCount() {
     final raw = (widget.width / _tileSize).ceil();
     return raw < 3 ? 3 : raw;
   }
 
-  int _clipSourceStartMs() => (widget.clip.trimStart ?? Duration.zero).inMilliseconds;
+  int _clipSourceStartMs() =>
+      (widget.clip.trimStart ?? Duration.zero).inMilliseconds;
 
   int _clipSourceDurationMs() {
     final start = _clipSourceStartMs();
@@ -731,12 +898,22 @@ class _ClipThumbStripState extends State<_ClipThumbStrip> {
   Future<void> _loadFramesIfNeeded() async {
     if (widget.clip.type != ReelClipType.video) return;
     final nextCount = _desiredFrameCount();
-    if (_forPath == widget.clip.path && _frameCount == nextCount && _frames != null) {
+    if (_forPath == widget.clip.path &&
+        _frameCount == nextCount &&
+        _frames != null) {
       return;
     }
-    _forPath = widget.clip.path;
+    final requestedPath = widget.clip.path;
+    _forPath = requestedPath;
     _frameCount = nextCount;
-    _frames = null;
+
+    final cacheKey = '$requestedPath:$nextCount';
+    final cached = _getCachedFrames(cacheKey);
+    if (cached != null) {
+      if (!mounted) return;
+      setState(() => _frames = cached);
+      return;
+    }
 
     final startMs = _clipSourceStartMs();
     final durMs = _clipSourceDurationMs();
@@ -760,7 +937,8 @@ class _ClipThumbStripState extends State<_ClipThumbStrip> {
     }
     final frames = await Future.wait(futures);
     if (!mounted) return;
-    if (_forPath != widget.clip.path) return;
+    if (_forPath != requestedPath || _frameCount != nextCount) return;
+    _putCachedFrames(cacheKey, frames);
     setState(() => _frames = frames);
   }
 
@@ -773,22 +951,36 @@ class _ClipThumbStripState extends State<_ClipThumbStrip> {
   @override
   void didUpdateWidget(covariant _ClipThumbStrip oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.clip.path != widget.clip.path ||
-        oldWidget.width != widget.width ||
+    final shouldReload = oldWidget.clip.path != widget.clip.path ||
+        (widget.width - oldWidget.width).abs() > 10 ||
         oldWidget.clip.trimStart != widget.clip.trimStart ||
-        oldWidget.clip.trimEnd != widget.clip.trimEnd) {
+        oldWidget.clip.trimEnd != widget.clip.trimEnd;
+    if (!shouldReload) return;
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
       unawaited(_loadFramesIfNeeded());
-    }
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final count = widget.clip.type == ReelClipType.video ? _desiredFrameCount() : _desiredFrameCount();
+    final count = widget.clip.type == ReelClipType.video
+        ? _desiredFrameCount()
+        : _desiredFrameCount();
     final widths = <double>[];
     final fullTiles = count - 1;
     final remaining = widget.width - (fullTiles * _tileSize);
     for (int i = 0; i < count; i++) {
-      widths.add(i == count - 1 ? (remaining <= 0 ? _tileSize : remaining) : _tileSize);
+      widths.add(i == count - 1
+          ? (remaining <= 0 ? _tileSize : remaining)
+          : _tileSize);
     }
 
     if (widget.clip.type != ReelClipType.video) {

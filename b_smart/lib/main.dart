@@ -46,6 +46,7 @@ void main() async {
     ErrorWidget.builder = (FlutterErrorDetails details) {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
+        scrollBehavior: const _NoGlowScrollBehavior(),
         home: Scaffold(
           backgroundColor: Colors.white,
           body: SafeArea(
@@ -80,6 +81,11 @@ void main() async {
         ),
       );
     };
+
+    // Tune decoded image cache for reels/feed to reduce churn and re-decoding jank.
+    PaintingBinding.instance.imageCache.maximumSize = 200; // max 200 images
+    PaintingBinding.instance.imageCache.maximumSizeBytes =
+        150 * 1024 * 1024; // 150MB
 
     try {
       await dotenv.load(fileName: ".env");
@@ -226,6 +232,7 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     if (!_isInitialized) {
       return const MaterialApp(
+        scrollBehavior: _NoGlowScrollBehavior(),
         home: Scaffold(
           body: Center(
             child: CircularProgressIndicator(
@@ -250,6 +257,7 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
     return MaterialApp(
       title: 'b Smart',
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const _NoGlowScrollBehavior(),
       theme: AppTheme.theme,
       darkTheme: AppTheme.darkTheme,
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
@@ -340,6 +348,26 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
         debugPrint('[Router] No match for: $name');
         return null;
       },
+    );
+  }
+}
+
+class _NoGlowScrollBehavior extends ScrollBehavior {
+  const _NoGlowScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
+  }
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) {
+    return const BouncingScrollPhysics(
+      parent: AlwaysScrollableScrollPhysics(),
     );
   }
 }

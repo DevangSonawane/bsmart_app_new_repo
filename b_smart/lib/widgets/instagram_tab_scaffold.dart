@@ -14,15 +14,18 @@ class InstagramTabScaffold extends StatefulWidget {
   const InstagramTabScaffold({
     super.key,
     required this.pages,
-    this.labels = const ['POST', 'STORY', 'REEL', 'LIVE'],
+    this.labels = const ['POST', 'STORY', 'REEL', 'TWEET'],
     this.onTabChanged,
     this.initialIndex = 0,
     this.bottomPaddingForIndex,
     this.pillBackgroundColorForIndex,
     this.pillVisibleForIndex,
-  }) : assert(pages.length == 4, 'InstagramTabScaffold requires exactly 4 pages.'),
-       assert(labels.length == 4, 'InstagramTabScaffold requires exactly 4 labels.'),
-       assert(initialIndex >= 0 && initialIndex < 4, 'initialIndex must be between 0 and 3.');
+  })  : assert(pages.length == 4,
+            'InstagramTabScaffold requires exactly 4 pages.'),
+        assert(labels.length == 4,
+            'InstagramTabScaffold requires exactly 4 labels.'),
+        assert(initialIndex >= 0 && initialIndex < 4,
+            'initialIndex must be between 0 and 3.');
 
   @override
   State<InstagramTabScaffold> createState() => _InstagramTabScaffoldState();
@@ -145,7 +148,8 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                 top: false,
                 child: Padding(
                   padding: EdgeInsets.only(
-                    bottom: widget.bottomPaddingForIndex?.call(_currentIndex) ?? 8,
+                    bottom:
+                        widget.bottomPaddingForIndex?.call(_currentIndex) ?? 8,
                   ),
                   child: LayoutBuilder(
                     builder: (context, constraints) {
@@ -159,7 +163,8 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                           fontWeight: FontWeight.w700,
                           letterSpacing: _pillLetterSpacing,
                         );
-                        final textWidth = _measureTextWidth(labels[i], textStyle);
+                        final textWidth =
+                            _measureTextWidth(labels[i], textStyle);
                         textWidths.add(textWidth);
                         final itemWidth = textWidth +
                             (_pillItemPadH * 2) +
@@ -181,23 +186,31 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                               animation: _controller,
                               builder: (context, _) {
                                 final pagePos = (_controller.hasClients
-                                        ? (_controller.page ?? _currentIndex.toDouble())
+                                        ? (_controller.page ??
+                                            _currentIndex.toDouble())
                                         : _pageValue)
                                     .clamp(0.0, (labels.length - 1).toDouble());
-                                final lower = pagePos.floor().clamp(0, labels.length - 1);
-                                final upper = pagePos.ceil().clamp(0, labels.length - 1);
+                                final lower =
+                                    pagePos.floor().clamp(0, labels.length - 1);
+                                final upper =
+                                    pagePos.ceil().clamp(0, labels.length - 1);
                                 final t = pagePos - lower;
-                                final activeCenter =
-                                    lerpDouble(centers[lower], centers[upper], t) ?? centers[lower];
-                                final selectedIndex = pagePos.round().clamp(0, labels.length - 1);
+                                final activeCenter = lerpDouble(
+                                        centers[lower], centers[upper], t) ??
+                                    centers[lower];
+                                final selectedIndex =
+                                    pagePos.round().clamp(0, labels.length - 1);
 
                                 final maxWidth = constraints.maxWidth;
                                 double left = (maxWidth / 2) - activeCenter;
                                 final minLeft = 0.0;
-                                final maxLeft = (maxWidth - totalWidth).clamp(0.0, double.infinity);
+                                final maxLeft = (maxWidth - totalWidth)
+                                    .clamp(0.0, double.infinity);
                                 left = left.clamp(minLeft, maxLeft);
 
-                                final bgColor = widget.pillBackgroundColorForIndex?.call(_currentIndex) ??
+                                final bgColor = widget
+                                        .pillBackgroundColorForIndex
+                                        ?.call(_currentIndex) ??
                                     Colors.black.withValues(alpha: 0.6);
                                 final hasBackground = bgColor.alpha > 0;
 
@@ -209,7 +222,8 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                                   ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
-                                    children: List.generate(labels.length, (index) {
+                                    children:
+                                        List.generate(labels.length, (index) {
                                       final isSelected = index == selectedIndex;
                                       return GestureDetector(
                                         behavior: HitTestBehavior.translucent,
@@ -221,22 +235,30 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                                             horizontal: _pillItemPadH,
                                             vertical: _pillItemPadV,
                                           ),
-                                          margin: const EdgeInsets.symmetric(horizontal: _pillItemMarginH),
+                                          margin: const EdgeInsets.symmetric(
+                                              horizontal: _pillItemMarginH),
                                           decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(16),
+                                            borderRadius:
+                                                BorderRadius.circular(16),
                                           ),
                                           child: Opacity(
-                                            opacity: _opacityForIndex(pagePos, index),
+                                            opacity: _opacityForIndex(
+                                                pagePos, index),
                                             child: SizedBox(
                                               width: textWidths[index],
                                               child: Center(
                                                 child: Text(
                                                   labels[index],
                                                   style: TextStyle(
-                                                    color: isSelected ? Colors.white : Colors.white70,
+                                                    color: isSelected
+                                                        ? Colors.white
+                                                        : Colors.white70,
                                                     fontSize: _pillFontSize,
-                                                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                                    letterSpacing: _pillLetterSpacing,
+                                                    fontWeight: isSelected
+                                                        ? FontWeight.w700
+                                                        : FontWeight.w500,
+                                                    letterSpacing:
+                                                        _pillLetterSpacing,
                                                   ),
                                                 ),
                                               ),
@@ -252,7 +274,8 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                                   borderRadius: BorderRadius.circular(30),
                                   child: hasBackground
                                       ? BackdropFilter(
-                                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                                          filter: ImageFilter.blur(
+                                              sigmaX: 16, sigmaY: 16),
                                           child: pill,
                                         )
                                       : pill,

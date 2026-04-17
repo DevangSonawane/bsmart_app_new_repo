@@ -1620,7 +1620,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
                     : FontWeight.w500,
                 letterSpacing: 1.2,
               ),
-              child: const Text('LIVE'),
+              child: const Text('TWEET'),
             ),
           ),
         ],

@@ -7,6 +7,7 @@ import 'package:photo_manager/photo_manager.dart';
 import '../services/create_service.dart';
 import 'create_edit_preview_screen.dart';
 import 'story_camera_screen.dart';
+import 'tweet_composer/tweet_composer_page.dart';
 import '../models/media_model.dart';
 import 'advertiser_create_ad_screen.dart';
 import '../widgets/instagram_tab_scaffold.dart';
@@ -629,7 +630,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       case UploadMode.reel:
         return 'New reel';
       case UploadMode.live:
-        return 'New live';
+        return 'New tweet';
     }
   }
 
@@ -711,13 +712,13 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                   initialIndex: _indexForMode(_mode),
                   onTabChanged: (index) => _onModeTap(_modeForIndex(index)),
                   bottomPaddingForIndex: (index) => 20,
-                  pillBackgroundColorForIndex: (index) =>
-                      (index == 1 || index == 3)
-                          ? Colors.transparent
-                          : Colors.black.withValues(alpha: 0.6),
+                  pillBackgroundColorForIndex: (index) => (index == 1)
+                      ? Colors.transparent
+                      : Colors.black.withValues(alpha: 0.6),
                   pillVisibleForIndex: (index) {
                     if (isStoryEditing) return false;
                     if (_mode == UploadMode.reel && _hasSelection) return false;
+                    if (_mode == UploadMode.live) return index == 3;
                     return true;
                   },
                   pages: List.generate(
@@ -731,11 +732,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                         );
                       }
                       if (index == 3) {
-                        return const StoryCameraScreen(
-                          initialMode: UploadMode.live,
-                          lockMode: true,
-                          showModeTabs: false,
-                        );
+                        return const TweetComposerPage();
                       }
                       return _UploadPage(
                         isReelMode: _mode == UploadMode.reel,

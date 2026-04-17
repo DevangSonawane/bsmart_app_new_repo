@@ -1,9 +1,10 @@
 import 'dart:io';
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
@@ -50,17 +51,39 @@ class ReelEditorScreen extends StatefulWidget {
 
 class _ReelEditorScreenState extends State<ReelEditorScreen> {
   static const List<double> _identityMatrix = <double>[
-    1, 0, 0, 0, 0,
-    0, 1, 0, 0, 0,
-    0, 0, 1, 0, 0,
-    0, 0, 0, 1, 0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ];
 
   late List<ReelClip> _clips;
   int _activeClipIndex = 0;
   double _playheadMs = 0.0;
+  final ValueNotifier<double> _playheadMsNotifier = ValueNotifier<double>(0.0);
+  final ValueNotifier<String> _clockNotifier =
+      ValueNotifier<String>('0:00 / 0:00');
   bool _isPlaying = false;
   VideoPlayerController? _videoController;
+  final LinkedHashMap<String, VideoPlayerController> _controllerCache =
+      LinkedHashMap<String, VideoPlayerController>();
+  static const int _controllerCacheMaxSize = 3;
   String? _initializingPath;
   Timer? _playheadTimer;
   ReelEditorMode _mode = ReelEditorMode.idle;
@@ -75,10 +98,6 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   int? _activeStickerIndex;
   final GlobalKey _previewKey = GlobalKey();
   bool _showDeleteZone = false;
-  Offset _lastFocalPoint = Offset.zero;
-  double _baseScale = 1.0;
-  double _baseRotation = 0.0;
-  Offset _basePosition = Offset.zero;
   String? _audioPath;
   double _audioVolume = 1.0;
   String? _voicePath;
@@ -91,19 +110,22 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   Timer? _hidePlayheadTimer;
   bool _isTrimMode = false;
   double _timelineScrollOffset = 0.0;
+  double? _lastSeekedMs;
 
   @override
   void initState() {
     super.initState();
     _clips = widget.initialMedia.map((m) {
       final isVideo = m.type == app_models.MediaType.video;
-        return ReelClip(
-          id: m.id,
-          type: isVideo ? ReelClipType.video : ReelClipType.image,
-          path: m.filePath ?? '',
-          duration: isVideo ? (m.duration ?? const Duration(seconds: 1)) : const Duration(seconds: 3),
-        );
-      }).toList();
+      return ReelClip(
+        id: m.id,
+        type: isVideo ? ReelClipType.video : ReelClipType.image,
+        path: m.filePath ?? '',
+        duration: isVideo
+            ? (m.duration ?? const Duration(seconds: 1))
+            : const Duration(seconds: 3),
+      );
+    }).toList();
     if (_clips.isNotEmpty) {
       _selectedClipIndex = 0;
     }
@@ -115,21 +137,173 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   void dispose() {
     _hidePlayheadTimer?.cancel();
     _playheadTimer?.cancel();
-    _videoController?.dispose();
+    final cachedControllers = _controllerCache.values.toList(growable: false);
+    _controllerCache.clear();
+    for (final c in cachedControllers) {
+      unawaited(c.dispose());
+    }
+    if (_videoController != null &&
+        !cachedControllers.any((c) => identical(c, _videoController))) {
+      _videoController?.dispose();
+    }
+    _playheadMsNotifier.dispose();
+    _clockNotifier.dispose();
     super.dispose();
+  }
+
+  VideoPlayerController? _getCachedController(String path) {
+    final existing = _controllerCache.remove(path);
+    if (existing != null) {
+      // Reinsert to mark as most recently used (LRU).
+      _controllerCache[path] = existing;
+    }
+    return existing;
+  }
+
+  void _putCachedController(String path, VideoPlayerController controller) {
+    _controllerCache.remove(path);
+    _controllerCache[path] = controller;
+    _trimControllerCache(protectedPath: path);
+  }
+
+  void _trimControllerCache({String? protectedPath}) {
+    while (_controllerCache.length > _controllerCacheMaxSize) {
+      final oldestKey = _controllerCache.keys.first;
+      if (protectedPath != null &&
+          _controllerCache.length > 1 &&
+          oldestKey == protectedPath) {
+        // Avoid evicting the protected entry; move it to the end and try again.
+        final protected = _controllerCache.remove(oldestKey);
+        if (protected != null) _controllerCache[oldestKey] = protected;
+        continue;
+      }
+      final controller = _controllerCache.remove(oldestKey);
+      if (controller != null) {
+        unawaited(controller.dispose());
+      }
+    }
+  }
+
+  void _evictStaleControllers() {
+    final keepPaths =
+        _clips.map((c) => c.path).where((p) => p.isNotEmpty).toSet();
+    final staleKeys =
+        _controllerCache.keys.where((k) => !keepPaths.contains(k)).toList();
+    for (final key in staleKeys) {
+      final controller = _controllerCache.remove(key);
+      if (controller != null) {
+        unawaited(controller.dispose());
+      }
+    }
+  }
+
+  double _clipLocalMsForTimelineMs(double timelineMs) {
+    if (_clips.isEmpty) return 0.0;
+    final activeStartMs = _clipStartMsForIndex(_activeClipIndex);
+    final clip = _clips[_activeClipIndex];
+    final localTimelineMs =
+        (timelineMs - activeStartMs).clamp(0.0, double.infinity).toDouble();
+    final maxLocalTimelineMs = _clipEffectiveDurationMs(clip);
+    final clampedLocalTimelineMs =
+        localTimelineMs.clamp(0.0, maxLocalTimelineMs).toDouble();
+
+    final trimStartMs =
+        (clip.trimStart ?? Duration.zero).inMilliseconds.toDouble();
+    final trimEndMs = (clip.trimEnd ?? clip.duration).inMilliseconds.toDouble();
+    final speed = clip.speed <= 0 ? 1.0 : clip.speed;
+    final sourcePositionMs = trimStartMs + (clampedLocalTimelineMs * speed);
+    return sourcePositionMs.clamp(trimStartMs, trimEndMs).toDouble();
+  }
+
+  void _setDeleteZoneVisible(bool visible) {
+    if (_showDeleteZone == visible) return;
+    setState(() => _showDeleteZone = visible);
+  }
+
+  void _updateClockNotifier() {
+    final ctrl = _videoController;
+    final position = ctrl?.value.position ?? Duration.zero;
+    final duration = ctrl?.value.duration ?? Duration.zero;
+    _clockNotifier.value =
+        '${_formatClock(position)} / ${_formatClock(duration)}';
   }
 
   Future<void> _initControllerForActiveClip() async {
     _playheadTimer?.cancel();
     _initializingPath = null;
     final old = _videoController;
-    _videoController = null;
-    if (old != null) {
+
+    if (_clips.isEmpty) {
+      if (old != null) {
+        try {
+          await old.pause();
+        } catch (_) {}
+      }
+      _videoController = null;
+      if (mounted) setState(() {});
+      return;
+    }
+
+    final clip = _clips[_activeClipIndex];
+    if (clip.type != ReelClipType.video || clip.path.isEmpty) {
+      if (old != null) {
+        try {
+          await old.pause();
+        } catch (_) {}
+      }
+      _videoController = null;
+      if (mounted) setState(() {});
+      return;
+    }
+
+    final cached = _getCachedController(clip.path);
+    if (cached != null) {
+      bool isInitialized = false;
+      try {
+        isInitialized = cached.value.isInitialized;
+      } catch (_) {
+        isInitialized = false;
+      }
+      if (isInitialized) {
+        if (old != null && !identical(old, cached)) {
+          try {
+            await old.pause();
+          } catch (_) {}
+        }
+        _videoController = cached;
+        _initializingPath = clip.path;
+        try {
+          await cached.setLooping(true);
+          await cached.setVolume(_originalVolume.clamp(0.0, 1.0));
+          await cached.seekTo(clip.trimStart ?? Duration.zero);
+          _lastSeekedMs = null;
+          _updateClockNotifier();
+          if (_isPlaying) {
+            await cached.play();
+            _startPlayheadTimer();
+          } else {
+            await cached.pause();
+          }
+        } catch (_) {}
+        if (mounted) setState(() {});
+        return;
+      }
+
+      _controllerCache.remove(clip.path);
+      unawaited(cached.dispose());
+    }
+
+    // Only dispose the old controller if it's not managed by the cache.
+    if (old != null && !_controllerCache.values.any((c) => identical(c, old))) {
       await old.dispose();
     }
-    if (_clips.isEmpty) return;
-    final clip = _clips[_activeClipIndex];
-    if (clip.type != ReelClipType.video || clip.path.isEmpty) return;
+
+    if (old != null && _controllerCache.values.any((c) => identical(c, old))) {
+      try {
+        await old.pause();
+      } catch (_) {}
+    }
+
     final controller = VideoPlayerController.file(File(clip.path));
     _videoController = controller;
     _initializingPath = clip.path;
@@ -150,8 +324,15 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
       await controller.dispose();
       return;
     }
-    controller.setLooping(true);
-    controller.setVolume(_originalVolume.clamp(0.0, 1.0));
+
+    await controller.setLooping(true);
+    await controller.setVolume(_originalVolume.clamp(0.0, 1.0));
+    try {
+      await controller.seekTo(clip.trimStart ?? Duration.zero);
+    } catch (_) {}
+    _putCachedController(clip.path, controller);
+    _lastSeekedMs = null;
+    _updateClockNotifier();
     if (_isPlaying) {
       await controller.play();
       _startPlayheadTimer();
@@ -164,12 +345,23 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
     _playheadTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
       final ctrl = _videoController;
       if (ctrl == null || !ctrl.value.isInitialized) return;
+      if (_activeClipIndex < 0 || _activeClipIndex >= _clips.length) return;
+      final clip = _clips[_activeClipIndex];
       final positionMs = ctrl.value.position.inMilliseconds.toDouble();
-      final timelineMs = (_clipStartMsForIndex(_activeClipIndex) + positionMs)
-          .clamp(0.0, _totalDurationMs)
+      final trimStartMs =
+          (clip.trimStart ?? Duration.zero).inMilliseconds.toDouble();
+      final speed = clip.speed <= 0 ? 1.0 : clip.speed;
+      final localTimelineMs = ((positionMs - trimStartMs) / speed)
+          .clamp(0.0, _clipEffectiveDurationMs(clip))
           .toDouble();
+      final timelineMs =
+          (_clipStartMsForIndex(_activeClipIndex) + localTimelineMs)
+              .clamp(0.0, _totalDurationMs)
+              .toDouble();
       if (!mounted) return;
-      setState(() => _playheadMs = timelineMs);
+      _playheadMs = timelineMs;
+      _playheadMsNotifier.value = timelineMs;
+      _updateClockNotifier();
     });
   }
 
@@ -179,6 +371,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   }
 
   Future<void> _togglePlayback() async {
+    unawaited(HapticFeedback.lightImpact());
     final ctrl = _videoController;
     if (ctrl == null || !ctrl.value.isInitialized) return;
     if (ctrl.value.isPlaying) {
@@ -237,22 +430,26 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
       if (_clips.isEmpty) {
         _activeClipIndex = 0;
         _selectedClipIndex = null;
-        _playheadMs = 0;
+        _playheadMs = 0.0;
       } else {
         if (_activeClipIndex >= _clips.length) {
           _activeClipIndex = _clips.length - 1;
         }
-        if (_selectedClipIndex != null && _selectedClipIndex! >= _clips.length) {
+        if (_selectedClipIndex != null &&
+            _selectedClipIndex! >= _clips.length) {
           _selectedClipIndex = null;
         }
       }
     });
+    _playheadMsNotifier.value = _playheadMs;
     _history.push(next);
     _initControllerForActiveClip();
+    _evictStaleControllers();
   }
 
   void _undo() {
     if (!_history.canUndo) return;
+    unawaited(HapticFeedback.selectionClick());
     final next = _history.undo();
     if (next == null) return;
     setState(() {
@@ -269,6 +466,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
 
   void _redo() {
     if (!_history.canRedo) return;
+    unawaited(HapticFeedback.selectionClick());
     final next = _history.redo();
     if (next == null) return;
     setState(() {
@@ -286,6 +484,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   void _mutate(List<ReelClip> Function(List<ReelClip> clips) transform) {
     final next = transform(List<ReelClip>.from(_clips));
     _applyClips(next);
+    unawaited(HapticFeedback.lightImpact());
   }
 
   int? _findClipIndexAtPlayhead() {
@@ -305,8 +504,10 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
     if (index == null) return;
     final clip = _clips[index];
     final clipStartMs = _clipStartMsForIndex(index);
-    final localTimelineMs = (_playheadMs - clipStartMs).clamp(0.0, _clipEffectiveDurationMs(clip));
-    final localSourceMs = localTimelineMs * (clip.speed <= 0 ? 1.0 : clip.speed);
+    final localTimelineMs =
+        (_playheadMs - clipStartMs).clamp(0.0, _clipEffectiveDurationMs(clip));
+    final localSourceMs =
+        localTimelineMs * (clip.speed <= 0 ? 1.0 : clip.speed);
     final startMs = (clip.trimStart ?? Duration.zero).inMilliseconds.toDouble();
     final endMs = (clip.trimEnd ?? clip.duration).inMilliseconds.toDouble();
     final splitMs = startMs + localSourceMs;
@@ -886,11 +1087,13 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
                 itemBuilder: (context, i) {
                   final f = filters[i];
                   final isSelected = f.id == selectedId;
-                  final matrix = f.id == 'none' ? null : _reelFilterMatrixFor(f.id);
+                  final matrix =
+                      f.id == 'none' ? null : _reelFilterMatrixFor(f.id);
                   return GestureDetector(
                     onTap: () {
                       _mutate((clips) {
-                        clips[_activeClipIndex] = clips[_activeClipIndex].copyWith(
+                        clips[_activeClipIndex] =
+                            clips[_activeClipIndex].copyWith(
                           colorMatrix: matrix,
                         );
                         return clips;
@@ -907,7 +1110,8 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isSelected ? Colors.white : Colors.white12,
+                                color:
+                                    isSelected ? Colors.white : Colors.white12,
                                 width: isSelected ? 2 : 1,
                               ),
                             ),
@@ -973,9 +1177,20 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   }
 
   void _onScrub(double ms) {
-    setState(() {
-      _playheadMs = ms.clamp(0.0, _totalDurationMs);
-    });
+    _playheadMs = ms.clamp(0.0, _totalDurationMs);
+    _playheadMsNotifier.value = _playheadMs;
+
+    final ctrl = _videoController;
+    if (ctrl != null && ctrl.value.isInitialized) {
+      final localMs = _clipLocalMsForTimelineMs(_playheadMs);
+      final last = _lastSeekedMs;
+      if (last == null || (localMs - last).abs() > 50) {
+        _lastSeekedMs = localMs;
+        unawaited(ctrl.seekTo(Duration(milliseconds: localMs.round())));
+      }
+      _clockNotifier.value =
+          '${_formatClock(Duration(milliseconds: localMs.round()))} / ${_formatClock(ctrl.value.duration)}';
+    }
   }
 
   void _onScrubStart() {
@@ -999,6 +1214,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
           .take(index)
           .fold<double>(0.0, (sum, c) => sum + _clipEffectiveDurationMs(c));
     });
+    _playheadMsNotifier.value = _playheadMs;
     _initControllerForActiveClip();
   }
 
@@ -1027,6 +1243,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
       );
     }
     _mutate((clips) => clips..addAll(newClips));
+    unawaited(HapticFeedback.mediumImpact());
   }
 
   Future<void> _onNext() async {
@@ -1190,58 +1407,126 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
                     const SizedBox(height: 10),
                     SizedBox(
                       height: 88,
-                      child: ReelTimelineStrip(
-                        key: _timelineKey,
-                        clips: _clips,
-                        playheadMs: _playheadMs,
-                        totalDurationMs: _totalDurationMs,
-                        pxPerMs: _pxPerMs,
-                        selectedClipIndex: _selectedClipIndex,
-                        trimMode: _isTrimMode,
-                        onScrollOffsetChanged: (v) =>
-                            setState(() => _timelineScrollOffset = v),
-                        onClipSelected: _onClipTap,
-                        onClipDoubleTap: _toggleClipSelection,
-                        onClipLongPress: (i) {
-                          setState(() {
-                            _selectedClipIndex = i;
-                            _isReorderMode = true;
-                          });
-                          _openClipContextMenu(i).whenComplete(() {
-                            if (mounted) {
-                              setState(() => _isReorderMode = false);
-                            }
-                          });
-                        },
-                        onClipReorder: (from, to) {
-                          setState(() => _isReorderMode = false);
-                          _reorderClip(from, to);
-                        },
-                        onClipTrimmed: (index, trimStart, trimEnd) {
-                          _mutate((clips) {
-                            final clip = clips[index];
-                            if (clip.type == ReelClipType.image) {
-                              clips[index] = clip.copyWith(
-                                duration: trimEnd,
-                                trimStart: Duration.zero,
-                                trimEnd: trimEnd,
-                              );
-                            } else {
-                              clips[index] = clip.copyWith(
-                                trimStart: trimStart,
-                                trimEnd: trimEnd,
-                              );
-                            }
-                            return clips;
-                          });
-                        },
-                        onPlayheadScrub: _onScrub,
-                        onScrubStart: _onScrubStart,
-                        onScrubEnd: _onScrubEnd,
-                        onZoomChanged: (v) => setState(() => _pxPerMs = v),
-                        onAddClip: _onAddClip,
-                        overlaySpans: _overlaySpans(),
-                        onTransitionTap: _openTransitionPicker,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned.fill(
+                            child: ValueListenableBuilder<double>(
+                              valueListenable: _playheadMsNotifier,
+                              builder: (context, ms, _) {
+                                return ReelTimelineStrip(
+                                  key: _timelineKey,
+                                  clips: _clips,
+                                  playheadMs: ms,
+                                  totalDurationMs: _totalDurationMs,
+                                  pxPerMs: _pxPerMs,
+                                  selectedClipIndex: _selectedClipIndex,
+                                  trimMode: _isTrimMode,
+                                  onScrollOffsetChanged: (v) => setState(
+                                    () => _timelineScrollOffset = v,
+                                  ),
+                                  onClipSelected: _onClipTap,
+                                  onClipDoubleTap: _toggleClipSelection,
+                                  onClipLongPress: (i) {
+                                    setState(() {
+                                      _selectedClipIndex = i;
+                                      _isReorderMode = true;
+                                    });
+                                    _openClipContextMenu(i).whenComplete(() {
+                                      if (mounted) {
+                                        setState(() => _isReorderMode = false);
+                                      }
+                                    });
+                                  },
+                                  onClipReorder: (from, to) {
+                                    setState(() => _isReorderMode = false);
+                                    _reorderClip(from, to);
+                                  },
+                                  onClipTrimmed: (index, trimStart, trimEnd) {
+                                    _mutate((clips) {
+                                      final clip = clips[index];
+                                      if (clip.type == ReelClipType.image) {
+                                        clips[index] = clip.copyWith(
+                                          duration: trimEnd,
+                                          trimStart: Duration.zero,
+                                          trimEnd: trimEnd,
+                                        );
+                                      } else {
+                                        clips[index] = clip.copyWith(
+                                          trimStart: trimStart,
+                                          trimEnd: trimEnd,
+                                        );
+                                      }
+                                      return clips;
+                                    });
+                                  },
+                                  onPlayheadScrub: _onScrub,
+                                  onScrubStart: _onScrubStart,
+                                  onScrubEnd: _onScrubEnd,
+                                  onZoomChanged: (v) =>
+                                      setState(() => _pxPerMs = v),
+                                  onAddClip: _onAddClip,
+                                  overlaySpans: _overlaySpans(),
+                                  onTransitionTap: _openTransitionPicker,
+                                );
+                              },
+                            ),
+                          ),
+                          if (_showPlayheadTooltip)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    return ValueListenableBuilder<double>(
+                                      valueListenable: _playheadMsNotifier,
+                                      builder: (context, playheadMs, _) {
+                                        final x = _playheadX(
+                                          playheadMs,
+                                          constraints.maxWidth,
+                                        );
+                                        return SizedBox.expand(
+                                          child: Stack(
+                                            children: [
+                                              Positioned(
+                                                left: x - 32,
+                                                top: -18,
+                                                child: Container(
+                                                  width: 64,
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 3,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xCC000000,
+                                                    ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            6),
+                                                  ),
+                                                  child: Text(
+                                                    _playheadLabel(playheadMs),
+                                                    textAlign: TextAlign.center,
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -1251,7 +1536,9 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
                         children: [
                           _buildTrackRow(
                             icon: Icons.music_note_outlined,
-                            label: _audioPath == null ? 'Tap to add audio' : 'Audio added',
+                            label: _audioPath == null
+                                ? 'Tap to add audio'
+                                : 'Audio added',
                             onTap: _openAudioPicker,
                             hasContent: _audioPath != null,
                             contentColor: Colors.amber,
@@ -1259,7 +1546,9 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
                           const SizedBox(height: 8),
                           _buildTrackRow(
                             icon: Icons.text_fields,
-                            label: _textOverlays.isEmpty ? 'Tap to add text' : 'Text added',
+                            label: _textOverlays.isEmpty
+                                ? 'Tap to add text'
+                                : 'Text added',
                             onTap: _openTextEditor,
                             hasContent: _textOverlays.isNotEmpty,
                             contentColor: const Color(0xFF0095F6),
@@ -1338,7 +1627,8 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       children: [
         _bottomTool('Text', Icons.title, _openTextEditor),
-        _bottomTool('Sticker', Icons.emoji_emotions_outlined, _openStickerPicker),
+        _bottomTool(
+            'Sticker', Icons.emoji_emotions_outlined, _openStickerPicker),
         _bottomTool('Audio', Icons.music_note, _openAudioPicker),
         _bottomTool('Effects', Icons.auto_awesome, _openFilterPicker),
         _bottomTool('Photo', Icons.photo_outlined, _onAddClip),
@@ -1518,14 +1808,11 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: Center(
-            child: AnimatedBuilder(
-              animation: _videoController ?? Listenable.merge(const []),
-              builder: (context, _) {
-                final ctrl = _videoController;
-                final position = ctrl?.value.position ?? Duration.zero;
-                final duration = ctrl?.value.duration ?? Duration.zero;
+            child: ValueListenableBuilder<String>(
+              valueListenable: _clockNotifier,
+              builder: (context, value, _) {
                 return Text(
-                  '${_formatClock(position)} / ${_formatClock(duration)}',
+                  value,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
@@ -1616,13 +1903,16 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
               if (activeClip == null)
                 const SizedBox.shrink()
               else if (activeClip.type == ReelClipType.video)
-                (_videoController != null && _videoController!.value.isInitialized)
-                    ? FittedBox(
-                        fit: BoxFit.cover,
-                        child: SizedBox(
-                          width: _videoController!.value.size.width,
-                          height: _videoController!.value.size.height,
-                          child: VideoPlayer(_videoController!),
+                (_videoController != null &&
+                        _videoController!.value.isInitialized)
+                    ? RepaintBoundary(
+                        child: FittedBox(
+                          fit: BoxFit.cover,
+                          child: SizedBox(
+                            width: _videoController!.value.size.width,
+                            height: _videoController!.value.size.height,
+                            child: VideoPlayer(_videoController!),
+                          ),
                         ),
                       )
                     : const Center(
@@ -1632,11 +1922,22 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
                         ),
                       )
               else
-                Image.file(
-                  File(activeClip.path),
-                  fit: BoxFit.cover,
+                RepaintBoundary(
+                  child: Image.file(
+                    File(activeClip.path),
+                    fit: BoxFit.cover,
+                  ),
                 ),
-              ..._buildOverlayWidgets(),
+              ValueListenableBuilder<double>(
+                valueListenable: _playheadMsNotifier,
+                builder: (context, _, __) {
+                  return SizedBox.expand(
+                    child: Stack(
+                      children: _buildOverlayWidgets(),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -1765,7 +2066,9 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
               ? const Color(0xFF0095F6).withValues(alpha: 0.2)
               : Colors.grey[850],
           borderRadius: BorderRadius.circular(12),
-          border: isActive ? Border.all(color: const Color(0xFF0095F6), width: 1.5) : null,
+          border: isActive
+              ? Border.all(color: const Color(0xFF0095F6), width: 1.5)
+              : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1811,7 +2114,8 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
           children: [
             Icon(icon, color: Colors.white, size: 20),
             const SizedBox(height: 4),
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 10)),
+            Text(label,
+                style: const TextStyle(color: Colors.white, fontSize: 10)),
           ],
         ),
       ),
@@ -1928,7 +2232,9 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   Future<void> _replaceClip(int index, app_models.MediaItem media) async {
     if (index < 0 || index >= _clips.length) return;
     final isVideo = media.type == app_models.MediaType.video;
-    final duration = isVideo ? (media.duration ?? const Duration(seconds: 1)) : const Duration(seconds: 3);
+    final duration = isVideo
+        ? (media.duration ?? const Duration(seconds: 1))
+        : const Duration(seconds: 3);
     _mutate((clips) {
       final existing = clips[index];
       clips[index] = ReelClip(
@@ -1963,116 +2269,86 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
     for (int i = 0; i < _textOverlays.length; i++) {
       final t = _textOverlays[i];
       if (_playheadMs < t.startMs || _playheadMs >= t.endMs) continue;
-      widgets.add(
-        Positioned(
-          left: t.position.dx,
-          top: t.position.dy,
-          child: GestureDetector(
-            onTap: () => setState(() => _activeTextIndex = i),
-            onLongPress: () => _openOverlayDurationSheet(
-              startMs: t.startMs,
-              endMs: t.endMs,
-              onApply: (s, e) => setState(() => _textOverlays[i] = t.copyWith(startMs: s, endMs: e)),
-            ),
-            onScaleStart: (d) {
-              setState(() {
-                _showDeleteZone = true;
-                _activeTextIndex = i;
-              });
-              _lastFocalPoint = _globalToPreview(d.focalPoint);
-              _baseScale = t.scale;
-              _baseRotation = t.rotation;
-              _basePosition = t.position;
-            },
-            onScaleUpdate: (d) {
-              final local = _globalToPreview(d.focalPoint);
-              final delta = local - _lastFocalPoint;
-              setState(() {
-                _textOverlays[i] = t.copyWith(
-                  position: _basePosition + delta,
-                  scale: (_baseScale * d.scale).clamp(0.2, 6.0),
-                  rotation: _baseRotation + d.rotation,
-                );
-              });
-            },
-            onScaleEnd: (_) {
-              final center = _trashCenter();
-              final distance = (center - _textOverlays[i].position).distance;
-              if (distance <= 44) {
-                setState(() => _textOverlays.removeAt(i));
-              }
-              setState(() => _showDeleteZone = false);
-            },
-            child: Transform.rotate(
-              angle: t.rotation,
-              child: Transform.scale(
-                scale: t.scale,
-                child: _buildTextVisual(t),
-              ),
-            ),
-          ),
+      widgets.add(_DraggableTextOverlay(
+        key: ObjectKey(t),
+        overlay: t,
+        globalToPreview: _globalToPreview,
+        trashCenter: _trashCenter,
+        onDeleteZoneChanged: _setDeleteZoneVisible,
+        onTap: () => setState(() => _activeTextIndex = i),
+        onLongPress: () => _openOverlayDurationSheet(
+          startMs: t.startMs,
+          endMs: t.endMs,
+          onApply: (s, e) {
+            final idx = _textOverlays.indexOf(t);
+            if (idx < 0) return;
+            setState(
+                () => _textOverlays[idx] = t.copyWith(startMs: s, endMs: e));
+          },
         ),
-      );
+        onMoved: (pos, scale, rotation) {
+          final idx = _textOverlays.indexOf(t);
+          if (idx < 0) return;
+          setState(() {
+            _textOverlays[idx] = t.copyWith(
+              position: pos,
+              scale: scale,
+              rotation: rotation,
+            );
+          });
+        },
+        onDelete: () {
+          final idx = _textOverlays.indexOf(t);
+          if (idx < 0) return;
+          setState(() => _textOverlays.removeAt(idx));
+        },
+        child: _buildTextVisual(t),
+      ));
     }
 
     for (int i = 0; i < _stickerOverlays.length; i++) {
       final s = _stickerOverlays[i];
       if (_playheadMs < s.startMs || _playheadMs >= s.endMs) continue;
-      widgets.add(
-        Positioned(
-          left: s.position.dx,
-          top: s.position.dy,
-          child: GestureDetector(
-            onTap: () => setState(() => _activeStickerIndex = i),
-            onLongPress: () => _openOverlayDurationSheet(
-              startMs: s.startMs,
-              endMs: s.endMs,
-              onApply: (st, en) => setState(() => _stickerOverlays[i] = s.copyWith(startMs: st, endMs: en)),
-            ),
-            onScaleStart: (d) {
-              setState(() {
-                _showDeleteZone = true;
-                _activeStickerIndex = i;
-              });
-              _lastFocalPoint = _globalToPreview(d.focalPoint);
-              _baseScale = s.scale;
-              _baseRotation = s.rotation;
-              _basePosition = s.position;
-            },
-            onScaleUpdate: (d) {
-              final local = _globalToPreview(d.focalPoint);
-              final delta = local - _lastFocalPoint;
-              setState(() {
-                _stickerOverlays[i] = s.copyWith(
-                  position: _basePosition + delta,
-                  scale: (_baseScale * d.scale).clamp(0.2, 6.0),
-                  rotation: _baseRotation + d.rotation,
-                );
-              });
-            },
-            onScaleEnd: (_) {
-              final center = _trashCenter();
-              final distance = (center - _stickerOverlays[i].position).distance;
-              if (distance <= 44) {
-                setState(() => _stickerOverlays.removeAt(i));
-              }
-              setState(() => _showDeleteZone = false);
-            },
-            child: Transform.rotate(
-              angle: s.rotation,
-              child: Transform.scale(
-                scale: s.scale,
-                child: Image.file(
-                  File(s.imagePath),
-                  width: 120,
-                  height: 120,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-          ),
+      widgets.add(_DraggableStickerOverlay(
+        key: ObjectKey(s),
+        overlay: s,
+        globalToPreview: _globalToPreview,
+        trashCenter: _trashCenter,
+        onDeleteZoneChanged: _setDeleteZoneVisible,
+        onTap: () => setState(() => _activeStickerIndex = i),
+        onLongPress: () => _openOverlayDurationSheet(
+          startMs: s.startMs,
+          endMs: s.endMs,
+          onApply: (st, en) {
+            final idx = _stickerOverlays.indexOf(s);
+            if (idx < 0) return;
+            setState(() =>
+                _stickerOverlays[idx] = s.copyWith(startMs: st, endMs: en));
+          },
         ),
-      );
+        onMoved: (pos, scale, rotation) {
+          final idx = _stickerOverlays.indexOf(s);
+          if (idx < 0) return;
+          setState(() {
+            _stickerOverlays[idx] = s.copyWith(
+              position: pos,
+              scale: scale,
+              rotation: rotation,
+            );
+          });
+        },
+        onDelete: () {
+          final idx = _stickerOverlays.indexOf(s);
+          if (idx < 0) return;
+          setState(() => _stickerOverlays.removeAt(idx));
+        },
+        child: Image.file(
+          File(s.imagePath),
+          width: 120,
+          height: 120,
+          fit: BoxFit.cover,
+        ),
+      ));
     }
     return widgets;
   }
@@ -2113,7 +2389,8 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   List<({double startMs, double endMs, Color color})> _overlaySpans() {
     final spans = <({double startMs, double endMs, Color color})>[];
     for (final t in _textOverlays) {
-      spans.add((startMs: t.startMs, endMs: t.endMs, color: const Color(0xFF0095F6)));
+      spans.add(
+          (startMs: t.startMs, endMs: t.endMs, color: const Color(0xFF0095F6)));
     }
     for (final s in _stickerOverlays) {
       spans.add((startMs: s.startMs, endMs: s.endMs, color: Colors.white54));
@@ -2122,7 +2399,11 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
       spans.add((startMs: 0, endMs: _totalDurationMs, color: Colors.amber));
     }
     if (_voicePath != null) {
-      spans.add((startMs: 0, endMs: _totalDurationMs, color: const Color(0xFF0095F6)));
+      spans.add((
+        startMs: 0,
+        endMs: _totalDurationMs,
+        color: const Color(0xFF0095F6)
+      ));
     }
     return spans;
   }
@@ -2132,7 +2413,8 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
     const dotSlot = 16.0;
     double width = 0;
     for (int i = 0; i < _clips.length; i++) {
-      width += (_clipEffectiveDurationMs(_clips[i]) * _pxPerMs).clamp(48.0, double.infinity);
+      width += (_clipEffectiveDurationMs(_clips[i]) * _pxPerMs)
+          .clamp(48.0, double.infinity);
       if (i != _clips.length - 1) {
         width += tileGap + dotSlot + tileGap;
       }
@@ -2141,20 +2423,21 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
     return width;
   }
 
-  double _playheadX(double maxWidth) {
+  double _playheadX(double playheadMs, double maxWidth) {
     const leftPad = 16.0;
     final totalMs = _totalDurationMs <= 0 ? 1.0 : _totalDurationMs;
     final trackWidth = _timelineTrackWidth();
-    final raw = leftPad + (_playheadMs / totalMs) * trackWidth - _timelineScrollOffset;
+    final raw =
+        leftPad + (playheadMs / totalMs) * trackWidth - _timelineScrollOffset;
     final clamped = raw.clamp(12.0, maxWidth - 12.0);
     return clamped.toDouble();
   }
 
-  String _playheadLabel() {
-    final totalSeconds = (_playheadMs / 1000.0);
+  String _playheadLabel(double playheadMs) {
+    final totalSeconds = playheadMs / 1000.0;
     final minutes = totalSeconds ~/ 60;
     final seconds = (totalSeconds % 60);
-    return '${minutes}:${seconds.toStringAsFixed(1).padLeft(4, '0')}';
+    return '$minutes:${seconds.toStringAsFixed(1).padLeft(4, '0')}';
   }
 
   String _formatClock(Duration d) {
@@ -2292,7 +2575,8 @@ class _FilterChipThumbState extends State<_FilterChipThumb> {
   @override
   void didUpdateWidget(covariant _FilterChipThumb oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.clip.path != widget.clip.path || oldWidget.clip.type != widget.clip.type) {
+    if (oldWidget.clip.path != widget.clip.path ||
+        oldWidget.clip.type != widget.clip.type) {
       unawaited(_load());
     }
   }
@@ -2367,6 +2651,123 @@ class ReelEditorTextOverlay {
   }
 }
 
+class _DraggableTextOverlay extends StatefulWidget {
+  final ReelEditorTextOverlay overlay;
+  final Widget child;
+  final Offset Function(Offset global) globalToPreview;
+  final Offset Function() trashCenter;
+  final ValueChanged<bool> onDeleteZoneChanged;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final void Function(Offset pos, double scale, double rotation) onMoved;
+  final VoidCallback onDelete;
+
+  const _DraggableTextOverlay({
+    super.key,
+    required this.overlay,
+    required this.child,
+    required this.globalToPreview,
+    required this.trashCenter,
+    required this.onDeleteZoneChanged,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onMoved,
+    required this.onDelete,
+  });
+
+  @override
+  State<_DraggableTextOverlay> createState() => _DraggableTextOverlayState();
+}
+
+class _DraggableTextOverlayState extends State<_DraggableTextOverlay> {
+  Offset _localPosition = Offset.zero;
+  double _localScale = 1.0;
+  double _localRotation = 0.0;
+
+  Offset _basePosition = Offset.zero;
+  double _baseScale = 1.0;
+  double _baseRotation = 0.0;
+  Offset _lastFocalPoint = Offset.zero;
+  bool _gestureActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncFromOverlay(widget.overlay);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DraggableTextOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_gestureActive) return;
+    if (oldWidget.overlay != widget.overlay) {
+      _syncFromOverlay(widget.overlay);
+    }
+  }
+
+  void _syncFromOverlay(ReelEditorTextOverlay overlay) {
+    _localPosition = overlay.position;
+    _localScale = overlay.scale;
+    _localRotation = overlay.rotation;
+    _basePosition = _localPosition;
+    _baseScale = _localScale;
+    _baseRotation = _localRotation;
+  }
+
+  void _onScaleStart(ScaleStartDetails d) {
+    _gestureActive = true;
+    widget.onDeleteZoneChanged(true);
+    _lastFocalPoint = widget.globalToPreview(d.focalPoint);
+    _basePosition = _localPosition;
+    _baseScale = _localScale;
+    _baseRotation = _localRotation;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    final local = widget.globalToPreview(d.focalPoint);
+    final delta = local - _lastFocalPoint;
+    setState(() {
+      _localPosition = _basePosition + delta;
+      _localScale = (_baseScale * d.scale).clamp(0.2, 6.0);
+      _localRotation = _baseRotation + d.rotation;
+    });
+  }
+
+  void _onScaleEnd(ScaleEndDetails d) {
+    _gestureActive = false;
+    final center = widget.trashCenter();
+    final distance = (center - _localPosition).distance;
+    if (distance <= 44) {
+      widget.onDelete();
+    } else {
+      widget.onMoved(_localPosition, _localScale, _localRotation);
+    }
+    widget.onDeleteZoneChanged(false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: _localPosition.dx,
+      top: _localPosition.dy,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        onScaleStart: _onScaleStart,
+        onScaleUpdate: _onScaleUpdate,
+        onScaleEnd: _onScaleEnd,
+        child: Transform.rotate(
+          angle: _localRotation,
+          child: Transform.scale(
+            scale: _localScale,
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ReelEditorStickerOverlay {
   final String imagePath;
   final Offset position;
@@ -2402,6 +2803,124 @@ class ReelEditorStickerOverlay {
   }
 }
 
+class _DraggableStickerOverlay extends StatefulWidget {
+  final ReelEditorStickerOverlay overlay;
+  final Widget child;
+  final Offset Function(Offset global) globalToPreview;
+  final Offset Function() trashCenter;
+  final ValueChanged<bool> onDeleteZoneChanged;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final void Function(Offset pos, double scale, double rotation) onMoved;
+  final VoidCallback onDelete;
+
+  const _DraggableStickerOverlay({
+    super.key,
+    required this.overlay,
+    required this.child,
+    required this.globalToPreview,
+    required this.trashCenter,
+    required this.onDeleteZoneChanged,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onMoved,
+    required this.onDelete,
+  });
+
+  @override
+  State<_DraggableStickerOverlay> createState() =>
+      _DraggableStickerOverlayState();
+}
+
+class _DraggableStickerOverlayState extends State<_DraggableStickerOverlay> {
+  Offset _localPosition = Offset.zero;
+  double _localScale = 1.0;
+  double _localRotation = 0.0;
+
+  Offset _basePosition = Offset.zero;
+  double _baseScale = 1.0;
+  double _baseRotation = 0.0;
+  Offset _lastFocalPoint = Offset.zero;
+  bool _gestureActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncFromOverlay(widget.overlay);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DraggableStickerOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_gestureActive) return;
+    if (oldWidget.overlay != widget.overlay) {
+      _syncFromOverlay(widget.overlay);
+    }
+  }
+
+  void _syncFromOverlay(ReelEditorStickerOverlay overlay) {
+    _localPosition = overlay.position;
+    _localScale = overlay.scale;
+    _localRotation = overlay.rotation;
+    _basePosition = _localPosition;
+    _baseScale = _localScale;
+    _baseRotation = _localRotation;
+  }
+
+  void _onScaleStart(ScaleStartDetails d) {
+    _gestureActive = true;
+    widget.onDeleteZoneChanged(true);
+    _lastFocalPoint = widget.globalToPreview(d.focalPoint);
+    _basePosition = _localPosition;
+    _baseScale = _localScale;
+    _baseRotation = _localRotation;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    final local = widget.globalToPreview(d.focalPoint);
+    final delta = local - _lastFocalPoint;
+    setState(() {
+      _localPosition = _basePosition + delta;
+      _localScale = (_baseScale * d.scale).clamp(0.2, 6.0);
+      _localRotation = _baseRotation + d.rotation;
+    });
+  }
+
+  void _onScaleEnd(ScaleEndDetails d) {
+    _gestureActive = false;
+    final center = widget.trashCenter();
+    final distance = (center - _localPosition).distance;
+    if (distance <= 44) {
+      widget.onDelete();
+    } else {
+      widget.onMoved(_localPosition, _localScale, _localRotation);
+    }
+    widget.onDeleteZoneChanged(false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: _localPosition.dx,
+      top: _localPosition.dy,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        onScaleStart: _onScaleStart,
+        onScaleUpdate: _onScaleUpdate,
+        onScaleEnd: _onScaleEnd,
+        child: Transform.rotate(
+          angle: _localRotation,
+          child: Transform.scale(
+            scale: _localScale,
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ExportProgressDialog extends StatelessWidget {
   const _ExportProgressDialog();
 
@@ -2417,7 +2936,8 @@ class _ExportProgressDialog extends StatelessWidget {
             SizedBox(
               width: 22,
               height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.white),
             ),
             SizedBox(width: 12),
             Expanded(
@@ -2467,7 +2987,8 @@ class _GroupedClipMenuState extends State<_GroupedClipMenu> {
     final picker = ImagePicker();
     final picked = await picker.pickMedia();
     if (picked == null) return;
-    final isVideo = picked.mimeType?.startsWith('video') ?? picked.path.toLowerCase().endsWith('.mp4');
+    final isVideo = picked.mimeType?.startsWith('video') ??
+        picked.path.toLowerCase().endsWith('.mp4');
     Duration? duration;
     if (isVideo) {
       final controller = VideoPlayerController.file(File(picked.path));
@@ -2510,11 +3031,13 @@ class _GroupedClipMenuState extends State<_GroupedClipMenu> {
                   const SizedBox(width: 8),
                   _pill('Replace', Icons.swap_horiz, onTap: _pickReplacement),
                   const SizedBox(width: 8),
-                  _pill('Speed', Icons.speed, onTap: () => setState(() => _showSpeed = !_showSpeed)),
+                  _pill('Speed', Icons.speed,
+                      onTap: () => setState(() => _showSpeed = !_showSpeed)),
                   const SizedBox(width: 8),
                   _pill('Reverse', Icons.replay, onTap: widget.onReverse),
                   const SizedBox(width: 8),
-                  _pill('Freeze', Icons.pause_circle_outline, onTap: widget.onFreeze),
+                  _pill('Freeze', Icons.pause_circle_outline,
+                      onTap: widget.onFreeze),
                   const SizedBox(width: 8),
                   _pill(
                     'Delete',
@@ -2531,7 +3054,8 @@ class _GroupedClipMenuState extends State<_GroupedClipMenu> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               child: Row(
                 children: [
-                  const Text('0.1x', style: TextStyle(color: Colors.white, fontSize: 11)),
+                  const Text('0.1x',
+                      style: TextStyle(color: Colors.white, fontSize: 11)),
                   Expanded(
                     child: Slider(
                       value: _speed.clamp(0.1, 4.0),
@@ -2546,7 +3070,9 @@ class _GroupedClipMenuState extends State<_GroupedClipMenu> {
                       inactiveColor: Colors.white24,
                     ),
                   ),
-                  Text('${_speed.toStringAsFixed(1)}x', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                  Text('${_speed.toStringAsFixed(1)}x',
+                      style:
+                          const TextStyle(color: Colors.white, fontSize: 11)),
                 ],
               ),
             ),
@@ -2557,12 +3083,14 @@ class _GroupedClipMenuState extends State<_GroupedClipMenu> {
                 children: [
                   TextButton(
                     onPressed: widget.onDelete,
-                    child: const Text('Delete clip', style: TextStyle(color: Color(0xFFFF3B30))),
+                    child: const Text('Delete clip',
+                        style: TextStyle(color: Color(0xFFFF3B30))),
                   ),
                   const Spacer(),
                   TextButton(
                     onPressed: () => setState(() => _confirmDelete = false),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+                    child: const Text('Cancel',
+                        style: TextStyle(color: Colors.white70)),
                   ),
                 ],
               ),
@@ -2572,7 +3100,8 @@ class _GroupedClipMenuState extends State<_GroupedClipMenu> {
     );
   }
 
-  Widget _pill(String label, IconData icon, {required VoidCallback onTap, Color? color}) {
+  Widget _pill(String label, IconData icon,
+      {required VoidCallback onTap, Color? color}) {
     final tint = color ?? Colors.white;
     return GestureDetector(
       onTap: onTap,

@@ -38,6 +38,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   final Map<int, VideoPlayerController> _videoControllers =
       <int, VideoPlayerController>{};
   final Set<int> _controllerSetupInProgress = <int>{};
+  final Set<int> _prewarmRequested = <int>{};
+  int? _lastStartedIndex;
   final Set<int> _failedControllerIndexes = <int>{};
   final Map<int, int> _controllerRetryAttempts = <int, int>{};
   final Map<String, bool> _captionExpanded = {};
@@ -172,6 +174,32 @@ class _ReelsScreenState extends State<ReelsScreen>
   void _onPageScrollForAudioGate() {
     // Only flip volume when we cross the threshold (prevents spam).
     _applyAudioGate();
+
+    if (!widget.isActive) return;
+    if (!_pageController.hasClients) return;
+    final page = _pageController.page;
+    if (page == null) return;
+
+    final diff = page - _currentIndex;
+    if (diff > 0.3) {
+      final target = _currentIndex + 1;
+      if (target >= 0 &&
+          target < _reels.length &&
+          !_prewarmRequested.contains(target)) {
+        _prewarmRequested.add(target);
+        unawaited(
+            _createControllerForIndex(target, generation: _poolGeneration));
+      }
+    } else if (diff < -0.3) {
+      final target = _currentIndex - 1;
+      if (target >= 0 &&
+          target < _reels.length &&
+          !_prewarmRequested.contains(target)) {
+        _prewarmRequested.add(target);
+        unawaited(
+            _createControllerForIndex(target, generation: _poolGeneration));
+      }
+    }
   }
 
   @override
@@ -312,12 +340,7 @@ class _ReelsScreenState extends State<ReelsScreen>
             await controller.setVolume(_isMuted ? 0 : 1);
             _videoControllers[index] = controller;
             debugPrint('[Reels] video initialized index=$index id=${reel.id}');
-            if (mounted) {
-              setState(() {});
-            }
-            if (index == _currentIndex && widget.isActive) {
-              unawaited(controller.play().catchError((_) {}));
-            }
+            if (mounted && index == _currentIndex) setState(() {});
             _failedControllerIndexes.remove(index);
             _controllerRetryAttempts.remove(index);
             debugPrint('[Reels] controller created index=$index id=${reel.id}');
@@ -426,15 +449,15 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (!widget.isActive) return;
     final generation = ++_poolGeneration;
     _currentIndex = index;
-    final prev = index - 1 >= 0 ? index - 1 : null;
-    final next = index + 1 < _reels.length ? index + 1 : null;
-    // Keep previous + current + next so we don't show black frames while the
-    // user is mid-swipe between reels.
-    final keep = <int>{
-      if (prev != null) prev,
-      index,
-      if (next != null) next,
-    };
+    _prewarmRequested
+      ..clear()
+      ..add(index);
+    // Keep index-1, index, index+1, index+2 so we don't show black frames while
+    // the user is mid-swipe and can quickly back-swipe without re-init.
+    final keep = <int>{};
+    for (final k in <int>[index - 1, index, index + 1, index + 2]) {
+      if (k >= 0 && k < _reels.length) keep.add(k);
+    }
 
     final remove =
         _videoControllers.keys.where((k) => !keep.contains(k)).toList();
@@ -444,8 +467,15 @@ class _ReelsScreenState extends State<ReelsScreen>
 
     // Prioritize current reel startup first, then warm neighbors in background.
     await _createControllerForIndex(index, generation: generation);
-    if (next != null) {
-      unawaited(_createControllerForIndex(next, generation: generation));
+    final next1 = index + 1;
+    final next2 = index + 2;
+    if (next1 >= 0 && next1 < _reels.length) {
+      _prewarmRequested.add(next1);
+      unawaited(_createControllerForIndex(next1, generation: generation));
+    }
+    if (next2 >= 0 && next2 < _reels.length) {
+      _prewarmRequested.add(next2);
+      unawaited(_createControllerForIndex(next2, generation: generation));
     }
     if (_controllerForIndex(index) == null) {
       _scheduleControllerRetry(index);
@@ -458,6 +488,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     await _initializePoolAt(newIndex);
     if (!mounted) return;
     await _activateCurrentReelPlayback();
+    if (mounted) setState(() {});
   }
 
   Future<void> _pauseControllerForIndex(int index) async {
@@ -486,14 +517,18 @@ class _ReelsScreenState extends State<ReelsScreen>
     final controller = _controllerForIndex(index);
     if (controller == null) return;
     try {
-      // Mirror web/Instagram behavior: when a reel becomes current, start from 0.
-      await controller.seekTo(Duration.zero);
+      // Mirror web/Instagram behavior: when a reel becomes current, start from 0,
+      // but don't keep re-seeking to 0 during autoplay recovery kicks.
+      if (_lastStartedIndex != index) {
+        await controller.seekTo(Duration.zero);
+      }
       await controller.setVolume(
         (widget.isActive && _audioGateOpen && !_isMuted) ? 1 : 0,
       );
       if (!mounted || _controllerForIndex(index) != controller) return;
       if (widget.isActive) {
         await controller.play();
+        _lastStartedIndex = index;
         debugPrint(
           '[Reels] video started playing index=$index id=${_reels[index].id}',
         );
@@ -526,6 +561,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     setState(() {
       _currentIndex = index;
     });
+    _prewarmRequested.clear();
     // The active index changed; reevaluate audio gate based on page settling.
     _applyAudioGate();
     unawaited(_reelsService.incrementViews(_reels[index].id));
@@ -581,7 +617,7 @@ class _ReelsScreenState extends State<ReelsScreen>
         await _initializePoolAt(index);
         if (!mounted) return;
         await _activateCurrentReelPlayback();
-        if (mounted) setState(() {});
+        if (mounted && index == _currentIndex) setState(() {});
       }());
     });
   }
@@ -591,14 +627,15 @@ class _ReelsScreenState extends State<ReelsScreen>
     final idx = _currentIndex;
     _failedControllerIndexes.remove(idx);
     _controllerRetryAttempts.remove(idx);
-    setState(() {});
+    if (mounted && idx == _currentIndex) setState(() {});
     await _initializePoolAt(idx);
     if (!mounted) return;
     await _activateCurrentReelPlayback();
-    if (mounted) setState(() {});
+    if (mounted && idx == _currentIndex) setState(() {});
   }
 
   Future<void> _toggleLike() async {
+    unawaited(HapticFeedback.lightImpact());
     if (_reels.isEmpty) return;
     final reelId = _reels[_currentIndex].id;
     try {
@@ -1011,7 +1048,7 @@ class _ReelsScreenState extends State<ReelsScreen>
               controller: _pageController,
               scrollDirection: Axis.vertical,
               physics: const BouncingScrollPhysics(),
-              allowImplicitScrolling: true,
+              allowImplicitScrolling: false,
               itemCount: _reels.length,
               onPageChanged: _onPageChanged,
               itemBuilder: (context, index) {
@@ -1099,15 +1136,18 @@ class _ReelsScreenState extends State<ReelsScreen>
         : UrlHelper.absoluteUrl(reel.thumbnailUrl!);
     final isActive = widget.isActive && index == _currentIndex;
 
-    return _ReelPlayerItem(
-      key: ValueKey('reel-item-$index-${reel.id}'),
-      controller: safeController,
-      thumbnailUrl: thumb,
-      headers:
-          thumb == null || thumb.isEmpty ? const {} : _headersForUrl(thumb),
-      isActive: isActive,
-      isFailed: false,
-      onRetry: null,
+    return RepaintBoundary(
+      key: ValueKey('reel-rb-${reel.id}'),
+      child: _ReelPlayerItem(
+        key: ValueKey('reel-item-$index-${reel.id}'),
+        controller: safeController,
+        thumbnailUrl: thumb,
+        headers:
+            thumb == null || thumb.isEmpty ? const {} : _headersForUrl(thumb),
+        isActive: isActive,
+        isFailed: false,
+        onRetry: null,
+      ),
     );
   }
 
@@ -1120,11 +1160,14 @@ class _ReelsScreenState extends State<ReelsScreen>
           onTap: () {},
         ),
         const SizedBox(height: 16),
-        GlassActionButton(
-          icon: reel.isLiked ? Icons.favorite : LucideIcons.heart,
-          label: _formatCount(reel.likes),
-          iconColor: reel.isLiked ? Colors.red : Colors.white,
-          onTap: _toggleLike,
+        _LikeBump(
+          isLiked: reel.isLiked,
+          child: GlassActionButton(
+            icon: reel.isLiked ? Icons.favorite : LucideIcons.heart,
+            label: _formatCount(reel.likes),
+            iconColor: reel.isLiked ? Colors.red : Colors.white,
+            onTap: _toggleLike,
+          ),
         ),
         const SizedBox(height: 16),
         GlassActionButton(
@@ -1150,6 +1193,7 @@ class _ReelsScreenState extends State<ReelsScreen>
           icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
           label: '',
           onTap: () {
+            unawaited(HapticFeedback.selectionClick());
             setState(() {
               _isMuted = !_isMuted;
             });
@@ -1538,6 +1582,7 @@ class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
   double _playbackSpeed = 1.0;
   bool _isPlaying = false;
   int _baseEpochMs = 0;
+  static const int _snapBackToleranceMs = 120;
 
   @override
   void initState() {
@@ -1570,17 +1615,56 @@ class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
     setState(() {});
   }
 
+  int _predictedPositionMs(int nowMs) {
+    var positionMs = _basePosition.inMilliseconds;
+    if (_isPlaying) {
+      final elapsedMs = (nowMs - _baseEpochMs).clamp(0, 1 << 30);
+      positionMs += (elapsedMs * _playbackSpeed).round();
+    }
+    return positionMs;
+  }
+
   void _syncFromController() {
     if (!mounted) return;
     try {
       final value = widget.controller.value;
-      _duration = value.duration;
-      _basePosition = value.position;
-      _playbackSpeed = value.playbackSpeed;
-      _isPlaying = value.isPlaying;
-      _baseEpochMs = DateTime.now().millisecondsSinceEpoch;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final nextDuration = value.duration;
+      final nextSpeed = value.playbackSpeed;
+      final nextIsPlaying = value.isPlaying;
+      final controllerPos = value.position;
+
+      // Keep duration in sync always.
+      _duration = nextDuration;
+
+      // If speed changes while playing, "lock in" the current predicted position
+      // so we don't jump backwards/forwards unexpectedly.
+      if (_isPlaying && nextIsPlaying && _playbackSpeed != nextSpeed) {
+        _basePosition = Duration(milliseconds: _predictedPositionMs(nowMs));
+        _baseEpochMs = nowMs;
+      }
+      _playbackSpeed = nextSpeed;
+      _isPlaying = nextIsPlaying;
+
+      if (!_isPlaying) {
+        // When paused/buffering, trust controller position exactly.
+        _basePosition = controllerPos;
+        _baseEpochMs = nowMs;
+      } else {
+        // While playing, avoid snapping backwards to the controller's slightly
+        // lagging position (prevents visible progress "restarts"/jitter).
+        final predictedMs = _predictedPositionMs(nowMs);
+        final controllerMs = controllerPos.inMilliseconds;
+        if (controllerMs > predictedMs) {
+          _basePosition = controllerPos;
+          _baseEpochMs = nowMs;
+        } else if (controllerMs < predictedMs - _snapBackToleranceMs) {
+          // Large backward jump likely indicates a seek/loop; accept it.
+          _basePosition = controllerPos;
+          _baseEpochMs = nowMs;
+        }
+      }
       _updateTicker();
-      setState(() {});
     } catch (_) {
       _isPlaying = false;
       _updateTicker();
@@ -1588,7 +1672,10 @@ class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
   }
 
   void _onControllerValueChanged() {
+    final wasPlaying = _isPlaying;
     _syncFromController();
+    if (!mounted) return;
+    if (wasPlaying != _isPlaying) setState(() {});
   }
 
   void _updateTicker() {
@@ -1614,10 +1701,62 @@ class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
     }
     final progress = (positionMs / durationMs).clamp(0.0, 1.0);
 
-    return FractionallySizedBox(
-      alignment: Alignment.centerLeft,
-      widthFactor: progress,
-      child: const ColoredBox(color: Colors.white),
+    return RepaintBoundary(
+      child: FractionallySizedBox(
+        alignment: Alignment.centerLeft,
+        widthFactor: progress,
+        child: const ColoredBox(color: Colors.white),
+      ),
+    );
+  }
+}
+
+class _LikeBump extends StatefulWidget {
+  final bool isLiked;
+  final Widget child;
+
+  const _LikeBump({
+    required this.isLiked,
+    required this.child,
+  });
+
+  @override
+  State<_LikeBump> createState() => _LikeBumpState();
+}
+
+class _LikeBumpState extends State<_LikeBump> {
+  static const _bumpScale = 1.2;
+  static const _duration = Duration(milliseconds: 150);
+
+  double _scale = 1.0;
+  Timer? _resetTimer;
+
+  @override
+  void didUpdateWidget(covariant _LikeBump oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isLiked == widget.isLiked) return;
+
+    _resetTimer?.cancel();
+    setState(() => _scale = _bumpScale);
+    _resetTimer = Timer(_duration, () {
+      if (!mounted) return;
+      setState(() => _scale = 1.0);
+    });
+  }
+
+  @override
+  void dispose() {
+    _resetTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedScale(
+      scale: _scale,
+      duration: _duration,
+      curve: Curves.easeOut,
+      child: widget.child,
     );
   }
 }
@@ -1644,11 +1783,7 @@ class _ReelPlayerItem extends StatefulWidget {
   State<_ReelPlayerItem> createState() => _ReelPlayerItemState();
 }
 
-class _ReelPlayerItemState extends State<_ReelPlayerItem>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
+class _ReelPlayerItemState extends State<_ReelPlayerItem> {
   Widget _fallbackPlaceholder() {
     return const DecoratedBox(
       decoration: BoxDecoration(
@@ -1666,7 +1801,6 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final thumbnailUrl = widget.thumbnailUrl;
     final controller = widget.controller;
     bool isInitialized = false;
