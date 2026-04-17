@@ -68,6 +68,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   final List<AssetEntity> _allAlbumAssets = [];
   final Set<String> _selectedIds = {};
   final List<String> _selectedOrder = [];
+  final Map<String, Future<Uint8List?>> _thumbFutures = {};
+  final Map<String, Future<Uint8List?>> _previewFutures = {};
   AssetEntity? _currentAsset;
   bool _multiSelect = false;
   bool _galleryPermissionDenied = false;
@@ -76,12 +78,12 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   _GallerySource _source = _GallerySource.recents;
   bool _showSourceMenu = false;
   bool _isPreparingNext = false;
+  Timer? _saveCacheDebounce;
   final Map<String, Future<File?>> _assetFileFutures = {};
-  final GlobalKey _sourceBarKey = GlobalKey();
+  late final List<GlobalKey> _tabSourceBarKeys =
+      List<GlobalKey>.generate(4, (_) => GlobalKey());
   Offset _sourceMenuPosition = const Offset(16, 328);
   final Map<UploadMode, _GalleryCache> _cache = {};
-
-  static const Duration _modeAnimDuration = Duration(milliseconds: 90);
 
   String get _sourceLabel {
     switch (_source) {
@@ -103,6 +105,12 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     _loadGalleryMedia();
   }
 
+  @override
+  void dispose() {
+    _saveCacheDebounce?.cancel();
+    super.dispose();
+  }
+
   bool _shouldCacheMode(UploadMode mode) =>
       mode == UploadMode.post || mode == UploadMode.reel;
 
@@ -121,6 +129,39 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       galleryPermissionDenied: _galleryPermissionDenied,
       galleryPermissionLimited: _galleryPermissionLimited,
     );
+  }
+
+  void _scheduleSaveCache() {
+    _saveCacheDebounce?.cancel();
+    _saveCacheDebounce = Timer(const Duration(milliseconds: 400), _saveCache);
+  }
+
+  Future<Uint8List?> _getThumbFuture(AssetEntity asset) {
+    return _thumbFutures.putIfAbsent(
+      asset.id,
+      () => asset.thumbnailDataWithSize(const ThumbnailSize(300, 300)),
+    );
+  }
+
+  Future<Uint8List?> _getPreviewFuture(AssetEntity asset) {
+    return _previewFutures.putIfAbsent(asset.id, () {
+      final w = asset.width;
+      final h = asset.height;
+      const maxSide = 1000;
+      int thumbW;
+      int thumbH;
+      if (w >= h && w > 0 && h > 0) {
+        thumbW = maxSide;
+        thumbH = (maxSide * h / w).round();
+      } else if (h > 0 && w > 0) {
+        thumbH = maxSide;
+        thumbW = (maxSide * w / h).round();
+      } else {
+        thumbW = maxSide;
+        thumbH = maxSide;
+      }
+      return asset.thumbnailDataWithSize(ThumbnailSize(thumbW, thumbH));
+    });
   }
 
   void _prefetchAssetFile(AssetEntity? asset) {
@@ -339,6 +380,14 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       });
       _applySource(_source);
       _saveCache();
+
+      // Pre-warm first 20 grid thumbnails so they're ready before first paint.
+      final preload = _assets.take(20).toList(growable: false);
+      Future.microtask(() {
+        for (final asset in preload) {
+          _getThumbFuture(asset);
+        }
+      });
     }
   }
 
@@ -405,14 +454,19 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
 
   void _onModeTap(UploadMode mode) {
     if (_mode == mode) return;
+    if (_mode == UploadMode.live && mode != UploadMode.live) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
     if (widget.isAdFlow) {
       if (mode != UploadMode.post && mode != UploadMode.reel) return;
       if (_restoreFromCache(mode)) return;
       setState(() {
         _mode = mode;
-        _selectedIds.clear();
-        _selectedOrder.clear();
-        _currentAsset = null;
+        if (mode == UploadMode.reel) {
+          _selectedIds.clear();
+          _selectedOrder.clear();
+          _currentAsset = null;
+        }
       });
       _loadGalleryMedia();
       return;
@@ -421,11 +475,13 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
     if (_restoreFromCache(mode)) return;
     setState(() {
       _mode = mode;
+      if (mode == UploadMode.reel) {
+        _selectedIds.clear();
+        _selectedOrder.clear();
+        _currentAsset = null;
+      }
     });
     if (mode == UploadMode.post || mode == UploadMode.reel) {
-      _selectedIds.clear();
-      _selectedOrder.clear();
-      _currentAsset = null;
       _loadGalleryMedia();
     }
   }
@@ -451,7 +507,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         }
       });
       _prefetchAssetFile(asset);
-      _saveCache();
+      _scheduleSaveCache();
       return;
     }
 
@@ -475,7 +531,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
       }
     });
     _prefetchAssetFile(asset);
-    _saveCache();
+    _scheduleSaveCache();
   }
 
   Future<void> _handleNext() async {
@@ -745,11 +801,11 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                         hasSelection: _hasSelection,
                         galleryPermissionLimited: _galleryPermissionLimited,
                         sourceLabel: _sourceLabel,
-                        sourceBarKey:
-                            index == modeIndex ? _sourceBarKey : GlobalKey(),
+                        sourceBarKey: _tabSourceBarKeys[index],
                         onSourceBarTap: () {
-                          final box =
-                              _sourceBarKey.currentContext?.findRenderObject();
+                          final box = _tabSourceBarKeys[modeIndex]
+                              .currentContext
+                              ?.findRenderObject();
                           if (box is RenderBox) {
                             final pos = box.localToGlobal(Offset.zero);
                             _sourceMenuPosition = Offset(
@@ -764,17 +820,19 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                         onMultiSelectToggle: () => setState(() {
                           _multiSelect = !_multiSelect;
                           if (!_multiSelect) {
-                            _selectedIds..clear();
+                            _selectedIds.clear();
                             _selectedOrder.clear();
                             if (_currentAsset != null) {
                               _selectedIds.add(_currentAsset!.id);
                               _selectedOrder.add(_currentAsset!.id);
                             }
                           }
-                          _saveCache();
+                          _scheduleSaveCache();
                         }),
                         onLoadGalleryMedia: _loadGalleryMedia,
                         onAssetTap: _onAssetTap,
+                        getThumbFuture: _getThumbFuture,
+                        getPreviewFuture: _getPreviewFuture,
                         onCameraTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -958,6 +1016,8 @@ class _UploadPage extends StatelessWidget {
   final VoidCallback onMultiSelectToggle;
   final VoidCallback onLoadGalleryMedia;
   final ValueChanged<AssetEntity> onAssetTap;
+  final Future<Uint8List?> Function(AssetEntity) getThumbFuture;
+  final Future<Uint8List?> Function(AssetEntity) getPreviewFuture;
   final VoidCallback onCameraTap;
   final VoidCallback? onNext;
   final AssetEntity? firstSelectedAsset;
@@ -979,6 +1039,8 @@ class _UploadPage extends StatelessWidget {
     required this.onMultiSelectToggle,
     required this.onLoadGalleryMedia,
     required this.onAssetTap,
+    required this.getThumbFuture,
+    required this.getPreviewFuture,
     required this.onCameraTap,
     this.onNext,
     this.firstSelectedAsset,
@@ -1007,26 +1069,7 @@ class _UploadPage extends StatelessWidget {
                                       size: 64, color: Colors.grey[700]),
                                 )
                               : FutureBuilder<Uint8List?>(
-                                  future: () {
-                                    final asset = currentAsset!;
-                                    final w = asset.width;
-                                    final h = asset.height;
-                                    const maxSide = 1000;
-                                    int thumbW;
-                                    int thumbH;
-                                    if (w >= h && w > 0 && h > 0) {
-                                      thumbW = maxSide;
-                                      thumbH = (maxSide * h / w).round();
-                                    } else if (h > 0 && w > 0) {
-                                      thumbH = maxSide;
-                                      thumbW = (maxSide * w / h).round();
-                                    } else {
-                                      thumbW = maxSide;
-                                      thumbH = maxSide;
-                                    }
-                                    return asset.thumbnailDataWithSize(
-                                        ThumbnailSize(thumbW, thumbH));
-                                  }(),
+                                  future: getPreviewFuture(currentAsset!),
                                   builder: (context, snap) {
                                     if (snap.connectionState !=
                                             ConnectionState.done ||
@@ -1237,88 +1280,90 @@ class _UploadPage extends StatelessWidget {
                             final orderIndex = isSelected
                                 ? selectedOrder.indexOf(asset.id)
                                 : -1;
-                            return GestureDetector(
-                              onTap: () => onAssetTap(asset),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  FutureBuilder<Uint8List?>(
-                                    future: asset.thumbnailDataWithSize(
-                                        const ThumbnailSize(300, 300)),
-                                    builder: (context, snap) {
-                                      if (snap.connectionState !=
-                                              ConnectionState.done ||
-                                          snap.data == null) {
-                                        return Container(
-                                          color: Colors.grey[850],
-                                          child: const Center(
-                                            child: Icon(Icons.image,
-                                                color: Colors.white38),
-                                          ),
+                            return RepaintBoundary(
+                              child: GestureDetector(
+                                onTap: () => onAssetTap(asset),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    FutureBuilder<Uint8List?>(
+                                      future: getThumbFuture(asset),
+                                      builder: (context, snap) {
+                                        if (snap.connectionState !=
+                                                ConnectionState.done ||
+                                            snap.data == null) {
+                                          return Container(
+                                            color: Colors.grey[850],
+                                            child: const Center(
+                                              child: Icon(Icons.image,
+                                                  color: Colors.white38),
+                                            ),
+                                          );
+                                        }
+                                        return Image.memory(
+                                          snap.data!,
+                                          fit: BoxFit.cover,
                                         );
-                                      }
-                                      return Image.memory(
-                                        snap.data!,
-                                        fit: BoxFit.cover,
-                                      );
-                                    },
-                                  ),
-                                  if (asset.type == AssetType.video)
-                                    Positioned(
-                                      bottom: 4,
-                                      right: 4,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 4, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black54,
-                                          borderRadius:
-                                              BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          '${asset.duration}s',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
+                                      },
+                                    ),
+                                    if (asset.type == AssetType.video)
+                                      Positioned(
+                                        bottom: 4,
+                                        right: 4,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 4, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black54,
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            '${asset.duration}s',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  if (multiSelect)
-                                    Align(
-                                      alignment: Alignment.topRight,
-                                      child: Container(
-                                        margin: const EdgeInsets.all(6),
-                                        width: 20,
-                                        height: 20,
-                                        decoration: BoxDecoration(
-                                          color: isSelected
-                                              ? Colors.white
-                                                  .withValues(alpha: 0.9)
-                                              : Colors.black
-                                                  .withValues(alpha: 0.25),
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.8),
-                                            width: 1,
+                                    if (multiSelect)
+                                      Align(
+                                        alignment: Alignment.topRight,
+                                        child: Container(
+                                          margin: const EdgeInsets.all(6),
+                                          width: 20,
+                                          height: 20,
+                                          decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? Colors.white
+                                                    .withValues(alpha: 0.9)
+                                                : Colors.black
+                                                    .withValues(alpha: 0.25),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.8),
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: isSelected
+                                                ? Text(
+                                                    '${orderIndex + 1}',
+                                                    style: const TextStyle(
+                                                      color: Colors.black,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  )
+                                                : const SizedBox.shrink(),
                                           ),
                                         ),
-                                        child: Center(
-                                          child: isSelected
-                                              ? Text(
-                                                  '${orderIndex + 1}',
-                                                  style: const TextStyle(
-                                                    color: Colors.black,
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                )
-                                              : const SizedBox.shrink(),
-                                        ),
                                       ),
-                                    ),
-                                ],
+                                  ],
+                                ),
                               ),
                             );
                           },
@@ -1379,8 +1424,7 @@ class _UploadPage extends StatelessWidget {
                                           return Container(color: Colors.black);
                                         }
                                         return FutureBuilder<Uint8List?>(
-                                          future: asset.thumbnailDataWithSize(
-                                              const ThumbnailSize(300, 300)),
+                                          future: getThumbFuture(asset),
                                           builder: (context, snap) {
                                             if (snap.connectionState !=
                                                     ConnectionState.done ||
