@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/feed_post_model.dart';
@@ -505,46 +504,148 @@ class _PostCardState extends State<PostCard> {
   Widget _buildTweetCard(FeedPost post, ThemeData theme, bool isDark) {
     final colors = theme.colorScheme;
     final primaryText = isDark ? Colors.white : Colors.black;
-    final secondaryText = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
     final mediaUrls = post.mediaUrls;
     final content = (post.caption ?? '').trim();
 
     Widget media() {
       if (mediaUrls.isEmpty) return const SizedBox.shrink();
-      final pageController = _pageController;
+
+      final isCarousel = mediaUrls.length > 1;
+      final aspect = post.aspectRatio ?? 4 / 5;
+
+      final safeIndex = _mediaIndex < 0
+          ? 0
+          : (_mediaIndex >= mediaUrls.length ? mediaUrls.length - 1 : _mediaIndex);
+      final activeUrl = isCarousel ? mediaUrls[safeIndex] : mediaUrls.first;
+      final activeIsVideo = _isVideoUrl(activeUrl);
+
+      Widget mediaBody;
+      if (!isCarousel) {
+        mediaBody = RepaintBoundary(
+          child: DynamicMediaWidget(
+            id: post.id,
+            url: mediaUrls.first,
+            thumbnailUrl: post.thumbnailUrl,
+            isVideo: _isVideoUrl(mediaUrls.first),
+            isActive: widget.isActive && widget.isTabActive,
+            initialAspectRatio: post.aspectRatio,
+            filterName: null,
+            adjustments: null,
+          ),
+        );
+      } else {
+        mediaBody = AspectRatio(
+          aspectRatio: aspect,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: mediaUrls.length,
+            onPageChanged: (i) => setState(() => _mediaIndex = i),
+            itemBuilder: (context, i) {
+              final url = mediaUrls[i];
+              final isVideo = _isVideoUrl(url);
+              return RepaintBoundary(
+                child: DynamicMediaWidget(
+                  id: '${post.id}_$i',
+                  url: url,
+                  thumbnailUrl: post.thumbnailUrl,
+                  isVideo: isVideo,
+                  isActive: widget.isActive && widget.isTabActive && _mediaIndex == i,
+                  initialAspectRatio: post.aspectRatio,
+                  filterName: null,
+                  adjustments: null,
+                ),
+              );
+            },
+          ),
+        );
+      }
+
       return Padding(
         padding: const EdgeInsets.only(top: 10),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(14),
-          child: SizedBox(
-            height: 260,
-            child: PageView.builder(
-              controller: pageController,
-              itemCount: mediaUrls.length,
-              onPageChanged: (i) => setState(() => _mediaIndex = i),
-              itemBuilder: (context, index) {
-                final url = mediaUrls[index];
-                return GestureDetector(
-                  onDoubleTap: _handleDoubleTap,
-                  child: ColoredBox(
-                    color: isDark ? const Color(0xFF111827) : const Color(0xFFF3F4F6),
-                    child: SafeNetworkImage(
-                      url: url,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      height: double.infinity,
-                      placeholder: const Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onDoubleTap: _handleDoubleTap,
+            onTap: () => widget.onComment?.call(),
+            child: Stack(
+              children: [
+                mediaBody,
+                if (isCarousel)
+                  Positioned(
+                    bottom: 10,
+                    left: 0,
+                    right: 0,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        mediaUrls.length,
+                        (i) {
+                          final active = i == _mediaIndex;
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: active ? 10 : 6,
+                            height: 6,
+                            margin: const EdgeInsets.symmetric(horizontal: 3),
+                            decoration: BoxDecoration(
+                              color: active
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.4),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          );
+                        },
                       ),
-                      errorWidget: const Center(child: Icon(Icons.broken_image)),
                     ),
                   ),
-                );
-              },
+                if (activeIsVideo)
+                  Positioned(
+                    bottom: 10,
+                    right: 10,
+                    child: GestureDetector(
+                      onTap: _toggleMuted,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Center(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 180),
+                        opacity: _showDoubleTapLike ? 1 : 0,
+                        child: AnimatedScale(
+                          duration: const Duration(milliseconds: 260),
+                          scale: _showDoubleTapLike ? 1 : 0.6,
+                          curve: Curves.easeOutBack,
+                          child: const Icon(
+                            Icons.favorite,
+                            size: 90,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black54,
+                                blurRadius: 14,
+                                offset: Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

@@ -7,6 +7,16 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/api_config.dart';
 import 'api_exceptions.dart';
 
+class MultipartBytesFile {
+  final List<int> bytes;
+  final String filename;
+
+  const MultipartBytesFile({
+    required this.bytes,
+    required this.filename,
+  });
+}
+
 /// Centralised HTTP client for the REST API.
 ///
 /// * Automatically attaches the stored JWT Bearer token.
@@ -234,12 +244,14 @@ class ApiClient {
     required String filename,
     String fileField = 'file',
     Map<String, String>? fields,
+    Map<String, String>? extraFields,
   }) async {
     try {
       final request = http.MultipartRequest('POST', _uri(path));
       final token = await getToken();
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
       if (fields != null) request.fields.addAll(fields);
+      if (extraFields != null) request.fields.addAll(extraFields);
       final ct = _contentTypeForFilename(filename);
       request.files.add(http.MultipartFile.fromBytes(
         fileField,
@@ -247,6 +259,43 @@ class ApiClient {
         filename: filename,
         contentType: ct,
       ));
+      final streamed = await request.send().timeout(ApiConfig.timeout);
+      final response = await http.Response.fromStream(streamed);
+      return _handleResponse(response);
+    } on SocketException {
+      throw NetworkException();
+    }
+  }
+
+  /// Multipart `POST` from multiple files (as bytes).
+  ///
+  /// Matches the React web app behaviour: send multiple `fileField` parts.
+  Future<dynamic> multipartPostManyBytes(
+    String path, {
+    required List<MultipartBytesFile> files,
+    String fileField = 'file',
+    Map<String, String>? fields,
+    Map<String, String>? extraFields,
+  }) async {
+    if (files.isEmpty) return <String, dynamic>{};
+    try {
+      final request = http.MultipartRequest('POST', _uri(path));
+      final token = await getToken();
+      if (token != null) request.headers['Authorization'] = 'Bearer $token';
+      if (fields != null) request.fields.addAll(fields);
+      if (extraFields != null) request.fields.addAll(extraFields);
+
+      for (final f in files) {
+        if (f.bytes.isEmpty) continue;
+        final ct = _contentTypeForFilename(f.filename);
+        request.files.add(http.MultipartFile.fromBytes(
+          fileField,
+          f.bytes,
+          filename: f.filename,
+          contentType: ct,
+        ));
+      }
+
       final streamed = await request.send().timeout(ApiConfig.timeout);
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
@@ -342,6 +391,11 @@ class ApiClient {
     if (n.endsWith('.gif')) return MediaType('image', 'gif');
     if (n.endsWith('.mp4')) return MediaType('video', 'mp4');
     if (n.endsWith('.mov')) return MediaType('video', 'quicktime');
+    if (n.endsWith('.aac')) return MediaType('audio', 'aac');
+    if (n.endsWith('.m4a')) return MediaType('audio', 'mp4');
+    if (n.endsWith('.mp3')) return MediaType('audio', 'mpeg');
+    if (n.endsWith('.wav')) return MediaType('audio', 'wav');
+    if (n.endsWith('.ogg') || n.endsWith('.oga')) return MediaType('audio', 'ogg');
     return null;
   }
 }

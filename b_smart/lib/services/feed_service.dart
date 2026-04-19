@@ -314,10 +314,13 @@ class FeedService {
           final postId = item['_id'] as String? ?? item['id'] as String? ?? '';
           // The API nests the author info inside `user_id` as a populated object.
           Map<String, dynamic> user = {};
-          if (item['user_id'] is Map) {
-            user = Map<String, dynamic>.from(item['user_id'] as Map);
-          } else if (item['users'] is Map) {
-            user = Map<String, dynamic>.from(item['users'] as Map);
+          for (final key
+              in ['user_id', 'users', 'author', 'user', 'created_by', 'creator']) {
+            final val = item[key];
+            if (val is Map) {
+              user = Map<String, dynamic>.from(val);
+              break;
+            }
           }
 
           final rawLikesAny = (item['likes'] as List<dynamic>?) ??
@@ -779,20 +782,62 @@ class FeedService {
               ? Map<String, dynamic>.from(vendorAny)
               : <String, dynamic>{};
 
-          final authorName =
-              (user['username'] as String?) ?? (item['username'] as String?);
+          final authorName = (user['username'] ?? item['username'])?.toString();
           final vendorName = (vendor['business_name'] ??
                   vendor['name'] ??
                   vendor['company_name'] ??
                   vendor['brand_name'])
               ?.toString();
-          final resolvedUserName =
-              (isAdItem ? (authorName ?? vendorName) : authorName) ??
-                  vendorName ??
-                  'user';
+          String? resolvedUserName =
+              (isAdItem ? (authorName ?? vendorName) : authorName);
+          if (resolvedUserName == null || resolvedUserName.trim().isEmpty) {
+            final fallback = (user['full_name'] ??
+                    user['name'] ??
+                    item['full_name'])
+                ?.toString();
+            if (fallback != null && fallback.trim().isNotEmpty) {
+              resolvedUserName = fallback;
+            }
+          }
+          if (resolvedUserName == null || resolvedUserName.trim().isEmpty) {
+            resolvedUserName = vendorName;
+          }
+          resolvedUserName =
+              (resolvedUserName != null && resolvedUserName.trim().isNotEmpty)
+                  ? resolvedUserName.trim()
+                  : 'user';
           final resolvedFullName = (user['full_name'] as String?) ??
               (item['full_name'] as String?) ??
               vendorName;
+
+          String? _firstNonEmptyString(Iterable<dynamic> candidates) {
+            for (final c in candidates) {
+              final s = c?.toString();
+              if (s == null) continue;
+              final trimmed = s.trim();
+              if (trimmed.isNotEmpty) return trimmed;
+            }
+            return null;
+          }
+
+          final avatarCandidate = _firstNonEmptyString([
+            user['avatar_url'],
+            item['userAvatar'],
+            vendor['logo_url'],
+            vendor['avatar_url'],
+            user['profile_picture'],
+            user['profilePicture'],
+            user['photo_url'],
+            user['photoUrl'],
+            user['photo'],
+            user['image'],
+            user['picture'],
+            item['profile_picture'],
+            item['avatar'],
+          ]);
+          final resolvedAvatar = avatarCandidate != null
+              ? UrlHelper.normalizeUrl(avatarCandidate)
+              : null;
 
           // Never cache-bust thumbnails — it breaks CachedNetworkImage disk cache
           // and causes the grey placeholder to show on every render.
@@ -805,10 +850,7 @@ class FeedService {
             userId: authorId,
             userName: resolvedUserName,
             fullName: resolvedFullName,
-            userAvatar: user['avatar_url'] as String? ??
-                (item['userAvatar'] as String?) ??
-                (vendor['logo_url'] as String?) ??
-                (vendor['avatar_url'] as String?),
+            userAvatar: resolvedAvatar,
             isVerified: user['is_verified'] as bool? ?? false,
             mediaType: mediaType,
             mediaUrls: mediaUrls,

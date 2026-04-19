@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'api_client.dart';
 
 /// REST API wrapper for `/chat` endpoints.
@@ -104,5 +106,76 @@ class ChatApi {
       fileField: 'media',
     );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> uploadChatMediaManyBytes({
+    required String conversationId,
+    required List<MultipartBytesFile> files,
+  }) async {
+    final res = await _client.multipartPostManyBytes(
+      '/chat/conversations/$conversationId/media',
+      files: files,
+      fileField: 'media',
+    );
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> uploadVoiceMessage({
+    required String conversationId,
+    required Uint8List audioBytes,
+    required int durationSeconds,
+    String filename = 'voice-message.aac',
+    String? replyTo,
+  }) async {
+    final extra = <String, String>{
+      'duration': durationSeconds.toString(),
+    };
+    final trimmedReply = replyTo?.toString().trim();
+    if (trimmedReply != null && trimmedReply.isNotEmpty) {
+      extra['replyTo'] = trimmedReply;
+    }
+    final res = await _client.multipartPostBytes(
+      '/chat/conversations/$conversationId/voice',
+      bytes: audioBytes,
+      filename: filename,
+      fileField: 'audio',
+      extraFields: extra,
+    );
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  /// Best-effort (backend-dependent) reaction support.
+  Future<Map<String, dynamic>> addMessageReaction({
+    required String messageId,
+    required String emoji,
+  }) async {
+    final e = emoji.trim();
+    if (e.isEmpty) return <String, dynamic>{};
+    final res = await _client.post(
+      '/chat/messages/$messageId/reaction',
+      body: {'emoji': e},
+    );
+    if (res is Map<String, dynamic>) {
+      final msg = res['message'];
+      if (msg is Map) return Map<String, dynamic>.from(msg);
+      final data = res['data'];
+      if (data is Map) return Map<String, dynamic>.from(data);
+      return res;
+    }
+    return <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> removeMessageReaction({
+    required String messageId,
+  }) async {
+    final res = await _client.delete('/chat/messages/$messageId/reaction');
+    if (res is Map<String, dynamic>) {
+      final msg = res['message'];
+      if (msg is Map) return Map<String, dynamic>.from(msg);
+      final data = res['data'];
+      if (data is Map) return Map<String, dynamic>.from(data);
+      return res;
+    }
+    return <String, dynamic>{};
   }
 }

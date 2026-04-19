@@ -24,6 +24,7 @@ class SafeNetworkImage extends StatelessWidget {
   final Widget? errorWidget;
   final String? cacheKey;
   final String? debugLabel;
+  final bool assumeRaster;
 
   const SafeNetworkImage({
     super.key,
@@ -37,6 +38,7 @@ class SafeNetworkImage extends StatelessWidget {
     this.errorWidget,
     this.cacheKey,
     this.debugLabel,
+    this.assumeRaster = false,
   });
 
   static final Map<String, Future<_ProbeResult>> _probeCache =
@@ -55,7 +57,7 @@ class SafeNetworkImage extends StatelessWidget {
     if (kindFromExt == _ImageKind.unsupported) {
       return _error();
     }
-    if (kindFromExt == _ImageKind.raster) {
+    if (assumeRaster || kindFromExt == _ImageKind.raster) {
       return _cachedRaster();
     }
 
