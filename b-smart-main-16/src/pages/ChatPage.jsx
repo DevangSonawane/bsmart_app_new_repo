@@ -3,7 +3,6 @@ import {
   ChevronLeft,
   ImagePlus,
   MessageCircle,
-  Mic,
   Search,
   SendHorizontal,
   Smile,
@@ -15,6 +14,8 @@ import EmojiPicker from 'emoji-picker-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import VoiceMessageBubble from '../components/VoiceMessageBubble';
+import VoiceRecorder from '../components/VoiceRecorder';
 import * as chatService from '../services/chatService';
 import {
   emitStopTyping,
@@ -118,6 +119,7 @@ const messagePreview = (message, isMine, name) => {
   if (!message) return 'Start chatting';
   if (message.isDeleted) return 'Message unsent';
   if (message.text) return isMine ? `You: ${message.text}` : message.text;
+  if (message.mediaType === 'audio') return isMine ? 'You sent a voice message 🎤' : `${name} sent a voice message 🎤`;
   if (message.mediaUrl) return isMine ? 'You sent an attachment.' : `${name} sent an attachment.`;
   return 'Start chatting';
 };
@@ -130,6 +132,7 @@ const mobileBubblePreview = (message, isMine, name) => {
 const mobileListPreview = (message, isMine, name) => {
   if (!message) return 'Start chatting';
   if (message.isDeleted) return 'Message unsent';
+  if (message.mediaType === 'audio') return isMine ? 'You sent a voice message 🎤' : `${name} sent a voice message 🎤`;
   if (message.mediaUrl) return isMine ? 'You sent an attachment.' : `${name} sent an attachment.`;
   if (message.text) return isMine ? `You: ${message.text}` : message.text;
   return 'Start chatting';
@@ -259,6 +262,7 @@ export default function ChatPage() {
   const [contextMenu, setContextMenu] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [reactionPickerFor, setReactionPickerFor] = useState(null);
   const [hoveredMessageId, setHoveredMessageId] = useState(null);
@@ -579,6 +583,18 @@ export default function ChatPage() {
     finally { setUploading(false); event.target.value = ''; }
   };
 
+  const handleVoiceSend = async (audioBlob, duration) => {
+    if (!activeConversation?._id) return;
+    try {
+      await chatService.uploadVoiceMessage(activeConversation._id, audioBlob, duration);
+      setReplyTo(null);
+      stopTyping();
+    } catch (error) {
+      console.error('Voice message send failed:', error);
+    }
+    setIsRecording(false);
+  };
+
   const handleDelete = async (message) => {
     if (!message?._id || !activeConversation?._id) return;
     try {
@@ -677,11 +693,15 @@ export default function ChatPage() {
         ) : null}
         {message.mediaUrl ? (
           <div className="space-y-2">
-            <div className={mediaFrameClass}>
-              {message.mediaType === 'video' || isVideoUrl(message.mediaUrl)
-                ? <video src={message.mediaUrl} controls className="block max-h-80 w-full object-cover outline-none border-0 ring-0 shadow-none" />
-                : <img src={message.mediaUrl} alt="attachment" className="block max-h-80 w-full object-cover outline-none border-0 ring-0 shadow-none" />}
-            </div>
+            {message.mediaType === 'audio' ? (
+              <VoiceMessageBubble message={message} isMine={mine} />
+            ) : (
+              <div className={mediaFrameClass}>
+                {message.mediaType === 'video' || isVideoUrl(message.mediaUrl)
+                  ? <video src={message.mediaUrl} controls className="block max-h-80 w-full object-cover outline-none border-0 ring-0 shadow-none" />
+                  : <img src={message.mediaUrl} alt="attachment" className="block max-h-80 w-full object-cover outline-none border-0 ring-0 shadow-none" />}
+              </div>
+            )}
             {message.text ? (
               <div className={`${bubbleClass} overflow-hidden px-3 py-2.5 ${mine ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
                 <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.text}</p>
@@ -1112,29 +1132,40 @@ export default function ChatPage() {
                     </div>
                   )}
                   <div className="flex items-center gap-2 rounded-[28px] bg-gray-50 dark:bg-[#111111] border border-gray-200 dark:border-white/5 px-3 py-2 min-h-[52px] shadow-sm focus-within:shadow-md focus-within:border-gray-300 dark:focus-within:border-white/20 transition-all">
-                    <button
-                      type="button"
-                      onClick={() => setShowEmojiPicker((prev) => !prev)}
-                      className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
-                      aria-label="Toggle emoji picker"
-                    >
-                      <Smile size={20} />
-                    </button>
-                    <input
-                      ref={inputRef}
-                      value={input}
-                      onChange={(event) => handleInputChange(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Escape' && showEmojiPicker) { setShowEmojiPicker(false); return; }
-                        if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(); }
-                      }}
-                      placeholder="Message..."
-                      className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-white min-w-0 px-1"
-                    />
-                    <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"><ImagePlus size={20} /></button>
-                    <button className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors hidden sm:block"><Sticker size={20} /></button>
-                    <button className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"><Mic size={20} /></button>
-                    {input.trim() && !sending ? (
+                    {!isRecording ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setShowEmojiPicker((prev) => !prev)}
+                          className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                          aria-label="Toggle emoji picker"
+                        >
+                          <Smile size={20} />
+                        </button>
+                        <input
+                          ref={inputRef}
+                          value={input}
+                          onChange={(event) => handleInputChange(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape' && showEmojiPicker) { setShowEmojiPicker(false); return; }
+                            if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(); }
+                          }}
+                          placeholder="Message..."
+                          className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-white min-w-0 px-1"
+                        />
+                        <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"><ImagePlus size={20} /></button>
+                        <button className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors hidden sm:block"><Sticker size={20} /></button>
+                      </>
+                    ) : null}
+                    <div className={isRecording ? 'flex-1' : 'flex-shrink-0'}>
+                      <VoiceRecorder
+                        onSend={handleVoiceSend}
+                        onCancel={() => setIsRecording(false)}
+                        onStateChange={setIsRecording}
+                        disabled={uploading || sending}
+                      />
+                    </div>
+                    {!isRecording && input.trim() && !sending ? (
                       <button
                         onClick={() => handleSend()}
                         disabled={sending || uploading}

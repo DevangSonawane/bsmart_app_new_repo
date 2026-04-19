@@ -19,6 +19,7 @@ const CONTENT_LABELS = {
   story: 'story',
   ad: 'ad',
   comment: 'comment',
+  tweet: 'tweet',
 };
 
 const ContentReportModal = ({

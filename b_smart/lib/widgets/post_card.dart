@@ -170,6 +170,9 @@ class _PostCardState extends State<PostCard> {
     final post = widget.post;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    if (post.isTweet) {
+      return _buildTweetCard(post, theme, isDark);
+    }
     final mediaUrls = post.mediaUrls;
     final isCarousel = _isCarousel;
     final aspect = post.aspectRatio ?? 4 / 5;
@@ -496,6 +499,134 @@ class _PostCardState extends State<PostCard> {
         _buildActionBar(post, theme),
         _buildPostDetails(post, theme),
       ],
+    );
+  }
+
+  Widget _buildTweetCard(FeedPost post, ThemeData theme, bool isDark) {
+    final colors = theme.colorScheme;
+    final primaryText = isDark ? Colors.white : Colors.black;
+    final secondaryText = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final mediaUrls = post.mediaUrls;
+    final content = (post.caption ?? '').trim();
+
+    Widget media() {
+      if (mediaUrls.isEmpty) return const SizedBox.shrink();
+      final pageController = _pageController;
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(
+            height: 260,
+            child: PageView.builder(
+              controller: pageController,
+              itemCount: mediaUrls.length,
+              onPageChanged: (i) => setState(() => _mediaIndex = i),
+              itemBuilder: (context, index) {
+                final url = mediaUrls[index];
+                return GestureDetector(
+                  onDoubleTap: _handleDoubleTap,
+                  child: ColoredBox(
+                    color: isDark ? const Color(0xFF111827) : const Color(0xFFF3F4F6),
+                    child: SafeNetworkImage(
+                      url: url,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      placeholder: const Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                      errorWidget: const Center(child: Icon(Icons.broken_image)),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(
+            color: colors.onSurface.withValues(alpha: 0.08),
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(post, isDark, theme),
+            if (content.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+                child: Text(
+                  content,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: primaryText,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+            media(),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _buildTweetActionBar(post, theme),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+              child: Text(
+                '${post.likes} likes',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: primaryText,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTweetActionBar(FeedPost post, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          IconButton(
+            iconSize: 22,
+            icon: Icon(
+              post.isLiked ? Icons.favorite : LucideIcons.heart,
+              color: post.isLiked ? Colors.red : null,
+            ),
+            onPressed: widget.onLike,
+          ),
+          if (!post.commentsDisabled)
+            IconButton(
+              iconSize: 22,
+              icon: const Icon(LucideIcons.messageCircle),
+              onPressed: widget.onComment,
+            ),
+          IconButton(
+            iconSize: 22,
+            icon: const Icon(LucideIcons.send),
+            onPressed: widget.onShare,
+          ),
+          const Spacer(),
+        ],
+      ),
     );
   }
 

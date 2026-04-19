@@ -57,3 +57,17 @@ export const uploadChatMedia = async (conversationId, files) => {
 
   return response.data;
 };
+
+export const uploadVoiceMessage = async (conversationId, audioBlob, duration) => {
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'voice-message.webm');
+  formData.append('duration', String(Math.round(duration)));
+
+  const response = await api.post(`/chat/conversations/${conversationId}/voice`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return response.data;
+};

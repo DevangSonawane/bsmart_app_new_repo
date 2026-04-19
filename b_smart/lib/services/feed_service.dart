@@ -774,6 +774,7 @@ class FeedService {
               (item['item_type'] ?? item['itemType'] ?? '').toString();
           final vendorAny = item['vendor_id'] ?? item['vendorId'];
           final isAdItem = itemType.toLowerCase() == 'ad' || vendorAny != null;
+          final isTweetItem = itemType.toLowerCase() == 'tweet';
           final vendor = vendorAny is Map
               ? Map<String, dynamic>.from(vendorAny)
               : <String, dynamic>{};
@@ -816,7 +817,10 @@ class FeedService {
             mediaFilters: mediaFilters.isEmpty ? null : mediaFilters,
             mediaAdjustments:
                 mediaAdjustments.isEmpty ? null : mediaAdjustments,
-            caption: item['caption'] as String?,
+            caption: (isTweetItem
+                    ? (item['content'] ?? item['caption'])
+                    : item['caption'])
+                as String?,
             hashtags: ((item['tags'] as List<dynamic>?) ?? [])
                 .map((e) => e.toString())
                 .toList(),
@@ -841,6 +845,7 @@ class FeedService {
                 .toList(),
             isShared: false,
             isAd: isAdItem,
+            isTweet: isTweetItem,
             commentsDisabled: item['turn_off_commenting'] ??
                 item['comments_disabled'] ??
                 item['commentsDisabled'] ??

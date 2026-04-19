@@ -1,6 +1,8 @@
 import 'package:b_smart/api/api.dart';
 import 'package:b_smart/utils/url_helper.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:typed_data';
 
 class TweetComposerPage extends StatefulWidget {
   final String? username;
@@ -21,6 +23,9 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
 
   late final TextEditingController _controller;
   Map<String, dynamic>? _me;
+  final ImagePicker _picker = ImagePicker();
+  final List<_TweetDraftMedia> _media = [];
+  bool _posting = false;
 
   @override
   void initState() {
@@ -78,6 +83,85 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
       setState(() => _me = normalized);
     } catch (_) {
       // ignore (not authenticated / offline)
+    }
+  }
+
+  Future<void> _pickImages() async {
+    try {
+      final picked = await _picker.pickMultiImage(imageQuality: 90);
+      if (picked.isEmpty) return;
+      final remaining = 4 - _media.length;
+      if (remaining <= 0) return;
+      final toAdd = picked.take(remaining).toList();
+      final next = <_TweetDraftMedia>[];
+      for (final file in toAdd) {
+        final bytes = await file.readAsBytes();
+        if (bytes.isEmpty) continue;
+        next.add(_TweetDraftMedia(filename: file.name, bytes: bytes));
+      }
+      if (!mounted || next.isEmpty) return;
+      setState(() => _media.addAll(next));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to pick images')),
+      );
+    }
+  }
+
+  String _extractUploadUrl(Map<String, dynamic> payload) {
+    String pick(dynamic v) {
+      final s = (v ?? '').toString().trim();
+      return UrlHelper.normalizeUrl(s);
+    }
+
+    final mediaAny = payload['media'];
+    if (mediaAny is Map) {
+      final url = pick(mediaAny['url'] ?? mediaAny['fileUrl'] ?? mediaAny['file_url']);
+      if (url.isNotEmpty) return url;
+    }
+    final url = pick(payload['url'] ?? payload['fileUrl'] ?? payload['file_url']);
+    if (url.isNotEmpty) return url;
+    final alt = pick(payload['fileUrl'] ?? payload['file_url'] ?? payload['path']);
+    if (alt.isNotEmpty) return alt;
+    return '';
+  }
+
+  Future<void> _submit() async {
+    if (_posting) return;
+    final content = _controller.text.trim();
+    if (content.isEmpty && _media.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add text or an image to post your tweet.')),
+      );
+      return;
+    }
+    setState(() => _posting = true);
+    try {
+      final tweetMedia = <Map<String, dynamic>>[];
+      for (final m in _media) {
+        final res = await TweetsApi().uploadTweetMediaBytes(
+          bytes: m.bytes,
+          filename: m.filename.isNotEmpty ? m.filename : 'tweet_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        );
+        final url = _extractUploadUrl(res);
+        if (url.isNotEmpty) {
+          tweetMedia.add({'url': url, 'type': 'image'});
+        }
+      }
+      await TweetsApi().createTweet(
+        content: content,
+        media: tweetMedia.isEmpty ? null : tweetMedia,
+        audience: 'everyone',
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+      setState(() => _posting = false);
     }
   }
 
@@ -143,9 +227,11 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
                     ValueListenableBuilder<TextEditingValue>(
                       valueListenable: _controller,
                       builder: (context, value, child) {
-                        final canPost = value.text.trim().isNotEmpty;
+                        final canPost =
+                            (value.text.trim().isNotEmpty || _media.isNotEmpty) &&
+                                !_posting;
                         return FilledButton(
-                          onPressed: canPost ? () {} : null,
+                          onPressed: canPost ? _submit : null,
                           style: FilledButton.styleFrom(
                             backgroundColor: colors.primary,
                             foregroundColor: colors.onPrimary,
@@ -249,10 +335,59 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
                               isCollapsed: true,
                             ),
                           ),
+                          if (_media.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              height: 86,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _media.length,
+                                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                                itemBuilder: (context, index) {
+                                  final item = _media[index];
+                                  return Stack(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(14),
+                                        child: Image.memory(
+                                          item.bytes,
+                                          width: 86,
+                                          height: 86,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 6,
+                                        right: 6,
+                                        child: InkWell(
+                                          onTap: _posting
+                                              ? null
+                                              : () => setState(() => _media.removeAt(index)),
+                                          child: Container(
+                                            width: 22,
+                                            height: 22,
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(alpha: 0.55),
+                                              borderRadius: BorderRadius.circular(999),
+                                            ),
+                                            child: const Icon(
+                                              Icons.close,
+                                              size: 14,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 10),
                           Row(
                             children: [
-                              actionIcon(Icons.image_outlined),
+                              actionIcon(Icons.image_outlined, onTap: _posting ? null : _pickImages),
                               actionIcon(Icons.gif_box_outlined),
                               actionIcon(Icons.poll_outlined),
                             ],
@@ -269,4 +404,11 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
       ),
     );
   }
+}
+
+class _TweetDraftMedia {
+  final String filename;
+  final Uint8List bytes;
+
+  const _TweetDraftMedia({required this.filename, required this.bytes});
 }

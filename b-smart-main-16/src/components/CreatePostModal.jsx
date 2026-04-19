@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
+import EmojiPicker from 'emoji-picker-react';
 import { Image, Images, Video, X, ArrowLeft, Maximize2, Search, Copy, ZoomIn, Plus, ChevronLeft, ChevronRight, UserPlus, ChevronDown, ChevronUp, Smile, Megaphone,
   MousePointerClick, Target, Smartphone, Monitor, Calendar, Link2, Phone, Mail, MessageSquare,
-  TestTube2, CalendarClock, Zap, ShieldCheck, Tag, Globe, MapPin, Coins
+  TestTube2, CalendarClock, Zap, ShieldCheck, Tag, Globe, MapPin, Coins, FileText, Ellipsis
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 
@@ -238,6 +239,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
   useEffect(() => {
     if (isOpen) {
       setPostType(initialType);
+      setStep(initialType === 'tweet' ? 'share' : 'select');
     }
   }, [isOpen, initialType]);
 
@@ -283,6 +285,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
   const [media, setMedia] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  // Separate media state for Step 3 Ad Details — independent from steps 1-2
+  const [adMedia, setAdMedia] = useState([]);
+  const adMediaInputRef = React.useRef(null);
+  const [adMediaPreview, setAdMediaPreview] = useState(null);
+
   const [caption, setCaption] = useState('');
   const [location, setLocation] = useState('');
   const [hideLikes, setHideLikes] = useState(false);
@@ -290,6 +297,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
   const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiPickerRef = useRef(null);
   const [tags, setTags] = useState([]);
   const [showTagSearch, setShowTagSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -340,7 +348,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
   // ── NEW ad fields ──────────────────────────────────────────────────────────
   const [adTitle, setAdTitle] = useState('');
   const [adDescription, setAdDescription] = useState('');
-  const [adType, setAdType] = useState('sponsored_post');
+  const [adType, setAdType] = useState('promote');
   const [subCategory, setSubCategory] = useState('');
   const [keywords, setKeywords] = useState([]);
   const [keywordInput, setKeywordInput] = useState('');
@@ -387,6 +395,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
 
   // A/B testing
   const [abTestingEnabled, setAbTestingEnabled] = useState(false);
+
+  // Search states for accordions
+  const [countrySearch, setCountrySearch] = useState('');
+  const [stateSearch, setStateSearch] = useState('');
+  const [languageSearch, setLanguageSearch] = useState('');
 
   // Scheduling
   const [scheduleSlots, setScheduleSlots] = useState([]);
@@ -637,7 +650,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
 
   const handleFiles = async (files) => {
     const validFiles = files.filter(file => {
-      if (postType === 'post') return file.type.startsWith('image/');
+      if (postType === 'post' || postType === 'tweet') return file.type.startsWith('image/');
       if (postType === 'reel') return file.type.startsWith('video/');
       if (postType === 'ad') return file.type.startsWith('image/') || file.type.startsWith('video/');
       return file.type.startsWith('image/') || file.type.startsWith('video/');
@@ -700,7 +713,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
       }
     }));
 
-    if (step === 'select') {
+    if (postType === 'tweet') {
+      setMedia(newMedia);
+      setCurrentIndex(0);
+      setStep('share');
+    } else if (step === 'select') {
       setMedia(newMedia);
       setCurrentIndex(0);
       setTimeout(() => setStep('crop'), 0);
@@ -735,7 +752,13 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
   const handleButtonClick = () => fileInputRef.current?.click();
 
   const handleBack = () => {
+    if (postType === 'tweet' && step === 'share') {
+      handleClose();
+      return;
+    }
     if (step === 'share') {
+      setStep(postType === 'ad' ? 'adDetails' : 'edit');
+    } else if (step === 'adDetails') {
       setStep('edit');
     } else if (step === 'edit') {
       setStep('crop');
@@ -813,6 +836,12 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
       setMedia(newMedia);
       setStep('edit');
     } else if (step === 'edit') {
+      if (postType === 'ad') {
+        setStep('adDetails');
+      } else {
+        setStep('share');
+      }
+    } else if (step === 'adDetails') {
       setStep('share');
     } else if (step === 'share') {
       if (isSubmitting) return;
@@ -907,7 +936,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           const formData = new FormData();
           formData.append('file', file);
 
-          const uploadResponse = await api.post('https://api.bebsmart.in/api/upload', formData, {
+          const uploadResponse = await api.post(postType === 'tweet' ? '/tweets/upload' : 'https://api.bebsmart.in/api/upload', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
             onUploadProgress: (evt) => {
               if (evt.total) {
@@ -919,8 +948,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             }
           });
 
-          const { fileName: serverFileName, url: serverUrl, fileUrl: serverFileUrl } = uploadResponse.data;
-          const finalUrl = serverUrl || serverFileUrl;
+          const { fileName: serverFileName, url: serverUrl, fileUrl: serverFileUrl, media: uploadedTweetMedia } = uploadResponse.data;
+          const finalUrl = uploadedTweetMedia?.url || serverUrl || serverFileUrl;
 
           // Generate Filter CSS
           const filterDef = FILTERS.find(f => f.name === item.filter);
@@ -964,14 +993,19 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           const trimEnd = (item.trimEnd && item.trimEnd > 0) ? item.trimEnd : dur;
 
           // Build the media object per the API schema
-          const mediaObj = {
-            fileName: serverFileName || fileName,
-            fileUrl: finalUrl,
-            url: finalUrl,
-            media_type: item.type === 'video' ? 'video' : 'image',
-          };
+          const mediaObj = postType === 'tweet'
+            ? {
+                url: finalUrl,
+                type: 'image',
+              }
+            : {
+                fileName: serverFileName || fileName,
+                fileUrl: finalUrl,
+                url: finalUrl,
+                media_type: item.type === 'video' ? 'video' : 'image',
+              };
 
-          if (item.type === 'video') {
+          if (postType !== 'tweet' && item.type === 'video') {
             mediaObj.video_meta = {
               original_length_seconds: dur,
               selected_start: trimStart,
@@ -986,7 +1020,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             if (uploadedThumbs) {
               mediaObj.thumbnails = uploadedThumbs;
             }
-          } else {
+          } else if (postType !== 'tweet') {
             // Image editing data
             mediaObj.image_editing = {
               filter: { name: item.filter || 'Original', css: filterCss },
@@ -1002,13 +1036,15 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           }
 
           // Crop settings (for both image and video)
-          mediaObj.crop_settings = {
-            mode: 'original',
-            aspect_ratio: getAspectRatioLabel(item.aspect || item.originalAspect || 1),
-            zoom: item.zoom || 1,
-            x: item.crop?.x || 0,
-            y: item.crop?.y || 0
-          };
+          if (postType !== 'tweet') {
+            mediaObj.crop_settings = {
+              mode: 'original',
+              aspect_ratio: getAspectRatioLabel(item.aspect || item.originalAspect || 1),
+              zoom: item.zoom || 1,
+              x: item.crop?.x || 0,
+              y: item.crop?.y || 0
+            };
+          }
 
           
 
@@ -1021,7 +1057,20 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
 
         const hashtags = caption.match(/#[a-zA-Z0-9_]+/g) || [];
 
-        if (postType === 'reel') {
+        if (postType === 'tweet') {
+          if (!caption.trim() && processedMedia.length === 0) {
+            throw new Error('Add text or an image to post your tweet.');
+          }
+          const payload = {
+            content: caption.trim(),
+            media: processedMedia.filter((m) => m.url).map((m) => ({
+              url: m.url,
+              type: 'image',
+            })),
+            audience: 'everyone',
+          };
+          await api.post('/tweets', payload);
+        } else if (postType === 'reel') {
           // Reel — existing endpoint unchanged
           const payload = {
             caption,
@@ -1057,6 +1106,25 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           }
           const mediaForApi = processedMedia.map(m => { const copy = { ...m }; delete copy._fileUrl; return copy; });
 
+          // Upload adMedia files (Step 3 uploads) separately
+          const uploadedAdGallery = [];
+          for (const adFile of adMedia) {
+            try {
+              const formData = new FormData();
+              const blob = await (await fetch(adFile.url)).blob();
+              const ext = adFile.type === 'video' ? 'mp4' : 'jpg';
+              const file = new File([blob], `ad_media_${Date.now()}.${ext}`, { type: blob.type });
+              formData.append('file', file);
+              const uploadRes = await api.post('https://api.bebsmart.in/api/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+              });
+              const { fileName: fn, url: fu, fileUrl: ffu } = uploadRes.data;
+              uploadedAdGallery.push({ link: fu || ffu || '', filename: fn || '' });
+            } catch (e) {
+              console.error('adMedia upload failed', e);
+            }
+          }
+
           const adPayload = {
             type: 'ads',
             // Core
@@ -1067,8 +1135,12 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             ad_type: adType,
             content_type: media.some(m => m.type === 'video') ? 'reel' : 'post',
             status: submitMode === 'draft' ? 'draft' : 'pending',
-            // Media
+            // Media (from steps 1-2)
             media: mediaForApi,
+            // Gallery — from Step 3 ad media uploads
+            gallery: uploadedAdGallery.length > 0
+              ? uploadedAdGallery
+              : mediaForApi.map(m => ({ link: m.fileUrl || m.url || '', filename: m.fileName || '' })),
             hashtags,
             tagged_users: tags.map(t => ({
               user_id: t.user.id,
@@ -1173,7 +1245,9 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
     }
   };
 
-  const handleEmojiClick = (emoji) => {
+  const handleEmojiClick = (emojiData) => {
+    const emoji = typeof emojiData === 'string' ? emojiData : emojiData?.emoji || '';
+    if (!emoji) return;
     setCaption(prev => prev + emoji);
     setShowEmojiPicker(false);
   };
@@ -1248,11 +1322,33 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
     }
   }, [searchQuery, showTagSearch]);
 
+  useEffect(() => {
+    if (!showEmojiPicker) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (emojiPickerRef.current?.contains(event.target)) return;
+      setShowEmojiPicker(false);
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setShowEmojiPicker(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showEmojiPicker]);
+
   const handleClose = () => {
     setStep('select');
     setMedia([]);
     setCurrentIndex(0);
     setCaption('');
+    setAdMedia([]);
     
     setSelectedCategory("");
     setSelectedLanguages([]);
@@ -1341,19 +1437,23 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
       const natW = v.videoWidth  || 640;
       const natH = v.videoHeight || 360;
       const aspect = natW / natH;
-      // Strip canvas — small/compact for the filmstrip timeline UI
-      const stripH = 120;
+      // Strip canvas — doubled height for crisp filmstrip on retina/HD screens
+      const stripH = 240;
       const stripW = Math.round(stripH * aspect);
       const stripCanvas = document.createElement('canvas');
       stripCanvas.width = stripW; stripCanvas.height = stripH;
       const stripCtx = stripCanvas.getContext('2d');
+      stripCtx.imageSmoothingEnabled = true;
+      stripCtx.imageSmoothingQuality = 'high';
 
-      // Cover canvas — full native resolution (max 720p) for crisp cover photo
-      const coverH = Math.min(natH, 720);
+      // Cover canvas — full native resolution (max 1080p) for crisp cover photo
+      const coverH = Math.min(natH, 1080);
       const coverW = Math.round(coverH * aspect);
       const coverCanvas = document.createElement('canvas');
       coverCanvas.width = coverW; coverCanvas.height = coverH;
       const coverCtx = coverCanvas.getContext('2d');
+      coverCtx.imageSmoothingEnabled = true;
+      coverCtx.imageSmoothingQuality = 'high';
 
       const stripFrames = [];
       const coverFrames = [];
@@ -1361,11 +1461,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
         const t = duration > 0 ? Math.min(duration - 0.01, i) : 0;
         await new Promise(res => { v.currentTime = t; v.onseeked = res; });
         stripCtx.drawImage(v, 0, 0, stripW, stripH);
-        stripFrames.push(stripCanvas.toDataURL('image/jpeg', 0.80));
+        stripFrames.push(stripCanvas.toDataURL('image/jpeg', 0.90));
         coverCtx.drawImage(v, 0, 0, coverW, coverH);
-        coverFrames.push(coverCanvas.toDataURL('image/jpeg', 0.95));
+        coverFrames.push(coverCanvas.toDataURL('image/jpeg', 0.97));
       }
-      // Use stripFrames for timeline strip (compact), coverFrames[0] for crisp cover
+      // Use stripFrames for timeline strip, coverFrames[0] for crisp cover
       updateCurrentMedia({ thumbnails: stripFrames, coverUrl: coverFrames[0], coverFrames });
     };
     run();
@@ -1387,9 +1487,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
       const h = v.videoHeight || 360;
       canvas.width = w;
       canvas.height = h;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       await new Promise((res) => { v.currentTime = 0; v.onseeked = res; });
       ctx.drawImage(v, 0, 0, w, h);
-      updateCurrentMedia({ coverUrl: canvas.toDataURL('image/jpeg', 0.9) });
+      updateCurrentMedia({ coverUrl: canvas.toDataURL('image/jpeg', 0.97) });
     };
     run();
   }, [step, currentMedia, updateCurrentMedia]);
@@ -1402,7 +1504,9 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
         <X size={32} />
       </button>
 
-      <div className={`bg-white dark:bg-[#262626] md:max-h-[85vh] md:rounded-xl overflow-hidden flex flex-col transition-all duration-300 shadow-2xl ${step === 'select'
+      <div className={`bg-white dark:bg-[#262626] md:max-h-[85vh] md:rounded-xl overflow-hidden flex flex-col transition-all duration-300 shadow-2xl ${postType === 'tweet' && step === 'share'
+        ? 'w-full h-full md:w-[720px] md:h-auto'
+        : step === 'select'
         ? 'w-full h-full md:w-[500px] md:h-[550px]'
         : step === 'crop'
           ? 'w-full h-full md:w-[750px] md:h-[800px]'
@@ -1410,13 +1514,27 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
         }`}>
 
         {/* Header */}
-        <div className="h-[45px] border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 bg-white dark:bg-[#262626] sticky top-0 z-40">
+        <div className={`h-[45px] border-b border-gray-200 dark:border-gray-800 items-center justify-between px-4 bg-white dark:bg-[#262626] sticky top-0 z-40 ${
+          postType === 'tweet' && step === 'share' ? 'hidden md:flex' : 'flex'
+        }`}>
           {step === 'select' ? (
             <>
               <div className="w-10"></div>
-              <h2 className="font-semibold text-base text-center dark:text-white flex-1">Create new {postType === 'reel' ? 'reel' : postType === 'ad' ? 'ad' : 'post'}</h2>
+              <h2 className="font-semibold text-base text-center dark:text-white flex-1">Create new {postType === 'tweet' ? 'tweet' : postType === 'reel' ? 'reel' : postType === 'ad' ? 'ad' : 'post'}</h2>
               <button onClick={handleClose} className="text-black dark:text-white md:hidden"><X size={24} /></button>
               <div className="w-10 md:block hidden"></div>
+            </>
+          ) : postType === 'tweet' && step === 'share' ? (
+            <>
+              <button onClick={handleClose} className="text-sm font-medium text-gray-700 dark:text-gray-200">Cancel</button>
+              <h2 className="font-semibold text-base text-center dark:text-white flex-1">New tweet</h2>
+              <button
+                onClick={() => handleNextStep('publish')}
+                disabled={isSubmitting || (!caption.trim() && media.length === 0)}
+                className="px-4 py-1.5 rounded-full bg-white text-black dark:bg-white dark:text-black text-sm font-semibold disabled:opacity-40"
+              >
+                Post
+              </button>
             </>
           ) : (
             <>
@@ -1426,10 +1544,10 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                 </button>
               </div>
               <h2 className="font-semibold text-base text-center dark:text-white flex-1">
-                {step === 'crop' ? 'Step 1 · Crop' : step === 'cover' ? 'Cover' : step === 'edit' ? 'Step 2 · Edit' : step === 'share' && postType === 'ad' ? 'Ad Setup' : 'Share'}
+                {step === 'crop' ? 'Step 1 · Crop' : step === 'cover' ? 'Cover' : step === 'edit' ? 'Step 2 · Edit' : step === 'adDetails' ? 'Step 3 · Ad Details' : step === 'share' && postType === 'ad' ? 'Ad Setup' : 'Share'}
               </h2>
               <div className="w-auto min-w-[140px] flex justify-end items-center gap-2">
-                {step === 'share' && postType === 'ad' && (
+                  {step === 'share' && postType === 'ad' && (
                   <button
                     onClick={() => handleNextStep('draft')}
                     className="px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 font-semibold text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40"
@@ -1481,6 +1599,15 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     >
                       <Image size={18} className="text-purple-400" />
                       <span className="text-xs font-semibold">Post</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPostType('tweet');
+                        setStep('share');
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl ${postType === 'tweet' ? 'bg-white/20' : 'hover:bg-white/10'}`}
+                    >
+                      <Image size={18} /> Tweet
                     </button>
                     <button
                       onClick={() => setPostType('reel')}
@@ -1627,7 +1754,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             <div ref={editContainerRef} className="relative bg-[#f0f0f0] dark:bg-[#121212] flex items-center justify-center w-full flex-1 h-auto">
               {currentMedia && (
                 currentMedia.type === 'video' ? (
-                  <div style={{ width: editBoxSize.w, height: editBoxSize.h }} className="relative overflow-hidden bg-black rounded">
+                  <div style={{ width: editBoxSize.w || '100%', height: editBoxSize.h || 'auto' }} className="relative overflow-hidden bg-black rounded flex items-center justify-center">
                     <video
                       src={currentMedia.croppedUrl || currentMedia.url}
                       className="hidden"
@@ -1645,9 +1772,10 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       }}
                     />
                     <img
-                      src={currentMedia.coverUrl || (currentMedia.thumbnails && currentMedia.thumbnails[0]) || currentMedia.croppedUrl || currentMedia.url}
-                      className="w-full h-full object-cover"
+                      src={currentMedia.coverUrl || (currentMedia.thumbnails && currentMedia.coverFrames && currentMedia.coverFrames[0]) || (currentMedia.thumbnails && currentMedia.thumbnails[0]) || currentMedia.croppedUrl || currentMedia.url}
+                      className="w-full h-full object-contain"
                       alt="Cover"
+                      style={{ imageRendering: 'auto' }}
                     />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="w-14 h-14 rounded-full bg-black/40 flex items-center justify-center">
@@ -1868,8 +1996,635 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
               </div>
             </div>
           </div>
+        ) : step === 'adDetails' ? (
+          /* AD DETAILS STEP — beautiful blue-themed UI */
+          <div className="flex-1 flex flex-col lg:flex-row lg:overflow-hidden overflow-y-auto overflow-x-hidden">
+            {/* Left: Media Preview */}
+            <div className="relative bg-black flex items-center justify-center select-none lg:w-[400px] w-full h-56 lg:h-auto flex-shrink-0">
+              {currentMedia && (
+                currentMedia.type === 'video' ? (
+                  <video src={currentMedia.croppedUrl || currentMedia.url} className="w-full h-full object-contain" muted autoPlay loop playsInline onLoadedMetadata={(e) => { e.currentTarget.currentTime = currentMedia.trimStart || 0; }} />
+                ) : (
+                  <img src={currentMedia.croppedUrl || currentMedia.url} className="max-w-full max-h-full object-contain" style={getFilterStyle(currentMedia)} alt="Ad Preview" />
+                )
+              )}
+              {/* Step badge */}
+              <div className="absolute top-3 left-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg">
+                STEP 3 · AD DETAILS
+              </div>
+            </div>
+
+            {/* Right: Ad Details Form */}
+            <div className="flex-1 bg-gray-50 dark:bg-[#0a0a0a] border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-800 overflow-y-auto scrollbar-hide">
+              <div className="p-4 space-y-3">
+
+                {/* ── Section 1: Ad Content ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <Megaphone size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Ad Content</span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Title <span className="text-blue-500">*</span></label>
+                      <input type="text" placeholder="e.g. Summer Sale — Up to 50% Off" value={adTitle} onChange={(e) => setAdTitle(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Description</label>
+                      <textarea placeholder="Describe what you're promoting..." value={adDescription} onChange={(e) => setAdDescription(e.target.value)} rows={3}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all resize-none placeholder-gray-400" />
+                    </div>
+                    {/* ── Ad Media Upload (separate from steps 1-2) ── */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">
+                        Ad Media
+                        <span className="text-gray-400 font-normal ml-1">(optional extra images/videos for this ad)</span>
+                      </label>
+
+                      {/* Hidden file input for ad media only */}
+                      <input
+                        type="file"
+                        ref={adMediaInputRef}
+                        className="hidden"
+                        multiple
+                        accept="image/*,video/*"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          const newItems = files.map(f => ({
+                            id: Math.random().toString(36).substr(2, 9),
+                            url: URL.createObjectURL(f),
+                            type: f.type.startsWith('video/') ? 'video' : 'image',
+                            file: f,
+                          }));
+                          setAdMedia(prev => [...prev, ...newItems]);
+                          e.target.value = '';
+                        }}
+                      />
+
+                      {/* Uploaded ad media — horizontal scroll row */}
+                      {adMedia.length > 0 && (
+                        <div
+                          className="flex gap-2 mb-2 overflow-x-auto pb-1"
+                          style={{ scrollbarWidth: 'none' }}
+                        >
+                          {adMedia.map((m) => (
+                            <div
+                              key={m.id}
+                              className="relative flex-shrink-0 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 group shadow-sm bg-black cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
+                              style={{ width: 120, height: 120 }}
+                              onClick={() => setAdMediaPreview(m)}
+                            >
+                              {m.type === 'video' ? (
+                                <>
+                                  <video src={m.url} className="w-full h-full object-contain" muted playsInline onClick={(e) => { e.stopPropagation(); setAdMediaPreview(m); }} />
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <div className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
+                                    </div>
+                                  </div>
+                                  <div className="absolute bottom-1 left-1 bg-black/70 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">VIDEO</div>
+                                </>
+                              ) : (
+                                <>
+                                  <img src={m.url} className="w-full h-full object-contain" alt="" onClick={(e) => { e.stopPropagation(); setAdMediaPreview(m); }} />
+                                  <div className="absolute bottom-1 left-1 bg-black/70 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">IMG</div>
+                                </>
+                              )}
+                              {/* Delete button */}
+                              <button
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 z-10"
+                                onClick={(e) => { e.stopPropagation(); setAdMedia(prev => prev.filter(x => x.id !== m.id)); }}
+                              >
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+
+                          {/* Add more tile inline in the scroll row */}
+                          <div
+                            className="flex-shrink-0 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] flex flex-col items-center justify-center gap-1 cursor-pointer hover:border-blue-400 hover:bg-blue-50/20 dark:hover:bg-blue-950/10 transition-all"
+                            style={{ width: 120, height: 120 }}
+                            onClick={() => adMediaInputRef.current?.click()}
+                          >
+                            <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.5">
+                                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                              </svg>
+                            </div>
+                            <span className="text-[10px] font-bold text-blue-500">Add more</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Upload zone — shown when empty */}
+                      {adMedia.length === 0 && (
+                        <div
+                          className="relative w-full rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] cursor-pointer group transition-all hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/20 dark:hover:bg-blue-950/10"
+                          style={{ minHeight: 130 }}
+                          onClick={() => adMediaInputRef.current?.click()}
+                        >
+                          <div className="flex flex-col items-center justify-center h-full py-6 px-4 gap-2">
+                            <div className="w-12 h-12 rounded-xl bg-blue-600 dark:bg-blue-700 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                <polyline points="17,8 12,3 7,8" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                <line x1="12" y1="3" x2="12" y2="15" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                              </svg>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-sm font-bold text-gray-800 dark:text-gray-100">Upload photo or video</p>
+                              <p className="text-[11px] text-gray-400 mt-0.5">JPG, PNG, MP4 supported</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="h-px w-10 bg-gray-300 dark:bg-gray-700" />
+                              <span className="text-[10px] text-gray-400">or drag & drop</span>
+                              <div className="h-px w-10 bg-gray-300 dark:bg-gray-700" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Section 2: Ad Type & Category ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <Tag size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Type & Category</span>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {/* Category Dropdown */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Category <span className="text-blue-500">*</span></label>
+                      <div className="relative">
+                        <select
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all appearance-none"
+                        >
+                          <option value="">Select a Category</option>
+                          {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* Ad Type: Promote or General */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Type <span className="text-blue-500">*</span></label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { value: 'promote', label: 'Promote', icon: '🚀', desc: 'Boost your brand reach' },
+                          { value: 'general', label: 'General', icon: '📋', desc: 'Standard advertisement' },
+                        ].map(t => (
+                          <button key={t.value} onClick={() => setAdType(t.value)}
+                            className={`flex flex-col items-start gap-1 py-3 px-4 rounded-xl text-xs font-bold border-2 transition-all ${
+                              adType === t.value
+                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-500 shadow-md shadow-blue-200 dark:shadow-blue-900/30'
+                                : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300 hover:text-blue-500'
+                            }`}>
+                            <span className="text-lg">{t.icon}</span>
+                            <span className="font-bold">{t.label}</span>
+                            <span className={`text-[10px] font-normal ${adType === t.value ? 'text-white/80' : 'text-gray-400'}`}>{t.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Section 3: Call To Action ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <MousePointerClick size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Call To Action</span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { value: 'view_site',    label: 'View Site' },
+                        { value: 'contact_info', label: 'Contact' },
+                        { value: 'install_app',  label: 'Install App' },
+                        { value: 'book_now',     label: 'Book Now' },
+                        { value: 'learn_more',   label: 'Learn More' },
+                        { value: 'call_now',     label: 'Call Now' },
+                      ].map(c => (
+                        <button key={c.value} onClick={() => setCtaType(c.value)}
+                          className={`py-2 px-2 rounded-lg text-[11px] font-bold border-2 transition-all ${
+                            ctaType === c.value
+                              ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-500 shadow-md shadow-blue-200 dark:shadow-blue-900/30'
+                              : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300 hover:text-blue-500'
+                          }`}>
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="space-y-2">
+                      {[
+                        { placeholder: 'Destination URL (https://...)', value: ctaUrl, setter: setCtaUrl, type: 'url' },
+                        { placeholder: 'Deep Link (e.g. myapp://product/123)', value: ctaDeepLink, setter: setCtaDeepLink, type: 'text' },
+                        { placeholder: 'Phone number (for Call Now)', value: ctaPhone, setter: setCtaPhone, type: 'tel' },
+                        { placeholder: 'WhatsApp number (e.g. 919876543210)', value: ctaWhatsapp, setter: setCtaWhatsapp, type: 'text' },
+                        { placeholder: 'Contact email', value: ctaEmail, setter: setCtaEmail, type: 'email' },
+                      ].map(f => (
+                        <input key={f.placeholder} type={f.type} placeholder={f.placeholder} value={f.value} onChange={e => f.setter(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Section 4: Keywords ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <Zap size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Keywords</span>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex gap-2 mb-2">
+                      <input type="text" placeholder="Type a keyword & press Enter" value={keywordInput} onChange={e => setKeywordInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && keywordInput.trim()) { setKeywords(prev => [...prev, keywordInput.trim()]); setKeywordInput(''); e.preventDefault(); }}}
+                        className="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                      <button onClick={() => { if (keywordInput.trim()) { setKeywords(prev => [...prev, keywordInput.trim()]); setKeywordInput(''); }}}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-bold shadow-sm hover:opacity-90 transition-opacity">+</button>
+                    </div>
+                    {keywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {keywords.map((k, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-semibold">
+                            {k} <button onClick={() => setKeywords(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500 transition-colors ml-0.5">×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Section 5: Audience ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <Target size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Audience</span>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {/* Age Range */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">Age Range</label>
+                      <div className="flex gap-2">
+                        <input type="number" placeholder="Min (13)" value={ageMin} onChange={e => setAgeMin(e.target.value)} min={13} max={99}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all" />
+                        <input type="number" placeholder="Max (65)" value={ageMax} onChange={e => setAgeMax(e.target.value)} min={13} max={100}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all" />
+                      </div>
+                    </div>
+                    {/* Gender */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">Gender</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['all', 'male', 'female', 'other'].map(g => (
+                          <button key={g} onClick={() => setGenderTarget(g)}
+                            className={`py-2 rounded-xl text-xs font-bold border-2 capitalize transition-all ${
+                              genderTarget === g
+                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-500'
+                                : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+                            }`}>
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Interests */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">Interests</label>
+                      <div className="flex gap-2 mb-2">
+                        <input type="text" placeholder="Add interest & press Enter" value={interestInput} onChange={e => setInterestInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && interestInput.trim()) { setSelectedInterests(prev => [...prev, interestInput.trim()]); setInterestInput(''); e.preventDefault(); }}}
+                          className="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                        <button onClick={() => { if (interestInput.trim()) { setSelectedInterests(prev => [...prev, interestInput.trim()]); setInterestInput(''); }}}
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-bold hover:opacity-90 transition-opacity">+</button>
+                      </div>
+                      {selectedInterests.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedInterests.map((item, i) => (
+                            <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-semibold">
+                              {item} <button onClick={() => setSelectedInterests(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500">×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Device Types */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">Device Types</label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { d: 'mobile', icon: <Smartphone size={11}/> },
+                          { d: 'ios',    icon: <Smartphone size={11}/> },
+                          { d: 'android',icon: <Smartphone size={11}/> },
+                          { d: 'desktop',icon: <Monitor size={11}/> },
+                        ].map(({ d, icon }) => (
+                          <button key={d} onClick={() => setSelectedDeviceTypes(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border-2 capitalize transition-all ${
+                              selectedDeviceTypes.includes(d)
+                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-500'
+                                : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+                            }`}>
+                            {icon} {d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Section 6: Review & Submit ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <ShieldCheck size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Review & Submit</span>
+                  </div>
+                  <div className="p-4">
+                    <div className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      policyAgreed
+                        ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-400 dark:border-blue-700'
+                        : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+                    }`} onClick={() => setPolicyAgreed(!policyAgreed)}>
+                      <div className={`w-5 h-5 rounded-lg flex-shrink-0 border-2 flex items-center justify-center transition-all mt-0.5 ${
+                        policyAgreed
+                          ? 'bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500'
+                          : 'border-gray-300 dark:border-gray-600'
+                      }`}>
+                        {policyAgreed && <span className="text-white text-xs font-bold">✓</span>}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                          I agree to the Ad Content Policy <span className="text-blue-500">*</span>
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
+                          By submitting this ad I confirm the content complies with platform guidelines and applicable laws. <strong className="text-blue-600 dark:text-blue-400">Required to publish.</strong>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pb-2" />
+              </div>
+            </div>
+          </div>
+        ) : postType === 'tweet' ? (
+          <div className="flex-1 bg-[#111111] text-white flex flex-col">
+            <div className="md:hidden flex items-center justify-between px-5 pt-4 pb-5 border-b border-white/10">
+              <button onClick={handleClose} className="text-white">
+                <X size={34} strokeWidth={2.2} />
+              </button>
+              <h2 className="text-[20px] font-bold tracking-[-0.02em]">New thread</h2>
+              <div className="flex items-center gap-4">
+                <button type="button" className="text-white/95">
+                  <FileText size={32} strokeWidth={2.1} />
+                </button>
+                <button type="button" className="text-white/95">
+                  <Ellipsis size={32} strokeWidth={2.1} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-5 pb-[13.5rem] md:pb-5">
+              <div className="hidden md:flex gap-4">
+                <div className="flex flex-col items-center shrink-0">
+                  <div className="w-11 h-11 rounded-full bg-[#222] overflow-hidden flex items-center justify-center">
+                    {userObject?.avatar_url ? (
+                      <img src={userObject.avatar_url} className="w-full h-full object-cover" alt={userObject.username} />
+                    ) : (
+                      <span className="text-sm font-semibold text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
+                    )}
+                  </div>
+                  <div className="w-px flex-1 bg-white/10 my-3" />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 text-sm mb-2">
+                    <span className="font-semibold text-white">{userObject?.username || 'User'}</span>
+                    <span className="text-white/35">›</span>
+                    <span className="text-white/35">Add a topic</span>
+                  </div>
+
+                  <textarea
+                    className="w-full min-h-[140px] resize-none bg-transparent outline-none text-[17px] leading-7 text-white placeholder:text-white/35"
+                    placeholder="What's new?"
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                    maxLength={500}
+                  />
+
+                  {currentMedia && (
+                    <div className="relative mt-4 w-full max-w-[320px] overflow-hidden rounded-2xl border border-white/10 bg-black">
+                      <img
+                        src={currentMedia.croppedUrl || currentMedia.url}
+                        alt="Tweet media"
+                        className="w-full h-auto object-cover"
+                      />
+                      <button
+                        onClick={(e) => handleRemoveMedia(currentIndex, e)}
+                        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/70 flex items-center justify-center text-white"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="mt-5 flex items-center gap-4 text-white/55">
+                    <button onClick={handleButtonClick} className="hover:text-white transition-colors">
+                      <Image size={20} />
+                    </button>
+                    <div ref={emojiPickerRef} className="relative">
+                      {showEmojiPicker && (
+                        <div className="absolute bottom-full left-0 mb-3 z-[80]">
+                          <EmojiPicker
+                            theme="dark"
+                            onEmojiClick={handleEmojiClick}
+                            lazyLoadEmojis
+                            skinTonesDisabled
+                            searchDisabled={false}
+                            previewConfig={{ showPreview: false }}
+                          />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker((prev) => !prev)}
+                        className="hover:text-white transition-colors"
+                        aria-label="Toggle emoji picker"
+                      >
+                        <Smile size={20} />
+                      </button>
+                    </div>
+                    <button type="button" className="opacity-50 cursor-default">
+                      <Copy size={20} />
+                    </button>
+                    <button type="button" className="opacity-50 cursor-default">
+                      <MapPin size={20} />
+                    </button>
+                  </div>
+
+                  <div className="mt-6 flex items-center gap-3 text-white/30">
+                    <div className="w-7 h-7 rounded-full bg-[#1a1a1a] flex items-center justify-center text-[10px]">+</div>
+                    <span className="text-sm">Add to thread</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="md:hidden flex gap-4 min-h-full">
+                <div className="flex flex-col items-center shrink-0 pt-2">
+                  <div className="w-[42px] h-[42px] rounded-full bg-[#262626] overflow-hidden flex items-center justify-center">
+                    {userObject?.avatar_url ? (
+                      <img src={userObject.avatar_url} className="w-full h-full object-cover" alt={userObject.username} />
+                    ) : (
+                      <span className="text-lg font-semibold text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
+                    )}
+                  </div>
+                  
+                </div>
+
+                <div className="flex-1 min-w-0 pt-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-bold text-[14px] truncate">{userObject?.username || 'User'}</span>
+                      <ChevronRight size={16} className="text-white/35 shrink-0" />
+                      <span className="text-white/35 text-[14px] truncate">Community or topic</span>
+                    </div>
+                    {(caption.trim() || media.length > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCaption('');
+                          setMedia([]);
+                          setCurrentIndex(0);
+                        }}
+                        className="text-white/35 shrink-0"
+                      >
+                        <X size={24} />
+                      </button>
+                    )}
+                  </div>
+
+                  <textarea
+                    className="mt-1 w-full min-h-[60px] resize-none bg-transparent outline-none text-[16px] leading-[1.35] tracking-[-0.02em] text-white placeholder:text-white/35"
+                    placeholder="What's new?"
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                    maxLength={500}
+                  />
+
+                  {currentMedia && (
+                    <div className="relative mt-4 w-full max-w-[360px] overflow-hidden rounded-[22px] border border-white/10 bg-black">
+                      <img
+                        src={currentMedia.croppedUrl || currentMedia.url}
+                        alt="Tweet media"
+                        className="w-full h-auto object-cover"
+                      />
+                      <button
+                        onClick={(e) => handleRemoveMedia(currentIndex, e)}
+                        className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/70 flex items-center justify-center text-white"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="mt-5 flex items-center gap-5 text-white/50">
+                    <button onClick={handleButtonClick} className="hover:text-white transition-colors">
+                      <Image size={28} strokeWidth={1.8} />
+                    </button>
+                    <div ref={emojiPickerRef} className="relative">
+                      {showEmojiPicker && (
+                        <div className="absolute bottom-full left-0 mb-3 z-[80]">
+                          <EmojiPicker
+                            theme="dark"
+                            onEmojiClick={handleEmojiClick}
+                            lazyLoadEmojis
+                            skinTonesDisabled
+                            searchDisabled={false}
+                            previewConfig={{ showPreview: false }}
+                          />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker((prev) => !prev)}
+                        className="hover:text-white transition-colors"
+                        aria-label="Toggle emoji picker"
+                      >
+                        <Smile size={28} strokeWidth={1.8} />
+                      </button>
+                    </div>
+                    <button type="button" className="opacity-50 cursor-default">
+                      <Copy size={28} strokeWidth={1.8} />
+                    </button>
+                    <button type="button" className="opacity-50 cursor-default">
+                      <MessageSquare size={28} strokeWidth={1.8} />
+                    </button>
+                    <button type="button" className="opacity-50 cursor-default">
+                      <Ellipsis size={28} strokeWidth={1.8} />
+                    </button>
+                  </div>
+
+                  <div className="mt-9 flex items-center gap-4 text-white/35">
+                      <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center text-sm">+</div>
+                    <span className="text-[14px]">Add to thread</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="hidden md:flex border-t border-white/10 px-5 py-4 items-center justify-between">
+              <span className="text-sm text-white/45">Reply options</span>
+              <button
+                onClick={() => handleNextStep('publish')}
+                disabled={isSubmitting || (!caption.trim() && media.length === 0)}
+                className="px-5 py-2 rounded-full bg-white text-black text-sm font-semibold disabled:opacity-30"
+              >
+                Post
+              </button>
+            </div>
+
+            <div className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-[#111111] px-8 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+              <div className="flex items-center justify-end gap-4">
+                
+
+                <button
+                  onClick={() => handleNextStep('publish')}
+                  disabled={isSubmitting || (!caption.trim() && media.length === 0)}
+                  className={`h-[40px] min-w-[80px] rounded-full text-[14px] font-semibold transition-all ${
+                    isSubmitting || (!caption.trim() && media.length === 0)
+                      ? 'bg-white/10 text-black/45'
+                      : 'bg-white text-black'
+                  }`}
+                >
+                  Post
+                </button>
+              </div>
+            </div>
+          </div>
         ) : (
-          /* SHARE STEP */
           <div className="flex-1 flex flex-col md:flex-row lg:overflow-hidden overflow-y-auto overflow-x-hidden">
             {/* Left: Final Image Preview */}
             <div className="relative bg-[#f0f0f0] dark:bg-[#121212] flex items-center justify-center select-none w-full h-auto md:flex-[2]">
@@ -2042,336 +2797,159 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                 />
               </div>
 
-              
-
-              {/* Ad-specific fields */}
+              {/* Ad-specific fields — Share/Ad Setup step: ONLY targeting + budget */}
               {postType === 'ad' && (
                 <div className="px-4 pb-4 border-b border-gray-100 dark:border-gray-800 space-y-3 pt-4">
 
-                  {/* Ad Content */}
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Ad Content</div>
+                  {/* ── Audience Targeting: Country → State → Language ── */}
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Audience Targeting</div>
 
-                  <input
-                    type="text"
-                    placeholder="Ad Title *"
-                    value={adTitle}
-                    onChange={(e) => setAdTitle(e.target.value)}
-                    className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all"
-                  />
-                  <textarea
-                    placeholder="Ad Description"
-                    value={adDescription}
-                    onChange={(e) => setAdDescription(e.target.value)}
-                    rows={2}
-                    className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all resize-none"
-                  />
-
-                  {/* Ad Type */}
-                  <div>
-                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5"><Megaphone size={13} /> Ad Type</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { value: 'sponsored_post', label: 'Sponsored Post' },
-                        { value: 'banner',         label: 'Banner' },
-                        { value: 'video',          label: 'Video' },
-                        { value: 'carousel',       label: 'Carousel' },
-                      ].map(t => (
-                        <button key={t.value} onClick={() => setAdType(t.value)}
-                          className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
-                            adType === t.value
-                              ? 'bg-purple-600 text-white border-purple-600'
-                              : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-purple-400'
-                          }`}>
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* ── STEP 3: CTA ── */}
-                  <div className="pt-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Step 3 · Call-To-Action</div>
-
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                    <button
-                      onClick={() => setOpenAccordion(openAccordion === 'cta' ? null : 'cta')}
-                      className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white"
-                    >
-                      <span className="flex items-center gap-2">
-                        <MousePointerClick size={14} className="text-indigo-500" />
-                        CTA {ctaType ? `· ${ctaType.replace('_', ' ')}` : ''}
-                      </span>
-                      <ChevronDown size={16} className={`transition-transform ${openAccordion === 'cta' ? 'rotate-180' : ''}`} />
-                    </button>
-                    {openAccordion === 'cta' && (
-                      <div className="p-3 bg-white dark:bg-black space-y-3">
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { value: 'view_site',    label: 'View Site' },
-                            { value: 'contact_info', label: 'Contact' },
-                            { value: 'install_app',  label: 'Install App' },
-                            { value: 'book_now',     label: 'Book Now' },
-                            { value: 'learn_more',   label: 'Learn More' },
-                            { value: 'call_now',     label: 'Call Now' },
-                          ].map(c => (
-                            <button key={c.value} onClick={() => setCtaType(c.value)}
-                              className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${
-                                ctaType === c.value
-                                  ? 'bg-indigo-600 text-white border-indigo-600'
-                                  : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
-                              }`}>
-                              {c.label}
-                            </button>
-                          ))}
-                        </div>
-                        <input type="url" placeholder="Destination URL" value={ctaUrl} onChange={e => setCtaUrl(e.target.value)}
-                          className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <input type="text" placeholder="Deep Link (e.g. myapp://product/123)" value={ctaDeepLink} onChange={e => setCtaDeepLink(e.target.value)}
-                          className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <input type="tel" placeholder="Phone Number (for Call Now)" value={ctaPhone} onChange={e => setCtaPhone(e.target.value)}
-                          className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <input type="text" placeholder="WhatsApp Number (e.g. 919876543210)" value={ctaWhatsapp} onChange={e => setCtaWhatsapp(e.target.value)}
-                          className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <input type="email" placeholder="Contact Email" value={ctaEmail} onChange={e => setCtaEmail(e.target.value)}
-                          className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ── STEP 4: Audience Targeting ── */}
-                  <div className="pt-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Step 4 · Audience Targeting</div>
-
-                  {/* Category */}
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                    <button onClick={() => setOpenAccordion(openAccordion === 'category' ? null : 'category')}
-                      className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
-                      <span className="flex items-center gap-2"><Tag size={14} className="text-orange-500" />Category {selectedCategory && `· ${selectedCategory}`}</span>
-                      <ChevronDown size={16} className={`transition-transform ${openAccordion === 'category' ? 'rotate-180' : ''}`} />
-                    </button>
-                    {openAccordion === 'category' && (
-                      <div className="max-h-52 overflow-y-auto p-2 bg-white dark:bg-black space-y-1">
-                        {isLoadingCategories ? (
-                          <div className="p-2 text-xs text-gray-500">Loading...</div>
-                        ) : (
-                          categories.map(cat => (
-                            <label key={cat} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer rounded-lg">
-                              <input type="radio" name="ad_category" checked={selectedCategory === cat} onChange={() => setSelectedCategory(cat)} className="accent-purple-600" />
-                              <span className="text-sm dark:text-gray-200">{cat}</span>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Sub-category + Keywords */}
-                  <input type="text" placeholder="Sub-category (optional, e.g. Women's Clothing)" value={subCategory} onChange={e => setSubCategory(e.target.value)}
-                    className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
-
-                  <div>
-                    <div className="flex gap-2">
-                      <input type="text" placeholder="Add keyword & press Enter" value={keywordInput} onChange={e => setKeywordInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && keywordInput.trim()) { setKeywords(prev => [...prev, keywordInput.trim()]); setKeywordInput(''); e.preventDefault(); }}}
-                        className="flex-1 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
-                      <button onClick={() => { if (keywordInput.trim()) { setKeywords(prev => [...prev, keywordInput.trim()]); setKeywordInput(''); }}}
-                        className="px-3 py-2 rounded-xl bg-purple-600 text-white text-sm font-bold hover:bg-purple-700 transition-colors">+</button>
-                    </div>
-                    {keywords.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {keywords.map((k, i) => (
-                          <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-semibold">
-                            {k} <button onClick={() => setKeywords(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500 transition-colors">×</button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Country */}
+                  {/* Country accordion */}
                   <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                     <button onClick={() => setOpenAccordion(openAccordion === 'country' ? null : 'country')}
                       className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
-                      <span className="flex items-center gap-2"><Globe size={14} className="text-blue-500" />Countries {selectedCountries.length > 0 && `(${selectedCountries.length})`}</span>
+                      <span className="flex items-center gap-2"><Globe size={14} className="text-blue-500" />Country {selectedCountries.length > 0 && `(${selectedCountries.length} selected)`}</span>
                       <ChevronDown size={16} className={`transition-transform ${openAccordion === 'country' ? 'rotate-180' : ''}`} />
                     </button>
                     {openAccordion === 'country' && (
-                      <div className="max-h-52 overflow-y-auto p-2 bg-white dark:bg-black">
-                        {isLoadingCountries ? (
-                          <div className="p-2 text-xs text-gray-500">Loading countries...</div>
-                        ) : allCountries.length === 0 ? (
-                          <div className="p-2 text-xs text-gray-400">No countries available</div>
-                        ) : allCountries.map(c => {
-                          const name = typeof c === 'string' ? c : (c.name || c.country);
-                          return (
-                            <label key={name} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer rounded-lg">
-                              <input type="checkbox" checked={selectedCountries.includes(name)}
-                                onChange={() => setSelectedCountries(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name])}
-                                className="accent-blue-600" />
-                              <span className="text-sm dark:text-gray-200">{name}</span>
-                            </label>
-                          );
-                        })}
+                      <div className="flex flex-col bg-white dark:bg-black">
+                        <div className="p-2 border-b border-gray-100 dark:border-gray-800">
+                          <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              placeholder="Search country..."
+                              value={countrySearch}
+                              onChange={(e) => setCountrySearch(e.target.value)}
+                              className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs dark:text-white outline-none"
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-52 overflow-y-auto">
+                          {isLoadingCountries ? (
+                            <div className="p-3 text-xs text-gray-500">Loading countries...</div>
+                          ) : allCountries.filter(c => (typeof c === 'string' ? c : (c.name || c.country)).toLowerCase().includes(countrySearch.toLowerCase())).length === 0 ? (
+                            <div className="p-3 text-xs text-gray-400">No countries found</div>
+                          ) : allCountries.filter(c => (typeof c === 'string' ? c : (c.name || c.country)).toLowerCase().includes(countrySearch.toLowerCase())).map(c => {
+                            const name = typeof c === 'string' ? c : (c.name || c.country);
+                            return (
+                              <label key={name} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                <input type="checkbox" checked={selectedCountries.includes(name)}
+                                  onChange={() => setSelectedCountries(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name])}
+                                  className="accent-blue-600" />
+                                <span className="text-sm dark:text-gray-200">{name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
 
-                  {/* State */}
+                  {/* State accordion — only shown after country selected */}
                   {selectedCountries.length > 0 && (
                     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                       <button onClick={() => setOpenAccordion(openAccordion === 'state' ? null : 'state')}
                         className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
-                        <span className="flex items-center gap-2"><MapPin size={14} className="text-blue-400" />States / Regions {selectedStates.length > 0 && `(${selectedStates.length})`}</span>
+                        <span className="flex items-center gap-2"><MapPin size={14} className="text-blue-400" />State {selectedStates.length > 0 && `(${selectedStates.length} selected)`}</span>
                         <ChevronDown size={16} className={`transition-transform ${openAccordion === 'state' ? 'rotate-180' : ''}`} />
                       </button>
                       {openAccordion === 'state' && (
-                        <div className="max-h-52 overflow-y-auto p-2 bg-white dark:bg-black">
-                          {isLoadingStates ? <div className="p-2 text-xs text-gray-500">Loading states...</div> : (
-                            selectedCountries.map(country => {
-                              const states = statesByCountry[country] || [];
-                              if (!states.length) return null;
-                              return (
-                                <div key={country}>
-                                  <div className="px-2 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide">{country}</div>
-                                  {states.map(st => {
-                                    const stateName = st.state || (typeof st === 'string' ? st : st.name);
-                                    return (
-                                      <label key={stateName} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer rounded-lg">
-                                        <input type="checkbox" checked={selectedStates.includes(stateName)}
-                                          onChange={() => setSelectedStates(prev => prev.includes(stateName) ? prev.filter(x => x !== stateName) : [...prev, stateName])}
-                                          className="accent-blue-600" />
-                                        <span className="text-sm dark:text-gray-200">{stateName}</span>
-                                      </label>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })
-                          )}
+                        <div className="flex flex-col bg-white dark:bg-black">
+                          <div className="p-2 border-b border-gray-100 dark:border-gray-800">
+                            <div className="relative">
+                              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                placeholder="Search state..."
+                                value={stateSearch}
+                                onChange={(e) => setStateSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs dark:text-white outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-52 overflow-y-auto">
+                            {isLoadingStates ? <div className="p-3 text-xs text-gray-500">Loading states...</div> : (
+                              selectedCountries.map(country => {
+                                const states = (statesByCountry[country] || []).filter(st => (st.state || (typeof st === 'string' ? st : st.name)).toLowerCase().includes(stateSearch.toLowerCase()));
+                                if (!states.length && !stateSearch) return null;
+                                if (!states.length && stateSearch) return null;
+                                return (
+                                  <div key={country}>
+                                    <div className="px-3 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 dark:bg-gray-900">{country}</div>
+                                    {states.map(st => {
+                                      const stateName = st.state || (typeof st === 'string' ? st : st.name);
+                                      return (
+                                        <label key={stateName} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                          <input type="checkbox" checked={selectedStates.includes(stateName)}
+                                            onChange={() => setSelectedStates(prev => prev.includes(stateName) ? prev.filter(x => x !== stateName) : [...prev, stateName])}
+                                            className="accent-blue-600" />
+                                          <span className="text-sm dark:text-gray-200">{stateName}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* Cities */}
-                  <div>
-                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5"><MapPin size={13} className="text-green-500" />Cities (optional)</div>
-                    <div className="flex gap-2">
-                      <input type="text" placeholder="Add city & press Enter" value={cityInput} onChange={e => setCityInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && cityInput.trim()) { setSelectedCities(prev => [...prev, cityInput.trim()]); setCityInput(''); e.preventDefault(); }}}
-                        className="flex-1 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-green-500" />
-                      <button onClick={() => { if (cityInput.trim()) { setSelectedCities(prev => [...prev, cityInput.trim()]); setCityInput(''); }}}
-                        className="px-3 py-2 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">+</button>
-                    </div>
-                    {selectedCities.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {selectedCities.map((c, i) => (
-                          <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-semibold">
-                            {c} <button onClick={() => setSelectedCities(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500">×</button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Age + Gender */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Age Range</div>
-                      <div className="flex gap-2">
-                        <input type="number" placeholder="Min" value={ageMin} onChange={e => setAgeMin(e.target.value)} min={13} max={99}
-                          className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <input type="number" placeholder="Max" value={ageMax} onChange={e => setAgeMax(e.target.value)} min={13} max={100}
-                          className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Gender</div>
-                      <div className="flex flex-col gap-1.5">
-                        {['all', 'male', 'female', 'other'].map(g => (
-                          <label key={g} className="flex items-center gap-2 cursor-pointer">
-                            <input type="radio" name="gender_target" value={g} checked={genderTarget === g} onChange={() => setGenderTarget(g)} className="accent-pink-600" />
-                            <span className="text-xs dark:text-gray-300 capitalize">{g}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Interests */}
-                  <div>
-                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5"><Zap size={13} className="text-yellow-500" />Interests</div>
-                    <div className="flex gap-2">
-                      <input type="text" placeholder="Add interest & press Enter" value={interestInput} onChange={e => setInterestInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && interestInput.trim()) { setSelectedInterests(prev => [...prev, interestInput.trim()]); setInterestInput(''); e.preventDefault(); }}}
-                        className="flex-1 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-yellow-500" />
-                      <button onClick={() => { if (interestInput.trim()) { setSelectedInterests(prev => [...prev, interestInput.trim()]); setInterestInput(''); }}}
-                        className="px-3 py-2 rounded-xl bg-yellow-500 text-white text-sm font-bold hover:bg-yellow-600 transition-colors">+</button>
-                    </div>
-                    {selectedInterests.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {selectedInterests.map((item, i) => (
-                          <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 text-xs font-semibold">
-                            {item} <button onClick={() => setSelectedInterests(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500">×</button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Device Types */}
-                  <div>
-                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5"><Smartphone size={13} className="text-indigo-500" />Device Types</div>
-                    <div className="flex flex-wrap gap-2">
-                      {['mobile', 'ios', 'android', 'desktop'].map(d => (
-                        <button key={d} onClick={() => setSelectedDeviceTypes(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])}
-                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                            selectedDeviceTypes.includes(d)
-                              ? 'bg-indigo-600 text-white border-indigo-600'
-                              : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
-                          }`}>
-                          {d === 'desktop' ? <Monitor size={12} /> : <Smartphone size={12} />}
-                          {d}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Language */}
+                  {/* Language accordion — only shown after state selected */}
                   {selectedStates.length > 0 && (
                     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                       <button onClick={() => setOpenAccordion(openAccordion === 'language' ? null : 'language')}
                         className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
-                        <span className="flex items-center gap-2"><Globe size={14} className="text-purple-500" />Languages {selectedLanguages.length > 0 && `(${selectedLanguages.length})`}</span>
+                        <span className="flex items-center gap-2"><Globe size={14} className="text-purple-500" />Language {selectedLanguages.length > 0 && `(${selectedLanguages.length} selected)`}</span>
                         <ChevronDown size={16} className={`transition-transform ${openAccordion === 'language' ? 'rotate-180' : ''}`} />
                       </button>
                       {openAccordion === 'language' && (
-                        <div className="max-h-52 overflow-y-auto p-2 bg-white dark:bg-black">
-                          {isLoadingLanguages ? <div className="p-2 text-xs text-gray-500">Loading languages...</div>
-                          : Object.keys(languagesByState).length === 0 ? <div className="p-2 text-xs text-gray-400">No languages found for selected states</div>
-                          : selectedCountries.map(country => {
-                              const langs = languagesByState[country] || [];
-                              if (!langs.length) return null;
-                              return (
-                                <div key={country}>
-                                  <div className="px-2 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide">{country}</div>
-                                  {langs.map(langName => (
-                                    <label key={langName} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer rounded-lg">
-                                      <input type="checkbox" checked={selectedLanguages.includes(langName)}
-                                        onChange={() => setSelectedLanguages(prev => prev.includes(langName) ? prev.filter(x => x !== langName) : [...prev, langName])}
-                                        className="accent-purple-600" />
-                                      <span className="text-sm dark:text-gray-200">{langName}</span>
-                                    </label>
-                                  ))}
-                                </div>
-                              );
-                            })
-                          }
+                        <div className="flex flex-col bg-white dark:bg-black">
+                          <div className="p-2 border-b border-gray-100 dark:border-gray-800">
+                            <div className="relative">
+                              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                placeholder="Search language..."
+                                value={languageSearch}
+                                onChange={(e) => setLanguageSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs dark:text-white outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-52 overflow-y-auto">
+                            {isLoadingLanguages ? <div className="p-3 text-xs text-gray-500">Loading languages...</div>
+                            : Object.keys(languagesByState).length === 0 ? <div className="p-3 text-xs text-gray-400">No languages found for selected states</div>
+                            : selectedCountries.map(country => {
+                                const langs = (languagesByState[country] || []).filter(l => l.toLowerCase().includes(languageSearch.toLowerCase()));
+                                if (!langs.length && !languageSearch) return null;
+                                if (!langs.length && languageSearch) return null;
+                                return (
+                                  <div key={country}>
+                                    <div className="px-3 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 dark:bg-gray-900">{country}</div>
+                                    {langs.map(langName => (
+                                      <label key={langName} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                        <input type="checkbox" checked={selectedLanguages.includes(langName)}
+                                          onChange={() => setSelectedLanguages(prev => prev.includes(langName) ? prev.filter(x => x !== langName) : [...prev, langName])}
+                                          className="accent-purple-600" />
+                                        <span className="text-sm dark:text-gray-200">{langName}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                );
+                              })
+                            }
+                          </div>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* ── STEP 5: Budget & Duration ── */}
-                  <div className="pt-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Step 5 · Budget & Duration</div>
+                  {/* ── Budget & Duration ── */}
+                  <div className="pt-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Budget & Duration</div>
 
                   <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                     <button onClick={() => setOpenAccordion(openAccordion === 'budget' ? null : 'budget')}
@@ -2408,8 +2986,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     )}
                   </div>
 
-                  {/* Tracking / UTM */}
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                  {/* ── Tracking / UTM ── */}
+                  {/* <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                     <button onClick={() => setOpenAccordion(openAccordion === 'tracking' ? null : 'tracking')}
                       className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
                       <span className="flex items-center gap-2"><Target size={14} className="text-teal-500" />Tracking & UTM (optional)</span>
@@ -2433,50 +3011,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                         ))}
                       </div>
                     )}
-                  </div>
+                  </div> */}
 
-                  {/* ── STEP 6: Review & Submit ── */}
-                  <div className="pt-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Step 6 · Review & Submit</div>
-
-                  {/* Policy Agreement — REQUIRED */}
-                  <div className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-colors cursor-pointer ${
-                    policyAgreed
-                      ? 'bg-green-50 dark:bg-green-900/20 border-green-400 dark:border-green-700'
-                      : 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50'
-                  }`} onClick={() => setPolicyAgreed(!policyAgreed)}>
-                    <div className={`w-5 h-5 rounded flex-shrink-0 border-2 flex items-center justify-center transition-all mt-0.5 ${
-                      policyAgreed ? 'bg-green-500 border-green-500' : 'border-gray-400 dark:border-gray-600'
-                    }`}>
-                      {policyAgreed && <span className="text-white text-xs font-bold">✓</span>}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                        I agree to the Ad Content Policy <span className="text-red-500">*</span>
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
-                        By submitting this ad I confirm the content complies with platform guidelines and applicable laws. <strong>Required to publish.</strong>
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Review Summary */}
-                  {(adTitle || selectedCategory || totalBudgetCoins) && (
-                    <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 space-y-2">
-                      <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Review Summary</div>
-                      {adTitle && <div className="flex justify-between text-sm"><span className="text-gray-500">Title</span><span className="font-semibold dark:text-white truncate max-w-[180px]">{adTitle}</span></div>}
-                      {selectedCategory && <div className="flex justify-between text-sm"><span className="text-gray-500">Category</span><span className="font-semibold dark:text-white">{selectedCategory}</span></div>}
-                      {ctaType && <div className="flex justify-between text-sm"><span className="text-gray-500">CTA</span><span className="font-semibold dark:text-white capitalize">{ctaType.replace('_', ' ')}</span></div>}
-                      {totalBudgetCoins && <div className="flex justify-between text-sm"><span className="text-gray-500">Total Budget</span><span className="font-bold text-amber-600">{totalBudgetCoins} 🪙</span></div>}
-                      {dailyBudgetCoins && <div className="flex justify-between text-sm"><span className="text-gray-500">Daily Budget</span><span className="font-bold text-amber-500">{dailyBudgetCoins} 🪙/day</span></div>}
-                      {selectedCountries.length > 0 && <div className="flex justify-between text-sm"><span className="text-gray-500">Countries</span><span className="font-semibold dark:text-white">{selectedCountries.length} selected</span></div>}
-                      {(ageMin || ageMax) && <div className="flex justify-between text-sm"><span className="text-gray-500">Age</span><span className="font-semibold dark:text-white">{ageMin || 13}–{ageMax || 65}</span></div>}
-                      {genderTarget !== 'all' && <div className="flex justify-between text-sm"><span className="text-gray-500">Gender</span><span className="font-semibold dark:text-white capitalize">{genderTarget}</span></div>}
-                      <div className="flex justify-between text-sm pt-1 border-t border-gray-200 dark:border-gray-700">
-                        <span className="text-gray-500">Policy Agreed</span>
-                        <span className={`font-bold ${policyAgreed ? 'text-green-600' : 'text-red-500'}`}>{policyAgreed ? '✓ Yes' : '✗ Required'}</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -2511,54 +3047,26 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     {isAdvancedSettingsOpen ? <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" /> : <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />}
                   </div>
                   {isAdvancedSettingsOpen && (
-                    <div className="px-4 pb-4 flex flex-col gap-4">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-800 dark:text-gray-200">Hide like and view counts on this post</span>
-                          <div className="relative inline-flex items-center cursor-pointer" onClick={() => setHideLikes(!hideLikes)}>
-                            <input type="checkbox" className="sr-only peer" checked={hideLikes} readOnly />
-                            <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <div className="px-4 pb-4 flex flex-col gap-0">
+                      {[
+                        { label: 'Hide like and view counts on this post', sub: 'Only you will see the total number of likes and views on this post.', value: hideLikes, setter: setHideLikes },
+                        { label: 'Turn off commenting', sub: 'You can change this later by going to the ... menu at the top of your post.', value: turnOffCommenting, setter: setTurnOffCommenting },
+                        { label: 'Disable share', sub: null, value: disableShare, setter: setDisableShare },
+                        { label: 'Disable save', sub: null, value: disableSave, setter: setDisableSave },
+                        { label: 'Disable report', sub: null, value: disableReport, setter: setDisableReport },
+                        { label: 'Moderation mode', sub: null, value: moderationEnabled, setter: setModerationEnabled },
+                      ].map((ctrl, idx) => (
+                        <div key={ctrl.label} className={`flex flex-col gap-1 py-3 ${idx > 0 ? 'border-t border-gray-100 dark:border-gray-800' : ''}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-800 dark:text-gray-200">{ctrl.label}</span>
+                            <div className="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-3" onClick={() => ctrl.setter(!ctrl.value)}>
+                              <input type="checkbox" className="sr-only peer" checked={ctrl.value} readOnly />
+                              <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </div>
                           </div>
+                          {ctrl.sub && <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{ctrl.sub}</p>}
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Only you will see the total number of likes and views on this post. <span className="text-blue-500 cursor-pointer">Learn more</span></p>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-800 dark:text-gray-200">Turn off commenting</span>
-                          <div className="relative inline-flex items-center cursor-pointer" onClick={() => setTurnOffCommenting(!turnOffCommenting)}>
-                            <input type="checkbox" className="sr-only peer" checked={turnOffCommenting} readOnly />
-                            <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                          </div>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">You can change this later by going to the ... menu at the top of your post.</p>
-                      </div>
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                        <button onClick={() => setOpenAccordion(openAccordion === 'engagement' ? null : 'engagement')}
-                          className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
-                          <span>Engagement Controls</span>
-                          <ChevronDown size={16} className={`transition-transform ${openAccordion === 'engagement' ? 'rotate-180' : ''}`} />
-                        </button>
-                        {openAccordion === 'engagement' && (
-                          <div className="p-3 bg-white dark:bg-black space-y-3">
-                            {[
-                              { label: 'Hide likes count',   value: hideLikes,          setter: setHideLikes },
-                              { label: 'Disable comments',   value: turnOffCommenting,  setter: setTurnOffCommenting },
-                              { label: 'Disable share',      value: disableShare,       setter: setDisableShare },
-                              { label: 'Disable save',       value: disableSave,        setter: setDisableSave },
-                              { label: 'Disable report',     value: disableReport,      setter: setDisableReport },
-                              { label: 'Moderation mode',    value: moderationEnabled,  setter: setModerationEnabled },
-                            ].map(ctrl => (
-                              <div key={ctrl.label} className="flex items-center justify-between">
-                                <span className="text-sm text-gray-700 dark:text-gray-300">{ctrl.label}</span>
-                                <div className="relative inline-flex items-center cursor-pointer" onClick={() => ctrl.setter(!ctrl.value)}>
-                                  <input type="checkbox" className="sr-only peer" checked={ctrl.value} readOnly />
-                                  <div className="w-10 h-5 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -2570,7 +3078,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
 
       <input
         type="file" ref={fileInputRef} className="hidden" multiple
-        accept={postType === 'post' ? 'image/*' : postType === 'reel' ? 'video/*' : 'image/*,video/*'}
+        accept={postType === 'post' || postType === 'tweet' ? 'image/*' : postType === 'reel' ? 'video/*' : 'image/*,video/*'}
         onChange={handleFileSelect}
       />
 
@@ -2589,18 +3097,18 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
       {showAdProfileGate && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 dark:border-gray-800">
-            <div className="w-14 h-14 rounded-2xl bg-orange-50 dark:bg-orange-900/20 mx-auto flex items-center justify-center mb-4">
-              <Megaphone size={26} className="text-orange-500" />
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 mx-auto flex items-center justify-center mb-4">
+              <Megaphone size={26} className="text-blue-500" />
             </div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">Complete your profile first</h3>
             <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center leading-relaxed">
-              Your profile completion is currently <span className="font-bold text-orange-500">{Math.round(Number(vendorProfileCompletion || 0))}%</span>.
+              Your profile completion is currently <span className="font-bold text-blue-500">{Math.round(Number(vendorProfileCompletion || 0))}%</span>.
               You need to complete it above <span className="font-bold text-pink-600">80%</span> before uploading ads.
             </p>
             <div className="flex justify-center">
               <button
                 onClick={() => setShowAdProfileGate(false)}
-                className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-pink-600 text-white font-medium hover:opacity-90 transition-opacity"
+                className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium hover:opacity-90 transition-opacity"
               >
                 OK
               </button>
@@ -2617,13 +3125,13 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             </div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">Upgrade your package</h3>
             <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center leading-relaxed">
-              Your current package allows <span className="font-bold text-pink-600">{activePackageAdsLimit}</span> ads, and you have already uploaded <span className="font-bold text-orange-500">{uploadedAdsCount}</span>.
+              Your current package allows <span className="font-bold text-pink-600">{activePackageAdsLimit}</span> ads, and you have already uploaded <span className="font-bold text-blue-500">{uploadedAdsCount}</span>.
               Upgrade your package to create more ads.
             </p>
             <div className="flex justify-center">
               <button
                 onClick={() => setShowAdLimitPopup(false)}
-                className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-pink-600 text-white font-medium hover:opacity-90 transition-opacity"
+                className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium hover:opacity-90 transition-opacity"
               >
                 OK
               </button>
@@ -2721,7 +3229,9 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
               </div>
               <div className="flex flex-col items-center gap-1.5 text-center">
                 <h3 className="text-xl font-bold text-white">
-                  {postType === 'reel'
+                  {postType === 'tweet'
+                    ? 'Tweet Shared! 🎉'
+                    : postType === 'reel'
                     ? 'Reel Published! 🎉'
                     : postType === 'ad'
                     ? adSubmitMode === 'draft'
@@ -2730,7 +3240,9 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     : 'Post Shared! 🎉'}
                 </h3>
                 <p className="text-sm text-white/50">
-                  {postType === 'reel'
+                  {postType === 'tweet'
+                    ? 'Your tweet is now live'
+                    : postType === 'reel'
                     ? 'Your reel is now live'
                     : postType === 'ad'
                     ? adSubmitMode === 'draft'
@@ -2763,6 +3275,66 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
               <button onClick={() => { setUploadStage('idle'); setUploadProgress(0); setUploadError(''); }} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
               <button onClick={() => { setUploadStage('idle'); setUploadProgress(0); setUploadError(''); handleNextStep(adSubmitMode); }} className="flex-1 py-3 rounded-xl text-white font-semibold text-sm transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #f472b6, #a855f7)' }}>Try Again</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {adMediaPreview && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setAdMediaPreview(null)}
+        >
+          <div className="absolute inset-0 flex items-center justify-center" onClick={() => setAdMediaPreview(null)}>
+            {adMediaPreview.type === 'video' ? (
+              <div className="relative w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                <video
+                  src={adMediaPreview.url}
+                  controls
+                  autoPlay
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                />
+              </div>
+            ) : (
+              <div
+                className="relative w-full h-full flex items-center justify-center overflow-auto cursor-zoom-out"
+                onClick={() => setAdMediaPreview(null)}
+                style={{ cursor: 'zoom-out' }}
+              >
+                <img
+                  src={adMediaPreview.url}
+                  alt=""
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl transition-transform duration-200"
+                  style={{ transform: 'scale(1)', minWidth: '60%', minHeight: '60%' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const current = e.currentTarget.style.transform;
+                    if (current === 'scale(1)' || current === '') {
+                      e.currentTarget.style.transform = 'scale(2)';
+                      e.currentTarget.style.cursor = 'zoom-in';
+                    } else {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.cursor = 'zoom-out';
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          <button
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95 z-10"
+            onClick={() => setAdMediaPreview(null)}
+          >
+            <X size={20} />
+          </button>
+
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-white/10 backdrop-blur-md rounded-full px-5 py-2.5 z-10">
+            <span className="text-white text-xs font-bold uppercase tracking-widest">
+              {adMediaPreview.type === 'video' ? 'Video Preview' : 'Image Preview'}
+            </span>
+            {adMediaPreview.type === 'image' && (
+              <span className="text-white/60 text-[10px]">Tap image to zoom</span>
+            )}
           </div>
         </div>
       )}

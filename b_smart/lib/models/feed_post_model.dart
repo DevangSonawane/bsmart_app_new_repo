@@ -34,6 +34,7 @@ class FeedPost {
   final bool isShared;
   final String? sharedFrom;
   final bool isAd;
+  final bool isTweet;
   final String? adTitle;
   final String? adCompanyId;
   final String? adCompanyName;
@@ -76,6 +77,7 @@ class FeedPost {
     this.isShared = false,
     this.sharedFrom,
     this.isAd = false,
+    this.isTweet = false,
     this.adTitle,
     this.adCompanyId,
     this.adCompanyName,
@@ -219,7 +221,7 @@ class FeedPost {
       aspectRatio: json['aspectRatio'] != null ? double.tryParse(json['aspectRatio'].toString()) : null,
       mediaFilters: mediaFilters.isEmpty ? null : mediaFilters,
       mediaAdjustments: mediaAdjustments.isEmpty ? null : mediaAdjustments,
-      caption: json['caption'],
+      caption: (json['caption'] ?? json['content']) as String?,
       hashtags: List<String>.from(json['hashtags'] ?? []),
       createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : DateTime.now(),
       likes: json['likesCount'] ?? json['likes'] ?? 0,
@@ -233,6 +235,7 @@ class FeedPost {
       isShared: json['isShared'] ?? false,
       sharedFrom: json['sharedFrom'],
       isAd: json['isAd'] ?? false,
+      isTweet: (json['item_type'] ?? json['itemType'] ?? '').toString().toLowerCase() == 'tweet' || (json['isTweet'] ?? false) == true,
       adTitle: json['adTitle'],
       adCompanyId: json['adCompanyId'],
       adCompanyName: json['adCompanyName'],
@@ -299,6 +302,7 @@ class FeedPost {
     bool? isShared,
     String? sharedFrom,
     bool? isAd,
+    bool? isTweet,
     String? adTitle,
     String? adCompanyId,
     String? adCompanyName,
@@ -340,6 +344,7 @@ class FeedPost {
       isShared: isShared ?? this.isShared,
       sharedFrom: sharedFrom ?? this.sharedFrom,
       isAd: isAd ?? this.isAd,
+      isTweet: isTweet ?? this.isTweet,
       adTitle: adTitle ?? this.adTitle,
       adCompanyId: adCompanyId ?? this.adCompanyId,
       adCompanyName: adCompanyName ?? this.adCompanyName,

@@ -12,9 +12,11 @@ import '../models/feed_post_model.dart';
 
 class CommentsSheet extends StatefulWidget {
   final String postId;
-  const CommentsSheet({super.key, required this.postId});
+  final bool isTweet;
+  const CommentsSheet({super.key, required this.postId, this.isTweet = false});
 
-  static Future<void> show(BuildContext context, String postId) async {
+  static Future<void> show(BuildContext context, String postId,
+      {bool isTweet = false}) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -24,7 +26,7 @@ class CommentsSheet extends StatefulWidget {
       ),
       builder: (_) => SizedBox(
         height: MediaQuery.of(context).size.height * 0.82,
-        child: CommentsSheet(postId: postId),
+        child: CommentsSheet(postId: postId, isTweet: isTweet),
       ),
     );
   }
@@ -49,6 +51,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   final FocusNode _inputFocus = FocusNode();
   Map<String, dynamic>? _me;
   Map<String, dynamic>? _post;
+  late bool _isTweet;
 
   void _dispatchCommentsDelta(int delta) {
     if (!mounted || delta == 0) return;
@@ -68,6 +71,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   @override
   void initState() {
     super.initState();
+    _isTweet = widget.isTweet;
     _load();
     _initMe();
     _loadPost();
@@ -82,7 +86,13 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final list = await _svc.getComments(widget.postId, page: 1, limit: 100, newestFirst: true);
+    final list = await _svc.getComments(
+      widget.postId,
+      page: 1,
+      limit: 100,
+      newestFirst: true,
+      isTweet: _isTweet,
+    );
     final uid = await CurrentUser.id;
     final likedIds = <String>{};
     final ids = <String>[];
@@ -135,7 +145,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
     // React parity: eagerly fetch replies for each top-level comment.
     for (final id in ids) {
       unawaited(() async {
-        final replies = await _svc.getReplies(id, page: 1, limit: 50);
+        final replies =
+            await _svc.getReplies(id, page: 1, limit: 50, isTweet: _isTweet);
         if (!mounted) return;
         setState(() {
           _replies[id] = replies;
@@ -148,8 +159,11 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Future<void> _loadPost() async {
     setState(() => _loadingPost = true);
     try {
-      final post = await _svc.getPostById(widget.postId);
+      final post = await _svc.getPostById(widget.postId, isTweet: _isTweet);
       if (!mounted) return;
+      final itemType =
+          (post?['item_type'] ?? post?['itemType'] ?? '').toString().toLowerCase();
+      if (itemType == 'tweet') _isTweet = true;
       setState(() {
         _post = post;
         _loadingPost = false;
@@ -417,7 +431,13 @@ class _CommentsSheetState extends State<CommentsSheet> {
         }
       }
     });
-    final createdRaw = await _svc.addComment(widget.postId, uid, text, parentId: _replyParentId);
+    final createdRaw = await _svc.addComment(
+      widget.postId,
+      uid,
+      text,
+      parentId: _replyParentId,
+      isTweet: _isTweet,
+    );
     if (createdRaw != null) {
       Map<String, dynamic> created = createdRaw;
       if (created['user'] == null) {
@@ -515,7 +535,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       _comments[index] = cc;
     });
     if (liked) {
-      final res = await _svc.unlikeComment(id);
+      final res = await _svc.unlikeComment(id, isTweet: _isTweet);
       if (res != null) {
         setState(() {
           final cc = Map<String, dynamic>.from(_comments[index]);
@@ -535,7 +555,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
         });
       }
     } else {
-      final res = await _svc.likeComment(id);
+      final res = await _svc.likeComment(id, isTweet: _isTweet);
       if (res != null) {
         setState(() {
           final cc = Map<String, dynamic>.from(_comments[index]);
@@ -560,7 +580,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Future<void> _delete(Map<String, dynamic> c, int index) async {
     final id = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
     if (id.isEmpty) return;
-    final ok = await _svc.deleteComment(id);
+    final ok = await _svc.deleteComment(id, isTweet: _isTweet);
     if (ok) {
       setState(() {
         _comments.removeAt(index);
@@ -572,7 +592,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Future<void> _loadRepliesFor(String commentId) async {
     if (_loadingReplies.contains(commentId)) return;
     setState(() => _loadingReplies.add(commentId));
-    final list = await _svc.getReplies(commentId, page: 1, limit: 10);
+    final list = await _svc.getReplies(
+      commentId,
+      page: 1,
+      limit: 10,
+      isTweet: _isTweet,
+    );
     if (!mounted) return;
     setState(() {
       _replies[commentId] = list;
@@ -690,7 +715,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
       list[replyIndex] = reply;
     });
 
-    final res = liked ? await _svc.unlikeComment(id) : await _svc.likeComment(id);
+    final res = liked
+        ? await _svc.unlikeComment(id, isTweet: _isTweet)
+        : await _svc.likeComment(id, isTweet: _isTweet);
     if (res == null || !mounted) return;
     setState(() {
       final latest = Map<String, dynamic>.from(list[replyIndex]);

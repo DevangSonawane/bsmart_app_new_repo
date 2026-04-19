@@ -577,6 +577,12 @@ const Sidebar = ({ onOpenCreateModal }) => {
                             <Image size={18} /> Create Post
                           </button>
                           <button
+                            onClick={() => { onOpenCreateModal('tweet'); setIsCreateDropdownOpen(false); }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-200"
+                          >
+                            <MessageCircle size={18} /> Create Tweet
+                          </button>
+                          <button
                             onClick={() => { onOpenCreateModal('reel'); setIsCreateDropdownOpen(false); }}
                             className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-200"
                           >
@@ -615,7 +621,7 @@ const Sidebar = ({ onOpenCreateModal }) => {
                     strokeWidth={isActive ? 2.5 : 2}
                   />
                   {item.label === 'Messages' && chatUnreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-blue-500 text-white text-[9px] font-black flex items-center justify-center leading-none border border-white dark:border-black">
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center leading-none border border-white dark:border-black">
                       {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
                     </span>
                   )}
@@ -651,7 +657,7 @@ const Sidebar = ({ onOpenCreateModal }) => {
                   <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-800 flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-sm dark:text-white">Notifications</h3>
-                      {unreadCount > 0 && <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-blue-600 text-white leading-none">{unreadCount}</span>}
+                      {unreadCount > 0 && <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-red-500 text-white leading-none">{unreadCount}</span>}
                     </div>
                     <div className="flex items-center gap-2">
                       {unreadCount > 0 && (

@@ -16,8 +16,14 @@ import '../state/feed_actions.dart';
 class PostDetailModal extends StatefulWidget {
   final String postId;
   final VoidCallback? onClose;
+  final bool isTweet;
 
-  const PostDetailModal({super.key, required this.postId, this.onClose});
+  const PostDetailModal({
+    super.key,
+    required this.postId,
+    this.onClose,
+    this.isTweet = false,
+  });
 
   @override
   State<PostDetailModal> createState() => _PostDetailModalState();
@@ -42,6 +48,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
   bool _videoReady = false;
   bool _videoLoading = false;
   String? _activeVideoUrl;
+  late bool _isTweet;
 
   String? _extractId(dynamic value) {
     if (value is String && value.isNotEmpty) return value;
@@ -257,6 +264,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
   @override
   void initState() {
     super.initState();
+    _isTweet = widget.isTweet;
     _load();
   }
 
@@ -273,11 +281,14 @@ class _PostDetailModalState extends State<PostDetailModal> {
       _loadingPost = true;
       _loadingComments = true;
     });
-    final post = await _svc.getPostById(widget.postId);
+    final post = await _svc.getPostById(widget.postId, isTweet: _isTweet);
     if (post == null || !mounted) {
       if (mounted) setState(() => _loadingPost = false);
       return;
     }
+    final itemType =
+        (post['item_type'] ?? post['itemType'] ?? '').toString().toLowerCase();
+    if (itemType == 'tweet') _isTweet = true;
     final userId = _extractId(post['user_id']) ??
         _extractId(post['user']) ??
         _extractId(post['users']);
@@ -288,13 +299,14 @@ class _PostDetailModalState extends State<PostDetailModal> {
       final fetched = await _svc.getUserById(userId);
       if (fetched != null) user = fetched;
     }
-    final comments = await _svc.getComments(widget.postId);
+    final comments = await _svc.getComments(widget.postId, isTweet: _isTweet);
     final currentUserId = await CurrentUser.id;
     final isLiked =
         _extractLikedFlag(post, currentUserId: currentUserId) ?? false;
     final likeCount = _extractLikesCount(post) ?? 0;
-    final isSaved =
-        _asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']);
+    final isSaved = _isTweet
+        ? false
+        : (_asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']));
     if (mounted) {
       setState(() {
         _post = post;
@@ -328,10 +340,12 @@ class _PostDetailModalState extends State<PostDetailModal> {
           desired ? _likeCount + 1 : (_likeCount > 0 ? _likeCount - 1 : 0);
       _likeAnimate = true;
     });
-    final liked = await _svc.setPostLike(widget.postId, like: desired);
+    final liked =
+        await _svc.setPostLike(widget.postId, like: desired, isTweet: _isTweet);
     if (!mounted) return;
     try {
-      final p = await SupabaseService().getPostById(widget.postId);
+      final p =
+          await SupabaseService().getPostById(widget.postId, isTweet: _isTweet);
       final currentUserId = await CurrentUser.id;
       final serverLiked =
           _extractLikedFlag(p, currentUserId: currentUserId) ?? liked;
@@ -356,7 +370,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
     if (content.isEmpty || userId == null) return;
     setState(() => _postingComment = true);
     try {
-      await _svc.addComment(widget.postId, userId, content);
+      await _svc.addComment(widget.postId, userId, content, isTweet: _isTweet);
       _commentController.clear();
       await _load();
     } finally {
@@ -365,6 +379,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
   }
 
   Future<void> _handleSave() async {
+    if (_isTweet) return;
     if (_post == null) return;
     final hasToken = await ApiClient().hasToken;
     if (!hasToken) {
@@ -381,10 +396,11 @@ class _PostDetailModalState extends State<PostDetailModal> {
     StoreProvider.of<AppState>(context, listen: false)
         .dispatch(UpdatePostSaved(widget.postId, desired));
 
-    final saved = await _svc.setPostSaved(widget.postId, save: desired);
+    final saved =
+        await _svc.setPostSaved(widget.postId, save: desired, isTweet: _isTweet);
     if (!mounted) return;
     try {
-      final p = await _svc.getPostById(widget.postId);
+      final p = await _svc.getPostById(widget.postId, isTweet: _isTweet);
       final serverSaved =
           _asBool(p?['is_saved_by_me']) || _asBool(p?['saved_by_me']) || saved;
       setState(() => _isSaved = serverSaved);
@@ -398,6 +414,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
   }
 
   Future<void> _showLikesList() async {
+    if (_isTweet) return;
     final users = await _svc.getPostLikes(widget.postId);
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -846,7 +863,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
     final baseTextColor = theme.textTheme.bodyMedium?.color ?? Colors.black;
     final username = _postUser?['username'] as String? ?? 'User';
     final avatarUrl = _postUser?['avatar_url'] as String?;
-    final caption = _post?['caption'] as String? ?? '';
+    final caption = (_post?['caption'] ?? _post?['content']) as String? ?? '';
     final location = _post?['location'] as String?;
     final createdAt = _post?['created_at'] as String? ?? '';
 
@@ -1322,11 +1339,12 @@ class _PostDetailModalState extends State<PostDetailModal> {
                   onPressed: () {}),
               IconButton(icon: const Icon(LucideIcons.send), onPressed: () {}),
               const Spacer(),
-              IconButton(
-                  icon: Icon(
-                    _isSaved ? Icons.bookmark : LucideIcons.bookmark,
-                  ),
-                  onPressed: _handleSave),
+              if (!_isTweet)
+                IconButton(
+                    icon: Icon(
+                      _isSaved ? Icons.bookmark : LucideIcons.bookmark,
+                    ),
+                    onPressed: _handleSave),
             ],
           ),
         ),

@@ -17,6 +17,8 @@ class SupabaseService {
   final VendorsApi _vendorsApi = VendorsApi();
   final PostsApi _postsApi = PostsApi();
   final CommentsApi _commentsApi = CommentsApi();
+  final TweetsApi _tweetsApi = TweetsApi();
+  final TweetCommentsApi _tweetCommentsApi = TweetCommentsApi();
   final UploadApi _uploadApi = UploadApi();
   final FollowsApi _followsApi = FollowsApi();
   final Map<String, bool> _commentLikeOverrides = {};
@@ -258,9 +260,19 @@ class SupabaseService {
 
   // ── Posts ───────────────────────────────────────────────────────────────────
 
-  Future<Map<String, dynamic>?> getPostById(String postId) async {
+  Future<Map<String, dynamic>?> getPostById(String postId,
+      {bool? isTweet}) async {
+    // React parity: try posts first, then fall back to tweets if needed.
+    if (isTweet == true) {
+      try {
+        return await _tweetsApi.getTweet(postId);
+      } catch (_) {}
+    }
     try {
       return await _postsApi.getPost(postId);
+    } catch (_) {}
+    try {
+      return await _tweetsApi.getTweet(postId);
     } catch (_) {
       return null;
     }
@@ -729,10 +741,14 @@ class SupabaseService {
   }
 
   Future<List<Map<String, dynamic>>> getComments(String postId,
-      {int page = 1, int limit = 50, bool newestFirst = true}) async {
+      {int page = 1,
+      int limit = 50,
+      bool newestFirst = true,
+      bool? isTweet}) async {
     try {
-      final data =
-          await _commentsApi.getComments(postId, page: page, limit: limit);
+      final data = (isTweet == true)
+          ? await _tweetCommentsApi.getComments(postId, page: page, limit: limit)
+          : await _commentsApi.getComments(postId, page: page, limit: limit);
       final list = _extractCommentsList(data);
       final comments = list
           .whereType<Map>()
@@ -753,57 +769,122 @@ class SupabaseService {
       }
       return comments;
     } catch (_) {
-      return [];
+      if (isTweet == true) return [];
+      // Fallback: if caller didn't know content type, try tweet comments.
+      try {
+        final data =
+            await _tweetCommentsApi.getComments(postId, page: page, limit: limit);
+        final list = _extractCommentsList(data);
+        final comments = list
+            .whereType<Map>()
+            .map((e) => _normalizeComment(Map<String, dynamic>.from(e)))
+            .toList();
+        if (newestFirst) {
+          comments.sort((a, b) {
+            final as =
+                (a['created_at'] as String?) ?? (a['createdAt'] as String?) ?? '';
+            final bs =
+                (b['created_at'] as String?) ?? (b['createdAt'] as String?) ?? '';
+            final ad =
+                DateTime.tryParse(as) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bd =
+                DateTime.tryParse(bs) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bd.compareTo(ad);
+          });
+        }
+        return comments;
+      } catch (_) {
+        return [];
+      }
     }
   }
 
   Future<Map<String, dynamic>?> addComment(
       String postId, String userId, String content,
-      {String? parentId}) async {
+      {String? parentId, bool? isTweet}) async {
     try {
-      final created = await _commentsApi.addComment(
-        postId,
-        text: content,
-        parentId: parentId,
-      );
+      final created = (isTweet == true)
+          ? await _tweetCommentsApi.addComment(
+              postId,
+              text: content,
+              parentId: parentId,
+            )
+          : await _commentsApi.addComment(
+              postId,
+              text: content,
+              parentId: parentId,
+            );
       return created;
     } catch (_) {
+      if (isTweet == true) return null;
+      try {
+        final created = await _tweetCommentsApi.addComment(
+          postId,
+          text: content,
+          parentId: parentId,
+        );
+        return created;
+      } catch (_) {}
       return null;
     }
   }
 
-  Future<bool> deleteComment(String commentId) async {
+  Future<bool> deleteComment(String commentId, {bool? isTweet}) async {
     try {
-      await _commentsApi.deleteComment(commentId);
+      if (isTweet == true) {
+        await _tweetCommentsApi.deleteComment(commentId);
+      } else {
+        await _commentsApi.deleteComment(commentId);
+      }
       return true;
     } catch (_) {
+      if (isTweet == true) return false;
+      try {
+        await _tweetCommentsApi.deleteComment(commentId);
+        return true;
+      } catch (_) {}
       return false;
     }
   }
 
-  Future<Map<String, dynamic>?> likeComment(String commentId) async {
+  Future<Map<String, dynamic>?> likeComment(String commentId,
+      {bool? isTweet}) async {
     try {
-      final res = await _commentsApi.likeComment(commentId);
+      final res = (isTweet == true)
+          ? await _tweetCommentsApi.likeComment(commentId)
+          : await _commentsApi.likeComment(commentId);
       return res;
     } catch (e) {
+      if (isTweet == true) return null;
+      try {
+        return await _tweetCommentsApi.likeComment(commentId);
+      } catch (_) {}
       return null;
     }
   }
 
-  Future<Map<String, dynamic>?> unlikeComment(String commentId) async {
+  Future<Map<String, dynamic>?> unlikeComment(String commentId,
+      {bool? isTweet}) async {
     try {
-      final res = await _commentsApi.unlikeComment(commentId);
+      final res = (isTweet == true)
+          ? await _tweetCommentsApi.unlikeComment(commentId)
+          : await _commentsApi.unlikeComment(commentId);
       return res;
     } catch (e) {
+      if (isTweet == true) return null;
+      try {
+        return await _tweetCommentsApi.unlikeComment(commentId);
+      } catch (_) {}
       return null;
     }
   }
 
   Future<List<Map<String, dynamic>>> getReplies(String commentId,
-      {int page = 1, int limit = 10}) async {
+      {int page = 1, int limit = 10, bool? isTweet}) async {
     try {
-      final res =
-          await _commentsApi.getReplies(commentId, page: page, limit: limit);
+      final res = (isTweet == true)
+          ? await _tweetCommentsApi.getReplies(commentId, page: page, limit: limit)
+          : await _commentsApi.getReplies(commentId, page: page, limit: limit);
       List<dynamic> replies = const [];
       if (res is List) {
         replies = res;
@@ -823,6 +904,33 @@ class SupabaseService {
       setRepliesCache(commentId, casted);
       return casted;
     } catch (_) {
+      if (isTweet != true) {
+        try {
+          final res = await _tweetCommentsApi.getReplies(
+            commentId,
+            page: page,
+            limit: limit,
+          );
+          List<dynamic> replies = const [];
+          if (res is List) {
+            replies = res;
+          } else if (res is Map) {
+            replies = (res['replies'] as List<dynamic>?) ??
+                (res['data'] as List<dynamic>?) ??
+                (res['results'] as List<dynamic>?) ??
+                (res['items'] as List<dynamic>?) ??
+                ((res['data'] is Map && (res['data'] as Map)['replies'] is List)
+                    ? ((res['data'] as Map)['replies'] as List<dynamic>)
+                    : const []);
+          }
+          final casted = replies
+              .whereType<Map>()
+              .map((e) => _normalizeComment(Map<String, dynamic>.from(e)))
+              .toList();
+          setRepliesCache(commentId, casted);
+          return casted;
+        } catch (_) {}
+      }
       return getRepliesCached(commentId);
     }
   }
@@ -860,7 +968,8 @@ class SupabaseService {
   ///
   /// Calls `/posts/:id/like` when [like] is true, otherwise `/posts/:id/unlike`.
   /// Returns the server's authoritative `liked` state.
-  Future<bool> setPostLike(String postId, {required bool like}) async {
+  Future<bool> setPostLike(String postId,
+      {required bool like, bool? isTweet}) async {
     bool? parseLiked(Map<String, dynamic>? payload) {
       if (payload == null) return null;
       final candidates = [
@@ -883,14 +992,16 @@ class SupabaseService {
     }
 
     try {
-      final res = like
-          ? await _postsApi.likePost(postId)
-          : await _postsApi.unlikePost(postId);
+      final Map<String, dynamic> res = (isTweet == true)
+          ? (like ? await _tweetsApi.likeTweet(postId) : await _tweetsApi.unlikeTweet(postId))
+          : (like ? await _postsApi.likePost(postId) : await _postsApi.unlikePost(postId));
       final liked = parseLiked(res);
       if (liked != null) return liked;
       // As a final fallback, re-fetch the post to derive authoritative state.
       try {
-        final post = await _postsApi.getPost(postId);
+        final post = (isTweet == true)
+            ? await _tweetsApi.getTweet(postId)
+            : await _postsApi.getPost(postId);
         final isLikedByMe = parseLiked(post);
         if (isLikedByMe != null) return isLikedByMe;
       } catch (_) {}
@@ -898,7 +1009,9 @@ class SupabaseService {
     } on BadRequestException {
       // Already in desired state; fetch current state to avoid incorrect flips.
       try {
-        final post = await _postsApi.getPost(postId);
+        final post = (isTweet == true)
+            ? await _tweetsApi.getTweet(postId)
+            : await _postsApi.getPost(postId);
         final isLikedByMe = parseLiked(post);
         if (isLikedByMe != null) return isLikedByMe;
       } catch (_) {}
@@ -906,18 +1019,32 @@ class SupabaseService {
     } on UnauthorizedException {
       // Token missing/expired – cannot persist. Try to read current state; otherwise keep desired for UI.
       try {
-        final post = await _postsApi.getPost(postId);
+        final post = (isTweet == true)
+            ? await _tweetsApi.getTweet(postId)
+            : await _postsApi.getPost(postId);
         final isLikedByMe = parseLiked(post);
         if (isLikedByMe != null) return isLikedByMe;
       } catch (_) {}
       return like;
     } catch (_) {
+      if (isTweet == false) return like;
+      // Fallback: if caller didn't know content type, try tweet like/unlike.
+      try {
+        final res = like
+            ? await _tweetsApi.likeTweet(postId)
+            : await _tweetsApi.unlikeTweet(postId);
+        final liked = parseLiked(res);
+        if (liked != null) return liked;
+      } catch (_) {}
       // Network or other error – avoid flipping; best-effort read of server state failed.
       return like;
     }
   }
 
-  Future<bool> setPostSaved(String postId, {required bool save}) async {
+  Future<bool> setPostSaved(String postId,
+      {required bool save, bool? isTweet}) async {
+    // Tweets are not saved/bookmarked in the React client.
+    if (isTweet == true) return false;
     bool result = save;
     try {
       final res = save
@@ -1064,9 +1191,13 @@ class SupabaseService {
     return false;
   }
 
-  Future<bool> deletePost(String postId) async {
+  Future<bool> deletePost(String postId, {bool? isTweet}) async {
     try {
-      await _postsApi.deletePost(postId);
+      if (isTweet == true) {
+        await _tweetsApi.deleteTweet(postId);
+      } else {
+        await _postsApi.deletePost(postId);
+      }
       return true;
     } on ApiException {
       rethrow;

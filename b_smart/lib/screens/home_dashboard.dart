@@ -1730,10 +1730,12 @@ class _HomeDashboardState extends State<HomeDashboard>
     store.dispatch(UpdatePostLiked(post.id, desired));
     if (mounted)
       setState(() {}); // trigger rebuild to reflect optimistic change
-    final liked = await _supabase.setPostLike(post.id, like: desired);
+    final liked =
+        await _supabase.setPostLike(post.id, like: desired, isTweet: post.isTweet);
     if (!mounted) return;
     try {
-      final p = await SupabaseService().getPostById(post.id);
+      final p =
+          await SupabaseService().getPostById(post.id, isTweet: post.isTweet);
       final serverLiked = _extractLikedFlag(p) ?? liked;
       final likesCount = _extractLikesCount(p) ?? optimisticLikes;
       store
@@ -1820,7 +1822,7 @@ class _HomeDashboardState extends State<HomeDashboard>
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         builder: (ctx) => FractionallySizedBox(
           heightFactor: 0.9,
-          child: CommentsSheet(postId: post.id),
+          child: CommentsSheet(postId: post.id, isTweet: post.isTweet),
         ),
       ).whenComplete(() {
         if (mounted) setState(() => _isCommentsOpen = false);
@@ -1830,7 +1832,8 @@ class _HomeDashboardState extends State<HomeDashboard>
       Navigator.of(context)
           .push(
         MaterialPageRoute(
-          builder: (context) => PostDetailModal(postId: post.id),
+          builder: (context) =>
+              PostDetailModal(postId: post.id, isTweet: post.isTweet),
         ),
       )
           .whenComplete(() {
@@ -1849,6 +1852,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   void _onSavePost(FeedPost post) async {
+    if (post.isTweet) return;
     final hasToken = await ApiClient().hasToken;
     if (!hasToken) {
       if (mounted) {
@@ -1862,10 +1866,12 @@ class _HomeDashboardState extends State<HomeDashboard>
     final store = StoreProvider.of<AppState>(context);
     store.dispatch(UpdatePostSaved(post.id, desired));
     if (mounted) setState(() {});
-    final saved = await _supabase.setPostSaved(post.id, save: desired);
+    final saved =
+        await _supabase.setPostSaved(post.id, save: desired, isTweet: post.isTweet);
     if (!mounted) return;
     try {
-      final p = await SupabaseService().getPostById(post.id);
+      final p =
+          await SupabaseService().getPostById(post.id, isTweet: post.isTweet);
       final serverSaved = (p?['is_saved_by_me'] as bool?) ?? saved;
       store.dispatch(UpdatePostSaved(post.id, serverSaved));
       if (mounted) setState(() {});
@@ -1964,8 +1970,10 @@ class _HomeDashboardState extends State<HomeDashboard>
                 if (!isOwner) return const SizedBox.shrink();
                 return ListTile(
                   leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: const Text('Delete Post',
-                      style: TextStyle(color: Colors.red)),
+                  title: Text(
+                    post.isTweet ? 'Delete Tweet' : 'Delete Post',
+                    style: const TextStyle(color: Colors.red),
+                  ),
                   onTap: () async {
                     Navigator.pop(ctx);
                     bool isDeleting = false;
@@ -2005,7 +2013,9 @@ class _HomeDashboardState extends State<HomeDashboard>
                                             ),
                                             const SizedBox(height: 16),
                                             Text(
-                                              'Deleting post...',
+                                              post.isTweet
+                                                  ? 'Deleting tweet...'
+                                                  : 'Deleting post...',
                                               style: TextStyle(
                                                 color: Theme.of(context)
                                                     .textTheme
@@ -2021,16 +2031,19 @@ class _HomeDashboardState extends State<HomeDashboard>
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             const SizedBox(height: 4),
-                                            const Text(
-                                              'Delete Post?',
+                                            Text(
+                                              post.isTweet
+                                                  ? 'Delete Tweet?'
+                                                  : 'Delete Post?',
                                               textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold),
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
                                             const SizedBox(height: 8),
                                             Text(
-                                              'Are you sure you want to delete this post? This action cannot be undone.',
+                                              'Are you sure you want to delete this ${post.isTweet ? 'tweet' : 'post'}? This action cannot be undone.',
                                               textAlign: TextAlign.center,
                                               style: TextStyle(
                                                   color: Theme.of(context)
@@ -2066,7 +2079,10 @@ class _HomeDashboardState extends State<HomeDashboard>
                                                         final ok =
                                                             await SupabaseService()
                                                                 .deletePost(
-                                                                    post.id);
+                                                              post.id,
+                                                              isTweet:
+                                                                  post.isTweet,
+                                                            );
                                                         await Future.delayed(
                                                             const Duration(
                                                                 milliseconds:
@@ -2084,7 +2100,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                                             messenger.showSnackBar(
                                                                 const SnackBar(
                                                                     content: Text(
-                                                                        'Post deleted')));
+                                                                        'Deleted')));
                                                           }
                                                         } else {
                                                           if (mounted) {
@@ -2096,7 +2112,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                                             messenger.showSnackBar(
                                                                 const SnackBar(
                                                                     content: Text(
-                                                                        'Failed to delete post')));
+                                                                        'Failed to delete')));
                                                           }
                                                         }
                                                       } on ApiException catch (e) {

@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import postCommentService from '../services/commentService';
 import adCommentService from '../services/commentServiceJS';
+import tweetCommentService from '../services/tweetCommentService';
 import ContentReportModal from './ContentReportModal';
 import EditContentModal from './EditContentModal';
 import OwnerContentOptionsModal from './OwnerContentOptionsModal';
@@ -40,6 +41,10 @@ const formatDateFull = (dateString) => {
 
 // ── Is Ad helper ───────────────────────────────────────────────────────────────
 const isAdItem = (item) => item?.item_type === 'ad' || !!item?.vendor_id;
+const isTweetItem = (item) => item?.item_type === 'tweet';
+const getContentText = (item) => item?.content || item?.caption || '';
+const getCommentsCount = (item) => item?.commentsCount ?? item?.comments_count ?? 0;
+const getLikeCount = (item) => item?.likesCount ?? item?.likes_count ?? (Array.isArray(item?.likes) ? item.likes.length : 0);
 
 // ── Ad auth headers ────────────────────────────────────────────────────────────
 const adAuthHeaders = () => {
@@ -449,18 +454,20 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
   const { userObject } = useSelector(s => s.auth);
   const [post, setPost] = useState(initialPost);
   const isAd = isAdItem(initialPost);
+  const isTweet = isTweetItem(initialPost);
 
   // Pick the right comment service based on type
-  const cs = isAd ? adCommentService : postCommentService;
+  const cs = isAd ? adCommentService : isTweet ? tweetCommentService : postCommentService;
 
   // Author info
-  const user = post?.user_id || post?.users || post?.user || {};
+  const user = post?.author || post?.user_id || post?.users || post?.user || {};
   const vendor = post?.vendor_id || {};
   const username = user.username || vendor.business_name || post?.username || 'User';
-  const fullName = (vendor.business_name && vendor.business_name !== username) ? vendor.business_name : (user.full_name || '');
-  const avatar = user.avatar_url || post?.userAvatar || '';
+  const fullName = (vendor.business_name && vendor.business_name !== username) ? vendor.business_name : (user.full_name || user.name || '');
+  const avatar = user.avatar_url || user.profilePicture || post?.userAvatar || '';
   const userId = user._id || user.id || (typeof post?.user_id === 'string' ? post.user_id : null);
   const postId = post?._id || post?.id;
+  const contentText = getContentText(post);
 
   const currentUserId = userObject?._id || userObject?.id || null;
   const isPostOwner = !isAd && currentUserId && userId && String(currentUserId) === String(userId);
@@ -532,26 +539,29 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
       // Set likes
       if (typeof initialPost.is_liked_by_me !== 'undefined') {
         setIsLiked(initialPost.is_liked_by_me);
-        setLikeCount(initialPost.likes_count || 0);
+        setLikeCount(getLikeCount(initialPost));
+      } else if (typeof initialPost.isLiked !== 'undefined') {
+        setIsLiked(initialPost.isLiked);
+        setLikeCount(getLikeCount(initialPost));
       } else if (Array.isArray(initialPost.likes)) {
         const myId = currentUserId;
         setIsLiked(myId ? initialPost.likes.some(l =>
           typeof l === 'string' ? String(l) === String(myId) : String(l.user_id || l._id || l.id) === String(myId)
         ) : false);
-        setLikeCount(initialPost.likes.length);
+        setLikeCount(getLikeCount(initialPost));
       }
       setIsDisliked(false);
       setIsSaved(initialPost.is_saved_by_me || false);
 
-      // Fetch fresh post data (posts only) + comments
+      // Fetch fresh post data + comments
       if (!isAd && initialPost._id) {
-        api.get(`/posts/${initialPost._id}`)
+        api.get(`${isTweet ? '/tweets' : '/posts'}/${initialPost._id}`)
           .then(({ data }) => { setPost(data); })
           .catch(() => {});
       }
       fetchComments(initialPost._id || initialPost.id);
     }
-  }, [isOpen, initialPost, currentUserId, isAd, fetchComments]);
+  }, [isOpen, initialPost, currentUserId, isAd, isTweet, fetchComments]);
 
   const handlePostComment = async (e) => {
     e?.preventDefault();
@@ -567,7 +577,11 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
         setExpandedComments(prev => ({ ...prev, [replyInfo.rootCommentId || replyInfo.id]: true }));
       } else {
         await fetchComments(postId);
-        setPost(prev => ({ ...prev, comments_count: (prev.comments_count || 0) + 1 }));
+        setPost(prev => (
+          isTweet
+            ? { ...prev, commentsCount: (prev?.commentsCount || 0) + 1 }
+            : { ...prev, comments_count: (prev?.comments_count || 0) + 1 }
+        ));
       }
     } catch (e) {
       console.error('Post comment:', e);
@@ -596,11 +610,17 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
     try {
       if (isAd) {
         await adCommentService.deleteComment(commentId);
+      } else if (isTweet) {
+        await tweetCommentService.deleteComment(commentId);
       } else {
         await api.delete(`/comments/${commentId}`);
       }
       setComments(prev => prev.filter(c => (c._id || c.id) !== commentId));
-      setPost(prev => ({ ...prev, comments_count: Math.max(0, (prev.comments_count || 1) - 1) }));
+      setPost(prev => (
+        isTweet
+          ? { ...prev, commentsCount: Math.max(0, (prev?.commentsCount || 1) - 1) }
+          : { ...prev, comments_count: Math.max(0, (prev?.comments_count || 1) - 1) }
+      ));
     } catch (e) { console.error(e); }
   };
 
@@ -609,6 +629,8 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
     try {
       if (isAd) {
         await adCommentService.deleteComment(replyId);
+      } else if (isTweet) {
+        await tweetCommentService.deleteComment(replyId);
       } else {
         await api.delete(`/comments/${replyId}`);
       }
@@ -636,6 +658,8 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
       if (isAd) {
         const ep = wasLiked ? `/api/ads/${postId}/dislike` : `/api/ads/${postId}/like`;
         await fetch(`${BASE_URL}${ep}`, { method: 'POST', headers: adAuthHeaders(), body: JSON.stringify({ user: { id: String(currentUserId || '') } }) });
+      } else if (isTweet) {
+        await api.post(`/tweets/${postId}/${wasLiked ? 'unlike' : 'like'}`);
       } else if (post._id) {
         await api.post(`/posts/${postId}/${wasLiked ? 'unlike' : 'like'}`);
       } else {
@@ -655,12 +679,12 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
   const handleDeletePost = async () => {
     setIsDeleting(true);
     try {
-      await api.delete(isAd ? `/ads/${postId}` : `/posts/${postId}`);
+      await api.delete(isAd ? `/ads/${postId}` : isTweet ? `/tweets/${postId}` : `/posts/${postId}`);
       await new Promise(r => setTimeout(r, 1000));
       onClose();
       window.location.reload();
     } catch {
-      alert('Failed to delete post');
+      alert(`Failed to delete ${isTweet ? 'tweet' : 'post'}`);
       setIsDeleting(false);
       setShowDeleteModal(false);
     }
@@ -669,9 +693,11 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
   if (!isOpen || !post) return null;
 
   const offer = isAd ? (post.product_offer?.[0] || null) : null;
-  const reportContentType = isAd ? 'ad' : (post.type === 'reel' ? 'reel' : 'post');
+  const reportContentType = isAd ? 'ad' : isTweet ? 'tweet' : (post.type === 'reel' ? 'reel' : 'post');
   const reportContentUrl = isAd
     ? `${window.location.origin}/ads`
+    : isTweet
+      ? `${window.location.origin}/post/${postId}?type=tweet`
     : post.type === 'reel'
       ? `${window.location.origin}/reels/${postId}`
       : `${window.location.origin}/posts/${postId}`;
@@ -710,8 +736,9 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
                 {fullName && fullName !== username && (
                   <p className="text-xs text-gray-500 truncate">{fullName}</p>
                 )}
-                {!isAd && post.location && <p className="text-xs text-gray-400">{post.location}</p>}
+                {!isAd && !isTweet && post.location && <p className="text-xs text-gray-400">{post.location}</p>}
                 {isAd && post.location && <p className="text-xs text-gray-400">{post.location}</p>}
+                {isTweet && <p className="text-xs text-gray-400">Tweet</p>}
               </div>
             </div>
 
@@ -719,7 +746,11 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
               <button
                 onClick={() => {
                   if (isPostOwner) {
-                    setShowOptions(true);
+                    if (isTweet) {
+                      setShowDeleteModal(true);
+                    } else {
+                      setShowOptions(true);
+                    }
                     return;
                   }
                   setShowReportModal(true);
@@ -732,37 +763,50 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
           </div>
 
           <DeleteModal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} onConfirm={handleDeletePost} isDeleting={isDeleting} />
-          <OwnerContentOptionsModal
-            isOpen={showOptions && isPostOwner}
-            onClose={() => setShowOptions(false)}
-            item={post}
-            contentType={isAd ? 'ad' : (post.type === 'reel' ? 'reel' : 'post')}
-            contentUrl={reportContentUrl}
-            onEdit={() => {
-              setShowOptions(false);
-              setShowEditModal(true);
-            }}
-            onDelete={() => {
-              setShowOptions(false);
-              setShowDeleteModal(true);
-            }}
-            onUpdated={(updated) => setPost(updated)}
-          />
-          <EditContentModal
-            isOpen={showEditModal}
-            onClose={() => setShowEditModal(false)}
-            item={post}
-            contentType={isAd ? 'ad' : (post.type === 'reel' ? 'reel' : 'post')}
-            onSaved={(updated) => setPost(updated)}
-          />
-          <ContentReportModal
-            isOpen={showReportModal}
-            onClose={() => setShowReportModal(false)}
-            contentType={reportContentType}
-            contentId={postId}
-            ownerUsername={username}
-            contentUrl={reportContentUrl}
-          />
+          {!isTweet && (
+            <>
+              <OwnerContentOptionsModal
+                isOpen={showOptions && isPostOwner}
+                onClose={() => setShowOptions(false)}
+                item={post}
+                contentType={isAd ? 'ad' : (post.type === 'reel' ? 'reel' : 'post')}
+                contentUrl={reportContentUrl}
+                onEdit={() => {
+                  setShowOptions(false);
+                  setShowEditModal(true);
+                }}
+                onDelete={() => {
+                  setShowOptions(false);
+                  setShowDeleteModal(true);
+                }}
+                onUpdated={(updated) => setPost(updated)}
+              />
+              <EditContentModal
+                isOpen={showEditModal}
+                onClose={() => setShowEditModal(false)}
+                item={post}
+                contentType={isAd ? 'ad' : (post.type === 'reel' ? 'reel' : 'post')}
+                onSaved={(updated) => setPost(updated)}
+              />
+              <ContentReportModal
+                isOpen={showReportModal}
+                onClose={() => setShowReportModal(false)}
+                contentType={reportContentType}
+                contentId={postId}
+                ownerUsername={username}
+                contentUrl={reportContentUrl}
+              />
+            </>
+          )}
+          {isTweet && (
+            <ContentReportModal
+              isOpen={showReportModal}
+              onClose={() => setShowReportModal(false)}
+              contentType={reportContentType}
+              contentId={postId}
+              contentUrl={reportContentUrl}
+            />
+          )}
 
           {/* Scrollable: post info + comments */}
           <div className="flex-1 overflow-y-auto p-3 md:p-4 scrollbar-hide">
@@ -774,8 +818,8 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
               </Link>
               <div className="flex-1 text-sm">
                 <Link to={profilePath} className="font-semibold mr-2 dark:text-white hover:underline">{username}</Link>
-                {post.caption ? (
-                  <span className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap">{post.caption}</span>
+                {contentText ? (
+                  <span className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap">{contentText}</span>
                 ) : (
                   <span className="text-gray-400 italic text-xs">No caption</span>
                 )}
@@ -879,9 +923,11 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
                   {!isPostOwner && userId && userObject && (
                     <FollowButton targetUserId={String(userId)} />
                   )}
-                  <button onClick={() => setIsSaved(s => !s)} className="hover:opacity-50 transition-opacity active:scale-90">
-                    <Bookmark size={24} className={isSaved ? 'fill-black text-black dark:fill-white dark:text-white' : 'text-gray-900 dark:text-white'} />
-                  </button>
+                  {!isTweet && (
+                    <button onClick={() => setIsSaved(s => !s)} className="hover:opacity-50 transition-opacity active:scale-90">
+                      <Bookmark size={24} className={isSaved ? 'fill-black text-black dark:fill-white dark:text-white' : 'text-gray-900 dark:text-white'} />
+                    </button>
+                  )}
                 </div>
               </div>
 

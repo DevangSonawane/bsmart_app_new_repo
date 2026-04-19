@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useSelector } from 'react-redux';
 import { ArrowLeft, MoreHorizontal, Heart, MessageCircle, Send, Bookmark, Smile, ChevronLeft, ChevronRight, Trash2, X, Edit } from 'lucide-react';
 import api from '../lib/api';
 import commentService from '../services/commentService';
+import tweetCommentService from '../services/tweetCommentService';
 import ContentReportModal from '../components/ContentReportModal';
 
-const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
+const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting, itemLabel = 'Post' }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in p-4">
@@ -19,9 +20,9 @@ const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
                     </div>
                 ) : (
                     <>
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">Delete Post?</h3>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">Delete {itemLabel}?</h3>
                         <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center">
-                            Are you sure you want to delete this post? This action cannot be undone.
+                            Are you sure you want to delete this {itemLabel.toLowerCase()}? This action cannot be undone.
                         </p>
                         <div className="flex gap-3">
                             <button
@@ -47,7 +48,13 @@ const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
 const MobilePostDetail = () => {
     const { postId } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
     const { userObject } = useSelector((state) => state.auth);
+    const searchParams = new URLSearchParams(location.search);
+    const forcedType = searchParams.get('type');
+    const [contentType, setContentType] = useState(forcedType === 'tweet' ? 'tweet' : 'post');
+    const isTweet = contentType === 'tweet';
+    const activeCommentService = isTweet ? tweetCommentService : commentService;
 
     const [post, setPost] = useState(null);
     const [comments, setComments] = useState([]);
@@ -76,7 +83,7 @@ const MobilePostDetail = () => {
         if (postId) {
             fetchPostDetails();
         }
-    }, [postId]);
+    }, [postId, contentType]);
 
     // Update local state when post data changes
     useEffect(() => {
@@ -94,15 +101,15 @@ const MobilePostDetail = () => {
                 }) : false;
 
                 setIsLiked(userLiked);
-                setLikeCount(post.likes.length);
+                setLikeCount(post.likesCount || post.likes_count || post.likes.length);
             } else if (typeof post.is_liked_by_me !== 'undefined') {
                 setIsLiked(post.is_liked_by_me);
-                setLikeCount(post.likes_count || 0);
+                setLikeCount(post.likesCount || post.likes_count || 0);
             } else {
                 const likes = post.likes || [];
                 const userLiked = userObject ? likes.some(like => like.user_id === userObject.id) : false;
                 setIsLiked(userLiked);
-                setLikeCount(likes.length);
+                setLikeCount(post.likesCount || post.likes_count || likes.length);
             }
         }
     }, [post, userObject]);
@@ -111,7 +118,17 @@ const MobilePostDetail = () => {
         setLoading(true);
         setIsLoadingComments(true);
         try {
-            const response = await api.get(`/posts/${postId}`);
+            let response;
+            try {
+                response = await api.get(`/${isTweet ? 'tweets' : 'posts'}/${postId}`);
+            } catch (error) {
+                if (!isTweet) {
+                    response = await api.get(`/tweets/${postId}`);
+                    setContentType('tweet');
+                } else {
+                    throw error;
+                }
+            }
             const fullPost = response.data;
 
             setPost(fullPost);
@@ -120,7 +137,7 @@ const MobilePostDetail = () => {
             await fetchComments(postId);
 
             // Handle user
-            const user = fullPost.user || fullPost.users || fullPost.user_id;
+            const user = fullPost.author || fullPost.user || fullPost.users || fullPost.user_id;
             if (typeof user === 'object') {
                 setPostUser(user);
             } else {
@@ -143,14 +160,14 @@ const MobilePostDetail = () => {
 
     const fetchComments = async (id = postId) => {
         try {
-            const data = await commentService.getComments(id);
+            const data = await activeCommentService.getComments(id);
             setComments(data || []);
 
             // Fetch replies for all comments to check for nested content
             if (data && Array.isArray(data)) {
                 data.forEach(comment => {
                     const commentId = comment._id || comment.id;
-                    commentService.getReplies(commentId)
+                    activeCommentService.getReplies(commentId)
                         .then(repliesData => {
                             if (repliesData && repliesData.length > 0) {
                                 setReplies(prev => ({ ...prev, [commentId]: repliesData }));
@@ -166,7 +183,7 @@ const MobilePostDetail = () => {
 
     const loadReplies = async (commentId) => {
         try {
-            const data = await commentService.getReplies(commentId);
+            const data = await activeCommentService.getReplies(commentId);
             setReplies(prev => ({ ...prev, [commentId]: data }));
         } catch (error) {
             console.error('Error loading replies:', error);
@@ -176,9 +193,9 @@ const MobilePostDetail = () => {
     const handleLikeComment = async (commentId, isLikedByMe) => {
         try {
             if (isLikedByMe) {
-                await commentService.unlikeComment(commentId);
+                await activeCommentService.unlikeComment(commentId);
             } else {
-                await commentService.likeComment(commentId);
+                await activeCommentService.likeComment(commentId);
             }
             // Refresh to update counts/status
             fetchComments();
@@ -196,7 +213,7 @@ const MobilePostDetail = () => {
         try {
             const parentId = replyTo ? replyTo.id : null;
 
-            await commentService.createComment(postId, newComment.trim(), parentId);
+            await activeCommentService.createComment(postId, newComment.trim(), parentId);
 
             setNewComment('');
 
@@ -238,11 +255,7 @@ const MobilePostDetail = () => {
 
         try {
             if (post._id) {
-                if (newIsLiked) {
-                    await api.post(`/posts/${post._id}/like`);
-                } else {
-                    await api.post(`/posts/${post._id}/unlike`);
-                }
+                await api.post(`/${isTweet ? 'tweets' : 'posts'}/${post._id}/${newIsLiked ? 'like' : 'unlike'}`);
             } else {
                 const { error } = await supabase
                     .from('posts')
@@ -256,7 +269,11 @@ const MobilePostDetail = () => {
             const updatedPost = { ...post, likes: newLikes };
             if (typeof post.is_liked_by_me !== 'undefined') {
                 updatedPost.is_liked_by_me = newIsLiked;
-                updatedPost.likes_count = newLikes.length;
+                if (isTweet) {
+                    updatedPost.likesCount = newLikes.length;
+                } else {
+                    updatedPost.likes_count = newLikes.length;
+                }
             }
             setPost(updatedPost);
 
@@ -271,7 +288,11 @@ const MobilePostDetail = () => {
     const handleDeleteComment = async (commentId) => {
         if (!window.confirm('Are you sure you want to delete this comment?')) return;
         try {
-            await api.delete(`/comments/${commentId}`);
+            if (isTweet) {
+                await tweetCommentService.deleteComment(commentId);
+            } else {
+                await api.delete(`/comments/${commentId}`);
+            }
             await fetchComments();
         } catch (error) {
             console.error('Error deleting comment:', error);
@@ -283,7 +304,7 @@ const MobilePostDetail = () => {
         try {
             const id = post._id || post.id;
             const token = localStorage.getItem('token');
-            await api.delete(`/posts/${id}`, {
+            await api.delete(`/${isTweet ? 'tweets' : 'posts'}/${id}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             // Wait a bit
@@ -297,8 +318,12 @@ const MobilePostDetail = () => {
         }
     };
 
-    const reportContentType = post?.type === 'reel' ? 'reel' : 'post';
-    const reportContentUrl = post?._id ? `${window.location.origin}/${reportContentType === 'reel' ? 'reels' : 'posts'}/${post._id}` : window.location.href;
+    const reportContentType = isTweet ? 'tweet' : post?.type === 'reel' ? 'reel' : 'post';
+    const reportContentUrl = post?._id
+        ? isTweet
+            ? `${window.location.origin}/post/${post._id}?type=tweet`
+            : `${window.location.origin}/${reportContentType === 'reel' ? 'reels' : 'posts'}/${post._id}`
+        : window.location.href;
 
     // Format date relative (simple version)
     const formatDate = (dateString) => {
@@ -428,7 +453,7 @@ const MobilePostDetail = () => {
     if (!post) {
         return (
             <div className="min-h-screen bg-white dark:bg-black flex flex-col items-center justify-center p-4">
-                <p className="text-gray-500 mb-4">Post not found</p>
+                <p className="text-gray-500 mb-4">{isTweet ? 'Tweet' : 'Post'} not found</p>
                 <button onClick={() => navigate(-1)} className="text-blue-500 font-semibold">Go Back</button>
             </div>
         );
@@ -484,7 +509,7 @@ const MobilePostDetail = () => {
                 <button onClick={() => navigate(-1)} className="text-gray-900 dark:text-white">
                     <ArrowLeft size={24} />
                 </button>
-                <h1 className="text-lg font-bold text-gray-900 dark:text-white">Post</h1>
+                <h1 className="text-lg font-bold text-gray-900 dark:text-white">{isTweet ? 'Tweet' : 'Post'}</h1>
                 <div className="w-6"></div> {/* Spacer for centering */}
             </div>
 
@@ -493,9 +518,9 @@ const MobilePostDetail = () => {
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-insta-yellow via-insta-orange to-insta-pink">
                         <div className="w-full h-full rounded-full bg-white dark:bg-black p-[2px] overflow-hidden">
-                            {postUser?.avatar_url ? (
+                            {postUser?.avatar_url || postUser?.profilePicture ? (
                                 <img
-                                    src={postUser.avatar_url}
+                                    src={postUser.avatar_url || postUser.profilePicture}
                                     alt={postUser?.username}
                                     className="w-full h-full rounded-full object-cover"
                                 />
@@ -508,7 +533,7 @@ const MobilePostDetail = () => {
                     </div>
                     <div className="flex flex-col">
                         <span className="font-semibold text-sm text-gray-900 dark:text-white leading-tight">
-                            {postUser?.username || 'User'}
+                            {postUser?.username || postUser?.name || 'User'}
                         </span>
                         {post.location && (
                             <span className="text-xs text-gray-500 dark:text-gray-400 leading-tight">{post.location}</span>
@@ -519,7 +544,11 @@ const MobilePostDetail = () => {
                     <button
                         onClick={() => {
                             if (isPostOwner) {
-                                setShowOptions(!showOptions);
+                                if (isTweet) {
+                                    setShowDeleteModal(true);
+                                } else {
+                                    setShowOptions(!showOptions);
+                                }
                                 return;
                             }
                             setShowReportModal(true);
@@ -561,6 +590,7 @@ const MobilePostDetail = () => {
                 onClose={() => setShowDeleteModal(false)}
                 onConfirm={handleDeletePost}
                 isDeleting={isDeleting}
+                itemLabel={isTweet ? 'Tweet' : 'Post'}
             />
             <ContentReportModal
                 isOpen={showReportModal}
@@ -686,7 +716,7 @@ const MobilePostDetail = () => {
                 <div className="space-y-1 mb-2">
                     <div className="text-sm text-gray-900 dark:text-white">
                         <span className="font-semibold mr-2">{postUser?.username}</span>
-                        {post.caption}
+                        {post.content || post.caption}
                     </div>
                     <div className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide pt-1">
                         {formatDate(post.created_at)}
@@ -739,7 +769,7 @@ const MobilePostDetail = () => {
                         disabled={!newComment.trim()}
                         className={`text-blue-500 font-semibold text-sm ${!newComment.trim() ? 'opacity-50' : 'hover:text-blue-700'}`}
                     >
-                        Post
+                        {isTweet ? 'Reply' : 'Post'}
                     </button>
                 </form>
             </div>

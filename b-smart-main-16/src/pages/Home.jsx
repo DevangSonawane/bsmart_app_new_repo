@@ -433,7 +433,11 @@ const Home = () => {
   const handleCommentClick = (item) => {
     if (window.innerWidth < 768) {
       if (item.item_type === 'ad') { setSelectedItem(item); }
-      else { navigate(`/post/${item._id || item.id}`); }
+      else {
+        const itemId = item._id || item.id;
+        const suffix = item.item_type === 'tweet' ? '?type=tweet' : '';
+        navigate(`/post/${itemId}${suffix}`);
+      }
     } else {
       setSelectedItem(item);
     }
