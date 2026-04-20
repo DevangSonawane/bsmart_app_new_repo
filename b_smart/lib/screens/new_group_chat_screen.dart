@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/follows_api.dart';
+import '../api/chat_api.dart';
 import '../api/users_api.dart';
 import '../theme/design_tokens.dart';
 import '../theme/instagram_theme.dart';
@@ -27,12 +28,16 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
   final TextEditingController _groupNameController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
 
+  final ChatApi _chatApi = ChatApi();
   final FollowsApi _followsApi = FollowsApi();
   final UsersApi _usersApi = UsersApi();
 
   bool _followersLoading = true;
   String? _followersError;
   List<Map<String, dynamic>> _followers = const [];
+
+  bool _creating = false;
+  String? _createError;
 
   String? _currentUserId;
   String _searchQuery = '';
@@ -140,10 +145,14 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
   Future<Map<String, dynamic>?> _fetchUserById(String userId) async {
     try {
       final res = await _usersApi.getUserProfile(userId);
-      if (res['user'] is Map) return Map<String, dynamic>.from(res['user'] as Map);
+      if (res['user'] is Map) {
+        return Map<String, dynamic>.from(res['user'] as Map);
+      }
       if (res['data'] is Map) {
         final data = Map<String, dynamic>.from(res['data'] as Map);
-        if (data['user'] is Map) return Map<String, dynamic>.from(data['user'] as Map);
+        if (data['user'] is Map) {
+          return Map<String, dynamic>.from(data['user'] as Map);
+        }
         return data;
       }
       return res;
@@ -233,13 +242,44 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
     });
   }
 
+  Future<void> _createGroup() async {
+    if (_creating) return;
+    final participantIds = _selectedUsers.keys.toList(growable: false);
+    if (participantIds.length < 2) return;
+    setState(() {
+      _creating = true;
+      _createError = null;
+    });
+    try {
+      final conversation = await _chatApi.createGroup(
+        participantIds: participantIds,
+        groupName: _groupNameController.text.trim(),
+      );
+      if (!mounted) return;
+      final id = (conversation['_id'] ?? conversation['id'])?.toString().trim();
+      if (id == null || id.isEmpty) {
+        setState(() {
+          _creating = false;
+          _createError = 'Failed to create group';
+        });
+        return;
+      }
+      Navigator.of(context).pop(conversation);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _creating = false;
+        _createError = e.toString().replaceAll('Exception: ', '');
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final muted =
-        theme.textTheme.bodySmall?.color?.withValues(alpha: 0.70) ??
-            (isDark ? Colors.white70 : Colors.black54);
+    final muted = theme.textTheme.bodySmall?.color?.withValues(alpha: 0.70) ??
+        (isDark ? Colors.white70 : Colors.black54);
 
     final query = _searchQuery.trim().toLowerCase();
     final suggested = _suggestedUsers();
@@ -268,11 +308,7 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
                   height: 52,
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Coming soon')),
-                      );
-                    },
+                    onPressed: _creating ? null : _createGroup,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: InstagramTheme.accentBlue,
                       foregroundColor: Colors.white,
@@ -281,10 +317,19 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
-                      'Create chat',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
+                    child: _creating
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Create group',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
                   ),
                 ),
               )
@@ -293,13 +338,23 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
+          if (_createError != null) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                _createError!,
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+            ),
+          ],
           TextField(
             controller: _groupNameController,
             textInputAction: TextInputAction.next,
             decoration: InputDecoration(
               hintText: 'Group name (optional)',
               filled: true,
-              fillColor: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2),
+              fillColor:
+                  isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(18),
                 borderSide: BorderSide.none,
@@ -324,7 +379,8 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
                       icon: const Icon(LucideIcons.x, size: 18),
                     ),
               filled: true,
-              fillColor: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2),
+              fillColor:
+                  isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(18),
                 borderSide: BorderSide.none,
@@ -542,9 +598,8 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
   Widget _userRow(BuildContext context, Map<String, dynamic> user) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final muted =
-        theme.textTheme.bodySmall?.color?.withValues(alpha: 0.70) ??
-            (isDark ? Colors.white70 : Colors.black54);
+    final muted = theme.textTheme.bodySmall?.color?.withValues(alpha: 0.70) ??
+        (isDark ? Colors.white70 : Colors.black54);
 
     final id = _userId(user) ?? '';
     final selected = id.isNotEmpty && _selectedUsers.containsKey(id);
@@ -606,8 +661,7 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
               highlightColor: Colors.transparent,
               hoverColor: Colors.transparent,
               focusColor: Colors.transparent,
-              overlayColor:
-                  const WidgetStatePropertyAll(Colors.transparent),
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
               child: Container(
                 width: 32,
                 height: 32,
@@ -615,9 +669,7 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
                   shape: BoxShape.circle,
                   color: selected ? DesignTokens.instaPink : unselectedBg,
                   border: Border.all(
-                    color: selected
-                        ? DesignTokens.instaPink
-                        : unselectedBorder,
+                    color: selected ? DesignTokens.instaPink : unselectedBorder,
                     width: 2,
                   ),
                 ),

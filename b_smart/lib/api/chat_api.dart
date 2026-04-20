@@ -19,15 +19,47 @@ class ChatApi {
 
   final ApiClient _client = ApiClient();
 
-  Future<List<Map<String, dynamic>>> getConversations() async {
-    final res = await _client.get('/chat/conversations');
+  /// Fetch conversations for the logged-in user.
+  ///
+  /// Backend supports `type=normal|requests` (defaults to `normal`).
+  Future<List<Map<String, dynamic>>> getConversations(
+      {String type = 'normal'}) async {
+    final t = type.trim().isEmpty ? 'normal' : type.trim();
+    dynamic res;
+    try {
+      // Prefer explicit type for newer backends.
+      res = await _client.get(
+        '/chat/conversations',
+        queryParams: {'type': t},
+      );
+    } catch (_) {
+      // Some deployments reject/ignore the query param; fall back to the legacy
+      // shape for the default "normal" inbox.
+      if (t == 'normal') {
+        res = await _client.get('/chat/conversations');
+      } else {
+        rethrow;
+      }
+    }
     if (res is List) {
-      return res.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      return res
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
     }
     if (res is Map<String, dynamic>) {
-      final list = res['conversations'] ?? res['items'] ?? res['data'];
+      final data = res['data'];
+      final list = res['conversations'] ??
+          res['items'] ??
+          (data is Map
+              ? (data['conversations'] ?? data['items'] ?? data['data'])
+              : null) ??
+          data;
       if (list is List) {
-        return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        return list
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
       }
     }
     return const <Map<String, dynamic>>[];
@@ -42,6 +74,91 @@ class ChatApi {
     });
     if (res is Map<String, dynamic>) {
       final conversation = res['conversation'];
+      if (conversation is Map) return Map<String, dynamic>.from(conversation);
+      return res;
+    }
+    return <String, dynamic>{};
+  }
+
+  /// Creates a new group conversation.
+  ///
+  /// Mirrors the web app endpoint: `POST /chat/groups`.
+  Future<Map<String, dynamic>> createGroup({
+    required List<String> participantIds,
+    String? groupName,
+    String? groupAvatar,
+  }) async {
+    final ids =
+        participantIds.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (ids.isEmpty) return <String, dynamic>{};
+    final body = <String, dynamic>{'participantIds': ids};
+    final name = groupName?.trim();
+    if (name != null && name.isNotEmpty) body['groupName'] = name;
+    final avatar = groupAvatar?.trim();
+    if (avatar != null && avatar.isNotEmpty) body['groupAvatar'] = avatar;
+
+    final res = await _client.post('/chat/groups', body: body);
+    if (res is Map<String, dynamic>) {
+      final conversation = res['conversation'] ?? res['group'] ?? res['data'];
+      if (conversation is Map) return Map<String, dynamic>.from(conversation);
+      return res;
+    }
+    return <String, dynamic>{};
+  }
+
+  /// Updates a group conversation's name or avatar.
+  Future<Map<String, dynamic>> updateGroup({
+    required String conversationId,
+    String? groupName,
+    String? groupAvatar,
+  }) async {
+    final id = conversationId.trim();
+    if (id.isEmpty) return <String, dynamic>{};
+    final body = <String, dynamic>{};
+    final name = groupName?.trim();
+    final avatar = groupAvatar?.trim();
+    if (name != null && name.isNotEmpty) body['groupName'] = name;
+    if (avatar != null && avatar.isNotEmpty) body['groupAvatar'] = avatar;
+    if (body.isEmpty) return <String, dynamic>{};
+
+    final res = await _client.patch('/chat/groups/$id', body: body);
+    if (res is Map<String, dynamic>) {
+      final conversation = res['conversation'] ?? res['group'] ?? res['data'];
+      if (conversation is Map) return Map<String, dynamic>.from(conversation);
+      return res;
+    }
+    return <String, dynamic>{};
+  }
+
+  /// Adds a member to a group conversation.
+  Future<Map<String, dynamic>> addGroupMember({
+    required String conversationId,
+    required String userId,
+  }) async {
+    final cid = conversationId.trim();
+    final uid = userId.trim();
+    if (cid.isEmpty || uid.isEmpty) return <String, dynamic>{};
+    final res =
+        await _client.post('/chat/groups/$cid/members', body: {'userId': uid});
+    if (res is Map<String, dynamic>) {
+      final conversation = res['conversation'] ?? res['group'] ?? res['data'];
+      if (conversation is Map) return Map<String, dynamic>.from(conversation);
+      return res;
+    }
+    return <String, dynamic>{};
+  }
+
+  /// Removes a member from a group conversation (or leaves the group).
+  Future<Map<String, dynamic>> removeGroupMember({
+    required String conversationId,
+    required String userId,
+  }) async {
+    final cid = conversationId.trim();
+    final uid = userId.trim();
+    if (cid.isEmpty || uid.isEmpty) return <String, dynamic>{};
+    final res = await _client.delete('/chat/groups/$cid/members/$uid');
+    if (res is Map<String, dynamic>) {
+      final conversation = res['conversation'] ?? res['group'] ?? res['data'];
       if (conversation is Map) return Map<String, dynamic>.from(conversation);
       return res;
     }
@@ -86,12 +203,14 @@ class ChatApi {
     return <String, dynamic>{};
   }
 
-  Future<Map<String, dynamic>> markMessageSeen({required String messageId}) async {
+  Future<Map<String, dynamic>> markMessageSeen(
+      {required String messageId}) async {
     final res = await _client.put('/chat/messages/$messageId/seen');
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
-  Future<Map<String, dynamic>> deleteMessage({required String messageId}) async {
+  Future<Map<String, dynamic>> deleteMessage(
+      {required String messageId}) async {
     final res = await _client.delete('/chat/messages/$messageId');
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
@@ -177,5 +296,20 @@ class ChatApi {
       return res;
     }
     return <String, dynamic>{};
+  }
+
+  /// Returns online user ids (best-effort; backend dependent).
+  Future<List<String>> getOnlineUsers() async {
+    final res = await _client.get('/chat/online-users');
+    final list = res is Map<String, dynamic>
+        ? (res['data'] ?? res['users'] ?? res['items'])
+        : res;
+    if (list is List) {
+      return list
+          .map((e) => e?.toString().trim() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    return const <String>[];
   }
 }

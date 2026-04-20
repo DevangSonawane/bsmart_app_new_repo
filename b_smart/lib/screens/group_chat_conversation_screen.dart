@@ -7,32 +7,36 @@ import 'package:just_audio/just_audio.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
 import '../api/users_api.dart';
+import '../services/chat_unread_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/voice_recorder_sheet.dart';
+import 'group_chat_info_screen.dart';
 
-class ChatConversationScreen extends StatefulWidget {
+class GroupChatConversationScreen extends StatefulWidget {
   final String conversationId;
   final Map<String, dynamic>? initialConversation;
 
-  const ChatConversationScreen({
+  const GroupChatConversationScreen({
     super.key,
     required this.conversationId,
     this.initialConversation,
   });
 
   @override
-  State<ChatConversationScreen> createState() => _ChatConversationScreenState();
+  State<GroupChatConversationScreen> createState() =>
+      _GroupChatConversationScreenState();
 }
 
-class _ChatConversationScreenState extends State<ChatConversationScreen>
-    with WidgetsBindingObserver {
+class _GroupChatConversationScreenState
+    extends State<GroupChatConversationScreen> with WidgetsBindingObserver {
   final _chatApi = ChatApi();
   final _usersApi = UsersApi();
   final _scrollController = ScrollController();
@@ -41,6 +45,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   final _picker = ImagePicker();
 
   static const bool _showCallButtons = false;
+
+  // TODO: populate from the backend (following list) and keep in sync.
+  final Set<String> _followingIds = <String>{};
 
   String? _currentUserId;
   Map<String, dynamic>? _conversation;
@@ -61,11 +68,373 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   static const int _pageLimit = 20;
 
+  bool _isGroupConversation() => true;
+
+  String _groupName() {
+    final c = _conversation;
+    final explicit =
+        (c?['groupName'] ?? c?['group_name'] ?? c?['name'])?.toString().trim();
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+
+    // Fallback: build a name from participant display names (excluding self).
+    final uid = (_currentUserId ?? '').trim();
+    final names = <String>[];
+    for (final p in _participants()) {
+      final pid =
+          (p['_id'] ?? p['id'] ?? p['user_id'])?.toString().trim() ?? '';
+      if (uid.isNotEmpty && pid == uid) continue;
+      final n = (p['full_name'] ?? p['fullName'] ?? p['name'] ?? p['username'])
+          ?.toString()
+          .trim();
+      if (n != null && n.isNotEmpty) names.add(n);
+      if (names.length >= 3) break;
+    }
+    if (names.isNotEmpty) return names.join(', ');
+    return 'Group';
+  }
+
+  String? _groupAvatar() {
+    final c = _conversation;
+    final v = (c?['groupAvatar'] ?? c?['group_avatar'])?.toString().trim();
+    return (v == null || v.isEmpty) ? null : v;
+  }
+
+  List<Map<String, dynamic>> _participants() {
+    final p = _conversation?['participants'];
+    if (p is! List) return const [];
+    return p.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  String _groupCreatorId() {
+    final c = _conversation;
+    return (c?['createdBy'] ??
+                c?['created_by'] ??
+                c?['groupAdmin'] ??
+                c?['group_admin'] ??
+                c?['requestedBy'] ??
+                c?['requested_by'])
+            ?.toString()
+            .trim() ??
+        '';
+  }
+
+  String _labelForUser(Map<String, dynamic>? u) {
+    if (u == null) return 'User';
+    return (u['full_name'] ??
+            u['fullName'] ??
+            u['name'] ??
+            u['username'] ??
+            'User')
+        .toString()
+        .trim();
+  }
+
+  String _groupCreatedLine() {
+    final creatorId = _groupCreatorId();
+    final uid = (_currentUserId ?? '').trim();
+    if (creatorId.isNotEmpty && uid.isNotEmpty && creatorId == uid) {
+      return 'You created the group.';
+    }
+    if (creatorId.isNotEmpty) {
+      final match = _participants().firstWhere(
+        (p) =>
+            (p['_id'] ?? p['id'] ?? p['user_id'])?.toString().trim() ==
+            creatorId,
+        orElse: () => const <String, dynamic>{},
+      );
+      if (match.isNotEmpty) {
+        final name = _labelForUser(match);
+        if (name.isNotEmpty) return '$name created the group.';
+      }
+    }
+    return 'Group created.';
+  }
+
+  DateTime? _groupCreatedAt() {
+    final raw = (_conversation?['createdAt'] ??
+            _conversation?['created_at'] ??
+            _conversation?['updatedAt'] ??
+            _conversation?['updated_at'])
+        ?.toString()
+        .trim();
+    if (raw == null || raw.isEmpty) return null;
+    return DateTime.tryParse(raw)?.toLocal();
+  }
+
+  String _groupCreatedTimeLabel() {
+    final dt = _groupCreatedAt();
+    if (dt == null) return '';
+    return DateFormat('h:mm a').format(dt);
+  }
+
+  void _showGroupMembersSheet() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final participants = _participants();
+        final theme = Theme.of(context);
+        final muted = theme.textTheme.bodySmall?.color?.withValues(alpha: 0.75);
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _groupName(),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${participants.length} members',
+                  style: TextStyle(
+                    color: muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: min(
+                    320,
+                    MediaQuery.of(context).size.height * 0.45,
+                  ),
+                  child: ListView.separated(
+                    itemCount: participants.length,
+                    separatorBuilder: (_, __) => const Divider(height: 18),
+                    itemBuilder: (context, index) {
+                      final u = participants[index];
+                      final name = (u['full_name'] ??
+                              u['fullName'] ??
+                              u['name'] ??
+                              u['username'] ??
+                              'User')
+                          .toString()
+                          .trim();
+                      final handle = (u['username'] ?? u['handle'] ?? '')
+                          .toString()
+                          .trim();
+                      final avatar = (u['avatar_url'] ??
+                              u['avatarUrl'] ??
+                              u['profile_pic'] ??
+                              u['profilePic'])
+                          ?.toString()
+                          .trim();
+                      return Row(
+                        children: [
+                          if (avatar != null && avatar.isNotEmpty)
+                            ClipOval(
+                              child: SafeNetworkImage(
+                                url: avatar,
+                                width: 34,
+                                height: 34,
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          else
+                            CircleAvatar(
+                              radius: 17,
+                              backgroundColor: DesignTokens.instaPink,
+                              child: Text(
+                                name.isNotEmpty
+                                    ? name.characters.first.toUpperCase()
+                                    : 'U',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (handle.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    handle.startsWith('@')
+                                        ? handle
+                                        : '@$handle',
+                                    style: TextStyle(
+                                      color: muted,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _leaveGroup,
+                    icon: const Icon(LucideIcons.logOut, size: 18),
+                    label: const Text('Leave group'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAppBarGroupAvatar() {
+    final borderColor = Theme.of(context).scaffoldBackgroundColor;
+    final uid = (_currentUserId ?? '').trim();
+    final participants = _participants();
+    final others = participants
+        .where((p) => (p['_id'] ?? p['id'])?.toString().trim() != uid)
+        .take(2)
+        .toList();
+
+    // Ensure we have 2 (fill from all if needed).
+    while (others.length < 2 && participants.length > others.length) {
+      final extra = participants.firstWhere(
+        (p) => !others.contains(p),
+        orElse: () => const <String, dynamic>{},
+      );
+      if (extra.isEmpty) break;
+      others.add(extra);
+    }
+
+    Widget avatarCircle(Map<String, dynamic> user, {double size = 28}) {
+      final url = (user['avatar_url'] ?? user['avatarUrl'])?.toString().trim();
+      final label = _labelForUser(user);
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: borderColor, width: 1.5),
+        ),
+        child: ClipOval(
+          child: (url != null && url.isNotEmpty)
+              ? SafeNetworkImage(
+                  url: url,
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                )
+              : CircleAvatar(
+                  radius: size / 2,
+                  backgroundColor: DesignTokens.instaPink,
+                  child: Text(
+                    label.isNotEmpty
+                        ? label.characters.first.toUpperCase()
+                        : 'G',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: size * 0.4,
+                    ),
+                  ),
+                ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: 44,
+      height: 32,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (others.length >= 2)
+            Positioned(left: 14, top: 2, child: avatarCircle(others[1])),
+          Positioned(
+            left: 0,
+            top: 2,
+            child: avatarCircle(
+              others.isNotEmpty ? others[0] : const <String, dynamic>{},
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEditGroupSheet() async {
+    if (!_isGroupConversation()) return;
+    final convId = widget.conversationId.trim();
+    if (convId.isEmpty) return;
+
+    final initialName =
+        (_conversation?['groupName'] ?? _conversation?['group_name'])
+            ?.toString()
+            .trim();
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) {
+        return _EditGroupSheet(
+          conversationId: convId,
+          initialName: initialName,
+          groupAvatarUrl: _groupAvatar(),
+          participants: _participants(),
+          chatApi: _chatApi,
+          picker: _picker,
+          extractUploadedMediaUrl: _extractUploadedMediaUrl,
+          groupAvatarStackBuilder: (participants, size) => _groupAvatarStack(
+            participants: participants,
+            size: size,
+          ),
+          onConversationUpdated: (normalized) {
+            if (!mounted) return;
+            setState(() => _conversation = normalized);
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _leaveGroup() async {
+    final cid = widget.conversationId.trim();
+    final uid = (_currentUserId ?? '').trim();
+    if (cid.isEmpty || uid.isEmpty) return;
+    try {
+      await _chatApi.removeGroupMember(conversationId: cid, userId: uid);
+      if (!mounted) return;
+      Navigator.of(context).pop(); // sheet
+      Navigator.of(context).maybePop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _conversation = widget.initialConversation;
+    ChatUnreadService().markConversationRead(widget.conversationId);
     _init();
     _scrollController.addListener(_handleScroll);
     _inputController.addListener(_handleComposerChanged);
@@ -172,6 +541,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   }
 
   Future<void> _loadOtherProfileIfNeeded() async {
+    if (_isGroupConversation()) return;
     if (_otherProfile != null) return;
     final other = _otherParticipant();
     final otherId = _idFor(other);
@@ -306,6 +676,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 (m['_id']?.toString() == messageId) ? {...m, ...updated} : m)
             .toList();
       });
+      ChatUnreadService().markConversationRead(widget.conversationId);
     } catch (_) {
       // ignore
     }
@@ -517,6 +888,41 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     return DateTime.tryParse(raw)?.millisecondsSinceEpoch ?? 0;
   }
 
+  String? _seenAtRaw(Map<String, dynamic>? message) {
+    if (message == null) return null;
+    final raw = (message['seenAt'] ?? message['seen_at'])?.toString().trim();
+    return (raw != null && raw.isNotEmpty) ? raw : null;
+  }
+
+  String _formatSeenAgo(String? dateValue) {
+    if (dateValue == null || dateValue.trim().isEmpty) return 'Seen';
+    final parsed = DateTime.tryParse(dateValue);
+    if (parsed == null) return 'Seen';
+    final diff = DateTime.now().difference(parsed);
+    final minutes = max(1, diff.inMinutes);
+    if (minutes < 60) return 'Seen ${minutes}m ago';
+    final hours = minutes ~/ 60;
+    if (hours < 24) return 'Seen ${hours}h ago';
+    final days = hours ~/ 24;
+    if (days < 7) return 'Seen ${days}d ago';
+    final formatted = DateFormat('d MMM', 'en_IN').format(parsed);
+    return 'Seen $formatted';
+  }
+
+  Map<String, dynamic>? _latestSeenOwnMessage(String otherUserId) {
+    final uid = _currentUserId ?? '';
+    final other = otherUserId.trim();
+    if (uid.isEmpty || other.isEmpty) return null;
+    for (var index = _messages.length - 1; index >= 0; index -= 1) {
+      final m = _messages[index];
+      if (m['isDeleted'] == true) continue;
+      final mine = _senderIdForMessage(m) == uid;
+      if (!mine) continue;
+      if (_hasSeen(m, other)) return m;
+    }
+    return null;
+  }
+
   bool _isImageOnlyMessage(Map<String, dynamic> message) {
     if (message['isDeleted'] == true) return false;
     final mediaType = (message['mediaType'] ?? message['media_type'] ?? '')
@@ -584,6 +990,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     required bool mine,
     required Map<String, dynamic>? senderMap,
     required List<String> urls,
+    required bool showSeen,
+    required String seenText,
   }) {
     final w = MediaQuery.sizeOf(context).width;
     final maxBubbleWidth = min(420.0, w * 0.78);
@@ -666,6 +1074,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
           children: [
             wrapped,
             reactionPill(),
+            if (showSeen)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  seenText,
+                  style: TextStyle(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.48),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
       );
@@ -795,91 +1218,166 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   @override
   Widget build(BuildContext context) {
-    final other = _otherParticipant();
-    final otherName =
-        (_otherProfile?['username'] as String?)?.trim().isNotEmpty == true
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final appBarBg =
+        theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
+    final isGroup = _isGroupConversation();
+    final other = isGroup ? null : _otherParticipant();
+    final otherName = isGroup
+        ? _groupName()
+        : (_otherProfile?['username'] as String?)?.trim().isNotEmpty == true
             ? (_otherProfile?['username'] as String).trim()
             : _nameFor(other);
-    final otherAvatar = _avatarFor(_otherProfile ?? other);
-    final otherId = _idFor(_otherProfile ?? other) ?? '';
+    final otherAvatar =
+        isGroup ? _groupAvatar() : _avatarFor(_otherProfile ?? other);
+    final otherId = isGroup ? '' : (_idFor(_otherProfile ?? other) ?? '');
+    final latestSeenOwn = isGroup ? null : _latestSeenOwnMessage(otherId);
+    final latestSeenOwnId = isGroup ? '' : _messageId(latestSeenOwn);
+    final seenText = isGroup ? '' : _formatSeenAgo(_seenAtRaw(latestSeenOwn));
+    final membersCount = isGroup ? _participants().length : 0;
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            if (otherAvatar != null && otherAvatar.trim().isNotEmpty)
-              ClipOval(
-                child: SafeNetworkImage(
-                  url: otherAvatar,
-                  width: 32,
-                  height: 32,
-                  fit: BoxFit.cover,
-                ),
-              )
-            else
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: DesignTokens.instaPink,
-                child: Text(
-                  otherName.isNotEmpty
-                      ? otherName.characters.first.toUpperCase()
-                      : 'U',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+      appBar: isGroup
+          ? AppBar(
+              backgroundColor: appBarBg,
+              surfaceTintColor: appBarBg,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              foregroundColor: cs.onSurface,
+              titleSpacing: 0,
+              title: Row(
                 children: [
-                  Text(
-                    otherName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+                  _buildAppBarGroupAvatar(),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                otherName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: cs.onSurface,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.chevron_right,
+                              size: 16,
+                              color: cs.onSurface.withValues(alpha: 0.55),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
+              actions: [
+                IconButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => GroupChatInfoScreen(
+                          title: otherName,
+                          groupAvatarUrl: otherAvatar,
+                          currentUserId: _currentUserId ?? '',
+                          participants: _participants(),
+                          onEdit: _showEditGroupSheet,
+                          onShowMembers: _showGroupMembersSheet,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(LucideIcons.info),
+                ),
+              ],
+            )
+          : AppBar(
+              titleSpacing: 0,
+              title: Row(
+                children: [
+                  if (otherAvatar != null && otherAvatar.trim().isNotEmpty)
+                    ClipOval(
+                      child: SafeNetworkImage(
+                        url: otherAvatar,
+                        width: 32,
+                        height: 32,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  else
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: DesignTokens.instaPink,
+                      child: Text(
+                        otherName.isNotEmpty
+                            ? otherName.characters.first.toUpperCase()
+                            : 'U',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          otherName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                if (_showCallButtons)
+                  IconButton(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Calling coming soon')),
+                      );
+                    },
+                    icon: const Icon(LucideIcons.phone),
+                  ),
+                if (_showCallButtons)
+                  IconButton(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Video call coming soon')),
+                      );
+                    },
+                    icon: const Icon(LucideIcons.video),
+                  ),
+                IconButton(
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Coming soon')),
+                    );
+                  },
+                  icon: const Icon(LucideIcons.info),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          if (_showCallButtons)
-            IconButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Calling coming soon')),
-                );
-              },
-              icon: const Icon(LucideIcons.phone),
-            ),
-          if (_showCallButtons)
-            IconButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Video call coming soon')),
-                );
-              },
-              icon: const Icon(LucideIcons.video),
-            ),
-          IconButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Coming soon')),
-              );
-            },
-            icon: const Icon(LucideIcons.info),
-          ),
-        ],
-      ),
       body: Column(
         children: [
           Expanded(
@@ -893,7 +1391,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                     child: ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                      itemCount: _messages.length + 1 + (_loadingMore ? 1 : 0),
+                      itemCount: _messages.length +
+                          (isGroup ? 2 : 1) +
+                          (_loadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (_loadingMore && index == 0) {
                           return const Padding(
@@ -910,13 +1410,53 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         }
                         final base = _loadingMore ? index - 1 : index;
                         if (base == 0) {
+                          if (isGroup) {
+                            return _groupHeader(
+                              name: otherName,
+                              avatarUrl: otherAvatar,
+                              membersCount: membersCount,
+                              participants: _participants(),
+                              onEdit: _showEditGroupSheet,
+                            );
+                          }
                           return _conversationHeader(
                             userId: otherId,
                             username: otherName,
                             avatarUrl: otherAvatar ?? '',
                           );
                         }
-                        final i = base - 1;
+                        if (isGroup && base == 1) {
+                          final timeLabel = _groupCreatedTimeLabel();
+                          return Column(
+                            children: [
+                              const SizedBox(height: 12),
+                              Center(
+                                child: Text(
+                                  timeLabel,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: cs.onSurface.withValues(alpha: 0.40),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Center(
+                                child: Text(
+                                  _groupCreatedLine(),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: cs.onSurface.withValues(alpha: 0.45),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                            ],
+                          );
+                        }
+
+                        final i = isGroup ? base - 2 : base - 1;
                         final message = _messages[i];
                         final uid = _currentUserId ?? '';
                         final sender = message['sender'];
@@ -932,6 +1472,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         final senderMap = sender is Map
                             ? Map<String, dynamic>.from(sender)
                             : null;
+                        final showSeen = mine &&
+                            latestSeenOwnId.isNotEmpty &&
+                            _messageId(message) == latestSeenOwnId;
 
                         // Instagram-like grouping: if multiple images were sent
                         // together, they arrive as consecutive image-only
@@ -953,16 +1496,36 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                             j++;
                           }
                           if (urls.length > 1) {
+                            var groupHasSeen = showSeen;
+                            if (!groupHasSeen &&
+                                mine &&
+                                latestSeenOwnId.isNotEmpty) {
+                              for (var k = i; k < j; k++) {
+                                if (_messageId(_messages[k]) ==
+                                    latestSeenOwnId) {
+                                  groupHasSeen = true;
+                                  break;
+                                }
+                              }
+                            }
                             return _albumBubble(
                               message: message,
                               mine: mine,
                               senderMap: senderMap,
                               urls: urls,
+                              showSeen: groupHasSeen,
+                              seenText: seenText,
                             );
                           }
                         }
 
-                        return _bubble(message, mine, senderMap: senderMap);
+                        return _bubble(
+                          message,
+                          mine,
+                          senderMap: senderMap,
+                          showSeen: showSeen,
+                          seenText: seenText,
+                        );
                       },
                     ),
                   ),
@@ -1640,6 +2203,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     Map<String, dynamic> message,
     bool mine, {
     required Map<String, dynamic>? senderMap,
+    bool showSeen = false,
+    String seenText = 'Seen',
   }) {
     final isDeleted = message['isDeleted'] == true;
     final text = message['text']?.toString() ?? '';
@@ -1729,6 +2294,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 children: [
                   voice,
                   reactionPill(),
+                  if (showSeen)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        seenText,
+                        style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.48),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1976,6 +2556,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             children: [
               bubble,
               reactionPill(),
+              if (showSeen)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    seenText,
+                    style: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.48),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -2048,9 +2643,335 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     if (value >= 1000000000) {
       return '${(value / 1000000000).toStringAsFixed(1)}B';
     }
-    if (value >= 1000000) return '${(value / 1000000).toStringAsFixed(1)}M';
-    if (value >= 1000) return '${(value / 1000).toStringAsFixed(1)}K';
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1)}M';
+    }
+    if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(1)}K';
+    }
     return n.toString();
+  }
+
+  Widget _groupHeader({
+    required String name,
+    required String? avatarUrl,
+    required int membersCount,
+    required List<Map<String, dynamic>> participants,
+    required VoidCallback onEdit,
+  }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final borderColor = theme.scaffoldBackgroundColor;
+    final uid = (_currentUserId ?? '').trim();
+    final title = name.trim().isEmpty ? 'Group' : name.trim();
+
+    final others = participants
+        .where((p) => (p['_id'] ?? p['id'])?.toString().trim() != uid)
+        .take(2)
+        .toList();
+    while (others.length < 2 && participants.length > others.length) {
+      final extra = participants.firstWhere(
+        (p) => !others.contains(p),
+        orElse: () => const <String, dynamic>{},
+      );
+      if (extra.isEmpty) break;
+      others.add(extra);
+    }
+
+    Widget bigAvatar(Map<String, dynamic> user) {
+      final url = (user['avatar_url'] ?? user['avatarUrl'])?.toString().trim();
+      final label = _labelForUser(user);
+      return Container(
+        width: 68,
+        height: 68,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: borderColor, width: 3),
+        ),
+        child: ClipOval(
+          child: (url != null && url.isNotEmpty)
+              ? SafeNetworkImage(
+                  url: url,
+                  width: 68,
+                  height: 68,
+                  fit: BoxFit.cover,
+                )
+              : CircleAvatar(
+                  radius: 34,
+                  backgroundColor: DesignTokens.instaPink,
+                  child: Text(
+                    label.isNotEmpty
+                        ? label.characters.first.toUpperCase()
+                        : 'G',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 22,
+                    ),
+                  ),
+                ),
+        ),
+      );
+    }
+
+    final followCount = _followingIds.isNotEmpty
+        ? participants
+            .where((p) =>
+                (p['_id'] ?? p['id'])?.toString().trim() != uid &&
+                _followingIds.contains(
+                  (p['_id'] ?? p['id'])?.toString().trim(),
+                ))
+            .length
+        : max(0, membersCount - 1); // TODO: compute from following ids.
+
+    Widget actionButton({
+      required Widget iconCircle,
+      required String label,
+      required VoidCallback onTap,
+    }) {
+      return InkWell(
+        onTap: onTap,
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: Colors.transparent,
+        child: SizedBox(
+          width: 74,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              iconCircle,
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: cs.onSurface.withValues(alpha: 0.85),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget iconCircle(IconData icon) {
+      return Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: cs.onSurface.withValues(alpha: 0.10),
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, size: 22, color: cs.onSurface),
+      );
+    }
+
+    final themeCircle = Container(
+      width: 52,
+      height: 52,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Color(0xFF7B2FF7), Color(0xFFB44AFF)],
+        ),
+      ),
+    );
+
+    return Column(
+      children: [
+        const SizedBox(height: 14),
+        SizedBox(
+          width: 96,
+          height: 96,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: bigAvatar(
+                  others.length >= 2
+                      ? others[1]
+                      : (others.isNotEmpty
+                          ? others[0]
+                          : const <String, dynamic>{}),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                child: bigAvatar(
+                  others.isNotEmpty ? others[0] : const <String, dynamic>{},
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            color: cs.onSurface,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextButton(
+          onPressed: onEdit,
+          child: const Text(
+            'Change name and image',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF4A90D9),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'You follow $followCount people on Instagram',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 14,
+            color: cs.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 22),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              actionButton(
+                iconCircle: iconCircle(LucideIcons.link),
+                label: 'Invitation link',
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Coming soon')),
+                  );
+                },
+              ),
+              actionButton(
+                iconCircle: iconCircle(LucideIcons.userPlus),
+                label: 'Add people',
+                onTap: _showGroupMembersSheet,
+              ),
+              actionButton(
+                iconCircle: iconCircle(LucideIcons.share),
+                label: 'Share',
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Coming soon')),
+                  );
+                },
+              ),
+              actionButton(
+                iconCircle: themeCircle,
+                label: 'Theme',
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Coming soon')),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Divider(
+          height: 1,
+          thickness: 0.5,
+          color: cs.onSurface.withValues(alpha: 0.10),
+        ),
+      ],
+    );
+  }
+
+  Widget _groupAvatarStack({
+    required List<Map<String, dynamic>> participants,
+    required double size,
+  }) {
+    final borderColor = Theme.of(context).scaffoldBackgroundColor;
+    final uid = (_currentUserId ?? '').trim();
+    final others = participants
+        .where((p) => (p['_id'] ?? p['id'])?.toString().trim() != uid)
+        .take(2)
+        .toList();
+    while (others.length < 2 && participants.length > others.length) {
+      final extra = participants.firstWhere(
+        (p) => !others.contains(p),
+        orElse: () => const <String, dynamic>{},
+      );
+      if (extra.isEmpty) break;
+      others.add(extra);
+    }
+
+    Widget avatarCircle(Map<String, dynamic> user, {required double s}) {
+      final url = (user['avatar_url'] ?? user['avatarUrl'])?.toString().trim();
+      final label = _labelForUser(user);
+      return Container(
+        width: s,
+        height: s,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: borderColor, width: 3),
+        ),
+        child: ClipOval(
+          child: (url != null && url.isNotEmpty)
+              ? SafeNetworkImage(
+                  url: url, width: s, height: s, fit: BoxFit.cover)
+              : CircleAvatar(
+                  radius: s / 2,
+                  backgroundColor: DesignTokens.instaPink,
+                  child: Text(
+                    label.isNotEmpty
+                        ? label.characters.first.toUpperCase()
+                        : 'G',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: s * 0.35,
+                    ),
+                  ),
+                ),
+        ),
+      );
+    }
+
+    final avatarSize = min(68.0, size * 0.71);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: avatarCircle(
+              others.length >= 2
+                  ? others[1]
+                  : (others.isNotEmpty ? others[0] : const <String, dynamic>{}),
+              s: avatarSize,
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            child: avatarCircle(
+              others.isNotEmpty ? others[0] : const <String, dynamic>{},
+              s: avatarSize,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _conversationHeader({
@@ -2193,6 +3114,285 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+typedef _GroupAvatarStackBuilder = Widget Function(
+  List<Map<String, dynamic>> participants,
+  double size,
+);
+
+class _EditGroupSheet extends StatefulWidget {
+  final String conversationId;
+  final String? initialName;
+  final String? groupAvatarUrl;
+  final List<Map<String, dynamic>> participants;
+  final ChatApi chatApi;
+  final ImagePicker picker;
+  final String Function(Map<String, dynamic> payload) extractUploadedMediaUrl;
+  final _GroupAvatarStackBuilder groupAvatarStackBuilder;
+  final ValueChanged<Map<String, dynamic>> onConversationUpdated;
+
+  const _EditGroupSheet({
+    required this.conversationId,
+    required this.initialName,
+    required this.groupAvatarUrl,
+    required this.participants,
+    required this.chatApi,
+    required this.picker,
+    required this.extractUploadedMediaUrl,
+    required this.groupAvatarStackBuilder,
+    required this.onConversationUpdated,
+  });
+
+  @override
+  State<_EditGroupSheet> createState() => _EditGroupSheetState();
+}
+
+class _EditGroupSheetState extends State<_EditGroupSheet> {
+  late final TextEditingController _nameController;
+  Uint8List? _pickedBytes;
+  String _pickedFilename = 'group-avatar.jpg';
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    final x = await widget.picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+    );
+    if (x == null) return;
+    final bytes = await x.readAsBytes();
+    if (!mounted || bytes.isEmpty) return;
+    setState(() {
+      _pickedBytes = bytes;
+      _pickedFilename = x.name.trim().isNotEmpty ? x.name : _pickedFilename;
+    });
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final name = _nameController.text.trim();
+      String? avatarUrl;
+      if (_pickedBytes != null) {
+        final uploaded = await widget.chatApi.uploadChatMediaManyBytes(
+          conversationId: widget.conversationId,
+          files: [
+            MultipartBytesFile(
+              bytes: _pickedBytes!,
+              filename: _pickedFilename,
+            ),
+          ],
+        );
+        avatarUrl = widget.extractUploadedMediaUrl(uploaded);
+        if (avatarUrl.isEmpty) {
+          final mediaAny = uploaded['media'];
+          if (mediaAny is List &&
+              mediaAny.isNotEmpty &&
+              mediaAny.first is Map) {
+            avatarUrl = widget.extractUploadedMediaUrl(
+              Map<String, dynamic>.from(mediaAny.first as Map),
+            );
+          }
+        }
+        if (avatarUrl.isEmpty) avatarUrl = null;
+      }
+
+      final updated = await widget.chatApi.updateGroup(
+        conversationId: widget.conversationId,
+        groupName: name.isEmpty ? null : name,
+        groupAvatar: avatarUrl,
+      );
+
+      if (!mounted) return;
+      final normalized = updated['conversation'] is Map
+          ? Map<String, dynamic>.from(updated['conversation'] as Map)
+          : Map<String, dynamic>.from(updated);
+      if (normalized.isNotEmpty) {
+        widget.onConversationUpdated(normalized);
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final muted = theme.textTheme.bodySmall?.color?.withValues(alpha: 0.75);
+
+    return SafeArea(
+      top: false,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final screenH = MediaQuery.of(context).size.height;
+          final maxH = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : (screenH * 0.75);
+          return ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxH),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+                top: 8,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Change name and image',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed:
+                            _saving ? null : () => Navigator.of(context).pop(),
+                        icon: const Icon(LucideIcons.x),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: GestureDetector(
+                      onTap: _saving ? null : _pickPhoto,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          ClipOval(
+                            child: Container(
+                              width: 96,
+                              height: 96,
+                              color: cs.onSurface.withValues(alpha: 0.08),
+                              child: _pickedBytes != null
+                                  ? Image.memory(
+                                      _pickedBytes!,
+                                      fit: BoxFit.cover,
+                                    )
+                                  : (widget.groupAvatarUrl?.trim().isNotEmpty ==
+                                          true)
+                                      ? SafeNetworkImage(
+                                          url: widget.groupAvatarUrl!,
+                                          width: 96,
+                                          height: 96,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : widget.groupAvatarStackBuilder(
+                                          widget.participants,
+                                          96,
+                                        ),
+                            ),
+                          ),
+                          Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: Container(
+                              width: 30,
+                              height: 30,
+                              decoration: BoxDecoration(
+                                color: cs.primary,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: theme.scaffoldBackgroundColor,
+                                  width: 2,
+                                ),
+                              ),
+                              child: const Icon(
+                                LucideIcons.camera,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    height: 56,
+                    child: TextField(
+                      controller: _nameController,
+                      maxLines: 1,
+                      expands: false,
+                      textInputAction: TextInputAction.done,
+                      decoration: InputDecoration(
+                        labelText: 'Group name',
+                        hintText: 'Enter group name',
+                        filled: true,
+                        fillColor: cs.onSurface.withValues(alpha: 0.06),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 48,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _saving
+                                ? null
+                                : () => Navigator.of(context).pop(),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _saving ? null : _save,
+                            child: Text(_saving ? 'Saving…' : 'Save'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (muted != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Tip: tap the photo to change it.',
+                      style: TextStyle(color: muted),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

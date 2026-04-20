@@ -10,6 +10,7 @@ import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
 import 'chat_conversation_screen.dart';
+import 'group_chat_conversation_screen.dart';
 import 'new_group_chat_screen.dart';
 
 class MessagingScreen extends StatefulWidget {
@@ -151,7 +152,8 @@ class _MessagingScreenState extends State<MessagingScreen> {
       _error = null;
     });
     try {
-      final data = await _chatApi.getConversations();
+      final type = _selectedFilter == 3 ? 'requests' : 'normal';
+      final data = await _chatApi.getConversations(type: type);
       if (!mounted) return;
       data.sort((a, b) {
         final aAt = DateTime.tryParse((a['lastMessageAt'] ?? '').toString()) ??
@@ -164,7 +166,9 @@ class _MessagingScreenState extends State<MessagingScreen> {
         _conversations = data;
         _loading = false;
       });
-      ChatUnreadService().setFromConversations(data);
+      if (type == 'normal') {
+        ChatUnreadService().setFromConversations(data);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -193,14 +197,20 @@ class _MessagingScreenState extends State<MessagingScreen> {
           IconButton(
             tooltip: 'New group chat',
             icon: const Icon(LucideIcons.users),
-            onPressed: () {
-              Navigator.of(context).push(
+            onPressed: () async {
+              final res = await Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => NewGroupChatScreen(
                     suggestedUsers: _activeUsers(),
                   ),
                 ),
               );
+              if (!mounted) return;
+              if (res is Map) {
+                _openConversation(Map<String, dynamic>.from(res));
+                return;
+              }
+              _load();
             },
           ),
         ],
@@ -254,9 +264,39 @@ class _MessagingScreenState extends State<MessagingScreen> {
                       : ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
-                          itemCount: _filteredConversations().length,
+                          itemCount: _filteredConversations().isEmpty
+                              ? 1
+                              : _filteredConversations().length,
                           itemBuilder: (context, index) {
-                            final conv = _filteredConversations()[index];
+                            final list = _filteredConversations();
+                            if (list.isEmpty) {
+                              final q = _searchQuery.trim();
+                              final msg = q.isNotEmpty
+                                  ? 'No results for "$q"'
+                                  : _selectedFilter == 3
+                                      ? 'No message requests'
+                                      : 'No conversations yet';
+                              return Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 80, 16, 24),
+                                child: Center(
+                                  child: Text(
+                                    msg,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.color
+                                              ?.withValues(alpha: 0.7) ??
+                                          Colors.grey,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            final conv = list[index];
                             return _conversationTile(conv);
                           },
                         ),
@@ -271,7 +311,10 @@ class _MessagingScreenState extends State<MessagingScreen> {
     var list = _conversations;
 
     if (_selectedFilter == 0) {
-      list = list.where((c) => !_isCommunity(c) && !_isRequest(c)).toList();
+      // Primary conversations: backend already returns `type=normal` by default.
+      // Avoid over-filtering based on `isRequest`, since the new API includes
+      // request metadata fields on the conversation object.
+      list = list.where((c) => !_isCommunity(c)).toList();
     } else if (_selectedFilter == 1) {
       list = list
           .where((c) => ((c['unreadCount'] as num?)?.toInt() ?? 0) > 0)
@@ -279,6 +322,8 @@ class _MessagingScreenState extends State<MessagingScreen> {
     } else if (_selectedFilter == 2) {
       list = list.where(_isCommunity).toList();
     } else if (_selectedFilter == 3) {
+      // Requests tab: backend is queried with `type=requests`, but keep a
+      // best-effort local guard in case the server returns mixed results.
       list = list.where(_isRequest).toList();
     }
 
@@ -295,7 +340,27 @@ class _MessagingScreenState extends State<MessagingScreen> {
         conversation['type']?.toString().toLowerCase() == 'community';
   }
 
+  bool _isGroup(Map<String, dynamic> conversation) {
+    final explicit = conversation['isGroup'] ?? conversation['is_group'];
+    if (explicit is bool) return explicit;
+    final name = (conversation['groupName'] ?? conversation['group_name'])
+        ?.toString()
+        .trim();
+    if (name != null && name.isNotEmpty) return true;
+    return conversation['groupAdmin'] != null ||
+        conversation['group_admin'] != null;
+  }
+
   bool _isRequest(Map<String, dynamic> conversation) {
+    final status = (conversation['requestStatus'] ??
+            conversation['request_status'] ??
+            conversation['requestState'] ??
+            conversation['request_state'])
+        ?.toString()
+        .trim()
+        .toLowerCase();
+    if (status == 'pending' || status == 'requested') return true;
+
     final type = conversation['type']?.toString().toLowerCase();
     final folder = conversation['folder']?.toString().toLowerCase();
     final category = conversation['category']?.toString().toLowerCase();
@@ -313,10 +378,16 @@ class _MessagingScreenState extends State<MessagingScreen> {
 
   String _conversationSearchText(Map<String, dynamic> conversation) {
     final isCommunity = _isCommunity(conversation);
+    final isGroup = _isGroup(conversation);
     final other = _otherParticipant(conversation);
     final name = isCommunity
         ? (conversation['name']?.toString() ?? 'Community')
-        : _userName(other);
+        : isGroup
+            ? (conversation['groupName'] ??
+                    conversation['group_name'] ??
+                    'Group')
+                .toString()
+            : _userName(other);
     final lastMessage = conversation['lastMessage'] is Map
         ? Map<String, dynamic>.from(conversation['lastMessage'] as Map)
         : null;
@@ -506,7 +577,11 @@ class _MessagingScreenState extends State<MessagingScreen> {
                     for (var index = 0; index < labels.length; index++) ...[
                       if (index > 0) const SizedBox(width: 8),
                       InkWell(
-                        onTap: () => setState(() => _selectedFilter = index),
+                        onTap: () {
+                          if (_selectedFilter == index) return;
+                          setState(() => _selectedFilter = index);
+                          _load();
+                        },
                         borderRadius: BorderRadius.circular(999),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
@@ -612,10 +687,15 @@ class _MessagingScreenState extends State<MessagingScreen> {
     Navigator.of(context)
         .push(
           MaterialPageRoute(
-            builder: (_) => ChatConversationScreen(
-              conversationId: id,
-              initialConversation: conversation,
-            ),
+            builder: (_) => _isGroup(conversation)
+                ? GroupChatConversationScreen(
+                    conversationId: id,
+                    initialConversation: conversation,
+                  )
+                : ChatConversationScreen(
+                    conversationId: id,
+                    initialConversation: conversation,
+                  ),
           ),
         )
         .then((_) => _load());
@@ -624,11 +704,29 @@ class _MessagingScreenState extends State<MessagingScreen> {
   Widget _conversationTile(Map<String, dynamic> conversation) {
     final unread = (conversation['unreadCount'] as num?)?.toInt() ?? 0;
     final isCommunity = _isCommunity(conversation);
+    final isGroup = _isGroup(conversation);
     final other = _otherParticipant(conversation);
     final name = isCommunity
         ? (conversation['name']?.toString() ?? 'Community')
-        : _userName(other);
-    final avatarUrl = isCommunity ? null : _avatar(other);
+        : isGroup
+            ? ((conversation['groupName'] ?? conversation['group_name'])
+                        ?.toString()
+                        .trim()
+                        .isNotEmpty ==
+                    true
+                ? (conversation['groupName'] ?? conversation['group_name'])
+                    .toString()
+                    .trim()
+                : 'Group')
+            : _userName(other);
+    final avatarUrl = isCommunity
+        ? null
+        : isGroup
+            ? (conversation['groupAvatar'] ??
+                    conversation['group_avatar'] ??
+                    '')
+                .toString()
+            : (_avatar(other) ?? '');
 
     final lastMessage = conversation['lastMessage'] is Map
         ? Map<String, dynamic>.from(conversation['lastMessage'] as Map)
@@ -668,7 +766,10 @@ class _MessagingScreenState extends State<MessagingScreen> {
                         ? DesignTokens.instaOrange
                         : DesignTokens.instaPink,
                     child: Text(
-                      name.characters.first.toUpperCase(),
+                      (name.trim().isNotEmpty ? name.trim() : 'G')
+                          .characters
+                          .first
+                          .toUpperCase(),
                       style: const TextStyle(
                           color: Colors.white, fontWeight: FontWeight.w700),
                     ),
