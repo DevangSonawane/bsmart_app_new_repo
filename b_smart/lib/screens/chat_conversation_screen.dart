@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
@@ -454,7 +455,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             _messages = [..._messages, msg];
             _replyToMessage = null;
           });
-          WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _scrollToBottom());
         }
       }
     } catch (e) {
@@ -473,7 +475,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   }
 
   String _extractUploadedMediaUrl(Map<String, dynamic> payload) {
-    String pick(dynamic v) => UrlHelper.normalizeUrl((v ?? '').toString().trim());
+    String pick(dynamic v) =>
+        UrlHelper.normalizeUrl((v ?? '').toString().trim());
     final url = pick(payload['mediaUrl'] ??
         payload['media_url'] ??
         payload['url'] ??
@@ -509,11 +512,45 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   }
 
   int _createdAtMillis(Map<String, dynamic> message) {
-    final raw = (message['createdAt'] ?? message['created_at'] ?? '')
-        .toString()
-        .trim();
+    final raw =
+        (message['createdAt'] ?? message['created_at'] ?? '').toString().trim();
     if (raw.isEmpty) return 0;
     return DateTime.tryParse(raw)?.millisecondsSinceEpoch ?? 0;
+  }
+
+  String? _seenAtRaw(Map<String, dynamic>? message) {
+    if (message == null) return null;
+    final raw = (message['seenAt'] ?? message['seen_at'])?.toString().trim();
+    return (raw != null && raw.isNotEmpty) ? raw : null;
+  }
+
+  String _formatSeenAgo(String? dateValue) {
+    if (dateValue == null || dateValue.trim().isEmpty) return 'Seen';
+    final parsed = DateTime.tryParse(dateValue);
+    if (parsed == null) return 'Seen';
+    final diff = DateTime.now().difference(parsed);
+    final minutes = max(1, diff.inMinutes);
+    if (minutes < 60) return 'Seen ${minutes}m ago';
+    final hours = minutes ~/ 60;
+    if (hours < 24) return 'Seen ${hours}h ago';
+    final days = hours ~/ 24;
+    if (days < 7) return 'Seen ${days}d ago';
+    final formatted = DateFormat('d MMM', 'en_IN').format(parsed);
+    return 'Seen $formatted';
+  }
+
+  Map<String, dynamic>? _latestSeenOwnMessage(String otherUserId) {
+    final uid = _currentUserId ?? '';
+    final other = otherUserId.trim();
+    if (uid.isEmpty || other.isEmpty) return null;
+    for (var index = _messages.length - 1; index >= 0; index -= 1) {
+      final m = _messages[index];
+      if (m['isDeleted'] == true) continue;
+      final mine = _senderIdForMessage(m) == uid;
+      if (!mine) continue;
+      if (_hasSeen(m, other)) return m;
+    }
+    return null;
   }
 
   bool _isImageOnlyMessage(Map<String, dynamic> message) {
@@ -583,6 +620,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     required bool mine,
     required Map<String, dynamic>? senderMap,
     required List<String> urls,
+    required bool showSeen,
+    required String seenText,
   }) {
     final w = MediaQuery.sizeOf(context).width;
     final maxBubbleWidth = min(420.0, w * 0.78);
@@ -591,20 +630,20 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     Widget reactionPill() {
       if (message['isDeleted'] == true) return const SizedBox.shrink();
       final reactionsRaw = message['reactions'];
-      final reactions = (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final reactions =
+          (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
       if (reactions.isEmpty) return const SizedBox.shrink();
 
       final cs = Theme.of(context).colorScheme;
       final isDark = Theme.of(context).brightness == Brightness.dark;
       final uid = _currentUserId ?? '';
       final own = uid.isEmpty ? null : _ownReactionFor(message, uid);
-      final primaryEmoji =
-          (own?['emoji']?.toString().trim().isNotEmpty == true)
-              ? own!['emoji'].toString().trim()
-              : (reactions.first['emoji']?.toString().trim() ?? '');
+      final primaryEmoji = (own?['emoji']?.toString().trim().isNotEmpty == true)
+          ? own!['emoji'].toString().trim()
+          : (reactions.first['emoji']?.toString().trim() ?? '');
       final count = reactions.length;
       final label = count > 1 ? '$primaryEmoji $count' : primaryEmoji;
 
@@ -665,6 +704,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
           children: [
             wrapped,
             reactionPill(),
+            if (showSeen)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  seenText,
+                  style: TextStyle(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.48),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
       );
@@ -769,9 +823,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               'text': '',
               'mediaUrl': url,
               'mediaType': type,
-              'replyTo': (replyId != null && replyId.isNotEmpty)
-                  ? replyId
-                  : null,
+              'replyTo':
+                  (replyId != null && replyId.isNotEmpty) ? replyId : null,
             },
           );
           return Map<String, dynamic>.from(created);
@@ -802,6 +855,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             : _nameFor(other);
     final otherAvatar = _avatarFor(_otherProfile ?? other);
     final otherId = _idFor(_otherProfile ?? other) ?? '';
+    final latestSeenOwn = _latestSeenOwnMessage(otherId);
+    final latestSeenOwnId = _messageId(latestSeenOwn);
+    final seenText = _formatSeenAgo(_seenAtRaw(latestSeenOwn));
 
     return Scaffold(
       appBar: AppBar(
@@ -932,6 +988,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         final senderMap = sender is Map
                             ? Map<String, dynamic>.from(sender)
                             : null;
+                        final showSeen = mine &&
+                            latestSeenOwnId.isNotEmpty &&
+                            _messageId(message) == latestSeenOwnId;
 
                         // Instagram-like grouping: if multiple images were sent
                         // together, they arrive as consecutive image-only
@@ -953,16 +1012,36 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                             j++;
                           }
                           if (urls.length > 1) {
+                            var groupHasSeen = showSeen;
+                            if (!groupHasSeen &&
+                                mine &&
+                                latestSeenOwnId.isNotEmpty) {
+                              for (var k = i; k < j; k++) {
+                                if (_messageId(_messages[k]) ==
+                                    latestSeenOwnId) {
+                                  groupHasSeen = true;
+                                  break;
+                                }
+                              }
+                            }
                             return _albumBubble(
                               message: message,
                               mine: mine,
                               senderMap: senderMap,
                               urls: urls,
+                              showSeen: groupHasSeen,
+                              seenText: seenText,
                             );
                           }
                         }
 
-                        return _bubble(message, mine, senderMap: senderMap);
+                        return _bubble(
+                          message,
+                          mine,
+                          senderMap: senderMap,
+                          showSeen: showSeen,
+                          seenText: seenText,
+                        );
                       },
                     ),
                   ),
@@ -1118,7 +1197,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 color: Color(0xFF3B82F6),
               ),
               child: IconButton(
-                onPressed: _uploadingMedia ? null : () => _pickAndSendImages(fromCamera: true),
+                onPressed: _uploadingMedia
+                    ? null
+                    : () => _pickAndSendImages(fromCamera: true),
                 icon: const Icon(
                   LucideIcons.camera,
                   size: 20,
@@ -1218,8 +1299,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                           : () {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                    content:
-                                        Text('More options coming soon')),
+                                    content: Text('More options coming soon')),
                               );
                             },
                       icon: _sending && canSend
@@ -1376,7 +1456,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     }());
   }
 
-  Map<String, dynamic>? _ownReactionFor(Map<String, dynamic> message, String uid) {
+  Map<String, dynamic>? _ownReactionFor(
+      Map<String, dynamic> message, String uid) {
     final reactions = message['reactions'];
     if (reactions is! List) return null;
     for (final r in reactions) {
@@ -1638,6 +1719,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     Map<String, dynamic> message,
     bool mine, {
     required Map<String, dynamic>? senderMap,
+    bool showSeen = false,
+    String seenText = 'Seen',
   }) {
     final isDeleted = message['isDeleted'] == true;
     final text = message['text']?.toString() ?? '';
@@ -1657,18 +1740,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     Widget reactionPill() {
       if (isDeleted) return const SizedBox.shrink();
       final reactionsRaw = message['reactions'];
-      final reactions = (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final reactions =
+          (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
       if (reactions.isEmpty) return const SizedBox.shrink();
 
       final uid = _currentUserId ?? '';
       final own = uid.isEmpty ? null : _ownReactionFor(message, uid);
-      final primaryEmoji =
-          (own?['emoji']?.toString().trim().isNotEmpty == true)
-              ? own!['emoji'].toString().trim()
-              : (reactions.first['emoji']?.toString().trim() ?? '');
+      final primaryEmoji = (own?['emoji']?.toString().trim().isNotEmpty == true)
+          ? own!['emoji'].toString().trim()
+          : (reactions.first['emoji']?.toString().trim() ?? '');
       final count = reactions.length;
       final label = count > 1 ? '$primaryEmoji $count' : primaryEmoji;
       return Container(
@@ -1727,6 +1810,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 children: [
                   voice,
                   reactionPill(),
+                  if (showSeen)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        seenText,
+                        style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.48),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1974,6 +2072,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             children: [
               bubble,
               reactionPill(),
+              if (showSeen)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    seenText,
+                    style: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.48),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -2024,10 +2137,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       if (map.isEmpty) return null;
       final id = (map['_id'] ?? map['id'])?.toString().trim();
       final hasId = id != null && id.isNotEmpty;
-      final hasAnyContent = (map['text']?.toString().trim().isNotEmpty == true) ||
-          (map['mediaUrl']?.toString().trim().isNotEmpty == true) ||
-          (map['mediaType']?.toString().trim().isNotEmpty == true) ||
-          (map['sender'] != null);
+      final hasAnyContent =
+          (map['text']?.toString().trim().isNotEmpty == true) ||
+              (map['mediaUrl']?.toString().trim().isNotEmpty == true) ||
+              (map['mediaType']?.toString().trim().isNotEmpty == true) ||
+              (map['sender'] != null);
       if (!hasId && !hasAnyContent) return null;
       return map;
     }
@@ -2042,9 +2156,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   String _formatCount(num n) {
     final value = n.toDouble();
-    if (value >= 1000000000) return '${(value / 1000000000).toStringAsFixed(1)}B';
-    if (value >= 1000000) return '${(value / 1000000).toStringAsFixed(1)}M';
-    if (value >= 1000) return '${(value / 1000).toStringAsFixed(1)}K';
+    if (value >= 1000000000) {
+      return '${(value / 1000000000).toStringAsFixed(1)}B';
+    }
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1)}M';
+    }
+    if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(1)}K';
+    }
     return n.toString();
   }
 
@@ -2417,7 +2537,8 @@ class _AspectPreservingChatImage extends StatefulWidget {
       _AspectPreservingChatImageState();
 }
 
-class _AspectPreservingChatImageState extends State<_AspectPreservingChatImage> {
+class _AspectPreservingChatImageState
+    extends State<_AspectPreservingChatImage> {
   static final Map<String, double> _aspectCache = <String, double>{};
 
   ImageStream? _stream;
@@ -2741,15 +2862,13 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
                               children: [
                                 Container(
                                   height: 2,
-                                  color:
-                                      Colors.white.withValues(alpha: 0.22),
+                                  color: Colors.white.withValues(alpha: 0.22),
                                 ),
                                 FractionallySizedBox(
                                   widthFactor: progress,
                                   child: Container(
                                     height: 2,
-                                    color:
-                                        Colors.white.withValues(alpha: 0.85),
+                                    color: Colors.white.withValues(alpha: 0.85),
                                   ),
                                 ),
                               ],

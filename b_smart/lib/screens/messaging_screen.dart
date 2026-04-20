@@ -563,11 +563,27 @@ class _MessagingScreenState extends State<MessagingScreen> {
   String _preview(Map<String, dynamic>? lastMessage, bool mine, String name) {
     if (lastMessage == null || lastMessage.isEmpty) return 'Start chatting';
     if (lastMessage['isDeleted'] == true) return 'Message unsent';
-    final text = lastMessage['text']?.toString() ?? '';
+    final text = (lastMessage['text'] ?? '').toString().trim();
     if (text.isNotEmpty) return mine ? 'You: $text' : text;
-    final mediaUrl = lastMessage['mediaUrl']?.toString() ?? '';
+
+    final mediaType = (lastMessage['mediaType'] ??
+            lastMessage['media_type'] ??
+            lastMessage['type'] ??
+            '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (mediaType == 'audio') {
+      return mine
+          ? 'You sent a voice message 🎤'
+          : '$name sent you a voice message 🎤';
+    }
+
+    final mediaUrl = (lastMessage['mediaUrl'] ?? lastMessage['media_url'] ?? '')
+        .toString()
+        .trim();
     if (mediaUrl.isNotEmpty) {
-      return mine ? 'You sent an attachment.' : '$name sent an attachment.';
+      return mine ? 'You sent an attachment.' : '$name sent you an attachment.';
     }
     return 'Start chatting';
   }
