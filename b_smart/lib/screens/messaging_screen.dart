@@ -5,6 +5,7 @@ import '../api/auth_api.dart';
 import '../api/api_client.dart';
 import '../api/chat_api.dart';
 import '../services/supabase_service.dart';
+import '../services/chat_unread_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
@@ -162,6 +163,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
         _conversations = data;
         _loading = false;
       });
+      ChatUnreadService().setFromConversations(data);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -591,14 +593,16 @@ class _MessagingScreenState extends State<MessagingScreen> {
   void _openConversation(Map<String, dynamic> conversation) {
     final id = (conversation['_id'] ?? conversation['id'])?.toString();
     if (id == null || id.isEmpty) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChatConversationScreen(
-          conversationId: id,
-          initialConversation: conversation,
-        ),
-      ),
-    );
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => ChatConversationScreen(
+              conversationId: id,
+              initialConversation: conversation,
+            ),
+          ),
+        )
+        .then((_) => _load());
   }
 
   Widget _conversationTile(Map<String, dynamic> conversation) {

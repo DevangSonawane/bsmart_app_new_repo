@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../services/chat_unread_service.dart';
 import '../services/ui_prefs.dart';
 
 class FloatingMessageOverlay extends StatefulWidget {
@@ -13,8 +14,7 @@ class FloatingMessageOverlay extends StatefulWidget {
   });
 
   @override
-  State<FloatingMessageOverlay> createState() =>
-      _FloatingMessageOverlayState();
+  State<FloatingMessageOverlay> createState() => _FloatingMessageOverlayState();
 }
 
 class _FloatingMessageOverlayState extends State<FloatingMessageOverlay>
@@ -33,6 +33,7 @@ class _FloatingMessageOverlayState extends State<FloatingMessageOverlay>
   @override
   void initState() {
     super.initState();
+    ChatUnreadService().startPolling();
     _trashAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -45,6 +46,7 @@ class _FloatingMessageOverlayState extends State<FloatingMessageOverlay>
 
   @override
   void dispose() {
+    ChatUnreadService().stopPolling();
     _trashAnimController.dispose();
     super.dispose();
   }
@@ -52,7 +54,7 @@ class _FloatingMessageOverlayState extends State<FloatingMessageOverlay>
   Offset _clampOffset(Offset next, Size maxSize, EdgeInsets padding) {
     final maxX = maxSize.width - _iconSize - _margin;
     final maxY = maxSize.height - _iconSize - _margin - padding.bottom;
-    final minX = _margin;
+    const minX = _margin;
     final minY = _margin + padding.top;
     return Offset(
       next.dx.clamp(minX, maxX),
@@ -111,8 +113,9 @@ class _FloatingMessageOverlayState extends State<FloatingMessageOverlay>
               });
             }
 
-            final effectiveOffset =
-                _hasPosition ? _offset : _clampOffset(defaultOffset, size, padding);
+            final effectiveOffset = _hasPosition
+                ? _offset
+                : _clampOffset(defaultOffset, size, padding);
 
             const trashSize = 68.0;
             final trashBottom = padding.bottom + 24.0;
@@ -159,7 +162,9 @@ class _FloatingMessageOverlayState extends State<FloatingMessageOverlay>
                               : LucideIcons.trash2,
                           color: _isNearTrash
                               ? Colors.red
-                              : (isDark ? Colors.white : const Color(0xFF111827)),
+                              : (isDark
+                                  ? Colors.white
+                                  : const Color(0xFF111827)),
                           size: _isNearTrash ? 32 : 28,
                         ),
                       ),
@@ -219,31 +224,62 @@ class _FloatingMessageOverlayState extends State<FloatingMessageOverlay>
                       duration: const Duration(milliseconds: 150),
                       curve: Curves.easeOutBack,
                       scale: _isNearTrash ? 0.85 : 1.0,
-                      child: Container(
-                        width: _iconSize,
-                        height: _iconSize,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _isNearTrash ? Colors.red.withValues(alpha: 0.15) : iconBg,
-                          border: _isNearTrash
-                              ? Border.all(
-                                  color: Colors.red.withValues(alpha: 0.5),
-                                  width: 1.5,
-                                )
-                              : null,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.35),
-                              blurRadius: 16,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          LucideIcons.messageCircle,
-                          color: _isNearTrash ? Colors.red : iconFg,
-                          size: 26,
-                        ),
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: ChatUnreadService().hasUnread,
+                        builder: (context, hasUnread, _) {
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                width: _iconSize,
+                                height: _iconSize,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _isNearTrash
+                                      ? Colors.red.withValues(alpha: 0.15)
+                                      : iconBg,
+                                  border: _isNearTrash
+                                      ? Border.all(
+                                          color:
+                                              Colors.red.withValues(alpha: 0.5),
+                                          width: 1.5,
+                                        )
+                                      : null,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.35),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  LucideIcons.messageCircle,
+                                  color: _isNearTrash ? Colors.red : iconFg,
+                                  size: 26,
+                                ),
+                              ),
+                              if (hasUnread && !_isNearTrash)
+                                Positioned(
+                                  right: 10,
+                                  top: 10,
+                                  child: Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: iconBg,
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),

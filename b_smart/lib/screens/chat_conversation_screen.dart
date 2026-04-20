@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
 import '../api/users_api.dart';
+import '../services/chat_unread_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
@@ -67,6 +68,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _conversation = widget.initialConversation;
+    ChatUnreadService().markConversationRead(widget.conversationId);
     _init();
     _scrollController.addListener(_handleScroll);
     _inputController.addListener(_handleComposerChanged);
@@ -307,6 +309,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 (m['_id']?.toString() == messageId) ? {...m, ...updated} : m)
             .toList();
       });
+      ChatUnreadService().markConversationRead(widget.conversationId);
     } catch (_) {
       // ignore
     }
