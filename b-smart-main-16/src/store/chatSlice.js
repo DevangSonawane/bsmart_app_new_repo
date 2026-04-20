@@ -113,6 +113,36 @@ const chatSlice = createSlice({
         };
       }
     },
+    upsertConversation: (state, action) => {
+      const conversation = action.payload;
+      if (!conversation?._id) return;
+
+      const existingIndex = state.conversations.findIndex((item) => item._id === conversation._id);
+      if (existingIndex >= 0) {
+        state.conversations[existingIndex] = {
+          ...state.conversations[existingIndex],
+          ...conversation,
+        };
+      } else {
+        state.conversations.unshift(conversation);
+      }
+
+      state.conversations = state.conversations
+        .map((item) => ({
+          ...item,
+          unreadCount: Number(item.unreadCount || 0),
+        }))
+        .sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
+
+      if (state.activeConversation?._id === conversation._id) {
+        state.activeConversation = {
+          ...state.activeConversation,
+          ...conversation,
+        };
+      }
+
+      state.unreadCounts[conversation._id] = Number(conversation.unreadCount || state.unreadCounts[conversation._id] || 0);
+    },
   },
 });
 
@@ -130,6 +160,7 @@ export const {
   setUnreadCount,
   markConversationRead,
   updateLastMessage,
+  upsertConversation,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

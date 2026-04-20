@@ -289,6 +289,8 @@ const Sidebar = ({ onOpenCreateModal }) => {
       onUserStopTyping,
       onMessageSeenUpdate: () => {},
       onMessageRemoved: () => {},
+      onGroupMemberAdded: syncChatConversations,
+      onGroupMemberRemoved: syncChatConversations,
     };
 
     sidebarSocketCallbacksRef.current = callbacks;
@@ -299,7 +301,7 @@ const Sidebar = ({ onOpenCreateModal }) => {
         removeChatSocketCallbacks(sidebarSocketCallbacksRef.current);
       }
     };
-  }, [userId, token, dispatch]);
+  }, [userId, token, dispatch, syncChatConversations]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {

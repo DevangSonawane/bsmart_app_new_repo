@@ -1,4 +1,5 @@
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ImagePlus,
@@ -8,15 +9,17 @@ import {
   Smile,
   SquarePen,
   Sticker,
+  UserMinus,
   X,
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import VoiceMessageBubble from '../components/VoiceMessageBubble';
 import VoiceRecorder from '../components/VoiceRecorder';
 import * as chatService from '../services/chatService';
+import { getFollowing } from '../services/followService';
 import {
   emitStopTyping,
   emitTyping,
@@ -38,6 +41,7 @@ import {
   setPage,
   setTypingUser,
   setUnreadCount,
+  upsertConversation,
   updateLastMessage,
 } from '../store/chatSlice';
 
@@ -48,6 +52,52 @@ const getUserName = (user) => user?.full_name || user?.name || user?.username ||
 const getUserAvatar = (user) => user?.avatar_url || user?.profilePicture || user?.profile_picture || '';
 const getInitial = (user) => getUserName(user).trim().charAt(0).toUpperCase() || 'U';
 const isVideoUrl = (url = '') => /\.(mp4|mov|webm|ogg|m4v)$/i.test(url) || url.includes('.m3u8');
+const getConversationAvatar = (conversation, currentUserId) => (
+  conversation?.isGroup ? conversation?.groupAvatar : getUserAvatar(otherParticipant(conversation, currentUserId))
+);
+const getConversationTitle = (conversation, currentUserId) => {
+  if (!conversation) return 'Conversation';
+  if (conversation.isGroup) {
+    return conversation.groupName || `Group (${conversation.participants?.length || 0})`;
+  }
+  return getUserName(otherParticipant(conversation, currentUserId));
+};
+const getGroupParticipantNames = (conversation, currentUserId) => (
+  (conversation?.participants || [])
+    .filter((user) => String(getUserId(user)) !== String(currentUserId))
+    .map((user) => getUserName(user))
+    .filter(Boolean)
+);
+const getGroupMemberLabel = (conversation, currentUserId, limit = 3) => {
+  if (!conversation?.isGroup) return '';
+  const names = getGroupParticipantNames(conversation, currentUserId);
+
+  if (!names.length) return 'Only you';
+  if (names.length <= limit) return names.join(', ');
+  return `${names.slice(0, limit).join(', ')} +${names.length - limit} more`;
+};
+const getConversationSubtitle = (conversation, currentUserId, onlineUserIds = []) => {
+  if (!conversation) return '';
+  if (conversation.isGroup) {
+    const memberCount = Math.max((conversation?.participants?.length || 0) - 1, 0);
+    if (!memberCount) return 'Only you';
+    if (memberCount === 1) return getGroupMemberLabel(conversation, currentUserId, 2);
+    return `${memberCount} members`;
+  }
+  const otherUser = otherParticipant(conversation, currentUserId);
+  const otherUserId = getUserId(otherUser);
+  return onlineUserIds.includes(String(otherUserId)) ? 'Online' : getUserName(otherUser);
+};
+const isConversationRequestForMe = (conversation, currentUserId) => (
+  Boolean(conversation?.isRequest)
+  && conversation?.requestStatus === 'pending'
+  && String(conversation?.requestedBy?._id || conversation?.requestedBy) !== String(currentUserId)
+);
+const canSendInConversation = (conversation, currentUserId) => (
+  !conversation?.isRequest
+  || conversation?.requestStatus !== 'pending'
+  || String(conversation?.requestedBy?._id || conversation?.requestedBy) === String(currentUserId)
+);
 
 const formatAgo = (dateValue) => {
   if (!dateValue) return '';
@@ -86,6 +136,11 @@ const otherParticipant = (conversation, currentUserId) =>
   conversation?.participants?.find((item) => String(item?._id) !== String(currentUserId))
   || conversation?.participants?.[0]
   || null;
+const getMessageSender = (conversation, message, currentUserId) => {
+  if (!conversation?.isGroup) return otherParticipant(conversation, currentUserId);
+  const senderId = String(message?.sender?._id || message?.sender || '');
+  return conversation?.participants?.find((item) => String(getUserId(item)) === senderId) || message?.sender || null;
+};
 
 const sortConversations = (conversations) =>
   [...conversations].sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
@@ -147,10 +202,44 @@ const hasReplyContent = (replyTo) => Boolean(
   )
 );
 
-const Avatar = ({ user, className = 'h-10 w-10' }) => {
-  const avatar = getUserAvatar(user);
-  if (avatar) {
-    return <img src={avatar} alt={getUserName(user)} className={`${className} rounded-full object-cover border border-gray-100 dark:border-white/10`} />;
+const getConversationListMeta = (conversation, currentUserId, unread, isTyping, subtitle) => {
+  if (isTyping) return 'Typing...';
+  if (unread > 0) return `${unread}+ new message${unread > 1 ? 's' : ''}`;
+
+  const otherUser = otherParticipant(conversation, currentUserId);
+  const mine = String(conversation?.lastMessage?.sender?._id || conversation?.lastMessage?.sender) === String(currentUserId);
+  const messagePreviewText = mobileListPreview(conversation?.lastMessage, mine, getUserName(otherUser));
+
+  if (messagePreviewText && messagePreviewText !== 'Start chatting') {
+    return messagePreviewText;
+  }
+
+  if (conversation?.isRequest && conversation?.requestStatus === 'pending') {
+    return String(conversation?.requestedBy?._id || conversation?.requestedBy) === String(currentUserId)
+      ? 'Sent request'
+      : 'Message request';
+  }
+
+  return subtitle || 'Start chatting';
+};
+
+const Avatar = ({ user, className = 'h-10 w-10', src = '', alt = '' }) => {
+  const avatar = src || getUserAvatar(user);
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [avatar]);
+
+  if (avatar && !imageFailed) {
+    return (
+      <img
+        src={avatar}
+        alt={alt || getUserName(user)}
+        onError={() => setImageFailed(true)}
+        className={`${className} rounded-full object-cover border border-gray-100 dark:border-white/10`}
+      />
+    );
   }
   return (
     <div className={`${className} flex items-center justify-center rounded-full bg-gradient-to-br from-[#7C3AED] to-[#3B82F6] text-sm font-bold text-white shadow-sm`}>
@@ -235,9 +324,305 @@ const MessageActions = ({ message, mine, onReply, onReact, onMore }) => (
   </div>
 );
 
+const GroupCreateModal = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  users = [],
+  loading = false,
+}) => {
+  const [groupName, setGroupName] = useState('');
+  const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setGroupName('');
+      setSearch('');
+      setSelectedIds([]);
+    }
+  }, [isOpen]);
+
+  const filteredUsers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return users;
+    return users.filter((user) => (
+      [getUserName(user), user?.username].filter(Boolean).some((value) => value.toLowerCase().includes(query))
+    ));
+  }, [search, users]);
+  const isGroup = selectedIds.length > 1;
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="flex max-h-[80vh] w-full max-w-[610px] flex-col overflow-hidden rounded-[28px] bg-[#24252b] text-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <div className="w-8" />
+          <p className="text-xl font-bold tracking-tight">New message</p>
+          <button onClick={onClose} className="rounded-full p-2 text-white/70 transition hover:bg-white/5 hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="border-b border-white/10 px-5 py-3">
+          <div className="flex items-center gap-3 text-sm">
+            <span className="font-semibold text-white">To:</span>
+            <div className="min-w-0 flex flex-1 flex-wrap items-center gap-2">
+              {selectedIds.map((userId) => {
+                const user = users.find((item) => String(getUserId(item)) === String(userId));
+                if (!user) return null;
+                return (
+                  <span key={userId} className="inline-flex items-center gap-1 rounded-full bg-[#34353c] px-2.5 py-1 text-xs font-semibold text-white">
+                    {user?.username || getUserName(user)}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIds((prev) => prev.filter((id) => id !== userId))}
+                      className="text-white/70 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                );
+              })}
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search..."
+                className="min-w-[140px] flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+              />
+            </div>
+          </div>
+          {isGroup ? (
+            <input
+              value={groupName}
+              onChange={(event) => setGroupName(event.target.value)}
+              placeholder="Group name"
+              className="mt-3 w-full rounded-xl border border-white/10 bg-[#1b1c21] px-4 py-3 text-sm outline-none transition focus:border-white/20"
+            />
+          ) : null}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-0 pb-3">
+          {filteredUsers.map((user) => {
+            const userId = getUserId(user);
+            const selected = selectedIds.includes(userId);
+            return (
+              <button
+                key={userId}
+                type="button"
+                onClick={() => setSelectedIds((prev) => (
+                  selected
+                    ? prev.filter((id) => id !== userId)
+                    : [...prev.filter((id) => id !== userId), userId]
+                ))}
+                className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-white/5"
+              >
+                <Avatar user={user} className="h-11 w-11" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-white">{getUserName(user)}</p>
+                  <p className="truncate text-xs text-white/60">@{user?.username || 'user'}</p>
+                </div>
+                <span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs ${
+                  selected
+                    ? 'border-white bg-white text-[#24252b]'
+                    : 'border-white/70 text-transparent'
+                }`}>
+                  <Check size={14} />
+                </span>
+              </button>
+            );
+          })}
+          {!filteredUsers.length ? (
+            <div className="px-4 py-8 text-center text-sm text-white/55">No following users found.</div>
+          ) : null}
+        </div>
+
+        <div className="border-t border-white/10 px-5 py-4">
+          <button
+            type="button"
+            disabled={loading || selectedIds.length === 0 || (isGroup && !groupName.trim())}
+            onClick={() => onSubmit({ groupName: groupName.trim(), participantIds: selectedIds })}
+            className="w-full rounded-2xl bg-[#2a2f9f] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#3137b5] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading ? 'Please wait...' : (isGroup ? 'Create group' : 'Chat')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const GroupManageModal = ({
+  isOpen,
+  onClose,
+  conversation,
+  currentUserId,
+  followingUsers = [],
+  onSave,
+  onAddMember,
+  onRemoveMember,
+  loading = false,
+}) => {
+  const [groupName, setGroupName] = useState('');
+  const [groupAvatar, setGroupAvatar] = useState('');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setGroupName(conversation?.groupName || '');
+    setGroupAvatar(conversation?.groupAvatar || '');
+    setSearch('');
+  }, [conversation, isOpen]);
+
+  const participantIds = useMemo(
+    () => new Set((conversation?.participants || []).map((user) => String(getUserId(user)))),
+    [conversation]
+  );
+  const groupAdminId = String(conversation?.groupAdmin?._id || conversation?.groupAdmin || '');
+  const isAdmin = groupAdminId === String(currentUserId);
+  const addableUsers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return followingUsers.filter((user) => {
+      const userId = String(getUserId(user));
+      if (!userId || participantIds.has(userId)) return false;
+      if (!query) return true;
+      return [getUserName(user), user?.username].filter(Boolean).some((value) => value.toLowerCase().includes(query));
+    });
+  }, [followingUsers, participantIds, search]);
+
+  if (!isOpen || !conversation) return null;
+
+  return (
+    <div className="fixed inset-0 z-[135] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] bg-white text-gray-900 shadow-2xl dark:bg-[#111111] dark:text-white"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-white/10">
+          <div>
+            <p className="text-lg font-bold">Manage group</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{conversation?.participants?.length || 0} members</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/5 dark:hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid gap-5 overflow-y-auto p-5 md:grid-cols-[1.1fr,0.9fr]">
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <input
+                value={groupName}
+                onChange={(event) => setGroupName(event.target.value)}
+                disabled={!isAdmin || loading}
+                placeholder="Group name"
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none transition disabled:opacity-60 dark:border-white/10 dark:bg-[#181818]"
+              />
+              <input
+                value={groupAvatar}
+                onChange={(event) => setGroupAvatar(event.target.value)}
+                disabled={!isAdmin || loading}
+                placeholder="Group avatar URL"
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none transition disabled:opacity-60 dark:border-white/10 dark:bg-[#181818]"
+              />
+              {isAdmin ? (
+                <button
+                  type="button"
+                  disabled={loading || !groupName.trim()}
+                  onClick={() => onSave({ groupName: groupName.trim(), groupAvatar: groupAvatar.trim() })}
+                  className="rounded-full bg-[#7C3AED] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#6d28d9] disabled:opacity-50"
+                >
+                  Save changes
+                </button>
+              ) : null}
+            </div>
+
+            <div>
+              <p className="mb-3 text-sm font-semibold">Members</p>
+              <div className="space-y-2">
+                {(conversation?.participants || []).map((user) => {
+                  const userId = getUserId(user);
+                  const canRemove = isAdmin || String(userId) === String(currentUserId);
+                  return (
+                    <div key={userId} className="flex items-center gap-3 rounded-2xl bg-gray-50 px-3 py-3 dark:bg-[#181818]">
+                      <Avatar user={user} className="h-10 w-10" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{getUserName(user)}</p>
+                        <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                          {String(userId) === groupAdminId ? 'Admin' : 'Member'}
+                        </p>
+                      </div>
+                      {canRemove ? (
+                        <button
+                          type="button"
+                          disabled={loading || String(userId) === groupAdminId && !isAdmin}
+                          onClick={() => onRemoveMember(String(userId))}
+                          className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-100 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                        >
+                          {String(userId) === String(currentUserId) ? 'Leave' : 'Remove'}
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-sm font-semibold">Add members</p>
+            <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500 dark:border-white/10 dark:bg-[#181818] dark:text-gray-400">
+              <Search size={16} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                disabled={!isAdmin || loading}
+                placeholder="Search following"
+                className="w-full bg-transparent outline-none"
+              />
+            </div>
+            <div className="max-h-[360px] space-y-2 overflow-y-auto">
+              {addableUsers.map((user) => {
+                const userId = getUserId(user);
+                return (
+                  <div key={userId} className="flex items-center gap-3 rounded-2xl bg-gray-50 px-3 py-3 dark:bg-[#181818]">
+                    <Avatar user={user} className="h-10 w-10" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{getUserName(user)}</p>
+                      <p className="truncate text-xs text-gray-500 dark:text-gray-400">@{user?.username || 'user'}</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!isAdmin || loading}
+                      onClick={() => onAddMember(String(userId))}
+                      className="rounded-full bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-black disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-gray-200"
+                    >
+                      Add
+                    </button>
+                  </div>
+                );
+              })}
+              {!addableUsers.length ? (
+                <div className="rounded-2xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-500 dark:bg-[#181818] dark:text-gray-400">
+                  {isAdmin ? 'No more following users available to add.' : 'Only the group admin can add members.'}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function ChatPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const { conversationId: conversationIdFromUrl } = useParams();
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
@@ -255,6 +640,8 @@ export default function ChatPage() {
   const messagesRef = useRef([]);
   const unreadCountsRef = useRef({});
   const currentUserIdRef = useRef('');
+  const fetchConversationsPromiseRef = useRef(null);
+  const activatingConversationRef = useRef({ conversationId: '', promise: null });
 
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
@@ -266,6 +653,14 @@ export default function ChatPage() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [reactionPickerFor, setReactionPickerFor] = useState(null);
   const [hoveredMessageId, setHoveredMessageId] = useState(null);
+  const [conversationType, setConversationType] = useState('normal');
+  const [onlineUserIds, setOnlineUserIds] = useState([]);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showManageGroupModal, setShowManageGroupModal] = useState(false);
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [loadingGroupMembers, setLoadingGroupMembers] = useState(false);
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [groupActionLoading, setGroupActionLoading] = useState(false);
 
   const {
     conversations, activeConversation, messages, page, hasMore,
@@ -276,11 +671,19 @@ export default function ChatPage() {
 
   const currentUserId = getUserId(userObject);
   const token = localStorage.getItem('token');
+  const initialConversation = location.state?.conversation || null;
   const activeId = activeConversation?._id || conversationIdFromUrl || null;
   const otherUser = useMemo(() => otherParticipant(activeConversation, currentUserId), [activeConversation, currentUserId]);
   const activeTyping = (typingUsers[activeId] || []).filter((id) => String(id) !== String(currentUserId));
   const otherUserId = getUserId(otherUser);
   const currentUserLabel = userObject?.username || getUserName(userObject);
+  const activeConversationTitle = getConversationTitle(activeConversation, currentUserId);
+  const activeConversationSubtitle = getConversationSubtitle(activeConversation, currentUserId, onlineUserIds);
+  const activeConversationCanSend = canSendInConversation(activeConversation, currentUserId);
+  const activeConversationIsRequestForMe = isConversationRequestForMe(activeConversation, currentUserId);
+  const activeConversationIsGroupAdmin = String(activeConversation?.groupAdmin?._id || activeConversation?.groupAdmin || '') === String(currentUserId);
+  const isRequestsView = conversationType === 'requests';
+  const requestCount = conversations.length;
 
   useEffect(() => { activeConversationIdRef.current = activeId; }, [activeId]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
@@ -292,7 +695,11 @@ export default function ChatPage() {
     if (!query) return conversations;
     return conversations.filter((conversation) => {
       const other = otherParticipant(conversation, currentUserId);
-      return [getUserName(other), other?.username].filter(Boolean).some((value) => value.toLowerCase().includes(query));
+      return [
+        getConversationTitle(conversation, currentUserId),
+        getUserName(other),
+        other?.username,
+      ].filter(Boolean).some((value) => value.toLowerCase().includes(query));
     });
   }, [conversations, currentUserId, search]);
 
@@ -312,44 +719,110 @@ export default function ChatPage() {
 
   const setConversationAsActive = useCallback(async (conversation, options = {}) => {
     if (!conversation?._id || !currentUserId) return;
-    const { skipNavigation = false } = options;
+    const { skipNavigation = false, forceReload = false } = options;
+    const conversationId = String(conversation._id);
+
+    if (!skipNavigation && String(activeConversationIdRef.current || '') !== conversationId) {
+      navigate(`/messages/${conversation._id}`);
+    }
+
+    dispatch(setActiveConversation(conversation));
+    dispatch(markConversationRead(conversation._id));
+
+    if (
+      !forceReload
+      && String(activeConversationIdRef.current || '') === conversationId
+      && messagesRef.current.length > 0
+    ) {
+      return;
+    }
+
+    if (activatingConversationRef.current.conversationId === conversationId && activatingConversationRef.current.promise) {
+      return activatingConversationRef.current.promise;
+    }
+
     dispatch(setActiveConversation(conversation));
     dispatch(markConversationRead(conversation._id));
     dispatch(setMessages([]));
     dispatch(setPage(1));
     dispatch(setHasMore(true));
     dispatch(setIsLoadingMessages(true));
-    if (!skipNavigation) navigate(`/messages/${conversation._id}`);
-    try {
-      const response = await chatService.getMessages(conversation._id, 1, PAGE_LIMIT);
-      dispatch(setMessages([...(response?.messages || [])].reverse()));
-      dispatch(setHasMore(Boolean(response?.hasMore)));
-      dispatch(setPage(1));
-      dispatch(markConversationRead(conversation._id));
-    } catch (error) {
-      console.error('Failed to load messages:', error);
-      dispatch(setMessages([]));
-      dispatch(setHasMore(false));
-    } finally {
-      dispatch(setIsLoadingMessages(false));
-    }
+
+    const request = (async () => {
+      try {
+        const response = await chatService.getMessages(conversation._id, 1, PAGE_LIMIT);
+        if (String(activeConversationIdRef.current || conversationId) !== conversationId) return;
+        dispatch(setMessages([...(response?.messages || [])].reverse()));
+        dispatch(setHasMore(Boolean(response?.hasMore)));
+        dispatch(setPage(1));
+        dispatch(markConversationRead(conversation._id));
+      } catch (error) {
+        console.error('Failed to load messages:', error);
+        if (String(activeConversationIdRef.current || conversationId) !== conversationId) return;
+        dispatch(setMessages([]));
+        dispatch(setHasMore(false));
+      } finally {
+        if (String(activeConversationIdRef.current || conversationId) === conversationId) {
+          dispatch(setIsLoadingMessages(false));
+        }
+        if (activatingConversationRef.current.promise === request) {
+          activatingConversationRef.current = { conversationId: '', promise: null };
+        }
+      }
+    })();
+
+    activatingConversationRef.current = { conversationId, promise: request };
+    return request;
   }, [currentUserId, dispatch, navigate]);
 
-  const fetchConversations = useCallback(async () => {
-    dispatch(setIsLoadingConversations(true));
-    try {
-      const data = await chatService.getConversations();
-      const ordered = sortConversations(data || []);
-      dispatch(setConversations(ordered));
-      return ordered;
-    } catch (error) {
-      console.error('Failed to load conversations:', error);
-      dispatch(setConversations([]));
-      return [];
-    } finally {
-      dispatch(setIsLoadingConversations(false));
+  const refreshOnlineUsers = useCallback(async (items = []) => {
+    const targetIds = items
+      .filter((conversation) => !conversation?.isGroup)
+      .map((conversation) => getUserId(otherParticipant(conversation, currentUserId)))
+      .filter(Boolean);
+
+    if (!targetIds.length) {
+      setOnlineUserIds([]);
+      return;
     }
-  }, [dispatch]);
+
+    try {
+      const response = await chatService.getOnlineUsers(targetIds);
+      setOnlineUserIds(Array.isArray(response?.onlineUserIds) ? response.onlineUserIds.map(String) : []);
+    } catch (error) {
+      console.error('Failed to load online users:', error);
+    }
+  }, [currentUserId]);
+
+  const fetchConversations = useCallback(async () => {
+    if (fetchConversationsPromiseRef.current) {
+      return fetchConversationsPromiseRef.current;
+    }
+
+    const request = (async () => {
+      dispatch(setIsLoadingConversations(true));
+      try {
+        const data = await chatService.getConversations(conversationType);
+        const ordered = sortConversations(data || []);
+        dispatch(setConversations(ordered));
+        refreshOnlineUsers(ordered);
+        return ordered;
+      } catch (error) {
+        console.error('Failed to load conversations:', error);
+        dispatch(setConversations([]));
+        setOnlineUserIds([]);
+        return [];
+      } finally {
+        dispatch(setIsLoadingConversations(false));
+        if (fetchConversationsPromiseRef.current === request) {
+          fetchConversationsPromiseRef.current = null;
+        }
+      }
+    })();
+
+    fetchConversationsPromiseRef.current = request;
+    return request;
+  }, [conversationType, dispatch, refreshOnlineUsers]);
 
   const markLatestSeen = useCallback(async (items = messages, conversation = activeConversation) => {
     if (!conversation?._id || !currentUserId) return;
@@ -373,10 +846,23 @@ export default function ChatPage() {
     dispatch(updateLastMessage({ conversationId, lastMessage, lastMessageAt }));
   }, [dispatch]);
 
+  const syncConversationPreview = useCallback((conversation, lastMessage) => {
+    if (!conversation?._id) return;
+    dispatch(upsertConversation({
+      ...conversation,
+      lastMessage: lastMessage || conversation.lastMessage || null,
+      lastMessageAt: lastMessage?.createdAt || conversation.lastMessageAt || new Date().toISOString(),
+      unreadCount: 0,
+    }));
+  }, [dispatch]);
+
   const onNewMessage = useCallback(async (message) => {
     const incomingConversationId = String(message?.conversationId?._id || message?.conversationId?.id || message?.conversationId || '');
     if (!incomingConversationId) return;
     refreshConversationOrdering(incomingConversationId, message, message.createdAt || new Date().toISOString());
+    if (!conversations.some((conversation) => String(conversation._id) === incomingConversationId)) {
+      fetchConversations();
+    }
     const currentActiveConversationId = String(roomRef.current || activeConversationIdRef.current || conversationIdFromUrl || '');
     if (currentActiveConversationId === incomingConversationId) {
       const existingMessages = messagesRef.current || [];
@@ -397,7 +883,7 @@ export default function ChatPage() {
       return;
     }
     dispatch(setUnreadCount({ conversationId: incomingConversationId, count: (unreadCountsRef.current[incomingConversationId] || 0) + 1 }));
-  }, [dispatch, refreshConversationOrdering]);
+  }, [conversations, dispatch, fetchConversations, refreshConversationOrdering]);
 
   useEffect(() => { onNewMessageRef.current = onNewMessage; }, [onNewMessage]);
 
@@ -445,6 +931,11 @@ export default function ChatPage() {
       },
       onMessageReactionUpdate: (...args) => onMessageReactionUpdateRef.current?.(...args),
       onMessageRemoved: (...args) => onMessageRemovedRef.current?.(...args),
+      onGroupMemberAdded: () => { fetchConversations(); },
+      onGroupMemberRemoved: () => { fetchConversations(); },
+      onOnlineUsersUpdated: ({ onlineUserIds: nextOnlineUserIds = [] }) => {
+        setOnlineUserIds(Array.isArray(nextOnlineUserIds) ? nextOnlineUserIds.map(String) : []);
+      },
     };
     chatPageCallbacksRef.current = callbacks;
     initChatSocket(token, callbacks, currentUserId);
@@ -453,7 +944,7 @@ export default function ChatPage() {
       roomRef.current = null;
       if (chatPageCallbacksRef.current) removeChatSocketCallbacks(chatPageCallbacksRef.current);
     };
-  }, [currentUserId, dispatch, token]);
+  }, [currentUserId, dispatch, fetchConversations, token]);
 
   useEffect(() => {
     if (!activeId) return undefined;
@@ -466,18 +957,58 @@ export default function ChatPage() {
   }, [activeId]);
 
   useEffect(() => {
-    fetchConversations().then((loaded) => {
-      if (!conversationIdFromUrl) { dispatch(setActiveConversation(null)); return; }
+    let cancelled = false;
+
+    const loadPage = async () => {
+      const loaded = await fetchConversations();
+      if (cancelled) return;
+
+      if (!conversationIdFromUrl) {
+        dispatch(setActiveConversation(null));
+        dispatch(setMessages([]));
+        return;
+      }
+
       const conversation = loaded.find((item) => item._id === conversationIdFromUrl);
-      if (conversation) setConversationAsActive(conversation, { skipNavigation: true });
-    });
-  }, [conversationIdFromUrl, dispatch, fetchConversations, setConversationAsActive]);
+      if (conversation) {
+        await setConversationAsActive(conversation, { skipNavigation: true });
+        return;
+      }
+
+      if (initialConversation?._id === conversationIdFromUrl) {
+        await setConversationAsActive(initialConversation, { skipNavigation: true });
+        return;
+      }
+
+      if (conversationType === 'requests') {
+        dispatch(setActiveConversation(null));
+        dispatch(setMessages([]));
+      }
+    };
+
+    loadPage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationIdFromUrl, conversationType, dispatch, fetchConversations, initialConversation, setConversationAsActive]);
 
   useEffect(() => {
     if (!conversationIdFromUrl || activeConversation?._id === conversationIdFromUrl) return;
+    if (activatingConversationRef.current.conversationId === String(conversationIdFromUrl)) return;
     const conversation = conversations.find((item) => item._id === conversationIdFromUrl);
     if (conversation) setConversationAsActive(conversation, { skipNavigation: true });
   }, [activeConversation?._id, conversationIdFromUrl, conversations, setConversationAsActive]);
+
+  useEffect(() => {
+    refreshOnlineUsers(conversations);
+  }, [conversations, refreshOnlineUsers]);
+
+  useEffect(() => {
+    if (!conversations.length) return undefined;
+    const interval = setInterval(() => refreshOnlineUsers(conversations), 20000);
+    return () => clearInterval(interval);
+  }, [conversations, refreshOnlineUsers]);
 
   useEffect(() => {
     if (!scrollerRef.current || !activeId) return;
@@ -538,7 +1069,7 @@ export default function ChatPage() {
   };
 
   const handleSend = async (customPayload = null) => {
-    if (!activeConversation?._id || !currentUserId || sending) return;
+    if (!activeConversation?._id || !currentUserId || sending || !activeConversationCanSend) return;
     const payload = customPayload || { text: input.trim(), mediaUrl: '', mediaType: 'none', replyTo };
     if (!payload.text && !payload.mediaUrl) return;
     setSending(true);
@@ -547,6 +1078,7 @@ export default function ChatPage() {
       const enriched = { ...created, replyTo: payload.replyTo || null };
       dispatch(appendMessage(enriched));
       refreshConversationOrdering(activeConversation._id, enriched, enriched.createdAt);
+      syncConversationPreview(activeConversation, enriched);
       dispatch(markConversationRead(activeConversation._id));
       setInput(''); setReplyTo(null); stopTyping();
     } catch (error) { console.error('Failed to send message:', error); }
@@ -555,7 +1087,7 @@ export default function ChatPage() {
 
   const handleFile = async (event) => {
     const files = Array.from(event.target.files || []);
-    if (!files.length || !activeConversation?._id || !currentUserId) return;
+    if (!files.length || !activeConversation?._id || !currentUserId || !activeConversationCanSend) return;
     setUploading(true);
     try {
       const uploaded = await chatService.uploadChatMedia(activeConversation._id, files);
@@ -574,6 +1106,7 @@ export default function ChatPage() {
         const enriched = { ...created, replyTo: replyTo || null };
         dispatch(appendMessage(enriched));
         refreshConversationOrdering(activeConversation._id, enriched, enriched.createdAt);
+        syncConversationPreview(activeConversation, enriched);
         dispatch(markConversationRead(activeConversation._id));
       }
 
@@ -584,9 +1117,15 @@ export default function ChatPage() {
   };
 
   const handleVoiceSend = async (audioBlob, duration) => {
-    if (!activeConversation?._id) return;
+    if (!activeConversation?._id || !activeConversationCanSend) return;
     try {
-      await chatService.uploadVoiceMessage(activeConversation._id, audioBlob, duration);
+      const created = await chatService.uploadVoiceMessage(activeConversation._id, audioBlob, duration);
+      if (created?._id) {
+        dispatch(appendMessage(created));
+        refreshConversationOrdering(activeConversation._id, created, created.createdAt);
+        syncConversationPreview(activeConversation, created);
+        dispatch(markConversationRead(activeConversation._id));
+      }
       setReplyTo(null);
       stopTyping();
     } catch (error) {
@@ -607,8 +1146,158 @@ export default function ChatPage() {
     } catch (error) { console.error('Failed to unsend message:', error); }
   };
 
+  const handleAcceptRequest = async () => {
+    if (!activeConversation?._id || groupActionLoading) return;
+    setGroupActionLoading(true);
+    try {
+      const updatedConversation = await chatService.acceptMessageRequest(activeConversation._id);
+      const normalConversations = sortConversations(await chatService.getConversations('normal') || []);
+      dispatch(setConversations(normalConversations));
+      dispatch(upsertConversation({ ...updatedConversation, unreadCount: 0 }));
+      setConversationType('normal');
+      dispatch(setActiveConversation(updatedConversation));
+      dispatch(markConversationRead(updatedConversation._id));
+      await refreshOnlineUsers(normalConversations);
+      await setConversationAsActive(updatedConversation, { skipNavigation: true, forceReload: true });
+      navigate(`/messages/${updatedConversation._id}`);
+    } catch (error) {
+      console.error('Failed to accept message request:', error);
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const handleDeclineRequest = async () => {
+    if (!activeConversation?._id || groupActionLoading) return;
+    setGroupActionLoading(true);
+    try {
+      await chatService.declineMessageRequest(activeConversation._id);
+      const requestConversations = sortConversations(await chatService.getConversations('requests') || []);
+      dispatch(setConversations(requestConversations));
+      setConversationType('requests');
+      dispatch(setActiveConversation(null));
+      dispatch(setMessages([]));
+      await refreshOnlineUsers(requestConversations);
+      navigate('/messages');
+    } catch (error) {
+      console.error('Failed to decline message request:', error);
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const loadFollowingForGroup = useCallback(async () => {
+    if (!currentUserId) return;
+    setLoadingGroupMembers(true);
+    try {
+      const response = await getFollowing(currentUserId, { page: 1, limit: 100 });
+      setGroupMembers(Array.isArray(response?.users) ? response.users : []);
+    } catch (error) {
+      console.error('Failed to load following users for group:', error);
+      setGroupMembers([]);
+    } finally {
+      setLoadingGroupMembers(false);
+    }
+  }, [currentUserId]);
+
+  const handleOpenGroupModal = async () => {
+    setShowGroupModal(true);
+    if (!groupMembers.length) {
+      await loadFollowingForGroup();
+    }
+  };
+
+  const handleCreateGroup = async (payload) => {
+    setCreatingGroup(true);
+    try {
+      if ((payload?.participantIds || []).length === 1) {
+        const conversation = await chatService.createOrGetConversation(payload.participantIds[0]);
+        setShowGroupModal(false);
+        await fetchConversations();
+        await setConversationAsActive(conversation);
+        return;
+      }
+
+      const conversation = await chatService.createGroupConversation(payload);
+      setShowGroupModal(false);
+      await fetchConversations();
+      await setConversationAsActive(conversation);
+    } catch (error) {
+      console.error('Failed to create group:', error);
+    } finally {
+      setCreatingGroup(false);
+    }
+  };
+
+  const handleSaveGroup = async (payload) => {
+    if (!activeConversation?._id || groupActionLoading) return;
+    setGroupActionLoading(true);
+    try {
+      const updatedConversation = await chatService.updateGroupConversation(activeConversation._id, payload);
+      await fetchConversations();
+      dispatch(setActiveConversation(updatedConversation));
+      setShowManageGroupModal(false);
+    } catch (error) {
+      console.error('Failed to update group:', error);
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const handleAddGroupMember = async (userId) => {
+    if (!activeConversation?._id || groupActionLoading) return;
+    setGroupActionLoading(true);
+    try {
+      const updatedConversation = await chatService.addGroupMember(activeConversation._id, userId);
+      await fetchConversations();
+      dispatch(setActiveConversation(updatedConversation));
+    } catch (error) {
+      console.error('Failed to add group member:', error);
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const handleRemoveGroupMember = async (userId) => {
+    if (!activeConversation?._id || groupActionLoading) return;
+    setGroupActionLoading(true);
+    try {
+      const response = await chatService.removeGroupMember(activeConversation._id, userId);
+      await fetchConversations();
+      if (response?.conversationDeleted) {
+        dispatch(setActiveConversation(null));
+        dispatch(setMessages([]));
+        setShowManageGroupModal(false);
+        navigate('/messages');
+      } else {
+        dispatch(setActiveConversation(response));
+      }
+    } catch (error) {
+      console.error('Failed to remove group member:', error);
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!activeConversation?._id || groupActionLoading) return;
+    setGroupActionLoading(true);
+    try {
+      await chatService.removeGroupMember(activeConversation._id, currentUserId);
+      await fetchConversations();
+      dispatch(setActiveConversation(null));
+      dispatch(setMessages([]));
+      navigate('/messages');
+    } catch (error) {
+      console.error('Failed to leave group:', error);
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
   const handleReply = (message) => {
-    const senderName = String(message?.sender?._id || message?.sender) === String(currentUserId) ? 'You' : getUserName(otherUser);
+    const sender = getMessageSender(activeConversation, message, currentUserId);
+    const senderName = String(message?.sender?._id || message?.sender) === String(currentUserId) ? 'You' : getUserName(sender);
     setReplyTo({ messageId: message._id, text: message.text || 'Attachment', senderName, senderId: message?.sender?._id || message?.sender });
     setReactionPickerFor(null); setContextMenu(null);
   };
@@ -674,6 +1363,7 @@ export default function ChatPage() {
 
   const renderBubble = (message, mine) => {
     if (message.isDeleted) return <p className="text-sm italic text-gray-500">Message unsent</p>;
+    const sender = getMessageSender(activeConversation, message, currentUserId);
     const bubbleClass = mine
       ? 'bg-[#7C3AED] rounded-[22px] rounded-br-md shadow-sm'
       : 'bg-gray-100 dark:bg-[#262626] rounded-[22px] rounded-bl-md border border-gray-200 dark:border-white/5 shadow-sm';
@@ -683,6 +1373,11 @@ export default function ChatPage() {
 
     return (
       <div className="max-w-[280px] sm:max-w-[340px]">
+        {!mine && activeConversation?.isGroup ? (
+          <p className="mb-1 px-1 text-[11px] font-semibold tracking-wide text-gray-500 dark:text-gray-400">
+            {getUserName(sender)}
+          </p>
+        ) : null}
         {hasReplyContent(message.replyTo) ? (
           <div className={`mb-1 rounded-2xl border px-3 py-2 text-xs ${mine ? 'bg-[#672ec3] border-white/10' : 'bg-gray-200/50 dark:bg-[#1a1a1a] border-gray-300 dark:border-white/10'}`}>
             <p className={`mb-1 font-semibold ${mine ? 'text-white/80' : 'text-gray-900 dark:text-white/80'}`}>
@@ -745,7 +1440,7 @@ export default function ChatPage() {
         `}>
 
           {/* ── Mobile top bar: back + username + compose ── */}
-          <div className="px-4 pb-2 pt-3 md:hidden">
+          <div className={`${isRequestsView ? 'hidden' : 'px-4 pb-2 pt-3 md:hidden'}`}>
             <div className="flex items-center justify-between">
               {/* Back arrow */}
               <button
@@ -767,6 +1462,7 @@ export default function ChatPage() {
               {/* Compose icon */}
               <button
                 type="button"
+                onClick={handleOpenGroupModal}
                 className="flex h-9 w-9 items-center justify-center rounded-full text-white transition hover:bg-white/10"
                 aria-label="Compose"
               >
@@ -776,10 +1472,10 @@ export default function ChatPage() {
           </div>
 
           {/* ── Desktop top bar ── */}
-          <div className="hidden md:block px-5 py-5 border-b border-gray-100 dark:border-white/10">
+          <div className={`${isRequestsView ? 'hidden' : 'hidden md:block px-5 py-5 border-b border-gray-100 dark:border-white/10'}`}>
             <div className="flex items-center justify-between mb-4">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">{currentUserLabel}</h1>
-              <button type="button" className="text-gray-500 hover:text-gray-900 dark:hover:text-white transition">
+              <button type="button" onClick={handleOpenGroupModal} className="text-gray-500 hover:text-gray-900 dark:hover:text-white transition">
                 <SquarePen size={20} />
               </button>
             </div>
@@ -797,7 +1493,7 @@ export default function ChatPage() {
           </div>
 
           {/* ── Mobile search bar ── */}
-          <div className="px-4 pt-2 pb-3 md:hidden">
+          <div className={`${isRequestsView ? 'hidden' : 'px-4 pt-2 pb-3 md:hidden'}`}>
             <div className="flex items-center gap-3 rounded-[12px] bg-[#1c1c1e] px-4 py-2.5 text-sm text-white/50">
               <Search size={16} className="shrink-0 text-white/40" />
               <input
@@ -810,12 +1506,14 @@ export default function ChatPage() {
           </div>
 
           {/* ── Story-style horizontal avatar row (mobile only) ── */}
-          <div className="flex gap-4 overflow-x-auto px-4 pb-3 pt-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden md:hidden">
+          <div className={`${isRequestsView ? 'hidden' : 'flex gap-4 overflow-x-auto px-4 pb-3 pt-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden md:hidden'}`}>
             {conversations.map((conversation) => {
               const user = otherParticipant(conversation, currentUserId);
               const mine = String(conversation?.lastMessage?.sender?._id || conversation?.lastMessage?.sender) === String(currentUserId);
               const preview = mobileBubblePreview(conversation.lastMessage, mine, getUserName(user));
               const unread = unreadCounts[conversation._id] ?? conversation.unreadCount ?? 0;
+              const title = getConversationTitle(conversation, currentUserId);
+              const avatar = getConversationAvatar(conversation, currentUserId);
 
               return (
                 <button
@@ -840,14 +1538,22 @@ export default function ChatPage() {
 
                   {/* Avatar with gradient ring */}
                   <div className={`rounded-full p-[2px] ${unread > 0 ? 'bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7]' : 'bg-[#333]'}`}>
-                    <div className="rounded-full bg-black p-[2px]">
-                      <Avatar user={user} className="h-[56px] w-[56px]" />
+                    <div className="relative rounded-full bg-black p-[2px]">
+                      <Avatar
+                        user={conversation?.isGroup ? { full_name: title } : user}
+                        src={avatar}
+                        alt={title}
+                        className="h-[56px] w-[56px]"
+                      />
+                      {!conversation?.isGroup && onlineUserIds.includes(String(getUserId(user))) ? (
+                        <span className="absolute bottom-[2px] right-[2px] h-3.5 w-3.5 rounded-full border-2 border-black bg-[#38d430]" />
+                      ) : null}
                     </div>
                   </div>
 
                   {/* Username */}
                   <span className="max-w-[80px] truncate text-[11px] font-medium tracking-[0.02em] text-white/80">
-                    {user?.username || getUserName(user)}
+                    {title}
                   </span>
                 </button>
               );
@@ -855,9 +1561,11 @@ export default function ChatPage() {
           </div>
 
           {/* ── Desktop story row ── */}
-          <div className="hidden md:flex gap-5 overflow-x-auto px-5 py-4 border-b border-gray-100 dark:border-white/10 [scrollbar-width:none]">
+          <div className="hidden">
             {conversations.map((conversation) => {
               const user = otherParticipant(conversation, currentUserId);
+              const title = getConversationTitle(conversation, currentUserId);
+              const avatar = getConversationAvatar(conversation, currentUserId);
               return (
                 <button
                   key={conversation._id}
@@ -866,11 +1574,16 @@ export default function ChatPage() {
                 >
                   <div className="rounded-full bg-gradient-to-br from-[#7C3AED] to-[#3B82F6] p-[2px]">
                     <div className="rounded-full bg-white dark:bg-black p-[2px]">
-                      <Avatar user={user} className="h-14 w-14" />
+                      <Avatar
+                        user={conversation?.isGroup ? { full_name: title } : user}
+                        src={avatar}
+                        alt={title}
+                        className="h-14 w-14"
+                      />
                     </div>
                   </div>
                   <span className="max-w-[64px] truncate text-[11px] font-medium text-gray-600 dark:text-gray-300">
-                    {user?.username || getUserName(user)}
+                    {title}
                   </span>
                 </button>
               );
@@ -878,16 +1591,84 @@ export default function ChatPage() {
           </div>
 
           {/* ── Messages label row ── */}
-          <div className="flex items-center justify-between px-4 pb-2 pt-3 md:px-5 md:py-4">
-            <h1 className="text-[16px] font-extrabold leading-none tracking-tight text-white md:text-xl md:font-bold md:text-gray-900 md:dark:text-white">
-              Messages
-            </h1>
-            <span className="cursor-pointer text-[14px] font-semibold text-white/60 hover:text-white transition-colors md:text-sm md:text-gray-500 md:hover:text-gray-700 md:dark:text-gray-400 md:dark:hover:text-white">
-              Requests
-            </span>
+          <div className={`${isRequestsView ? 'hidden' : 'flex items-center justify-between px-4 pb-2 pt-3 md:px-5 md:pb-3 md:pt-4'}`}>
+            <div className="flex items-center gap-3">
+              {[
+                { key: 'normal', label: 'Messages' },
+                { key: 'requests', label: 'Requests' },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => {
+                    setConversationType(tab.key);
+                    dispatch(setActiveConversation(null));
+                    dispatch(setMessages([]));
+                    navigate('/messages');
+                  }}
+                  className={`text-[15px] font-bold transition md:text-[15px] ${
+                    conversationType === tab.key
+                      ? 'text-white md:text-gray-900 md:dark:text-white'
+                      : 'text-white/55 hover:text-white md:text-gray-500 md:hover:text-gray-700 md:dark:text-gray-400 md:dark:hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* ── Conversation list ── */}
+          {isRequestsView ? (
+            <>
+              <div className="px-4 pb-3 pt-4 md:hidden">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setConversationType('normal'); dispatch(setActiveConversation(null)); dispatch(setMessages([])); navigate('/messages'); }}
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-white transition hover:bg-white/10"
+                    aria-label="Back to messages"
+                  >
+                    <ChevronLeft size={22} strokeWidth={2.5} />
+                  </button>
+                  <p className="text-[26px] font-bold tracking-tight text-white">Message requests</p>
+                </div>
+              </div>
+
+              <div className="hidden border-b border-gray-100 px-5 py-5 dark:border-white/10 md:block">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setConversationType('normal'); dispatch(setActiveConversation(null)); dispatch(setMessages([])); navigate('/messages'); }}
+                    className="rounded-full p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/5 dark:hover:text-white"
+                    aria-label="Back to messages"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <h1 className="text-[18px] font-bold text-gray-900 dark:text-white">Message requests</h1>
+                </div>
+              </div>
+
+              <div className="px-4 py-4 md:px-5">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-[18px] bg-white/5 px-4 py-4 text-left transition hover:bg-white/[0.08] md:bg-white md:hover:bg-gray-50 dark:md:bg-[#111111] dark:md:hover:bg-[#151515]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 md:bg-gray-100 dark:md:bg-white/5">
+                      <UserMinus size={22} className="text-white/80 md:text-gray-500 dark:md:text-gray-300" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-white md:text-gray-900 dark:md:text-white">Hidden requests</p>
+                      <p className="mt-1 text-xs text-white/45 md:text-gray-500 dark:md:text-gray-400">Restricted chats appear here.</p>
+                    </div>
+                  </div>
+                  <ChevronLeft size={18} className="rotate-180 text-white/60 md:text-gray-400" />
+                </button>
+              </div>
+            </>
+          ) : null}
+
           <div className="flex-1 overflow-y-auto px-2 pb-6 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {isLoadingConversations ? (
               <div className="space-y-1 px-2 pt-2">
@@ -901,47 +1682,68 @@ export default function ChatPage() {
                   </div>
                 ))}
               </div>
-            ) : (
+            ) : filteredConversations.length ? (
               filteredConversations.map((conversation) => {
                 const user = otherParticipant(conversation, currentUserId);
-                const mine = String(conversation?.lastMessage?.sender?._id || conversation?.lastMessage?.sender) === String(currentUserId);
                 const unread = unreadCounts[conversation._id] ?? conversation.unreadCount ?? 0;
                 const active = activeId === conversation._id;
                 const isTyping = (typingUsers[conversation._id] || []).some((id) => String(id) !== String(currentUserId));
+                const title = getConversationTitle(conversation, currentUserId);
+                const subtitle = getConversationSubtitle(conversation, currentUserId, onlineUserIds);
+                const avatar = getConversationAvatar(conversation, currentUserId);
+                const isRequest = isConversationRequestForMe(conversation, currentUserId);
+                const previewText = getConversationListMeta(conversation, currentUserId, unread, isTyping, subtitle);
+                const timeText = formatAgo(conversation.lastMessageAt);
 
                 return (
                   <button
                     key={conversation._id}
                     onClick={() => setConversationAsActive(conversation)}
-                    className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition-all
+                    className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-all
                       ${active
-                        ? 'bg-white/5 md:bg-white md:shadow-sm md:border md:border-gray-100 md:dark:bg-[#1a1a1a] md:dark:border-white/5'
-                        : 'hover:bg-white/[0.04] md:hover:bg-white md:dark:hover:bg-[#141414] border border-transparent'
+                        ? 'bg-white/5 md:bg-white md:shadow-sm md:border md:border-gray-100 md:dark:bg-[#141414] md:dark:border-white/5'
+                        : 'hover:bg-white/[0.04] md:hover:bg-white/70 md:dark:hover:bg-[#111111] border border-transparent'
                       }
                     `}
                   >
                     {/* Avatar */}
                     <div className="relative shrink-0">
-                      <Avatar user={user} className="h-[54px] w-[54px] md:h-12 md:w-12" />
+                      <Avatar
+                        user={conversation?.isGroup ? { full_name: title } : user}
+                        src={avatar}
+                        alt={title}
+                        className="h-[54px] w-[54px] md:h-12 md:w-12"
+                      />
+                      {!conversation?.isGroup && onlineUserIds.includes(String(getUserId(user))) ? (
+                        <span className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-black bg-[#38d430] md:border-white dark:md:border-[#0a0a0a]" />
+                      ) : null}
                     </div>
 
                     {/* Text content */}
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <p className={`truncate text-[14.5px] leading-snug md:text-sm md:font-bold md:text-gray-900 md:dark:text-white
+                      <div className="flex items-start justify-between gap-3">
+                        <p className={`min-w-0 truncate text-[14.5px] leading-snug md:text-[15px] md:text-gray-900 md:dark:text-white
                           ${unread > 0 ? 'font-bold text-white' : 'font-semibold text-white/90'}`}>
-                          {getUserName(user)}
+                          {title}
                         </p>
+                        <span className="shrink-0 pt-0.5 text-[12px] text-white/40 md:text-gray-400">
+                          {timeText}
+                        </span>
+                        {isRequest ? (
+                          <span className="hidden rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 md:inline-flex">
+                            Request
+                          </span>
+                        ) : null}
                         {conversation?.isPinned && (
                           <span className="text-white/40 md:text-gray-400 text-xs">📌</span>
                         )}
                       </div>
 
-                      <div className="mt-[2px] flex items-center gap-1.5 pr-2">
+                      <div className="mt-1 flex items-center gap-1.5 pr-2">
                         {unread > 0 ? (
                           <>
-                            <p className="truncate text-[13px] font-semibold text-white md:text-[#3B82F6]">
-                              {unread} new message{unread > 1 ? 's' : ''}
+                            <p className="truncate text-[13px] font-semibold text-white md:text-gray-900 md:dark:text-white">
+                              {previewText}
                             </p>
                             <span className="shrink-0 text-[13px] text-white/30">·</span>
                             <span className="shrink-0 text-[12px] text-white/40">
@@ -951,7 +1753,7 @@ export default function ChatPage() {
                         ) : (
                           <>
                             <p className={`truncate text-[13px] ${isTyping ? 'font-semibold text-[#4f6bff]' : 'text-white/50 md:text-gray-500 md:dark:text-gray-400'}`}>
-                              {isTyping ? 'Typing...' : mobileListPreview(conversation.lastMessage, mine, getUserName(user))}
+                              {previewText}
                             </p>
                             <span className="shrink-0 text-[13px] text-white/25 md:text-gray-400">·</span>
                             <span className="shrink-0 text-[12px] text-white/40 md:text-gray-400">
@@ -969,22 +1771,52 @@ export default function ChatPage() {
                   </button>
                 );
               })
+            ) : (
+              <div className="px-5 py-6">
+                <p className="text-sm text-white/55 md:text-gray-500 dark:md:text-gray-400">
+                  {isRequestsView
+                    ? "Chats will appear here after you send or receive a message request."
+                    : 'No conversations found.'}
+                </p>
+              </div>
             )}
           </div>
+          {isRequestsView ? (
+            <div className="border-t border-white/10 px-5 py-4 text-center md:border-gray-100 md:dark:border-white/10">
+              <button
+                type="button"
+                className="text-sm font-semibold text-red-400 transition hover:text-red-300 md:text-red-500 md:hover:text-red-600"
+              >
+                Delete all {requestCount}
+              </button>
+            </div>
+          ) : null}
         </aside>
 
         {/* ═══════════════════════════════════════════════════════════
             CHAT SECTION — unchanged, same as original
             ═══════════════════════════════════════════════════════════ */}
-        <section className={`${!activeId ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col bg-white dark:bg-black overflow-hidden relative md:flex`}>
+        <section className={`${!activeId && !isRequestsView ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col bg-white dark:bg-black overflow-hidden relative md:flex`}>
           {!activeConversation ? (
             <div className="flex flex-1 flex-col items-center justify-center px-6 text-center animate-in fade-in duration-500">
-              <div className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-gray-100 dark:border-white/10 bg-gray-50/50 dark:bg-[#0a0a0a] shadow-sm">
-                <MessageCircle size={42} className="text-gray-300 dark:text-gray-700" />
+              <div className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-gray-100 bg-gray-50/50 shadow-sm dark:border-white/10 dark:bg-[#0a0a0a]">
+                {isRequestsView ? (
+                  <UserMinus size={42} className="text-gray-300 dark:text-gray-700" />
+                ) : (
+                  <MessageCircle size={42} className="text-gray-300 dark:text-gray-700" />
+                )}
               </div>
-              <h2 className="mt-6 text-2xl font-bold tracking-tight">Your messages</h2>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 max-w-xs leading-relaxed">Send private photos and messages to a friend or group.</p>
-              <button className="mt-6 rounded-full bg-[#7C3AED] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-purple-500/20 transition hover:bg-[#6d28d9] hover:scale-105 active:scale-95">Send message</button>
+              <h2 className="mt-6 text-2xl font-bold tracking-tight">
+                {isRequestsView ? 'Message requests' : 'Your messages'}
+              </h2>
+              <p className="mt-2 max-w-xs text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                {isRequestsView
+                  ? "These messages are from people you don't follow yet. They won't know you've seen them until you accept."
+                  : 'Send private photos and messages to a friend or group.'}
+              </p>
+              {!isRequestsView ? (
+                <button onClick={handleOpenGroupModal} className="mt-6 rounded-full bg-[#7C3AED] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-purple-500/20 transition hover:bg-[#6d28d9] hover:scale-105 active:scale-95">Send message</button>
+              ) : null}
             </div>
           ) : (
             <>
@@ -995,14 +1827,81 @@ export default function ChatPage() {
                 >
                   <ChevronLeft size={24} />
                 </button>
-                <Link to={`/profile/${otherUserId}`} className="flex-shrink-0">
-                  <Avatar user={otherUser} className="h-9 w-9" />
-                </Link>
-                <Link to={`/profile/${otherUserId}`} className="min-w-0 flex-1 hover:opacity-70 transition-opacity">
-                  <p className="truncate text-sm font-bold tracking-tight">{otherUser?.username || getUserName(otherUser)}</p>
-                  <p className="truncate text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-widest">{getUserName(otherUser)}</p>
-                </Link>
+                {activeConversation?.isGroup ? (
+                  <div className="flex-shrink-0">
+                    <Avatar
+                      user={{ full_name: activeConversationTitle }}
+                      src={getConversationAvatar(activeConversation, currentUserId)}
+                      alt={activeConversationTitle}
+                      className="h-9 w-9"
+                    />
+                  </div>
+                ) : (
+                  <Link to={`/profile/${otherUserId}`} className="flex-shrink-0">
+                    <Avatar user={otherUser} className="h-9 w-9" />
+                  </Link>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold tracking-tight">{activeConversationTitle}</p>
+                  <p className={`truncate text-[11px] font-medium text-gray-500 dark:text-gray-400 ${
+                    activeConversation?.isGroup ? '' : 'uppercase tracking-widest'
+                  }`}>
+                    {activeConversation?.isGroup
+                      ? getGroupMemberLabel(activeConversation, currentUserId, 4)
+                      : activeConversationSubtitle}
+                  </p>
+                </div>
+                {activeConversation?.isGroup ? (
+                  <div className="flex items-center gap-2">
+                    {activeConversationIsGroupAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() => { loadFollowingForGroup(); setShowManageGroupModal(true); }}
+                        disabled={groupActionLoading}
+                        className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                      >
+                        Manage
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={handleLeaveGroup}
+                      disabled={groupActionLoading}
+                      className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <UserMinus size={13} />
+                        Leave
+                      </span>
+                    </button>
+                  </div>
+                ) : null}
               </header>
+
+              {activeConversationIsRequestForMe ? (
+                <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-500/20 dark:bg-amber-500/10">
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">Message request</p>
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Accept this request to start replying in this chat.</p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleAcceptRequest}
+                      disabled={groupActionLoading}
+                      className="rounded-full bg-amber-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-amber-600 disabled:opacity-50"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeclineRequest}
+                      disabled={groupActionLoading}
+                      className="rounded-full border border-amber-300 px-4 py-2 text-xs font-bold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-400/30 dark:text-amber-200 dark:hover:bg-amber-500/10"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               <div
                 ref={scrollerRef}
@@ -1012,6 +1911,29 @@ export default function ChatPage() {
                 {isLoadingMessages && messages.length === 0 ? (
                   <div className="flex h-full items-center justify-center">
                     <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-100 dark:border-[#262626] border-t-[#7C3AED]" />
+                  </div>
+                ) : (!messages.length && activeConversation && !activeConversation?.isGroup) ? (
+                  <div className="flex min-h-full items-start justify-center px-6 py-10">
+                    <div className="flex w-full max-w-md flex-col items-start text-center">
+                      <Link to={`/profile/${otherUserId}`} className="self-center transition hover:opacity-90">
+                        <Avatar user={otherUser} className="h-24 w-24 md:h-28 md:w-28" />
+                      </Link>
+                      <h2 className="mt-6 w-full text-[22px] font-bold tracking-tight text-gray-900 dark:text-white">
+                        {getUserName(otherUser)}
+                      </h2>
+                      <p className="mt-2 w-full text-base text-gray-500 dark:text-gray-400">
+                        @{otherUser?.username || getUserName(otherUser).toLowerCase().replace(/\s+/g, '_')}
+                      </p>
+                      <p className="mt-1 w-full text-sm text-gray-500 dark:text-gray-400">
+                        {otherUser?.username || getUserName(otherUser)} · Instagram
+                      </p>
+                      <Link
+                        to={`/profile/${otherUserId}`}
+                        className="mt-6 inline-flex self-center items-center justify-center rounded-xl bg-gray-100 px-5 py-2.5 text-sm font-bold text-gray-900 transition hover:bg-gray-200 dark:bg-[#262626] dark:text-white dark:hover:bg-[#303030]"
+                      >
+                        View Profile
+                      </Link>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex min-h-full flex-col justify-end">
@@ -1035,6 +1957,8 @@ export default function ChatPage() {
                       const showAvatar = !mine && !sameNext;
                       const showSeen = mine && message._id === latestSeenOwnMessageId;
                       const reactionBadge = getReactionBadge(message, currentUserId);
+                      const senderUser = getMessageSender(activeConversation, message, currentUserId);
+                      const senderUserId = getUserId(senderUser);
 
                       return (
                         <div
@@ -1053,8 +1977,8 @@ export default function ChatPage() {
                           <div className={`relative flex max-w-[85%] sm:max-w-[75%] flex-col ${mine ? 'items-end' : 'items-start'}`}>
                             <div className={`flex max-w-full items-end gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
                               {!mine ? (showAvatar ? (
-                                <Link to={`/profile/${otherUserId}`} className="flex-shrink-0">
-                                  <Avatar user={otherUser} className="h-7 w-7 shadow-sm hover:opacity-80 transition-opacity" />
+                                <Link to={`/profile/${senderUserId || otherUserId}`} className="flex-shrink-0">
+                                  <Avatar user={senderUser || otherUser} className="h-7 w-7 shadow-sm hover:opacity-80 transition-opacity" />
                                 </Link>
                               ) : <div className="w-7" />) : null}
 
@@ -1115,6 +2039,12 @@ export default function ChatPage() {
                 </div>
               )}
 
+              {!activeConversationCanSend ? (
+                <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 text-xs font-medium text-gray-500 dark:border-white/10 dark:bg-[#050505] dark:text-gray-400">
+                  You can view this request, but you cannot reply until you accept it.
+                </div>
+              ) : null}
+
               <div className="border-t border-gray-100 dark:border-white/10 px-4 py-4 flex-shrink-0 bg-white dark:bg-black">
                 <div ref={emojiPickerRef} className="relative">
                   {showEmojiPicker && (
@@ -1145,15 +2075,16 @@ export default function ChatPage() {
                         <input
                           ref={inputRef}
                           value={input}
+                          disabled={!activeConversationCanSend}
                           onChange={(event) => handleInputChange(event.target.value)}
                           onKeyDown={(event) => {
                             if (event.key === 'Escape' && showEmojiPicker) { setShowEmojiPicker(false); return; }
                             if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(); }
                           }}
-                          placeholder="Message..."
+                          placeholder={activeConversationCanSend ? 'Message...' : 'Accept request to reply'}
                           className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-white min-w-0 px-1"
                         />
-                        <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"><ImagePlus size={20} /></button>
+                        <button onClick={() => fileInputRef.current?.click()} disabled={uploading || !activeConversationCanSend} className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"><ImagePlus size={20} /></button>
                         <button className="rounded-full p-2.5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors hidden sm:block"><Sticker size={20} /></button>
                       </>
                     ) : null}
@@ -1162,10 +2093,10 @@ export default function ChatPage() {
                         onSend={handleVoiceSend}
                         onCancel={() => setIsRecording(false)}
                         onStateChange={setIsRecording}
-                        disabled={uploading || sending}
+                        disabled={uploading || sending || !activeConversationCanSend}
                       />
                     </div>
-                    {!isRecording && input.trim() && !sending ? (
+                    {!isRecording && input.trim() && !sending && activeConversationCanSend ? (
                       <button
                         onClick={() => handleSend()}
                         disabled={sending || uploading}
@@ -1192,7 +2123,8 @@ export default function ChatPage() {
         >
           <button
             onClick={() => {
-              const senderName = String(contextMenu.message?.sender?._id || contextMenu.message?.sender) === String(currentUserId) ? 'You' : getUserName(otherUser);
+              const sender = getMessageSender(activeConversation, contextMenu.message, currentUserId);
+              const senderName = String(contextMenu.message?.sender?._id || contextMenu.message?.sender) === String(currentUserId) ? 'You' : getUserName(sender);
               setReplyTo({ messageId: contextMenu.message._id, text: contextMenu.message.text || 'Attachment', senderName, senderId: contextMenu.message?.sender?._id || contextMenu.message?.sender });
               setContextMenu(null);
             }}
@@ -1218,6 +2150,25 @@ export default function ChatPage() {
           )}
         </div>
       )}
+
+      <GroupCreateModal
+        isOpen={showGroupModal}
+        onClose={() => setShowGroupModal(false)}
+        onSubmit={handleCreateGroup}
+        users={groupMembers}
+        loading={creatingGroup || loadingGroupMembers}
+      />
+      <GroupManageModal
+        isOpen={showManageGroupModal}
+        onClose={() => setShowManageGroupModal(false)}
+        conversation={activeConversation}
+        currentUserId={currentUserId}
+        followingUsers={groupMembers}
+        onSave={handleSaveGroup}
+        onAddMember={handleAddGroupMember}
+        onRemoveMember={handleRemoveGroupMember}
+        loading={groupActionLoading || loadingGroupMembers}
+      />
     </div>
   );
 }

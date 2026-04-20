@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Search, X } from 'lucide-react';
 import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import {
   bulkCheckFollowStatus,
   followUser,
@@ -18,6 +19,7 @@ const getAvatar = (user) => user?.avatar_url || user?.profilePicture || '';
 import Avatar from './Avatar';
 
 export default function FollowingModal({ isOpen, onClose, userId, isOwnProfile }) {
+  const navigate = useNavigate();
   const currentUser = useSelector((state) => state.auth?.userObject);
   const currentUserId = getUserId(currentUser);
   const scrollRef = useRef(null);
@@ -137,6 +139,13 @@ export default function FollowingModal({ isOpen, onClose, userId, isOwnProfile }
     search.trim() ? 'No following users found for that search.' : 'Not following anyone yet.'
   ), [search]);
 
+  const openProfile = useCallback((targetUser) => {
+    const targetUserId = getUserId(targetUser);
+    if (!targetUserId) return;
+    onClose();
+    navigate(`/profile/${targetUserId}`);
+  }, [navigate, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -182,22 +191,31 @@ export default function FollowingModal({ isOpen, onClose, userId, isOwnProfile }
 
                 return (
                   <div key={targetUserId} className="flex items-center gap-3 px-5 py-3 transition hover:bg-gray-50 dark:hover:bg-white/[0.03]">
-                    <Avatar user={user} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[16px] font-semibold leading-5 text-gray-900 dark:text-white">{getUserName(user)}</p>
-                      <p className="truncate text-[14px] leading-5 text-gray-500 dark:text-gray-400">{getFullName(user)}</p>
-                    </div>
                     <button
-                      onClick={() => handleToggleFollow(targetUserId, isFollowingUser)}
-                      disabled={actionUserId === targetUserId}
-                      className={`min-w-[112px] rounded-xl px-4 py-2 text-[15px] font-semibold transition disabled:opacity-60 ${
-                        isFollowingUser
-                          ? 'border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-[#36373b] text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-[#404148]'
-                          : 'bg-blue-500 text-white hover:bg-blue-400'
-                      }`}
+                      type="button"
+                      onClick={() => openProfile(user)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
-                      {actionUserId === targetUserId ? 'Updating...' : (isFollowingUser ? 'Following' : 'Follow')}
+                      <Avatar user={user} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[16px] font-semibold leading-5 text-gray-900 dark:text-white">{getUserName(user)}</p>
+                        <p className="truncate text-[14px] leading-5 text-gray-500 dark:text-gray-400">{getFullName(user)}</p>
+                      </div>
                     </button>
+                    <div className="min-w-[112px]">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleFollow(targetUserId, isFollowingUser)}
+                        disabled={actionUserId === targetUserId}
+                        className={`w-full rounded-xl px-4 py-2 text-[15px] font-semibold transition disabled:opacity-60 ${
+                          isFollowingUser
+                            ? 'border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-[#36373b] text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-[#404148]'
+                            : 'bg-blue-500 text-white hover:bg-blue-400'
+                        }`}
+                      >
+                        {actionUserId === targetUserId ? 'Updating...' : (isFollowingUser ? 'Following' : 'Follow')}
+                      </button>
+                    </div>
                   </div>
                 );
               })}

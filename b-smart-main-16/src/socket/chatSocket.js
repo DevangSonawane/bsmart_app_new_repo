@@ -20,6 +20,9 @@ const subscribers = {
   'message-seen-update': new Set(),
   'message-reaction-update': new Set(),
   'message-removed': new Set(),
+  'group-member-added': new Set(),
+  'group-member-removed': new Set(),
+  'online-users-updated': new Set(),
 };
 
 const attachAllListeners = () => {
@@ -46,6 +49,9 @@ export const initChatSocket = (token, callbacks = {}, registeredUserId = null) =
     onMessageSeenUpdate: 'message-seen-update',
     onMessageReactionUpdate: 'message-reaction-update',
     onMessageRemoved: 'message-removed',
+    onGroupMemberAdded: 'group-member-added',
+    onGroupMemberRemoved: 'group-member-removed',
+    onOnlineUsersUpdated: 'online-users-updated',
   };
 
   Object.entries(callbackMap).forEach(([key, eventName]) => {
@@ -98,6 +104,9 @@ export const removeChatSocketCallbacks = (callbacks = {}) => {
     onMessageSeenUpdate: 'message-seen-update',
     onMessageReactionUpdate: 'message-reaction-update',
     onMessageRemoved: 'message-removed',
+    onGroupMemberAdded: 'group-member-added',
+    onGroupMemberRemoved: 'group-member-removed',
+    onOnlineUsersUpdated: 'online-users-updated',
   };
   Object.entries(callbackMap).forEach(([key, eventName]) => {
     if (typeof callbacks[key] === 'function') {

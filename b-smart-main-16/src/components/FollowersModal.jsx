@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Search, X } from 'lucide-react';
 import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import {
   bulkCheckFollowStatus,
   followUser,
@@ -18,6 +19,7 @@ const getAvatar = (user) => user?.avatar_url || user?.profilePicture || '';
 import Avatar from './Avatar';
 
 export default function FollowersModal({ isOpen, onClose, userId, isOwnProfile }) {
+  const navigate = useNavigate();
   const currentUser = useSelector((state) => state.auth?.userObject);
   const currentUserId = getUserId(currentUser);
   const scrollRef = useRef(null);
@@ -136,6 +138,13 @@ export default function FollowersModal({ isOpen, onClose, userId, isOwnProfile }
     search.trim() ? 'No followers found for that search.' : 'No followers yet.'
   ), [search]);
 
+  const openProfile = useCallback((targetUser) => {
+    const targetUserId = getUserId(targetUser);
+    if (!targetUserId) return;
+    onClose();
+    navigate(`/profile/${targetUserId}`);
+  }, [navigate, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -181,29 +190,41 @@ export default function FollowersModal({ isOpen, onClose, userId, isOwnProfile }
 
                 return (
                   <div key={targetUserId} className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-gray-50 dark:hover:bg-zinc-800/80">
-                    <Avatar user={user} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{getUserName(user)}</p>
-                        {showFollowBadge ? (
-                          <button
-                            onClick={() => handleFollowBack(targetUserId)}
-                            disabled={actionUserId === targetUserId}
-                            className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] font-semibold text-blue-500 dark:text-blue-400 transition hover:bg-blue-500/25 disabled:opacity-60"
-                          >
-                            Follow
-                          </button>
-                        ) : null}
+                    <button
+                      type="button"
+                      onClick={() => openProfile(user)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    >
+                      <Avatar user={user} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{getUserName(user)}</p>
+                          {showFollowBadge ? (
+                            <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] font-semibold text-blue-500 dark:text-blue-400">
+                              Follow
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="truncate text-sm text-gray-500 dark:text-gray-400">{getFullName(user)}</p>
                       </div>
-                      <p className="truncate text-sm text-gray-500 dark:text-gray-400">{getFullName(user)}</p>
-                    </div>
+                    </button>
                     {isOwnProfile ? (
                       <button
+                        type="button"
                         onClick={() => handleRemoveFollower(targetUserId)}
                         disabled={actionUserId === targetUserId}
                         className="rounded-full border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-zinc-800 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white transition hover:bg-gray-200 dark:hover:bg-zinc-700 disabled:opacity-60"
                       >
                         {actionUserId === targetUserId ? 'Removing...' : 'Remove'}
+                      </button>
+                    ) : showFollowBadge ? (
+                      <button
+                        type="button"
+                        onClick={() => handleFollowBack(targetUserId)}
+                        disabled={actionUserId === targetUserId}
+                        className="rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-500 transition hover:bg-blue-500/20 disabled:opacity-60 dark:text-blue-400"
+                      >
+                        {actionUserId === targetUserId ? 'Following...' : 'Follow'}
                       </button>
                     ) : null}
                   </div>

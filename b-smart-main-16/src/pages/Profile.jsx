@@ -465,7 +465,7 @@ const Profile = () => {
         try {
             const conversation = await createOrGetConversation(participantId);
             if (conversation?._id) {
-                navigate(`/messages/${conversation._id}`);
+                navigate(`/messages/${conversation._id}`, { state: { conversation } });
             } else {
                 navigate('/messages');
             }

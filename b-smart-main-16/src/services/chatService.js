@@ -1,12 +1,52 @@
 import api from '../lib/api';
 
-export const getConversations = async () => {
-  const response = await api.get('/chat/conversations');
+export const getConversations = async (type = 'normal') => {
+  const response = await api.get('/chat/conversations', {
+    params: { type },
+  });
   return response.data;
 };
 
 export const createOrGetConversation = async (participantId) => {
   const response = await api.post('/chat/conversations', { participantId });
+  return response.data;
+};
+
+export const getOnlineUsers = async (ids = []) => {
+  const normalizedIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
+  const response = await api.get('/chat/online-users', {
+    params: normalizedIds.length ? { ids: normalizedIds.join(',') } : {},
+  });
+  return response.data;
+};
+
+export const createGroupConversation = async (payload) => {
+  const response = await api.post('/chat/groups', payload);
+  return response.data;
+};
+
+export const updateGroupConversation = async (conversationId, payload) => {
+  const response = await api.patch(`/chat/groups/${conversationId}`, payload);
+  return response.data;
+};
+
+export const addGroupMember = async (conversationId, userId) => {
+  const response = await api.post(`/chat/groups/${conversationId}/members`, { userId });
+  return response.data;
+};
+
+export const removeGroupMember = async (conversationId, userId) => {
+  const response = await api.delete(`/chat/groups/${conversationId}/members/${userId}`);
+  return response.data;
+};
+
+export const acceptMessageRequest = async (conversationId) => {
+  const response = await api.put(`/chat/conversations/${conversationId}/accept`);
+  return response.data;
+};
+
+export const declineMessageRequest = async (conversationId) => {
+  const response = await api.delete(`/chat/conversations/${conversationId}/decline`);
   return response.data;
 };
 

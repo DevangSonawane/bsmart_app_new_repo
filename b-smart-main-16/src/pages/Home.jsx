@@ -369,9 +369,9 @@ const buildFeed = (posts, ads, suggestedUsers, suggestedReels) => {
 const Home = () => {
   const navigate = useNavigate();
   const { userObject } = useSelector(s => s.auth);
+  const [activeTab, setActiveTab] = useState('all');
 
   const [posts,          setPosts]          = useState([]);
-  const [ads,            setAds]            = useState([]);
   const [suggestedUsers, setSuggestedUsers] = useState([]);
   const [suggestedReels, setSuggestedReels] = useState([]);
   const [feed,           setFeed]           = useState([]);
@@ -380,17 +380,14 @@ const Home = () => {
   const [selectedTweet,  setSelectedTweet]  = useState(null);
 
   const fetchPosts = useCallback(async () => {
-    try { const { data } = await api.get('/posts/feed'); return normalizeApiArray(data); }
-    catch (e) { console.error('Error fetching posts:', e); return []; }
-  }, []);
-
-  const fetchAds = useCallback(async () => {
     try {
-      const res = await fetch(`${BASE_URL}/api/ads/feed`, { headers: adAuthHeaders() });
-      if (!res.ok) return [];
-      return normalizeApiArray(await res.json());
-    } catch (e) { return []; }
-  }, []);
+      const { data } = await api.get('/posts/feed', {
+        params: { tab: activeTab },
+      });
+      return normalizeApiArray(data);
+    }
+    catch (e) { console.error('Error fetching posts:', e); return []; }
+  }, [activeTab]);
 
   const fetchSuggestedUsers = useCallback(async () => {
     try {
@@ -410,19 +407,22 @@ const Home = () => {
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
-    const [fetchedPosts, fetchedAds, fetchedUsers, fetchedReels] = await Promise.all([
-      fetchPosts(), fetchAds(), fetchSuggestedUsers(), fetchSuggestedReels(),
+    const [fetchedPosts, fetchedUsers, fetchedReels] = await Promise.all([
+      fetchPosts(),
+      activeTab === 'tweets' ? Promise.resolve([]) : fetchSuggestedUsers(),
+      activeTab === 'tweets' ? Promise.resolve([]) : fetchSuggestedReels(),
     ]);
     setPosts(fetchedPosts);
-    setAds(fetchedAds);
     setSuggestedUsers(fetchedUsers);
     setSuggestedReels(fetchedReels);
-    setFeed(buildFeed(fetchedPosts, fetchedAds, fetchedUsers, fetchedReels));
+    setFeed(activeTab === 'tweets' ? fetchedPosts : buildFeed(fetchedPosts, [], fetchedUsers, fetchedReels));
     setLoading(false);
-  }, [fetchPosts, fetchAds, fetchSuggestedUsers, fetchSuggestedReels]);
+  }, [activeTab, fetchPosts, fetchSuggestedUsers, fetchSuggestedReels]);
 
   useEffect(() => { loadFeed(); }, [loadFeed]);
-  useEffect(() => { setFeed(buildFeed(posts, ads, suggestedUsers, suggestedReels)); }, [posts, ads, suggestedUsers, suggestedReels]);
+  useEffect(() => {
+    setFeed(activeTab === 'tweets' ? posts : buildFeed(posts, [], suggestedUsers, suggestedReels));
+  }, [activeTab, posts, suggestedUsers, suggestedReels]);
 
   useEffect(() => {
     if (userObject?.role === 'vendor') navigate('/vendor/dashboard');
@@ -455,6 +455,26 @@ const Home = () => {
         <div className="xl:flex xl:items-start xl:justify-between xl:gap-16">
           <div className="w-full max-w-[630px]">
             <StoryRail />
+            <div className="mx-auto mb-4 flex w-full max-w-[470px] items-center gap-2 px-2 xl:mx-0">
+              {[
+                { key: 'all', label: 'All' },
+                { key: 'following', label: 'Following' },
+                { key: 'tweets', label: 'Tweets' },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    activeTab === tab.key
+                      ? 'bg-gray-900 text-white dark:bg-white dark:text-black'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-[#121212] dark:text-gray-300 dark:hover:bg-[#1b1b1b]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
             <div className="w-full max-w-[470px] mx-auto xl:mx-0 pb-4">
             {loading ? (
               <FeedSkeleton />
