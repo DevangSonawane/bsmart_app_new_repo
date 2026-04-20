@@ -15,20 +15,7 @@ const getUserName = (user) => user?.username || 'user';
 const getFullName = (user) => user?.full_name || user?.name || '';
 const getAvatar = (user) => user?.avatar_url || user?.profilePicture || '';
 
-const Avatar = ({ user }) => {
-  const avatar = getAvatar(user);
-  const label = getUserName(user).charAt(0).toUpperCase() || 'U';
-
-  if (avatar) {
-    return <img src={avatar} alt={getUserName(user)} className="h-11 w-11 rounded-full object-cover" />;
-  }
-
-  return (
-    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-sm font-bold text-white">
-      {label}
-    </div>
-  );
-};
+import Avatar from './Avatar';
 
 export default function FollowingModal({ isOpen, onClose, userId, isOwnProfile }) {
   const currentUser = useSelector((state) => state.auth?.userObject);

@@ -53,9 +53,22 @@ class FollowsApi {
           .toList();
     }
     if (res is Map) {
-      final map = res;
-      final list =
-          map['data'] ?? map['followers'] ?? map['items'] ?? map['results'];
+      final map = Map<String, dynamic>.from(res);
+      dynamic list = map['users'] ??
+          map['followers'] ??
+          map['items'] ??
+          map['results'] ??
+          map['data'];
+
+      if (list is Map) {
+        final inner = Map<String, dynamic>.from(list);
+        list = inner['users'] ??
+            inner['followers'] ??
+            inner['items'] ??
+            inner['results'] ??
+            inner['data'];
+      }
+
       if (list is List) {
         return list
             .whereType<Map>()

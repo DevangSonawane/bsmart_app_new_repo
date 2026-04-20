@@ -30,12 +30,7 @@ const getMediaUrl = (item) => {
   );
 };
 
-const Avatar = ({ src, name, size = 44 }) => (
-  <div className="rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0 flex items-center justify-center" style={{ width: size, height: size }}>
-    {src ? <img src={src} alt="" className="w-full h-full object-cover" />
-          : <span className="text-sm font-bold text-gray-500">{(name || '?')[0].toUpperCase()}</span>}
-  </div>
-);
+import Avatar from '../components/Avatar';
 
 // ── Post card (2-col grid) ────────────────────────────────────────────────────
 const PostCard = ({ post, onClick }) => {

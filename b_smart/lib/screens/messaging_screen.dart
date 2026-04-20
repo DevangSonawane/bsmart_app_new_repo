@@ -10,6 +10,7 @@ import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
 import 'chat_conversation_screen.dart';
+import 'new_group_chat_screen.dart';
 
 class MessagingScreen extends StatefulWidget {
   final String? initialConversationId;
@@ -188,6 +189,21 @@ class _MessagingScreenState extends State<MessagingScreen> {
       appBar: AppBar(
         title: Text(title),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'New group chat',
+            icon: const Icon(LucideIcons.users),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => NewGroupChatScreen(
+                    suggestedUsers: _activeUsers(),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [

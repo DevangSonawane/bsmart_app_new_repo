@@ -716,7 +716,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
     if (postType === 'tweet') {
       setMedia(newMedia);
       setCurrentIndex(0);
-      setStep('share');
+      setStep('crop');
     } else if (step === 'select') {
       setMedia(newMedia);
       setCurrentIndex(0);
@@ -827,6 +827,9 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           return { ...item, croppedAreaPixels: cropPx, croppedUrl: item.url };
         }
         try {
+          if (!item.croppedAreaPixels) {
+            return { ...item, croppedUrl: item.url };
+          }
           const croppedUrl = await getCroppedImg(item.url, item.croppedAreaPixels);
           return { ...item, croppedUrl };
         } catch {
@@ -997,6 +1000,15 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             ? {
                 url: finalUrl,
                 type: 'image',
+                aspectRatio: item.aspect || item.originalAspect || null,
+                originalAspect: item.originalAspect || null,
+                cropSettings: {
+                  mode: 'original',
+                  aspect_ratio: getAspectRatioLabel(item.aspect || item.originalAspect || 1),
+                  zoom: item.zoom || 1,
+                  x: item.crop?.x || 0,
+                  y: item.crop?.y || 0,
+                },
               }
             : {
                 fileName: serverFileName || fileName,
@@ -1066,6 +1078,9 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             media: processedMedia.filter((m) => m.url).map((m) => ({
               url: m.url,
               type: 'image',
+              aspectRatio: m.aspectRatio || null,
+              originalAspect: m.originalAspect || null,
+              cropSettings: m.cropSettings,
             })),
             audience: 'everyone',
           };
@@ -1531,7 +1546,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
               <button
                 onClick={() => handleNextStep('publish')}
                 disabled={isSubmitting || (!caption.trim() && media.length === 0)}
-                className="px-4 py-1.5 rounded-full bg-white text-black dark:bg-white dark:text-black text-sm font-semibold disabled:opacity-40"
+                className="px-4 py-1.5 my-2 rounded-full bg-white text-black dark:bg-white dark:text-black text-sm font-semibold disabled:opacity-40"
               >
                 Post
               </button>
@@ -2436,11 +2451,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                   />
 
                   {currentMedia && (
-                    <div className="relative mt-4 w-full max-w-[320px] overflow-hidden rounded-2xl border border-white/10 bg-black">
+                    <div className="relative mt-4 w-full max-w-[420px] overflow-hidden rounded-2xl border border-white/10 bg-black">
                       <img
                         src={currentMedia.croppedUrl || currentMedia.url}
                         alt="Tweet media"
-                        className="w-full h-auto object-cover"
+                        className="w-full h-auto max-h-[420px] object-contain"
                       />
                       <button
                         onClick={(e) => handleRemoveMedia(currentIndex, e)}
@@ -2539,7 +2554,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       <img
                         src={currentMedia.croppedUrl || currentMedia.url}
                         alt="Tweet media"
-                        className="w-full h-auto object-cover"
+                        className="w-full h-auto max-h-[420px] object-contain"
                       />
                       <button
                         onClick={(e) => handleRemoveMedia(currentIndex, e)}

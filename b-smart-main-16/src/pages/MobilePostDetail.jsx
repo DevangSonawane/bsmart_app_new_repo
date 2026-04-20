@@ -7,6 +7,7 @@ import api from '../lib/api';
 import commentService from '../services/commentService';
 import tweetCommentService from '../services/tweetCommentService';
 import ContentReportModal from '../components/ContentReportModal';
+import Avatar from '../components/Avatar';
 
 const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting, itemLabel = 'Post' }) => {
     if (!isOpen) return null;

@@ -202,22 +202,7 @@ const ActionButtons = ({ reel, mobile = false, onLike, onComment, onShare, onSav
 };
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
-const Avatar = ({ src, username, size = 'md' }) => {
-  const dim =
-    size === 'xs' ? 'w-7 h-7 text-[10px]' :
-    size === 'sm' ? 'w-8 h-8 text-xs' :
-    'w-9 h-9 text-sm';
-  return (
-    <div className={`${dim} rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0 flex items-center justify-center`}>
-      {src
-        ? <img src={src} alt={username || 'user'} className="w-full h-full object-cover" />
-        : <div className="w-full h-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 font-bold text-gray-500">
-            {(username || 'U')[0].toUpperCase()}
-          </div>
-      }
-    </div>
-  );
-};
+import Avatar from '../components/Avatar';
 
 // ─── CommentsUI ───────────────────────────────────────────────────────────────
 // Mirrors PostDetailModal comment logic exactly:

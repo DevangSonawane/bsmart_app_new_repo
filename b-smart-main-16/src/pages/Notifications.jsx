@@ -50,19 +50,7 @@ const FILTER_TABS = [
 const LIMIT = 15;
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
-const Avatar = ({ name, url }) => {
-  const initials = (name || "U").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
-  if (url) return (
-    <img src={url} alt={name}
-      className="w-11 h-11 rounded-full object-cover flex-shrink-0"
-      onError={e => { e.currentTarget.style.display = "none"; }} />
-  );
-  return (
-    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-      {initials}
-    </div>
-  );
-};
+import Avatar from '../components/Avatar';
 
 // ─── WS Status pill ───────────────────────────────────────────────────────────
 const WsIndicator = ({ status }) => {

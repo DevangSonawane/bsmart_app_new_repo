@@ -587,20 +587,7 @@ const TagList = ({ items, color = "blue" }) => {
   );
 };
 
-const Avatar = ({ name, url, size = "w-8 h-8", textSize = "text-xs" }) => {
-  const initials = (name || "U").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
-  if (url) {
-    return (
-      <img src={url} alt={name} className={`${size} rounded-full object-cover flex-shrink-0`}
-        onError={e => { e.target.style.display = "none"; }} />
-    );
-  }
-  return (
-    <div className={`${size} rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-white ${textSize} font-bold flex-shrink-0`}>
-      {initials}
-    </div>
-  );
-};
+import Avatar from '../../components/Avatar';
 
 // ─── Comment Item with Replies ────────────────────────────────────────────────
 

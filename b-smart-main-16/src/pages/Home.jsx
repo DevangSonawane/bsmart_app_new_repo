@@ -5,6 +5,7 @@ import { ChevronDown, MapPin, UserPlus, Play, X, MoreHorizontal } from 'lucide-r
 import StoryRail from '../components/StoryRail';
 import PostCard from '../components/PostCard';
 import PostDetailModal from '../components/PostDetailModal';
+import TweetDetailModal from '../components/TweetDetailModal';
 import api from '../lib/api';
 
 const BASE_URL = 'https://api.bebsmart.in';
@@ -376,6 +377,7 @@ const Home = () => {
   const [feed,           setFeed]           = useState([]);
   const [loading,        setLoading]        = useState(true);
   const [selectedItem,   setSelectedItem]   = useState(null);
+  const [selectedTweet,  setSelectedTweet]  = useState(null);
 
   const fetchPosts = useCallback(async () => {
     try { const { data } = await api.get('/posts/feed'); return normalizeApiArray(data); }
@@ -431,7 +433,10 @@ const Home = () => {
   };
 
   const handleCommentClick = (item) => {
-    if (window.innerWidth < 768) {
+    if (item.item_type === 'tweet') {
+      setSelectedTweet(item);
+      setSelectedItem(null); // Ensure PostDetailModal is closed
+    } else if (window.innerWidth < 768) {
       if (item.item_type === 'ad') { setSelectedItem(item); }
       else {
         const itemId = item._id || item.id;
@@ -486,6 +491,11 @@ const Home = () => {
         isOpen={!!selectedItem}
         post={selectedItem}
         onClose={() => setSelectedItem(null)}
+      />
+      <TweetDetailModal
+        isOpen={!!selectedTweet}
+        tweet={selectedTweet}
+        onClose={() => setSelectedTweet(null)}
       />
     </div>
   );
