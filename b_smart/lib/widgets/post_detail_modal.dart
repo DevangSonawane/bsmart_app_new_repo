@@ -127,7 +127,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
         (post['item_type'] ?? post['itemType'] ?? '').toString().toLowerCase();
     if (itemType == 'ad') return true;
     if (post['vendor_id'] != null || post['vendorId'] != null) return true;
-    if (post['total_budget_coins'] != null || post['totalBudgetCoins'] != null) {
+    if (post['total_budget_coins'] != null ||
+        post['totalBudgetCoins'] != null) {
       return true;
     }
     return false;
@@ -148,13 +149,20 @@ class _PostDetailModalState extends State<PostDetailModal> {
 
   List<String> _asStringList(dynamic raw) {
     if (raw is List) {
-      return raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+      return raw
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
     }
     if (raw is String) {
       final s = raw.trim();
       if (s.isEmpty) return const [];
       if (s.contains(',')) {
-        return s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+        return s
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
       }
       return [s];
     }
@@ -166,17 +174,29 @@ class _PostDetailModalState extends State<PostDetailModal> {
     if (!_isAdPost(post) || post == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final border = isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08);
-    final surface = isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
-    final muted = isDark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.55);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.black.withValues(alpha: 0.08);
+    final surface =
+        isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
+    final muted = isDark
+        ? Colors.white.withValues(alpha: 0.55)
+        : Colors.black.withValues(alpha: 0.55);
 
     final category = (post['category'] ?? '').toString().trim();
-    final budget = _toInt(post['total_budget_coins'] ?? post['totalBudgetCoins']);
+    final budget =
+        _toInt(post['total_budget_coins'] ?? post['totalBudgetCoins']);
     final views = _toInt(post['views_count'] ?? post['viewsCount']);
-    final unique = _toInt(post['unique_views_count'] ?? post['uniqueViewsCount']);
-    final completed = _toInt(post['completed_views_count'] ?? post['completedViewsCount']);
-    final targetLocations = _asStringList(post['target_location'] ?? post['targetLocation']);
-    final targetLanguages = _asStringList(post['target_language'] ?? post['target_languages'] ?? post['targetLanguage'] ?? post['targetLanguages']);
+    final unique =
+        _toInt(post['unique_views_count'] ?? post['uniqueViewsCount']);
+    final completed =
+        _toInt(post['completed_views_count'] ?? post['completedViewsCount']);
+    final targetLocations =
+        _asStringList(post['target_location'] ?? post['targetLocation']);
+    final targetLanguages = _asStringList(post['target_language'] ??
+        post['target_languages'] ??
+        post['targetLanguage'] ??
+        post['targetLanguages']);
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
@@ -195,7 +215,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
             children: [
               if (category.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: const Color(0x1A3B82F6),
                     borderRadius: BorderRadius.circular(999),
@@ -203,12 +224,16 @@ class _PostDetailModalState extends State<PostDetailModal> {
                   ),
                   child: Text(
                     category,
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2563EB)),
                   ),
                 ),
               if (budget > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: const Color(0x1AF59E0B),
                     borderRadius: BorderRadius.circular(999),
@@ -217,11 +242,15 @@ class _PostDetailModalState extends State<PostDetailModal> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(LucideIcons.coins, size: 14, color: Color(0xFFD97706)),
+                      const Icon(LucideIcons.coins,
+                          size: 14, color: Color(0xFFD97706)),
                       const SizedBox(width: 6),
                       Text(
                         '${_fmt(budget)} coins budget',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFD97706)),
+                        style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFD97706)),
                       ),
                     ],
                   ),
@@ -234,9 +263,24 @@ class _PostDetailModalState extends State<PostDetailModal> {
               spacing: 14,
               runSpacing: 6,
               children: [
-                if (views > 0) Text('${_fmt(views)} views', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
-                if (unique > 0) Text('${_fmt(unique)} unique', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
-                if (completed > 0) Text('${_fmt(completed)} completed', style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600)),
+                if (views > 0)
+                  Text('${_fmt(views)} views',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: muted,
+                          fontWeight: FontWeight.w600)),
+                if (unique > 0)
+                  Text('${_fmt(unique)} unique',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: muted,
+                          fontWeight: FontWeight.w600)),
+                if (completed > 0)
+                  Text('${_fmt(completed)} completed',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: muted,
+                          fontWeight: FontWeight.w600)),
               ],
             ),
           ],
@@ -245,14 +289,16 @@ class _PostDetailModalState extends State<PostDetailModal> {
             if (targetLocations.isNotEmpty)
               Text(
                 '📍 ${targetLocations.join(', ')}',
-                style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    fontSize: 12, color: muted, fontWeight: FontWeight.w600),
               ),
             if (targetLanguages.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   '🌐 ${targetLanguages.join(', ')}',
-                  style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      fontSize: 12, color: muted, fontWeight: FontWeight.w600),
                 ),
               ),
           ],
@@ -396,8 +442,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
     StoreProvider.of<AppState>(context, listen: false)
         .dispatch(UpdatePostSaved(widget.postId, desired));
 
-    final saved =
-        await _svc.setPostSaved(widget.postId, save: desired, isTweet: _isTweet);
+    final saved = await _svc.setPostSaved(widget.postId,
+        save: desired, isTweet: _isTweet);
     if (!mounted) return;
     try {
       final p = await _svc.getPostById(widget.postId, isTweet: _isTweet);
@@ -860,7 +906,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
 
   Widget _buildDetails() {
     final theme = Theme.of(context);
-    final baseTextColor = theme.textTheme.bodyMedium?.color ?? Colors.black;
+    final baseTextColor = theme.colorScheme.onSurface;
     final username = _postUser?['username'] as String? ?? 'User';
     final avatarUrl = _postUser?['avatar_url'] as String?;
     final caption = (_post?['caption'] ?? _post?['content']) as String? ?? '';
@@ -882,11 +928,10 @@ class _PostDetailModalState extends State<PostDetailModal> {
                         _extractId(_post?['user']) ??
                         _extractId(_post?['users']);
                     if (userId != null && userId.isNotEmpty) {
-                      final itemType = (_post?['item_type'] ??
-                              _post?['itemType'] ??
-                              '')
-                          .toString()
-                          .toLowerCase();
+                      final itemType =
+                          (_post?['item_type'] ?? _post?['itemType'] ?? '')
+                              .toString()
+                              .toLowerCase();
                       final isAdItem = itemType == 'ad' ||
                           _post?['vendor_id'] != null ||
                           _post?['vendorId'] != null ||
@@ -1222,7 +1267,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
                           children: [
                             RichText(
                               text: TextSpan(
-                                style: TextStyle(color: baseTextColor, fontSize: 14),
+                                style: TextStyle(
+                                    color: baseTextColor, fontSize: 14),
                                 children: [
                                   TextSpan(
                                       text: '$username ',
@@ -1286,7 +1332,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                 children: [
                                   RichText(
                                     text: TextSpan(
-                                      style: TextStyle(color: baseTextColor, fontSize: 14),
+                                      style: TextStyle(
+                                          color: baseTextColor, fontSize: 14),
                                       children: [
                                         TextSpan(
                                             text: '$un ',

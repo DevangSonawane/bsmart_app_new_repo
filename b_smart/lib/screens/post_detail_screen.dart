@@ -49,10 +49,60 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _videoLoading = false;
   String? _activeVideoUrl;
 
+  bool _isReelPost() {
+    final post = _post;
+    if (post == null) return false;
+    final rawType = (post['type'] ??
+            post['media_type'] ??
+            post['mediaType'] ??
+            post['item_type'] ??
+            post['itemType'] ??
+            '')
+        .toString()
+        .toLowerCase()
+        .trim();
+    if (rawType == 'reel' || rawType.contains('reel')) return true;
+
+    final media = post['media'];
+    if (media is List) {
+      for (final m in media) {
+        if (m is Map) {
+          final t = (m['type'] as String?)?.toLowerCase().trim();
+          if (t == 'reel') return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Widget _buildVideoPlayerCover(VideoPlayerController controller) {
+    final size = controller.value.size;
+    if (size.width <= 0 || size.height <= 0) {
+      return AspectRatio(
+        aspectRatio: _controllerAspectRatio(controller),
+        child: VideoPlayer(controller),
+      );
+    }
+    return ClipRect(
+      child: SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          child: SizedBox(
+            width: size.width,
+            height: size.height,
+            child: VideoPlayer(controller),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _dispatchCommentsCount(int commentsCount) {
     if (!mounted) return;
-    StoreProvider.of<AppState>(context, listen: false)
-        .dispatch(UpdatePostCommentsCount(widget.postId, commentsCount < 0 ? 0 : commentsCount));
+    StoreProvider.of<AppState>(context, listen: false).dispatch(
+        UpdatePostCommentsCount(
+            widget.postId, commentsCount < 0 ? 0 : commentsCount));
   }
 
   String? _extractId(dynamic value) {
@@ -213,7 +263,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     }
     final meId2 = currentUserId?.toString();
-    final isSaved = _asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']);
+    final isSaved =
+        _asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']);
     bool isFollowed = (post['is_followed_by_me'] as bool?) ??
         (user?['is_followed_by_me'] as bool?) ??
         false;
@@ -287,7 +338,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!mounted) return;
     try {
       final p = await _svc.getPostById(widget.postId);
-      final serverSaved = _asBool(p?['is_saved_by_me']) || _asBool(p?['saved_by_me']) || saved;
+      final serverSaved =
+          _asBool(p?['is_saved_by_me']) || _asBool(p?['saved_by_me']) || saved;
       setState(() => _isSaved = serverSaved);
       StoreProvider.of<AppState>(context, listen: false)
           .dispatch(UpdatePostSaved(widget.postId, serverSaved));
@@ -613,6 +665,77 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  double? _parseAspectRatio(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is num) {
+      final v = raw.toDouble();
+      return v > 0 ? v : null;
+    }
+    final s = raw.toString().trim();
+    if (s.isEmpty) return null;
+    if (s.contains(':') || s.contains('/')) {
+      final parts = s.split(RegExp(r'[:/]'));
+      if (parts.length >= 2) {
+        final a = double.tryParse(parts[0].trim());
+        final b = double.tryParse(parts[1].trim());
+        if (a != null && b != null && a > 0 && b > 0) return a / b;
+      }
+      return null;
+    }
+    final v = double.tryParse(s);
+    return (v != null && v > 0) ? v : null;
+  }
+
+  double? _aspectRatioFromItem(dynamic item) {
+    if (item is! Map) return null;
+    final map = item;
+
+    final rawAr = map['aspect_ratio'] ??
+        map['aspectRatio'] ??
+        (map['crop'] is Map ? (map['crop'] as Map)['aspect_ratio'] : null) ??
+        (map['crop'] is Map ? (map['crop'] as Map)['aspectRatio'] : null) ??
+        (map['crop_settings'] is Map
+            ? (map['crop_settings'] as Map)['aspect_ratio']
+            : null) ??
+        (map['crop_settings'] is Map
+            ? (map['crop_settings'] as Map)['aspectRatio']
+            : null);
+    final parsed = _parseAspectRatio(rawAr);
+    if (parsed != null) return parsed;
+
+    final w = map['width'] ?? map['w'];
+    final h = map['height'] ?? map['h'];
+    if (w is num && h is num && w > 0 && h > 0) {
+      return w.toDouble() / h.toDouble();
+    }
+    final ws = double.tryParse(w?.toString() ?? '');
+    final hs = double.tryParse(h?.toString() ?? '');
+    if (ws != null && hs != null && ws > 0 && hs > 0) return ws / hs;
+
+    return null;
+  }
+
+  double _currentMediaAspectRatio(dynamic currentItem) {
+    final isVideo = _isVideoMedia(currentItem);
+    if (isVideo) {
+      final controller = _videoController;
+      if (_videoReady &&
+          _isControllerInitialized(controller) &&
+          controller != null) {
+        final ar = controller.value.aspectRatio;
+        if (ar > 0) return ar;
+      }
+
+      final fromMeta = _aspectRatioFromItem(currentItem);
+      if (fromMeta != null && fromMeta > 0) return fromMeta;
+
+      // Reasonable fallbacks while the controller is still initializing.
+      return _isReelPost() ? (9 / 16) : (16 / 9);
+    }
+
+    return _aspectRatioFromItem(currentItem) ?? 4 / 5;
+  }
+
   double _aspectRatioForItem(dynamic item) {
     if (item is Map && item['crop'] is Map) {
       final crop = item['crop'] as Map;
@@ -633,7 +756,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final currentItem = media.isNotEmpty
         ? media[_currentMediaIndex.clamp(0, media.length - 1)]
         : null;
-    final aspectRatio = _aspectRatioForItem(currentItem);
+    final aspectRatio =
+        currentItem == null ? 4 / 5 : _currentMediaAspectRatio(currentItem);
+    final clampedAspectRatio = aspectRatio.clamp(0.45, 2.2);
     if (media.isEmpty) {
       return AspectRatio(
         aspectRatio: 4 / 5,
@@ -647,7 +772,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     return AspectRatio(
-      aspectRatio: aspectRatio,
+      aspectRatio: clampedAspectRatio,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -676,8 +801,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               if (isVideo) {
                 final isCurrent = index == _currentMediaIndex;
                 final controller = _videoController;
+                final reelMode = _isReelPost();
                 return Container(
-                  color: mediaBg,
+                  color: reelMode ? Colors.black : mediaBg,
                   child: Center(
                     child: isCurrent &&
                             _videoReady &&
@@ -692,10 +818,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               }
                               if (mounted) setState(() {});
                             },
-                            child: AspectRatio(
-                              aspectRatio: _controllerAspectRatio(controller),
-                              child: VideoPlayer(controller!),
-                            ),
+                            child: reelMode
+                                ? _buildVideoPlayerCover(controller!)
+                                : _buildVideoPlayerCover(controller!),
                           )
                         : _videoLoading && isCurrent
                             ? const CircularProgressIndicator(
@@ -799,6 +924,89 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return likes.length;
   }
 
+  int get _commentCount {
+    final post = _post;
+    if (post == null) return _comments.length;
+    final explicit = post['comments_count'] ??
+        post['commentsCount'] ??
+        post['commentCount'] ??
+        post['comment_count'];
+    if (explicit is int) return explicit;
+    if (explicit is num) return explicit.toInt();
+    final parsed = int.tryParse(explicit?.toString() ?? '');
+    if (parsed != null) return parsed;
+    if (post['comments'] is List) return (post['comments'] as List).length;
+    return _comments.length;
+  }
+
+  int get _shareCount {
+    final post = _post;
+    if (post == null) return 0;
+    final explicit =
+        post['shares_count'] ?? post['sharesCount'] ?? post['shareCount'];
+    if (explicit is int) return explicit;
+    if (explicit is num) return explicit.toInt();
+    return int.tryParse(explicit?.toString() ?? '') ?? 0;
+  }
+
+  DateTime? _parsePostCreatedAt() {
+    final post = _post;
+    if (post == null) return null;
+    final raw = post['created_at'] ??
+        post['createdAt'] ??
+        post['created'] ??
+        post['created_time'] ??
+        post['createdTime'];
+    if (raw == null) return null;
+    if (raw is DateTime) return raw;
+    if (raw is num) {
+      final ms = raw > 1000000000000 ? raw.toInt() : (raw * 1000).toInt();
+      return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    final s = raw.toString().trim();
+    if (s.isEmpty) return null;
+    final parsed = DateTime.tryParse(s);
+    if (parsed != null) return parsed;
+    final epoch = int.tryParse(s);
+    if (epoch != null) {
+      final ms = epoch > 1000000000000 ? epoch : epoch * 1000;
+      return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
+  }
+
+  Widget _actionWithCount({
+    required IconData icon,
+    required int count,
+    required Color primaryText,
+    required Color secondaryText,
+    Color? iconColor,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 26, color: iconColor ?? primaryText),
+            const SizedBox(width: 6),
+            Text(
+              '$count',
+              style: TextStyle(
+                color: secondaryText,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -809,6 +1017,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final secondaryText = theme.colorScheme.onSurfaceVariant;
     final dividerColor =
         theme.dividerColor.withValues(alpha: isDark ? 0.45 : 0.7);
+    final bottomSafeInset = MediaQuery.of(context).viewPadding.bottom;
 
     if (_loadingPost && _post == null) {
       return Scaffold(
@@ -846,7 +1055,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final avatarUrl = _postUser?['avatar_url'] as String?;
     final caption = _post?['caption'] as String? ?? '';
     final location = _post?['location'] as String?;
-    final createdAt = _post?['created_at'] as String? ?? '';
+    final createdAt = _parsePostCreatedAt();
+    final createdAtLabel = createdAt == null
+        ? ''
+        : _formatRelativeTime(createdAt.toIso8601String()).toUpperCase();
     final ownerId = _extractId(_postUser?['id']) ??
         _extractId(_post?['user_id']) ??
         _extractId(_post?['user']) ??
@@ -934,7 +1146,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 child: Text(
                                   username,
                                   style: TextStyle(
-                                      fontSize: 18,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                       color: primaryText),
                                 ),
@@ -943,7 +1155,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 Text(
                                   location,
                                   style: TextStyle(
-                                      color: secondaryText, fontSize: 12),
+                                    color: secondaryText,
+                                    fontSize: 12,
+                                  ),
                                 ),
                             ],
                           ),
@@ -1210,20 +1424,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                     child: Row(
                       children: [
-                        IconButton(
-                          icon: Icon(
-                            LucideIcons.heart,
-                            size: 28,
-                            color: _isLiked ? Colors.red : primaryText,
-                          ),
-                          onPressed: () async {
+                        _actionWithCount(
+                          icon: _isLiked ? Icons.favorite : LucideIcons.heart,
+                          iconColor: _isLiked ? Colors.red : primaryText,
+                          count: _likeCount,
+                          primaryText: primaryText,
+                          secondaryText: secondaryText,
+                          onTap: () async {
                             final hasToken = await ApiClient().hasToken;
                             if (!hasToken) {
-                              if (mounted) {
+                              if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                      content:
-                                          Text('Please log in to like posts')),
+                                    content:
+                                        Text('Please log in to like posts'),
+                                  ),
                                 );
                               }
                               return;
@@ -1231,23 +1446,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             if (_post == null) return;
                             final desired = !_isLiked;
                             setState(() => _isLiked = desired);
-                            final liked = await _svc.setPostLike(widget.postId,
-                                like: desired);
-                            if (mounted) {
-                              setState(() => _isLiked = liked);
-                              await _load();
-                            }
+                            final liked = await _svc.setPostLike(
+                              widget.postId,
+                              like: desired,
+                            );
+                            if (!mounted) return;
+                            setState(() => _isLiked = liked);
+                            await _load();
                           },
                         ),
-                        IconButton(
-                            icon:
-                                const Icon(LucideIcons.messageCircle, size: 28),
-                            color: primaryText,
-                            onPressed: () {}),
-                        IconButton(
-                            icon: const Icon(LucideIcons.send, size: 28),
-                            color: primaryText,
-                            onPressed: () {}),
+                        _actionWithCount(
+                          icon: LucideIcons.messageCircle,
+                          count: _commentCount,
+                          primaryText: primaryText,
+                          secondaryText: secondaryText,
+                          onTap: () {},
+                        ),
+                        _actionWithCount(
+                          icon: LucideIcons.send,
+                          count: _shareCount,
+                          primaryText: primaryText,
+                          secondaryText: secondaryText,
+                          onTap: () {},
+                        ),
                         const Spacer(),
                         IconButton(
                             icon: Icon(
@@ -1257,17 +1478,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             color: primaryText,
                             onPressed: _handleSave),
                       ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      '$_likeCount ${_likeCount == 1 ? 'like' : 'likes'}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: primaryText,
-                      ),
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -1289,7 +1499,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
                     child: Text(
-                      _formatRelativeTime(createdAt).toUpperCase(),
+                      createdAtLabel.isEmpty ? 'JUST NOW' : createdAtLabel,
                       style: TextStyle(
                         fontSize: 11,
                         letterSpacing: 0.6,
@@ -1297,6 +1507,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
@@ -1423,7 +1634,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                             Text(
                                               text,
                                               style: TextStyle(
-                                                  fontSize: 14,
+                                                  fontSize: 13,
                                                   color: primaryText),
                                             ),
                                             const SizedBox(height: 4),
@@ -1617,7 +1828,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 88),
+                  SizedBox(height: 88 + bottomSafeInset),
                 ],
               ),
             ),
@@ -1648,7 +1859,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           Container(
             color: pageBg,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: EdgeInsets.fromLTRB(12, 8, 12, 8 + bottomSafeInset),
             child: Row(
               children: [
                 IconButton(

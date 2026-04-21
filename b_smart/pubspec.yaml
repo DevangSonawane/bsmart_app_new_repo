@@ -91,4 +91,5 @@ flutter:
     - assets/images/dashboard_sample.png
     - assets/images/logo.svg
     - assets/images/google_logo.svg
+    - assets/banners/
     - .env

@@ -86,9 +86,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, String>? _adsMediaHeaders;
   bool _isOwnProfile = false;
   bool _isFavoriteProfile = false;
-  bool _favoriteCategoriesLoading = false;
-  List<AdCategory> _favoriteCategories = <AdCategory>[];
-  String _selectedFavoriteCategoryId = 'All';
+
+  static const List<String> _favoriteBanners = <String>[
+    'assets/banners/1.png',
+    'assets/banners/2.png',
+    'assets/banners/3.png',
+    'assets/banners/4.png',
+    'assets/banners/5.png',
+    'assets/banners/6.png',
+    'assets/banners/7.png',
+    'assets/banners/8.png',
+    'assets/banners/9.png',
+    'assets/banners/10.png',
+    'assets/banners/11.png',
+    'assets/banners/12.png',
+    'assets/banners/13.png',
+    'assets/banners/14.png',
+    'assets/banners/15.png',
+    'assets/banners/16.png',
+    'assets/banners/17.png',
+    'assets/banners/18.png',
+    'assets/banners/19.png',
+  ];
   bool _avatarUploading = false;
   StreamSubscription<AppState>? _storeSub;
   bool _showFollowSuggestions = false;
@@ -161,9 +180,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _toggleFavoriteProfile(String username) {
     final next = !_isFavoriteProfile;
     setState(() => _isFavoriteProfile = next);
-    if (next && _favoriteCategories.isEmpty) {
-      unawaited(_loadFavoriteCategories());
-    }
   }
 
   bool? _parseBoolLike(dynamic value) {
@@ -309,14 +325,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildFollowSuggestionsBlock(BuildContext context) {
     if (!_showFollowSuggestions) return const SizedBox.shrink();
+    final isLoading = _followSuggestionsLoading || _followSuggestions.isEmpty;
     final visible = _followSuggestions
         .where((u) => !_dismissedFollowSuggestionUserIds.contains(u.id))
         .take(14)
         .toList();
 
     final section = SuggestionFollowSection(
-      title: 'Suggestions',
-      users: visible,
+      title: '',
+      helperText: null,
+      users: isLoading ? const <SuggestionUser>[] : visible,
     );
 
     return AnimatedSize(
@@ -324,9 +342,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       curve: Curves.easeOut,
       child: SuggestionFollowBlock(
         sections: [section],
-        isLoading: _followSuggestionsLoading,
+        isLoading: isLoading,
         imageHeaders: _reelImageHeaders,
-        compact: true,
         onDismissUser: _dismissFollowSuggestionUser,
         onUserTap: (id) {
           Navigator.of(context).push(
@@ -338,133 +355,62 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Future<void> _loadFavoriteCategories() async {
-    if (_favoriteCategoriesLoading) return;
-    setState(() => _favoriteCategoriesLoading = true);
-    try {
-      final categories = await _adsService.fetchCategories();
-      if (!mounted) return;
-      setState(() {
-        _favoriteCategories = categories;
-        if (_favoriteCategories.isNotEmpty) {
-          final all = _favoriteCategories.firstWhere(
-            (c) => c.id.toLowerCase() == 'all' || c.name.toLowerCase() == 'all',
-            orElse: () => _favoriteCategories.first,
-          );
-          _selectedFavoriteCategoryId = all.id;
-        }
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _favoriteCategories = _adsService.getFallbackCategories();
-        _selectedFavoriteCategoryId = _favoriteCategories.isNotEmpty
-            ? _favoriteCategories.first.id
-            : 'All';
-      });
-    } finally {
-      if (mounted) setState(() => _favoriteCategoriesLoading = false);
-    }
-  }
-
   Widget _buildFavoriteCategoryStrip(BuildContext context) {
     if (!_isFavoriteProfile) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final track = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2);
-    final surface = theme.cardColor;
-
-    final showLoading =
-        _favoriteCategoriesLoading && _favoriteCategories.isEmpty;
-    final categories = _favoriteCategories;
+    final bg = isDark ? const Color(0xFF0B0B0C) : const Color(0xFFF3F4F6);
+    const bannerAspect = 625 / 313; // Source banners are 625x313 (~2:1)
+    final borderColor = theme.dividerColor.withValues(alpha: 0.55);
+    final tileBorderColor = theme.dividerColor.withValues(alpha: 0.45);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.only(top: 8, bottom: 10),
       child: SizedBox(
         height: 56,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          itemCount: showLoading ? 6 : categories.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 10),
-          itemBuilder: (context, index) {
-            if (showLoading) {
-              return Container(
-                width: 132,
-                decoration: BoxDecoration(
-                  color: track,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              );
-            }
-            final c = categories[index];
-            final selected = _selectedFavoriteCategoryId == c.id;
-            return InkWell(
-              onTap: () => setState(() => _selectedFavoriteCategoryId = c.id),
-              borderRadius: BorderRadius.circular(16),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                width: 132,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: selected ? null : surface,
-                  gradient: selected
-                      ? const LinearGradient(
-                          colors: [
-                            DesignTokens.instaPurple,
-                            DesignTokens.instaPink,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
-                      : null,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: selected
-                        ? Colors.transparent
-                        : theme.dividerColor.withValues(alpha: 0.6),
+        width: double.infinity,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: bg,
+            border: Border(
+              top: BorderSide(color: borderColor),
+              bottom: BorderSide(color: borderColor),
+              left: BorderSide(color: borderColor),
+              right: BorderSide(color: borderColor),
+            ),
+          ),
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: _favoriteBanners.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final asset = _favoriteBanners[index];
+              final w = 56 * bannerAspect;
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SizedBox(
+                  width: w,
+                  height: 56,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: tileBorderColor),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(13),
+                      child: Image.asset(
+                        asset,
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.medium,
+                      ),
+                    ),
                   ),
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? Colors.white.withValues(alpha: 0.18)
-                            : track,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        LucideIcons.tag,
-                        size: 16,
-                        color: selected
-                            ? Colors.white
-                            : theme.iconTheme.color?.withValues(alpha: 0.75),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        c.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          color: selected
-                              ? Colors.white
-                              : theme.textTheme.bodyMedium?.color,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -543,7 +489,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
 
-    Future<void> toggle(BuildContext sheetCtx, StateSetter setSheetState) async {
+    Future<void> toggle(
+        BuildContext sheetCtx, StateSetter setSheetState) async {
       if (!canToggleNotifications || toggling) return;
       toggling = true;
       error = null;
@@ -605,7 +552,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : null,
-                    onTap: loading ? null : () => toggle(sheetCtx, setSheetState),
+                    onTap:
+                        loading ? null : () => toggle(sheetCtx, setSheetState),
                   ),
                 ListTile(
                   leading: const Icon(Icons.report_outlined),
@@ -900,28 +848,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
           userName = joinedUser['username'] as String? ?? userName;
           userId = joinedUser['id'] as String? ?? userId;
         }
-        final media = (map['media'] as List<dynamic>? ?? []);
-        final mediaUrls = media
-            .map((m) {
-              if (m is String) return m;
-              if (m is Map) {
-                final mm = Map<String, dynamic>.from(m);
-                String? thumb;
-                final thumbField =
-                    mm['thumbnail'] ?? mm['thumbnailUrl'] ?? mm['thumb'];
-                if (thumbField is List && thumbField.isNotEmpty) {
-                  thumb = thumbField.first.toString();
-                } else if (thumbField is String) {
-                  thumb = thumbField;
-                }
-                final url = thumb ??
-                    (mm['fileUrl'] ?? mm['image'] ?? mm['url'])?.toString();
-                if (url != null && url.isNotEmpty) return url;
-              }
-              return m.toString();
-            })
-            .cast<String>()
-            .toList();
+        final media = (map['media'] as List<dynamic>? ??
+            map['mediaUrls'] as List<dynamic>? ??
+            map['media_urls'] as List<dynamic>? ??
+            const <dynamic>[]);
+
+        String _thumbFrom(dynamic raw) {
+          if (raw == null) return '';
+          if (raw is String) return UrlHelper.normalizeUrl(raw);
+          if (raw is Map) {
+            final m = Map<String, dynamic>.from(raw);
+            final cand = (m['url'] ??
+                    m['fileUrl'] ??
+                    m['file_url'] ??
+                    m['path'] ??
+                    m['image'] ??
+                    m['imageUrl'] ??
+                    m['thumb'] ??
+                    m['thumbnail'] ??
+                    m['thumbnailUrl'] ??
+                    m['thumbnail_url'])
+                ?.toString();
+            return cand == null ? '' : UrlHelper.normalizeUrl(cand);
+          }
+          if (raw is List) {
+            for (final e in raw) {
+              final v = _thumbFrom(e);
+              if (v.isNotEmpty) return v;
+            }
+            return '';
+          }
+          return UrlHelper.normalizeUrl(raw.toString());
+        }
+
+        String _mediaFromMap(Map<String, dynamic> mm) {
+          final cand = (mm['fileUrl'] ??
+                  mm['file_url'] ??
+                  mm['url'] ??
+                  mm['path'] ??
+                  mm['image'] ??
+                  mm['imageUrl'] ??
+                  mm['videoUrl'] ??
+                  mm['video_url'])
+              ?.toString();
+          if (cand == null || cand.trim().isEmpty) return '';
+          return UrlHelper.normalizeUrl(cand);
+        }
+
+        String? thumbnailUrl;
+        final mediaUrls = <String>[];
+        for (final m in media) {
+          if (m is String) {
+            final url = UrlHelper.normalizeUrl(m);
+            if (url.isNotEmpty) mediaUrls.add(url);
+            continue;
+          }
+          if (m is Map) {
+            final mm = Map<String, dynamic>.from(m);
+            final url = _mediaFromMap(mm);
+            if (url.isNotEmpty) mediaUrls.add(url);
+
+            if (thumbnailUrl == null || thumbnailUrl!.isEmpty) {
+              final thumbField = mm['thumbnail'] ??
+                  mm['thumbnailUrl'] ??
+                  mm['thumbnail_url'] ??
+                  mm['thumb'] ??
+                  mm['thumbnails'] ??
+                  mm['poster'];
+              final thumb = _thumbFrom(thumbField);
+              if (thumb.isNotEmpty) thumbnailUrl = thumb;
+            }
+          }
+        }
+
+        if (thumbnailUrl == null || thumbnailUrl!.isEmpty) {
+          final postThumb = map['thumbnail'] ??
+              map['thumbnailUrl'] ??
+              map['thumb'] ??
+              map['poster'];
+          final thumb = _thumbFrom(postThumb);
+          if (thumb.isNotEmpty) thumbnailUrl = thumb;
+        }
         final typeStr = ((map['type'] as String?) ??
                 (map['media_type'] as String?) ??
                 'post')
@@ -982,6 +989,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           userName: userName,
           mediaType: mediaType,
           mediaUrls: mediaUrls,
+          thumbnailUrl:
+              (thumbnailUrl != null && thumbnailUrl!.trim().isNotEmpty)
+                  ? thumbnailUrl!.trim()
+                  : null,
           caption: caption,
           hashtags: hashtags,
           createdAt: createdAt,

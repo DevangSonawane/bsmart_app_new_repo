@@ -284,15 +284,6 @@ class GroupChatInfoScreen extends StatelessWidget {
                 _quickAction(
                   context: context,
                   icon:
-                      Icon(LucideIcons.bellOff, size: 22, color: cs.onSurface),
-                  label: 'Mute',
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Coming soon')),
-                  ),
-                ),
-                _quickAction(
-                  context: context,
-                  icon:
                       Icon(LucideIcons.ellipsis, size: 22, color: cs.onSurface),
                   label: 'Options',
                   onTap: () => ScaffoldMessenger.of(context).showSnackBar(
@@ -303,37 +294,6 @@ class GroupChatInfoScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Container(
-              width: 44,
-              height: 44,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [Color(0xFF7B2FF7), Color(0xFFB44AFF)],
-                ),
-              ),
-            ),
-            title: const Text('Theme'),
-            subtitle: Text('Default', style: TextStyle(color: muted)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Coming soon')),
-            ),
-          ),
-          const Divider(height: 20),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(LucideIcons.link2, color: cs.onSurface),
-            title: const Text('Invitation link'),
-            subtitle: Text('Coming soon', style: TextStyle(color: muted)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Coming soon')),
-            ),
-          ),
-          const Divider(height: 20),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(LucideIcons.users, color: cs.onSurface),

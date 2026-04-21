@@ -171,129 +171,129 @@ class _GroupChatConversationScreenState
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (context) {
         final participants = _participants();
         final theme = Theme.of(context);
         final muted = theme.textTheme.bodySmall?.color?.withValues(alpha: 0.75);
+        final maxHeight = MediaQuery.of(context).size.height * 0.75;
         return SafeArea(
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _groupName(),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _groupName(),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${participants.length} members',
-                  style: TextStyle(
-                    color: muted,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(height: 6),
+                  Text(
+                    '${participants.length} members',
+                    style: TextStyle(
+                      color: muted,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: min(
-                    320,
-                    MediaQuery.of(context).size.height * 0.45,
-                  ),
-                  child: ListView.separated(
-                    itemCount: participants.length,
-                    separatorBuilder: (_, __) => const Divider(height: 18),
-                    itemBuilder: (context, index) {
-                      final u = participants[index];
-                      final name = (u['full_name'] ??
-                              u['fullName'] ??
-                              u['name'] ??
-                              u['username'] ??
-                              'User')
-                          .toString()
-                          .trim();
-                      final handle = (u['username'] ?? u['handle'] ?? '')
-                          .toString()
-                          .trim();
-                      final avatar = (u['avatar_url'] ??
-                              u['avatarUrl'] ??
-                              u['profile_pic'] ??
-                              u['profilePic'])
-                          ?.toString()
-                          .trim();
-                      return Row(
-                        children: [
-                          if (avatar != null && avatar.isNotEmpty)
-                            ClipOval(
-                              child: SafeNetworkImage(
-                                url: avatar,
-                                width: 34,
-                                height: 34,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          else
-                            CircleAvatar(
-                              radius: 17,
-                              backgroundColor: DesignTokens.instaPink,
-                              child: Text(
-                                name.isNotEmpty
-                                    ? name.characters.first.toUpperCase()
-                                    : 'U',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: ListView.separated(
+                      itemCount: participants.length,
+                      separatorBuilder: (_, __) => const Divider(height: 18),
+                      itemBuilder: (context, index) {
+                        final u = participants[index];
+                        final name = (u['full_name'] ??
+                                u['fullName'] ??
+                                u['name'] ??
+                                u['username'] ??
+                                'User')
+                            .toString()
+                            .trim();
+                        final handle = (u['username'] ?? u['handle'] ?? '')
+                            .toString()
+                            .trim();
+                        final avatar = (u['avatar_url'] ??
+                                u['avatarUrl'] ??
+                                u['profile_pic'] ??
+                                u['profilePic'])
+                            ?.toString()
+                            .trim();
+                        return Row(
+                          children: [
+                            if (avatar != null && avatar.isNotEmpty)
+                              ClipOval(
+                                child: SafeNetworkImage(
+                                  url: avatar,
+                                  width: 34,
+                                  height: 34,
+                                  fit: BoxFit.cover,
                                 ),
-                              ),
-                            ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                              )
+                            else
+                              CircleAvatar(
+                                radius: 17,
+                                backgroundColor: DesignTokens.instaPink,
+                                child: Text(
+                                  name.isNotEmpty
+                                      ? name.characters.first.toUpperCase()
+                                      : 'U',
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                if (handle.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
+                              ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Text(
-                                    handle.startsWith('@')
-                                        ? handle
-                                        : '@$handle',
-                                    style: TextStyle(
-                                      color: muted,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
+                                    name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
+                                  if (handle.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      handle.startsWith('@')
+                                          ? handle
+                                          : '@$handle',
+                                      style: TextStyle(
+                                        color: muted,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                        ],
-                      );
-                    },
+                          ],
+                        );
+                      },
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _leaveGroup,
-                    icon: const Icon(LucideIcons.logOut, size: 18),
-                    label: const Text('Leave group'),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _leaveGroup,
+                      icon: const Icon(LucideIcons.logOut, size: 18),
+                      label: const Text('Leave group'),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -2724,63 +2724,6 @@ class _GroupChatConversationScreenState
             .length
         : max(0, membersCount - 1); // TODO: compute from following ids.
 
-    Widget actionButton({
-      required Widget iconCircle,
-      required String label,
-      required VoidCallback onTap,
-    }) {
-      return InkWell(
-        onTap: onTap,
-        splashFactory: NoSplash.splashFactory,
-        highlightColor: Colors.transparent,
-        child: SizedBox(
-          width: 74,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              iconCircle,
-              const SizedBox(height: 8),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: cs.onSurface.withValues(alpha: 0.85),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    Widget iconCircle(IconData icon) {
-      return Container(
-        width: 52,
-        height: 52,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: cs.onSurface.withValues(alpha: 0.10),
-        ),
-        alignment: Alignment.center,
-        child: Icon(icon, size: 22, color: cs.onSurface),
-      );
-    }
-
-    final themeCircle = Container(
-      width: 52,
-      height: 52,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [Color(0xFF7B2FF7), Color(0xFFB44AFF)],
-        ),
-      ),
-    );
-
     return Column(
       children: [
         const SizedBox(height: 14),
@@ -2843,46 +2786,6 @@ class _GroupChatConversationScreenState
           ),
         ),
         const SizedBox(height: 22),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              actionButton(
-                iconCircle: iconCircle(LucideIcons.link),
-                label: 'Invitation link',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Coming soon')),
-                  );
-                },
-              ),
-              actionButton(
-                iconCircle: iconCircle(LucideIcons.userPlus),
-                label: 'Add people',
-                onTap: _showGroupMembersSheet,
-              ),
-              actionButton(
-                iconCircle: iconCircle(LucideIcons.share),
-                label: 'Share',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Coming soon')),
-                  );
-                },
-              ),
-              actionButton(
-                iconCircle: themeCircle,
-                label: 'Theme',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Coming soon')),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 8),
         Divider(
           height: 1,

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../models/feed_post_model.dart';
 import '../api/api_client.dart';
-import '../config/api_config.dart';
 import 'safe_network_image.dart';
+import '../utils/url_helper.dart';
 
 class PostsGrid extends StatefulWidget {
   final List<FeedPost> posts;
@@ -18,13 +17,6 @@ class PostsGrid extends StatefulWidget {
 
 class _PostsGridState extends State<PostsGrid> {
   Map<String, String>? _headers;
-  String _absolute(String url) {
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    final baseUri = Uri.parse(ApiConfig.baseUrl);
-    final origin =
-        '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
-    return url.startsWith('/') ? '$origin$url' : '$origin/$url';
-  }
 
   @override
   void initState() {
@@ -55,8 +47,18 @@ class _PostsGridState extends State<PostsGrid> {
       ),
       itemBuilder: (context, index) {
         final p = widget.posts[index];
-        final raw = p.mediaUrls.isNotEmpty ? p.mediaUrls.first : null;
-        final thumb = (raw != null && raw.isNotEmpty) ? _absolute(raw) : null;
+        final raw =
+            (p.thumbnailUrl != null && p.thumbnailUrl!.trim().isNotEmpty)
+                ? p.thumbnailUrl
+                : (p.mediaUrls.isNotEmpty ? p.mediaUrls.first : null);
+        final normalized = (raw != null && raw.trim().isNotEmpty)
+            ? UrlHelper.normalizeUrl(raw)
+            : '';
+        final thumb = normalized.isNotEmpty ? normalized : null;
+        final headers =
+            (thumb != null && UrlHelper.shouldAttachAuthHeader(thumb))
+                ? _headers
+                : null;
         return GestureDetector(
           onTap: () => widget.onTap(p),
           child: Stack(
@@ -65,8 +67,8 @@ class _PostsGridState extends State<PostsGrid> {
               if (thumb != null)
                 SafeNetworkImage(
                   url: thumb,
-                  headers: _headers,
-                  cacheKey: '$thumb#${_headers?['Authorization'] ?? ''}',
+                  headers: headers,
+                  cacheKey: '$thumb#${headers?['Authorization'] ?? ''}',
                   fit: BoxFit.cover,
                   placeholder: Container(color: Colors.grey[300]),
                   errorWidget: Container(

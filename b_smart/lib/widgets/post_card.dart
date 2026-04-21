@@ -332,8 +332,8 @@ class _PostCardState extends State<PostCard> {
                                     tabActive &&
                                     _mediaIndex == i,
                                 initialAspectRatio: post.aspectRatio,
-                                  filterName: filterForIndex(i),
-                                  adjustments: adjustmentsForIndex(i),
+                                filterName: filterForIndex(i),
+                                adjustments: adjustmentsForIndex(i),
                               ),
                             )
                           : ValueListenableBuilder<String?>(
@@ -562,7 +562,9 @@ class _PostCardState extends State<PostCard> {
 
       final safeIndex = _mediaIndex < 0
           ? 0
-          : (_mediaIndex >= mediaUrls.length ? mediaUrls.length - 1 : _mediaIndex);
+          : (_mediaIndex >= mediaUrls.length
+              ? mediaUrls.length - 1
+              : _mediaIndex);
       final activeUrl = isCarousel ? mediaUrls[safeIndex] : mediaUrls.first;
       final activeIsVideo = _isVideoUrl(activeUrl);
 
@@ -596,7 +598,8 @@ class _PostCardState extends State<PostCard> {
                   url: url,
                   thumbnailUrl: post.thumbnailUrl,
                   isVideo: isVideo,
-                  isActive: widget.isActive && widget.isTabActive && _mediaIndex == i,
+                  isActive:
+                      widget.isActive && widget.isTabActive && _mediaIndex == i,
                   initialAspectRatio: post.aspectRatio,
                   filterName: null,
                   adjustments: null,
@@ -908,13 +911,6 @@ class _PostCardState extends State<PostCard> {
                     ),
                 ],
               ),
-            ),
-          ),
-          Text(
-            _formatTimestamp(post.createdAt),
-            style: TextStyle(
-              fontSize: 11,
-              color: secondaryText,
             ),
           ),
           if (post.isAd && post.totalBudgetCoins > 0) ...[

@@ -40,7 +40,8 @@ class UrlHelper {
     try {
       final uri = Uri.parse(fixed);
       final host = uri.host.toLowerCase();
-      if (uri.scheme == 'http' && (host.contains('bsmart') || host.contains('asynk.store'))) {
+      if (uri.scheme == 'http' &&
+          (host.contains('bsmart') || host.contains('asynk.store'))) {
         fixed = uri.replace(scheme: 'https').toString();
       }
     } catch (_) {}
@@ -112,14 +113,29 @@ class UrlHelper {
     if (u.startsWith('http://') || u.startsWith('https://')) return u;
 
     // Clean the base URL (keep /api because backend serves media under /api/uploads)
+    final baseUri = Uri.parse(ApiConfig.baseUrl);
+    final origin =
+        '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
     String base = ApiConfig.baseUrl;
     if (base.endsWith('/')) base = base.substring(0, base.length - 1);
 
     // Ensure path starts with exactly one slash
     if (!u.startsWith('/')) u = '/$u';
 
-    // Combine and fix common double-prefixing issues
-    String result = '$base$u';
+    // If the incoming path already contains the base path (e.g. `/api/...`),
+    // avoid double-prefixing `/api/api/...`.
+    final basePath = baseUri.path.isEmpty ? '' : baseUri.path;
+    final normalizedBasePath = (basePath.endsWith('/') && basePath.length > 1)
+        ? basePath.substring(0, basePath.length - 1)
+        : basePath;
+    String result;
+    if (normalizedBasePath.isNotEmpty &&
+        normalizedBasePath != '/' &&
+        u.startsWith('$normalizedBasePath/')) {
+      result = '$origin$u';
+    } else {
+      result = '$base$u';
+    }
 
     // Cleanup internal double slashes (except the one after http:)
     result = result.replaceFirst('://', '###');

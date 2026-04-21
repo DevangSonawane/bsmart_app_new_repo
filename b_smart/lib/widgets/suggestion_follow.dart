@@ -88,18 +88,23 @@ class SuggestionFollowBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (final section in sections) ...[
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 14),
-              child: _SectionHeader(
-                title: section.title,
-                helperText: section.helperText,
-                titleColor: titleColor,
-                helperColor: subColor,
-                onSeeAll: section.onSeeAll,
-                onOverflow: section.onOverflow,
+            if (section.title.trim().isNotEmpty ||
+                (section.helperText?.trim().isNotEmpty ?? false) ||
+                section.onSeeAll != null ||
+                section.onOverflow != null) ...[
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 14),
+                child: _SectionHeader(
+                  title: section.title,
+                  helperText: section.helperText,
+                  titleColor: titleColor,
+                  helperColor: subColor,
+                  onSeeAll: section.onSeeAll,
+                  onOverflow: section.onOverflow,
+                ),
               ),
-            ),
-            SizedBox(height: compact ? 8 : 10),
+              SizedBox(height: compact ? 8 : 10),
+            ],
             SizedBox(
               height: listHeight,
               child: ListView.separated(
@@ -195,7 +200,8 @@ class _SectionHeader extends StatelessWidget {
                 icon: const Icon(LucideIcons.ellipsis, size: 18),
                 color: titleColor.withValues(alpha: 0.8),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                constraints:
+                    const BoxConstraints.tightFor(width: 32, height: 32),
               ),
           ],
         ),
@@ -338,9 +344,8 @@ class _SuggestionCard extends StatelessWidget {
         child: ClipOval(
           child: CachedNetworkImage(
             imageUrl: url,
-            httpHeaders: UrlHelper.shouldAttachAuthHeader(url)
-                ? imageHeaders
-                : null,
+            httpHeaders:
+                UrlHelper.shouldAttachAuthHeader(url) ? imageHeaders : null,
             width: avatarSize,
             height: avatarSize,
             fit: BoxFit.cover,
@@ -426,8 +431,8 @@ class _SuggestionCard extends StatelessWidget {
                           icon: const Icon(Icons.close, size: 14),
                           color: titleColor.withValues(alpha: 0.70),
                           padding: EdgeInsets.zero,
-                          constraints:
-                              const BoxConstraints.tightFor(width: 26, height: 26),
+                          constraints: const BoxConstraints.tightFor(
+                              width: 26, height: 26),
                           style: IconButton.styleFrom(
                             backgroundColor: isDark
                                 ? Colors.white.withValues(alpha: 0.10)
