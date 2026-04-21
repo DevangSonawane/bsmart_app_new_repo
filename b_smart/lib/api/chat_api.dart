@@ -312,4 +312,70 @@ class ChatApi {
     }
     return const <String>[];
   }
+
+  /// Accepts a pending message request conversation.
+  ///
+  /// Backend implementations differ; try a few common routes/methods.
+  Future<Map<String, dynamic>> acceptConversationRequest({
+    required String conversationId,
+  }) async {
+    final id = conversationId.trim();
+    if (id.isEmpty) return <String, dynamic>{};
+
+    Object? lastError;
+    final attempts = <Future<dynamic> Function()>[
+      () => _client.post('/chat/conversations/$id/accept'),
+      () => _client.patch('/chat/conversations/$id/accept'),
+      () => _client.put('/chat/conversations/$id/accept'),
+      () => _client.post('/chat/conversations/$id/approve'),
+      () => _client.patch('/chat/conversations/$id/approve'),
+      () => _client.put('/chat/conversations/$id/approve'),
+      () => _client.post('/chat/conversations/$id/request/accept'),
+      () => _client.patch('/chat/conversations/$id/request/accept'),
+      () => _client.put('/chat/conversations/$id/request/accept'),
+    ];
+
+    for (final attempt in attempts) {
+      try {
+        final res = await attempt();
+        return res is Map<String, dynamic> ? res : <String, dynamic>{};
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (lastError != null) throw lastError;
+    return <String, dynamic>{};
+  }
+
+  /// Deletes a conversation (used for declining/deleting message requests).
+  ///
+  /// Backend implementations differ; try a few common routes/methods.
+  Future<Map<String, dynamic>> deleteConversation({
+    required String conversationId,
+  }) async {
+    final id = conversationId.trim();
+    if (id.isEmpty) return <String, dynamic>{};
+
+    Object? lastError;
+    final attempts = <Future<dynamic> Function()>[
+      () => _client.delete('/chat/conversations/$id'),
+      () => _client.delete('/chat/conversations/$id/delete'),
+      () => _client.delete('/chat/conversations/$id/request'),
+      () => _client.post('/chat/conversations/$id/delete'),
+      () => _client.post('/chat/conversations/$id/request/delete'),
+    ];
+
+    for (final attempt in attempts) {
+      try {
+        final res = await attempt();
+        return res is Map<String, dynamic> ? res : <String, dynamic>{};
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (lastError != null) throw lastError;
+    return <String, dynamic>{};
+  }
 }

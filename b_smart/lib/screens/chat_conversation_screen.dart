@@ -58,6 +58,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   Timer? _pollTimer;
   bool _refreshingLatest = false;
   int _pendingNewCount = 0;
+  bool _requestActionLoading = false;
 
   static const int _pageLimit = 20;
 
@@ -169,6 +170,86 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   String? _idFor(Map<String, dynamic>? user) {
     if (user == null) return null;
     return (user['_id'] ?? user['id'] ?? user['user_id'])?.toString();
+  }
+
+  bool _isRequestConversation(Map<String, dynamic>? conversation) {
+    if (conversation == null || conversation.isEmpty) return false;
+    final status = (conversation['requestStatus'] ??
+            conversation['request_status'] ??
+            conversation['requestState'] ??
+            conversation['request_state'])
+        ?.toString()
+        .trim()
+        .toLowerCase();
+    if (status == 'pending' || status == 'requested') return true;
+
+    final type = conversation['type']?.toString().toLowerCase();
+    final folder = conversation['folder']?.toString().toLowerCase();
+    final category = conversation['category']?.toString().toLowerCase();
+    final isRequest = conversation['isRequest'] == true ||
+        conversation['is_request'] == true ||
+        conversation['request'] == true ||
+        type == 'request' ||
+        folder == 'requests' ||
+        category == 'requests';
+    if (isRequest) return true;
+    final approved = conversation['isApproved'];
+    if (approved is bool && approved == false) return true;
+    return false;
+  }
+
+  Future<void> _acceptRequest() async {
+    if (_requestActionLoading) return;
+    final convId = widget.conversationId.trim();
+    if (convId.isEmpty) return;
+    setState(() => _requestActionLoading = true);
+    try {
+      final res =
+          await _chatApi.acceptConversationRequest(conversationId: convId);
+      if (!mounted) return;
+      setState(() {
+        _conversation = {
+          ...?_conversation,
+          ...res,
+          'requestStatus': 'accepted',
+          'request_status': 'accepted',
+          'isApproved': true,
+          'isRequest': false,
+          'is_request': false,
+          'type': 'normal',
+          'folder': 'primary',
+        };
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Request accepted')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _requestActionLoading = false);
+    }
+  }
+
+  Future<void> _deleteRequest() async {
+    if (_requestActionLoading) return;
+    final convId = widget.conversationId.trim();
+    if (convId.isEmpty) return;
+    setState(() => _requestActionLoading = true);
+    try {
+      await _chatApi.deleteConversation(conversationId: convId);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _requestActionLoading = false);
+    }
   }
 
   Future<void> _loadOtherProfileIfNeeded() async {
@@ -796,12 +877,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   @override
   Widget build(BuildContext context) {
     final other = _otherParticipant();
+    final otherDisplayName = _nameFor(_otherProfile ?? other);
+    final otherHandle =
+        (_otherProfile?['username'] ?? other?['username'])?.toString().trim();
     final otherName =
         (_otherProfile?['username'] as String?)?.trim().isNotEmpty == true
             ? (_otherProfile?['username'] as String).trim()
-            : _nameFor(other);
+            : otherDisplayName;
     final otherAvatar = _avatarFor(_otherProfile ?? other);
     final otherId = _idFor(_otherProfile ?? other) ?? '';
+    final isRequestPending = _isRequestConversation(_conversation);
+    final requestWho = (otherHandle != null &&
+            otherHandle.isNotEmpty &&
+            otherHandle != otherDisplayName)
+        ? '$otherDisplayName ($otherHandle)'
+        : otherName;
 
     return Scaffold(
       appBar: AppBar(
@@ -1016,8 +1106,99 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             top: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: _bottomComposer(),
+              child: isRequestPending
+                  ? _messageRequestFooter(requestWho: requestWho)
+                  : _bottomComposer(),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _messageRequestFooter({required String requestWho}) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final divider = cs.onSurface.withValues(alpha: 0.10);
+    final muted = cs.onSurface.withValues(alpha: 0.70);
+    final acceptBg = cs.onSurface.withValues(alpha: isDark ? 0.18 : 0.10);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: divider)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Accept message request from $requestWho?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: cs.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "If you accept, they will also be able to call you and see info such as your activity status and when you've read messages.",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              height: 1.25,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: muted,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 46,
+                  child: TextButton(
+                    onPressed: _requestActionLoading ? null : _deleteRequest,
+                    style: TextButton.styleFrom(
+                      shape: const StadiumBorder(),
+                      foregroundColor: Colors.redAccent,
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    child: _requestActionLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Delete'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: _requestActionLoading ? null : _acceptRequest,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: acceptBg,
+                      foregroundColor: cs.onSurface,
+                      elevation: 0,
+                      shape: const StadiumBorder(),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    child: _requestActionLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Accept'),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
