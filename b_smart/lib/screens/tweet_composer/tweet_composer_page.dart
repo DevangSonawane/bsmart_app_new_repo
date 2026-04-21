@@ -117,12 +117,15 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
 
     final mediaAny = payload['media'];
     if (mediaAny is Map) {
-      final url = pick(mediaAny['url'] ?? mediaAny['fileUrl'] ?? mediaAny['file_url']);
+      final url =
+          pick(mediaAny['url'] ?? mediaAny['fileUrl'] ?? mediaAny['file_url']);
       if (url.isNotEmpty) return url;
     }
-    final url = pick(payload['url'] ?? payload['fileUrl'] ?? payload['file_url']);
+    final url =
+        pick(payload['url'] ?? payload['fileUrl'] ?? payload['file_url']);
     if (url.isNotEmpty) return url;
-    final alt = pick(payload['fileUrl'] ?? payload['file_url'] ?? payload['path']);
+    final alt =
+        pick(payload['fileUrl'] ?? payload['file_url'] ?? payload['path']);
     if (alt.isNotEmpty) return alt;
     return '';
   }
@@ -132,7 +135,8 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
     final content = _controller.text.trim();
     if (content.isEmpty && _media.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add text or an image to post your tweet.')),
+        const SnackBar(
+            content: Text('Add text or an image to post your tweet.')),
       );
       return;
     }
@@ -142,7 +146,9 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
       for (final m in _media) {
         final res = await TweetsApi().uploadTweetMediaBytes(
           bytes: m.bytes,
-          filename: m.filename.isNotEmpty ? m.filename : 'tweet_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          filename: m.filename.isNotEmpty
+              ? m.filename
+              : 'tweet_${DateTime.now().millisecondsSinceEpoch}.jpg',
         );
         final url = _extractUploadUrl(res);
         if (url.isNotEmpty) {
@@ -227,14 +233,14 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
                     ValueListenableBuilder<TextEditingValue>(
                       valueListenable: _controller,
                       builder: (context, value, child) {
-                        final canPost =
-                            (value.text.trim().isNotEmpty || _media.isNotEmpty) &&
-                                !_posting;
+                        final canPost = (value.text.trim().isNotEmpty ||
+                                _media.isNotEmpty) &&
+                            !_posting;
                         return FilledButton(
                           onPressed: canPost ? _submit : null,
                           style: FilledButton.styleFrom(
-                            backgroundColor: colors.primary,
-                            foregroundColor: colors.onPrimary,
+                            backgroundColor: const Color(0xFF3B82F6),
+                            foregroundColor: Colors.white,
                             disabledBackgroundColor:
                                 colors.surfaceContainerHighest,
                             disabledForegroundColor:
@@ -274,45 +280,6 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: colors.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: colors.outlineVariant
-                                          .withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          'Community or topic',
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            color: colors.onSurfaceVariant,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 2),
-                                      Icon(
-                                        Icons.keyboard_arrow_down,
-                                        size: 16,
-                                        color: colors.onSurfaceVariant,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -342,7 +309,8 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
                               child: ListView.separated(
                                 scrollDirection: Axis.horizontal,
                                 itemCount: _media.length,
-                                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 10),
                                 itemBuilder: (context, index) {
                                   final item = _media[index];
                                   return Stack(
@@ -362,13 +330,16 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
                                         child: InkWell(
                                           onTap: _posting
                                               ? null
-                                              : () => setState(() => _media.removeAt(index)),
+                                              : () => setState(
+                                                  () => _media.removeAt(index)),
                                           child: Container(
                                             width: 22,
                                             height: 22,
                                             decoration: BoxDecoration(
-                                              color: Colors.black.withValues(alpha: 0.55),
-                                              borderRadius: BorderRadius.circular(999),
+                                              color: Colors.black
+                                                  .withValues(alpha: 0.55),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
                                             ),
                                             child: const Icon(
                                               Icons.close,
@@ -387,7 +358,8 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
                           const SizedBox(height: 10),
                           Row(
                             children: [
-                              actionIcon(Icons.image_outlined, onTap: _posting ? null : _pickImages),
+                              actionIcon(Icons.image_outlined,
+                                  onTap: _posting ? null : _pickImages),
                               actionIcon(Icons.gif_box_outlined),
                               actionIcon(Icons.poll_outlined),
                             ],

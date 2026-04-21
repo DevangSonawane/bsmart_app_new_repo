@@ -588,6 +588,19 @@ class _HomeDashboardState extends State<HomeDashboard>
     return name.trim().isNotEmpty ? name.trim() : 'user';
   }
 
+  String _suggestionNameOf(Map<String, dynamic> u) {
+    final embedded = u['user'];
+    if (embedded is Map) {
+      return _suggestionNameOf(Map<String, dynamic>.from(embedded));
+    }
+    final raw = u['full_name'] ??
+        u['fullName'] ??
+        u['display_name'] ??
+        u['displayName'] ??
+        u['name'];
+    return raw == null ? '' : raw.toString().trim();
+  }
+
   String _suggestionAvatarOf(Map<String, dynamic> u) {
     final embedded = u['user'];
     if (embedded is Map) {
@@ -612,8 +625,7 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   String? _suggestionReasonOf(Map<String, dynamic> u) {
     final embedded = u['user'];
-    final source =
-        embedded is Map ? Map<String, dynamic>.from(embedded) : u;
+    final source = embedded is Map ? Map<String, dynamic>.from(embedded) : u;
     final mutual = source['mutual_friends_count'] ?? source['mutualCount'];
     if (mutual is num && mutual.toInt() > 0) return '${mutual.toInt()} mutual';
     final followedBy =
@@ -621,9 +633,8 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (followedBy != null && followedBy.isNotEmpty) {
       return 'Followed by $followedBy';
     }
-    final reason = (u['reason'] ?? u['message'] ?? u['subtitle'])
-        ?.toString()
-        .trim();
+    final reason =
+        (u['reason'] ?? u['message'] ?? u['subtitle'])?.toString().trim();
     if (reason != null && reason.isNotEmpty) return reason;
     return 'Suggested for you';
   }
@@ -701,11 +712,15 @@ class _HomeDashboardState extends State<HomeDashboard>
         final isFollowing = _suggestionIsFollowingOf(u);
         if (isFollowing) continue;
         final avatar = _suggestionAvatarOf(u).trim();
+        final username = _suggestionTitleOf(u);
+        final name = _suggestionNameOf(u);
         parsed.add(
           SuggestionUser(
             id: id,
-            title: _suggestionTitleOf(u),
-            subtitle: _suggestionReasonOf(u),
+            title: username,
+            subtitle: (name.isNotEmpty && name != username)
+                ? name
+                : _suggestionReasonOf(u),
             avatarUrl: avatar.isEmpty ? null : UrlHelper.absoluteUrl(avatar),
           ),
         );
@@ -764,7 +779,8 @@ class _HomeDashboardState extends State<HomeDashboard>
     final userName = str(user['username']) ?? str(user['full_name']) ?? 'reel';
     final userAvatar = UrlHelper.normalizeUrl(str(user['avatar_url']));
 
-    final mediaList = item['media'] is List ? (item['media'] as List) : const [];
+    final mediaList =
+        item['media'] is List ? (item['media'] as List) : const [];
     String? videoUrl;
     String? thumbnailUrl;
     String? aspectRatio;
@@ -779,13 +795,16 @@ class _HomeDashboardState extends State<HomeDashboard>
             str(media['videoUrl']) ??
             str(media['file_url']);
 
-        final thumbField =
-            media['thumbnails'] ?? media['thumbnail'] ?? media['thumbnailUrl'] ?? media['thumb'];
+        final thumbField = media['thumbnails'] ??
+            media['thumbnail'] ??
+            media['thumbnailUrl'] ??
+            media['thumb'];
         if (thumbField is String) {
           thumbnailUrl = str(thumbField);
         } else if (thumbField is Map) {
           final m = Map<String, dynamic>.from(thumbField);
-          thumbnailUrl = str(m['fileUrl']) ?? str(m['url']) ?? str(m['file_url']);
+          thumbnailUrl =
+              str(m['fileUrl']) ?? str(m['url']) ?? str(m['file_url']);
         } else if (thumbField is List && thumbField.isNotEmpty) {
           final t0 = thumbField.first;
           if (t0 is String) {
@@ -807,7 +826,9 @@ class _HomeDashboardState extends State<HomeDashboard>
     final reelCrop = item['crop'] is Map
         ? Map<String, dynamic>.from(item['crop'])
         : const <String, dynamic>{};
-    aspectRatio = aspectRatio ?? str(reelCrop['aspect_ratio']) ?? str(item['aspect_ratio']);
+    aspectRatio = aspectRatio ??
+        str(reelCrop['aspect_ratio']) ??
+        str(item['aspect_ratio']);
 
     final caption = str(item['caption']);
     final createdAtRaw = str(item['created_at']) ?? str(item['createdAt']);
@@ -862,9 +883,14 @@ class _HomeDashboardState extends State<HomeDashboard>
     setState(() => _reelSuggestionsLoading = true);
     try {
       final token = await ApiClient().getToken();
-      if (token != null && token.isNotEmpty && _suggestionImageHeaders.isEmpty && mounted) {
+      if (token != null &&
+          token.isNotEmpty &&
+          _suggestionImageHeaders.isEmpty &&
+          mounted) {
         setState(() {
-          _suggestionImageHeaders = <String, String>{'Authorization': 'Bearer $token'};
+          _suggestionImageHeaders = <String, String>{
+            'Authorization': 'Bearer $token'
+          };
         });
       }
 
@@ -1730,8 +1756,8 @@ class _HomeDashboardState extends State<HomeDashboard>
     store.dispatch(UpdatePostLiked(post.id, desired));
     if (mounted)
       setState(() {}); // trigger rebuild to reflect optimistic change
-    final liked =
-        await _supabase.setPostLike(post.id, like: desired, isTweet: post.isTweet);
+    final liked = await _supabase.setPostLike(post.id,
+        like: desired, isTweet: post.isTweet);
     if (!mounted) return;
     try {
       final p =
@@ -1866,8 +1892,8 @@ class _HomeDashboardState extends State<HomeDashboard>
     final store = StoreProvider.of<AppState>(context);
     store.dispatch(UpdatePostSaved(post.id, desired));
     if (mounted) setState(() {});
-    final saved =
-        await _supabase.setPostSaved(post.id, save: desired, isTweet: post.isTweet);
+    final saved = await _supabase.setPostSaved(post.id,
+        save: desired, isTweet: post.isTweet);
     if (!mounted) return;
     try {
       final p =
@@ -2079,10 +2105,9 @@ class _HomeDashboardState extends State<HomeDashboard>
                                                         final ok =
                                                             await SupabaseService()
                                                                 .deletePost(
-                                                              post.id,
-                                                              isTweet:
-                                                                  post.isTweet,
-                                                            );
+                                                          post.id,
+                                                          isTweet: post.isTweet,
+                                                        );
                                                         await Future.delayed(
                                                             const Duration(
                                                                 milliseconds:
@@ -2848,9 +2873,10 @@ class _HomeDashboardState extends State<HomeDashboard>
                                     _FeedRenderRowType.reelsSuggestions) {
                                   return SuggestedReelsCard(
                                     reels: _suggestedReels,
-                                    imageHeaders: _suggestionImageHeaders.isEmpty
-                                        ? null
-                                        : _suggestionImageHeaders,
+                                    imageHeaders:
+                                        _suggestionImageHeaders.isEmpty
+                                            ? null
+                                            : _suggestionImageHeaders,
                                     onOpenReel: (reel) {
                                       if (reel.id.isEmpty) return;
                                       Navigator.of(context).pushNamed(

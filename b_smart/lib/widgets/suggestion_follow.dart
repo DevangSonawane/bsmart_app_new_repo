@@ -422,21 +422,23 @@ class _SuggestionCard extends StatelessWidget {
             child: Stack(
               children: [
                 Positioned(
-                  top: 0,
-                  right: 0,
+                  top: -12,
+                  right: -12,
                   child: _loading
                       ? const SizedBox(height: 24, width: 24)
                       : IconButton(
                           onPressed: onDismiss,
-                          icon: const Icon(Icons.close, size: 14),
-                          color: titleColor.withValues(alpha: 0.70),
+                          icon: const Icon(Icons.close, size: 12),
+                          color: titleColor.withValues(alpha: 0.75),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints.tightFor(
-                              width: 26, height: 26),
+                            width: 24,
+                            height: 24,
+                          ),
                           style: IconButton.styleFrom(
-                            backgroundColor: isDark
-                                ? Colors.white.withValues(alpha: 0.10)
-                                : Colors.black.withValues(alpha: 0.06),
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            surfaceTintColor: Colors.transparent,
                           ),
                         ),
                 ),
@@ -494,7 +496,7 @@ class _SuggestionCard extends StatelessWidget {
                         textAlign: TextAlign.center,
                       ),
                     ],
-                    SizedBox(height: gapSm),
+                    SizedBox(height: gapSm + 12),
                     followButton(),
                   ],
                 ),

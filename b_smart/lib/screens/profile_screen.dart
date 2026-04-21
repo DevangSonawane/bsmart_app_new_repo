@@ -207,6 +207,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return name.trim().isNotEmpty ? name.trim() : 'user';
   }
 
+  String _suggestionNameOf(Map<String, dynamic> u) {
+    final raw = u['full_name'] ??
+        u['fullName'] ??
+        u['display_name'] ??
+        u['displayName'] ??
+        u['name'];
+    return raw == null ? '' : raw.toString().trim();
+  }
+
   String _suggestionAvatarOf(Map<String, dynamic> u) {
     final raw = u['avatar_url'] ??
         u['avatarUrl'] ??
@@ -283,11 +292,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (meId != null && meId.isNotEmpty && id == meId) continue;
         if (_suggestionIsFollowingOf(u)) continue;
         final avatar = _suggestionAvatarOf(u);
+        final username = _suggestionTitleOf(u);
+        final name = _suggestionNameOf(u);
         parsed.add(
           SuggestionUser(
             id: id,
-            title: _suggestionTitleOf(u),
-            subtitle: null,
+            title: username,
+            subtitle: (name.isNotEmpty && name != username) ? name : null,
             avatarUrl: avatar.isEmpty ? null : UrlHelper.absoluteUrl(avatar),
           ),
         );
