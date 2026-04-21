@@ -18,6 +18,7 @@ import 'screens/auth_callback_screen.dart';
 import 'screens/story_camera_screen.dart';
 import 'screens/own_story_viewer_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/search_explore_screen.dart';
 import 'screens/advertiser_ads_list_screen.dart';
 import 'screens/advertiser_create_ad_screen.dart';
 import 'screens/role_redirect_gate.dart';
@@ -53,8 +54,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   // '/profile' is intentionally removed — handled by onGenerateRoute
   '/reels': (ctx) {
     final args = ModalRoute.of(ctx)?.settings.arguments;
-    final initialId =
-        (args is Map ? args['initialReelId'] : null)?.toString();
+    final initialId = (args is Map ? args['initialReelId'] : null)?.toString();
     return ReelsScreen(initialReelId: initialId);
   },
   // Mirrors React: vendors are redirected off `/ads` to `/vendor-ads`.
@@ -85,7 +85,9 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/wallet': (ctx) => const WalletScreen(),
   '/notifications': (ctx) => const NotificationsScreen(),
   '/security': (ctx) => const SecurityScreen(),
-  '/search': (ctx) => const SearchScreen(),
+  // Explore-first search flow: show explore grid, tap search bar to open search input.
+  '/search': (ctx) => const ExploreSearchScreen(),
+  '/search/input': (ctx) => const SearchScreen(),
   '/auth/google/success': (ctx) => const AuthCallbackScreen(),
   '/edit-profile': (ctx) => const EditProfileScreen(userId: ''),
   '/story-camera': (ctx) => const StoryCameraScreen(),

@@ -27,6 +27,7 @@ import 'widgets/profile_setup_gate.dart';
 import 'utils/app_navigator.dart';
 
 void main() async {
+  
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     // Forward Flutter framework errors to the current zone handler so they

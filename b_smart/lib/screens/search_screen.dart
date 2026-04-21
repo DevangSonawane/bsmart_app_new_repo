@@ -59,6 +59,62 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
+  bool _looksLikeTweet(Map<String, dynamic> item) {
+    final type = (item['type'] ?? item['post_type'] ?? item['postType'])
+        ?.toString()
+        .toLowerCase()
+        .trim();
+    if (type == 'tweet' || type == 'tweets') return true;
+    if (item.containsKey('tweet') ||
+        item.containsKey('tweetId') ||
+        item.containsKey('tweet_id') ||
+        item.containsKey('tweet_text') ||
+        item.containsKey('tweetText')) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isDeletedLike(Map<String, dynamic> item) {
+    bool parseBool(dynamic value) {
+      if (value is bool) return value;
+      if (value is num) return value != 0;
+      if (value is String) {
+        final v = value.trim().toLowerCase();
+        if (v == 'true' || v == '1' || v == 'yes') return true;
+        if (v == 'false' || v == '0' || v == 'no') return false;
+      }
+      return false;
+    }
+
+    if (parseBool(item['isDeleted']) ||
+        parseBool(item['is_deleted']) ||
+        parseBool(item['deleted'])) {
+      return true;
+    }
+    final deletedAt = item['deletedAt'] ?? item['deleted_at'];
+    if (deletedAt != null && deletedAt.toString().trim().isNotEmpty) {
+      return true;
+    }
+    final status = (item['status'] ?? item['post_status'] ?? item['postStatus'])
+        ?.toString()
+        .toLowerCase()
+        .trim();
+    if (status == 'deleted' ||
+        status == 'removed' ||
+        status == 'inactive' ||
+        status == 'disabled') {
+      return true;
+    }
+    if (item.containsKey('isActive') && parseBool(item['isActive']) == false) {
+      return true;
+    }
+    if (item.containsKey('active') && parseBool(item['active']) == false) {
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _loadHistory() async {
     final userId = await CurrentUser.id;
     if (userId == null || userId.trim().isEmpty) return;
@@ -147,9 +203,23 @@ class _SearchScreenState extends State<SearchScreen> {
           'posts': (totals['posts'] as int?) ?? posts.length,
           'reels': (totals['reels'] as int?) ?? reels.length,
         };
-        _users = users.take(uLimit).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-        _posts = posts.take(pLimit).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-        _reels = reels.take(rLimit).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        _users = users
+            .take(uLimit)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+        _posts = posts
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((e) => !_looksLikeTweet(e) && !_isDeletedLike(e))
+            .take(pLimit)
+            .toList();
+        _reels = reels
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((e) => !_looksLikeTweet(e) && !_isDeletedLike(e))
+            .take(rLimit)
+            .toList();
       });
     } catch (_) {
       if (!mounted) return;
@@ -171,10 +241,12 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _handleHistoryClick(Map<String, dynamic> item) {
-    final label = (item['query'] ?? item['keyword'] ?? item['text'])?.toString() ?? '';
+    final label =
+        (item['query'] ?? item['keyword'] ?? item['text'])?.toString() ?? '';
     if (label.trim().isEmpty) return;
     _controller.text = label;
-    _controller.selection = TextSelection.fromPosition(TextPosition(offset: label.length));
+    _controller.selection =
+        TextSelection.fromPosition(TextPosition(offset: label.length));
     setState(() {
       _query = label;
       _activeTab = 'all';
@@ -202,7 +274,8 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  bool get _hasResults => _users.isNotEmpty || _posts.isNotEmpty || _reels.isNotEmpty;
+  bool get _hasResults =>
+      _users.isNotEmpty || _posts.isNotEmpty || _reels.isNotEmpty;
 
   void _showPostDetail(String postId) {
     if (postId.isEmpty) return;
@@ -215,7 +288,8 @@ class _SearchScreenState extends State<SearchScreen> {
         barrierColor: Colors.black54,
         builder: (ctx) => Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: PostDetailModal(
             postId: postId,
             onClose: () => Navigator.of(ctx).pop(),
@@ -243,7 +317,10 @@ class _SearchScreenState extends State<SearchScreen> {
         return UrlHelper.normalizeUrl(first);
       }
     }
-    final direct = item['image_url'] ?? item['thumbnail_url'] ?? item['image'] ?? item['thumb'];
+    final direct = item['image_url'] ??
+        item['thumbnail_url'] ??
+        item['image'] ??
+        item['thumb'];
     if (direct != null) return UrlHelper.normalizeUrl(direct.toString());
     return '';
   }
@@ -315,7 +392,8 @@ class _SearchScreenState extends State<SearchScreen> {
                           shape: BoxShape.circle,
                           color: Colors.grey,
                         ),
-                        child: const Icon(Icons.close, size: 12, color: Colors.white),
+                        child: const Icon(Icons.close,
+                            size: 12, color: Colors.white),
                       ),
                     ),
                 ],
@@ -337,7 +415,8 @@ class _SearchScreenState extends State<SearchScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+        border:
+            Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -375,7 +454,8 @@ class _SearchScreenState extends State<SearchScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Recent', style: TextStyle(fontWeight: FontWeight.w700)),
+              const Text('Recent',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
               TextButton(
                 onPressed: _clearHistory,
                 child: const Text('Clear all'),
@@ -385,7 +465,9 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
         ..._history.map((item) {
           final id = (item['_id'] ?? item['id'])?.toString();
-          final label = (item['query'] ?? item['keyword'] ?? item['text'])?.toString() ?? '';
+          final label =
+              (item['query'] ?? item['keyword'] ?? item['text'])?.toString() ??
+                  '';
           if (label.trim().isEmpty) return const SizedBox.shrink();
           return ListTile(
             leading: const CircleAvatar(child: Icon(LucideIcons.clock)),
@@ -404,16 +486,24 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildUserRow(Map<String, dynamic> user) {
-    final uid = (user['_id'] ?? user['id'] ?? user['user_id'])?.toString() ?? '';
+    final uid =
+        (user['_id'] ?? user['id'] ?? user['user_id'])?.toString() ?? '';
     final username = (user['username'] ?? user['userName'] ?? '').toString();
     final fullName = (user['full_name'] ?? user['fullName'] ?? '').toString();
-    final avatar = (user['avatar_url'] ?? user['avatar'] ?? user['profile_image'])?.toString() ?? '';
+    final avatar =
+        (user['avatar_url'] ?? user['avatar'] ?? user['profile_image'])
+                ?.toString() ??
+            '';
     final role = (user['role'] ?? '').toString().toLowerCase();
     return ListTile(
-      onTap: uid.isNotEmpty ? () => Navigator.of(context).pushNamed('/profile/$uid') : null,
+      onTap: uid.isNotEmpty
+          ? () => Navigator.of(context).pushNamed('/profile/$uid')
+          : null,
       leading: CircleAvatar(
         backgroundImage: avatar.trim().isNotEmpty ? NetworkImage(avatar) : null,
-        child: avatar.trim().isEmpty ? Text((username.isNotEmpty ? username[0] : 'U').toUpperCase()) : null,
+        child: avatar.trim().isEmpty
+            ? Text((username.isNotEmpty ? username[0] : 'U').toUpperCase())
+            : null,
       ),
       title: Text(fullName.isNotEmpty ? fullName : username),
       subtitle: username.isNotEmpty ? Text('@$username') : null,
@@ -422,7 +512,9 @@ class _SearchScreenState extends State<SearchScreen> {
           : Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: role == 'vendor' ? const Color(0xFFFFEDD5) : Colors.grey.shade200,
+                color: role == 'vendor'
+                    ? const Color(0xFFFFEDD5)
+                    : Colors.grey.shade200,
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
@@ -430,7 +522,9 @@ class _SearchScreenState extends State<SearchScreen> {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: role == 'vendor' ? const Color(0xFFEA580C) : Colors.grey.shade700,
+                  color: role == 'vendor'
+                      ? const Color(0xFFEA580C)
+                      : Colors.grey.shade700,
                 ),
               ),
             ),
@@ -438,7 +532,10 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildGridSection(String label, List<Map<String, dynamic>> items,
-      {required VoidCallback onLoadMore, required bool canLoadMore, required bool isLoadingMore, required bool isReel}) {
+      {required VoidCallback onLoadMore,
+      required bool canLoadMore,
+      required bool isLoadingMore,
+      required bool isReel}) {
     if (items.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -448,7 +545,10 @@ class _SearchScreenState extends State<SearchScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(label.toUpperCase(),
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.grey)),
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.grey)),
           ),
           GridView.builder(
             shrinkWrap: true,
@@ -467,7 +567,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 onTap: isReel
                     ? () => Navigator.of(context).pushNamed(
                           '/reels',
-                          arguments: id.isNotEmpty ? {'initialReelId': id} : null,
+                          arguments:
+                              id.isNotEmpty ? {'initialReelId': id} : null,
                         )
                     : () => _showPostDetail(id),
                 child: ClipRRect(
@@ -475,7 +576,8 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: Container(
                     color: Colors.grey.shade200,
                     child: thumb.isEmpty
-                        ? const Center(child: Icon(Icons.image, color: Colors.grey))
+                        ? const Center(
+                            child: Icon(Icons.image, color: Colors.grey))
                         : CachedNetworkImage(
                             imageUrl: thumb,
                             fit: BoxFit.cover,
@@ -535,15 +637,17 @@ class _SearchScreenState extends State<SearchScreen> {
                                   Padding(
                                     padding: const EdgeInsets.only(top: 8),
                                     child: Column(
-                                      children:
-                                          filteredUsers.map(_buildUserRow).toList(),
+                                      children: filteredUsers
+                                          .map(_buildUserRow)
+                                          .toList(),
                                     ),
                                   ),
                                 _buildGridSection(
                                   'Posts',
                                   filteredPosts,
                                   onLoadMore: () => _loadMore('posts'),
-                                  canLoadMore: _posts.length < (_totals['posts'] ?? 0),
+                                  canLoadMore:
+                                      _posts.length < (_totals['posts'] ?? 0),
                                   isLoadingMore: _loadingMore['posts'] == true,
                                   isReel: false,
                                 ),
@@ -551,7 +655,8 @@ class _SearchScreenState extends State<SearchScreen> {
                                   'Reels',
                                   filteredReels,
                                   onLoadMore: () => _loadMore('reels'),
-                                  canLoadMore: _reels.length < (_totals['reels'] ?? 0),
+                                  canLoadMore:
+                                      _reels.length < (_totals['reels'] ?? 0),
                                   isLoadingMore: _loadingMore['reels'] == true,
                                   isReel: true,
                                 ),
@@ -565,7 +670,8 @@ class _SearchScreenState extends State<SearchScreen> {
                                         ? const SizedBox(
                                             width: 16,
                                             height: 16,
-                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
                                           )
                                         : const Text('Load more people'),
                                   ),
