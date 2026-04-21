@@ -311,6 +311,18 @@ class FeedService {
           final Map<String, dynamic> item =
               Map<String, dynamic>.from(raw as Map<dynamic, dynamic>);
 
+          int toInt(dynamic v) {
+            if (v is int) return v;
+            if (v is num) return v.toInt();
+            return int.tryParse(v?.toString() ?? '') ?? 0;
+          }
+
+          int? toNullableInt(dynamic v) {
+            if (v == null) return null;
+            if (v is String && v.trim().isEmpty) return null;
+            return toInt(v);
+          }
+
           final postId = item['_id'] as String? ?? item['id'] as String? ?? '';
           // The API nests the author info inside `user_id` as a populated object.
           Map<String, dynamic> user = {};
@@ -326,8 +338,15 @@ class FeedService {
           final rawLikesAny = (item['likes'] as List<dynamic>?) ??
               (item['liked_by'] as List<dynamic>?) ??
               const [];
-          final likesCount =
-              (item['likes_count'] as int?) ?? rawLikesAny.length;
+          final likesCount = () {
+            final explicit = toNullableInt(
+              item['likesCount'] ??
+                  item['likes_count'] ??
+                  item['likeCount'] ??
+                  item['like_count'],
+            );
+            return explicit ?? rawLikesAny.length;
+          }();
           bool computedLiked = false;
           if (currentUserId != null && rawLikesAny.isNotEmpty) {
             for (final e in rawLikesAny) {
@@ -873,11 +892,25 @@ class FeedService {
                         DateTime.now()
                     : DateTime.now()),
             likes: likesCount,
-            comments: item['comments'] is List
-                ? (item['comments'] as List).length
-                : (item['comments_count'] as int? ??
-                    (item['commentCount'] as int? ?? 0)),
+            comments: () {
+              final explicit = toNullableInt(
+                item['commentsCount'] ??
+                    item['comments_count'] ??
+                    item['commentCount'] ??
+                    item['comment_count'],
+              );
+              if (explicit != null) return explicit;
+              if (item['comments'] is List) return (item['comments'] as List).length;
+              return toInt(item['comments']);
+            }(),
             views: 0,
+            shares: toInt(
+              item['sharesCount'] ??
+                  item['shares_count'] ??
+                  item['shareCount'] ??
+                  item['share_count'] ??
+                  item['shares'],
+            ),
             isLiked: isLikedByMe,
             isSaved: isSavedByMe,
             isFollowed: isFollowedByMe,

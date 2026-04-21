@@ -58,6 +58,53 @@ class _PostCardState extends State<PostCard> {
 
   bool get _isCarousel => widget.post.mediaUrls.length > 1;
 
+  String _formatCompactCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return n.toString();
+  }
+
+  Widget _actionWithCount({
+    required IconData icon,
+    required VoidCallback? onTap,
+    required int count,
+    Color? iconColor,
+    bool showCount = true,
+  }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final countColor = cs.onSurface.withValues(alpha: 0.80);
+    final shouldShow = showCount && count > 0;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 22, color: iconColor),
+              if (shouldShow) ...[
+                const SizedBox(width: 5),
+                Text(
+                  _formatCompactCount(count),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: countColor,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   bool _isVideoUrl(String url) {
     final lower = url.toLowerCase();
     return lower.endsWith('.mp4') ||
@@ -177,14 +224,14 @@ class _PostCardState extends State<PostCard> {
     final aspect = post.aspectRatio ?? 4 / 5;
     final mediaFilters = post.mediaFilters;
     final mediaAdjustments = post.mediaAdjustments;
-    String? _filterForIndex(int index) {
+    String? filterForIndex(int index) {
       if (mediaFilters == null || index < 0 || index >= mediaFilters.length) {
         return null;
       }
       return mediaFilters[index];
     }
 
-    Map<String, int>? _adjustmentsForIndex(int index) {
+    Map<String, int>? adjustmentsForIndex(int index) {
       if (mediaAdjustments == null ||
           index < 0 ||
           index >= mediaAdjustments.length) {
@@ -229,8 +276,8 @@ class _PostCardState extends State<PostCard> {
                         isVideo: singleIsVideo,
                         isActive: widget.isActive && tabActive,
                         initialAspectRatio: post.aspectRatio,
-                        filterName: _filterForIndex(0),
-                        adjustments: _adjustmentsForIndex(0),
+                        filterName: filterForIndex(0),
+                        adjustments: adjustmentsForIndex(0),
                       ),
                     )
                   : ValueListenableBuilder<String?>(
@@ -245,8 +292,8 @@ class _PostCardState extends State<PostCard> {
                             isVideo: singleIsVideo,
                             isActive: isActive,
                             initialAspectRatio: post.aspectRatio,
-                            filterName: _filterForIndex(0),
-                            adjustments: _adjustmentsForIndex(0),
+                            filterName: filterForIndex(0),
+                            adjustments: adjustmentsForIndex(0),
                           ),
                         );
                       },
@@ -285,8 +332,8 @@ class _PostCardState extends State<PostCard> {
                                     tabActive &&
                                     _mediaIndex == i,
                                 initialAspectRatio: post.aspectRatio,
-                                filterName: _filterForIndex(i),
-                                adjustments: _adjustmentsForIndex(i),
+                                  filterName: filterForIndex(i),
+                                  adjustments: adjustmentsForIndex(i),
                               ),
                             )
                           : ValueListenableBuilder<String?>(
@@ -303,8 +350,8 @@ class _PostCardState extends State<PostCard> {
                                     isVideo: isVideo,
                                     isActive: isActive,
                                     initialAspectRatio: post.aspectRatio,
-                                    filterName: _filterForIndex(i),
-                                    adjustments: _adjustmentsForIndex(i),
+                                    filterName: filterForIndex(i),
+                                    adjustments: adjustmentsForIndex(i),
                                   ),
                                 );
                               },
@@ -684,17 +731,6 @@ class _PostCardState extends State<PostCard> {
               padding: const EdgeInsets.only(top: 6),
               child: _buildTweetActionBar(post, theme),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-              child: Text(
-                '${post.likes} likes',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: primaryText,
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -702,28 +738,28 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _buildTweetActionBar(FeedPost post, ThemeData theme) {
+    final likeCountVisible = !post.hideLikesCount || widget.isOwnPost;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Row(
         children: [
-          IconButton(
-            iconSize: 22,
-            icon: Icon(
-              post.isLiked ? Icons.favorite : LucideIcons.heart,
-              color: post.isLiked ? Colors.red : null,
-            ),
-            onPressed: widget.onLike,
+          _actionWithCount(
+            icon: post.isLiked ? Icons.favorite : LucideIcons.heart,
+            iconColor: post.isLiked ? Colors.red : null,
+            onTap: widget.onLike,
+            count: post.likes,
+            showCount: likeCountVisible,
           ),
           if (!post.commentsDisabled)
-            IconButton(
-              iconSize: 22,
-              icon: const Icon(LucideIcons.messageCircle),
-              onPressed: widget.onComment,
+            _actionWithCount(
+              icon: LucideIcons.messageCircle,
+              onTap: widget.onComment,
+              count: post.comments,
             ),
-          IconButton(
-            iconSize: 22,
-            icon: const Icon(LucideIcons.send),
-            onPressed: widget.onShare,
+          _actionWithCount(
+            icon: LucideIcons.send,
+            onTap: widget.onShare,
+            count: post.shares,
           ),
           const Spacer(),
         ],
@@ -900,28 +936,28 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _buildActionBar(FeedPost post, ThemeData theme) {
+    final likeCountVisible = !post.hideLikesCount || widget.isOwnPost;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Row(
         children: [
-          IconButton(
-            iconSize: 22,
-            icon: Icon(
-              post.isLiked ? Icons.favorite : LucideIcons.heart,
-              color: post.isLiked ? Colors.red : null,
-            ),
-            onPressed: widget.onLike,
+          _actionWithCount(
+            icon: post.isLiked ? Icons.favorite : LucideIcons.heart,
+            iconColor: post.isLiked ? Colors.red : null,
+            onTap: widget.onLike,
+            count: post.likes,
+            showCount: likeCountVisible,
           ),
           if (!post.commentsDisabled)
-            IconButton(
-              iconSize: 22,
-              icon: const Icon(LucideIcons.messageCircle),
-              onPressed: widget.onComment,
+            _actionWithCount(
+              icon: LucideIcons.messageCircle,
+              onTap: widget.onComment,
+              count: post.comments,
             ),
-          IconButton(
-            iconSize: 22,
-            icon: const Icon(LucideIcons.send),
-            onPressed: widget.onShare,
+          _actionWithCount(
+            icon: LucideIcons.send,
+            onTap: widget.onShare,
+            count: post.shares,
           ),
           const Spacer(),
           if (widget.onFollow != null)
@@ -977,15 +1013,6 @@ class _PostCardState extends State<PostCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!post.hideLikesCount || widget.isOwnPost)
-            Text(
-              '${post.likes} likes',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: primaryText,
-              ),
-            ),
           if (post.isAd) ...[
             if ((post.adCategory ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 6),

@@ -53,6 +53,20 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Map<String, dynamic>? _post;
   late bool _isTweet;
 
+  String _toId(dynamic v) => (v ?? '').toString().trim();
+
+  String _userIdFromMap(Map<String, dynamic>? user) {
+    if (user == null) return '';
+    return _toId(user['id'] ?? user['_id'] ?? user['user_id'] ?? user['uid']);
+  }
+
+  bool _isMineUser(Map<String, dynamic>? user, String? myId) {
+    final mid = (myId ?? '').trim();
+    if (mid.isEmpty) return false;
+    final uid = _userIdFromMap(user);
+    return uid.isNotEmpty && uid == mid;
+  }
+
   void _dispatchCommentsDelta(int delta) {
     if (!mounted || delta == 0) return;
     final store = StoreProvider.of<AppState>(context, listen: false);
@@ -388,6 +402,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
     final isReply = _replyParentId != null && _replyParentId!.isNotEmpty;
     final tempId = 'temp-${DateTime.now().millisecondsSinceEpoch}';
     final me = _me ?? await _svc.getUserById(uid);
+    var bumpedParentReplyCount = false;
     setState(() {
       _posting = true;
       if (!isReply) {
@@ -428,6 +443,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
               0;
           updatedParent['replies_count'] = rc + 1;
           _comments[parentIndex] = updatedParent;
+          bumpedParentReplyCount = true;
         }
       }
     });
@@ -478,7 +494,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
             final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
             return cid == parentId;
           });
-          if (parentIndex >= 0) {
+          if (!bumpedParentReplyCount && parentIndex >= 0) {
             final updatedParent = Map<String, dynamic>.from(_comments[parentIndex]);
             final rc = (updatedParent['replies_count'] as int?) ??
                 (updatedParent['replyCount'] as int?) ??
@@ -580,13 +596,69 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Future<void> _delete(Map<String, dynamic> c, int index) async {
     final id = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
     if (id.isEmpty) return;
+    if (id.startsWith('temp-')) {
+      setState(() => _comments.removeAt(index));
+      return;
+    }
     final ok = await _svc.deleteComment(id, isTweet: _isTweet);
     if (ok) {
       setState(() {
         _comments.removeAt(index);
       });
       _dispatchCommentsDelta(-1);
+      return;
     }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to delete comment')),
+    );
+  }
+
+  Future<void> _deleteReply(String parentId, int replyIndex) async {
+    final list = _replies[parentId];
+    if (list == null || replyIndex < 0 || replyIndex >= list.length) return;
+    final reply = Map<String, dynamic>.from(list[replyIndex]);
+    final id = _toId(reply['_id'] ?? reply['id']);
+    if (id.isEmpty) return;
+
+    if (id.startsWith('temp-')) {
+      setState(() {
+        final next = List<Map<String, dynamic>>.from(list);
+        next.removeAt(replyIndex);
+        _replies[parentId] = next;
+        _svc.setRepliesCache(parentId, next);
+      });
+      return;
+    }
+
+    final ok = await _svc.deleteComment(id, isTweet: _isTweet);
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        final next = List<Map<String, dynamic>>.from(list);
+        next.removeAt(replyIndex);
+        _replies[parentId] = next;
+        _svc.setRepliesCache(parentId, next);
+
+        final parentIndex = _comments.indexWhere((c) {
+          final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
+          return cid == parentId;
+        });
+        if (parentIndex >= 0) {
+          final updatedParent = Map<String, dynamic>.from(_comments[parentIndex]);
+          final rc = (updatedParent['replies_count'] as int?) ??
+              (updatedParent['replyCount'] as int?) ??
+              (updatedParent['repliesCount'] as int?) ??
+              0;
+          updatedParent['replies_count'] = (rc - 1).clamp(0, 1 << 31);
+          _comments[parentIndex] = updatedParent;
+        }
+      });
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to delete reply')),
+    );
   }
 
   Future<void> _loadRepliesFor(String commentId) async {
@@ -659,8 +731,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
     });
   }
 
-  void _onLongPressComment(Map<String, dynamic> c, bool isMine, int index) {
-    if (!isMine) return;
+  void _showDeleteSheet({
+    required VoidCallback onDelete,
+  }) {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -672,7 +745,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
               title: const Text('Delete'),
               onTap: () {
                 Navigator.of(ctx).pop();
-                _delete(c, index);
+                onDelete();
               },
             ),
             ListTile(
@@ -683,6 +756,16 @@ class _CommentsSheetState extends State<CommentsSheet> {
         ),
       ),
     );
+  }
+
+  void _onLongPressComment(Map<String, dynamic> c, bool isMine, int index) {
+    if (!isMine) return;
+    _showDeleteSheet(onDelete: () => _delete(c, index));
+  }
+
+  void _onLongPressReply(String parentId, int replyIndex, bool isMine) {
+    if (!isMine) return;
+    _showDeleteSheet(onDelete: () => _deleteReply(parentId, replyIndex));
   }
 
   String _relative(String dateString) {
@@ -815,21 +898,19 @@ class _CommentsSheetState extends State<CommentsSheet> {
                             final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
                             final isVerified = _commentVerified(c);
                             final u = _commentUserMap(c);
-                            final userIdValue = (u['id'] ?? u['_id'] ?? u['user_id'])?.toString();
+                            final userIdValue = _userIdFromMap(u);
                             return Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                               child: FutureBuilder<String?>(
                                 future: CurrentUser.id,
                                 builder: (ctx, snap) {
                                   final myId = snap.data;
-                                  final isMine = myId != null &&
-                                      ((u['id'] as String?) == myId ||
-                                          (u['_id'] as String?) == myId ||
-                                          (u['user_id'] as String?) == myId);
+                                  final isMine = _isMineUser(u, myId);
                                   final liked = _liked.contains(cid);
                                   final likesCount = (c['likes_count'] as int?) ?? 0;
                                   final isPending = c['pending'] == true;
                                   return GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
                                     onLongPress: () => _onLongPressComment(c, isMine, idx),
                                     child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -838,7 +919,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
                                               GestureDetector(
-                                                onTap: userIdValue != null && userIdValue.isNotEmpty
+                                                onTap: userIdValue.isNotEmpty
                                                     ? () => Navigator.of(context).pushNamed('/profile/$userIdValue')
                                                     : null,
                                                 child: _avatar(av, un.isNotEmpty ? un[0].toUpperCase() : 'U', size: 16, ring: av != null && av.isNotEmpty),
@@ -982,105 +1063,110 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                           padding: const EdgeInsets.only(left: 42, right: 8, bottom: 8),
                                           child: Column(
                                             crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: _replies[cid]!
-                                                .map((r) {
+                                            children: [
+                                              for (var replyIndex = 0; replyIndex < _replies[cid]!.length; replyIndex++)
+                                                () {
+                                                  final r = _replies[cid]![replyIndex];
                                                   final rn = _commentUsername(r);
                                                   final rav = _commentAvatar(r);
                                                   final rcontent = r['content'] as String? ?? r['text'] as String? ?? '';
                                                   final rcreated = r['created_at'] as String? ?? r['createdAt'] as String? ?? '';
                                                   final rIsVerified = _commentVerified(r);
                                                   final rUser = _commentUserMap(r);
-                                                  final rLiked = _liked.contains(
-                                                    (r['_id'] as String?) ?? (r['id'] as String?) ?? '',
-                                                  );
+                                                  final rIsMine = _isMineUser(rUser, myId);
+                                                  final rid = (r['_id'] as String?) ?? (r['id'] as String?) ?? '';
+                                                  final rLiked = _liked.contains(rid);
                                                   final rLikesCount = (r['likes_count'] as int?) ?? 0;
-                                                  final rUserIdValue =
-                                                      (rUser['id'] ?? rUser['_id'] ?? rUser['user_id'])?.toString();
-                                                  return Padding(
-                                                    padding: const EdgeInsets.symmetric(vertical: 6),
-                                                    child: Row(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        GestureDetector(
-                                                          onTap: rUserIdValue != null && rUserIdValue.isNotEmpty
-                                                              ? () => Navigator.of(context).pushNamed('/profile/$rUserIdValue')
-                                                              : null,
-                                                          child: _avatar(
-                                                              rav, rn.isNotEmpty ? rn[0].toUpperCase() : 'U', size: 14, ring: rav != null && rav.isNotEmpty),
-                                                        ),
-                                                        const SizedBox(width: 8),
-                                                        Expanded(
-                                                          child: Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            children: [
-                                                              GestureDetector(
-                                                                onTap: rUserIdValue != null && rUserIdValue.isNotEmpty
-                                                                    ? () => Navigator.of(context).pushNamed('/profile/$rUserIdValue')
-                                                                    : null,
-                                                                child: RichText(
-                                                                  text: TextSpan(
-                                                                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.15),
-                                                                    children: [
-                                                                      TextSpan(text: rn, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                                                      if (rIsVerified)
-                                                                        const WidgetSpan(
-                                                                          alignment: PlaceholderAlignment.middle,
-                                                                          child: Padding(
-                                                                            padding: EdgeInsets.only(left: 4, right: 4),
-                                                                            child: Icon(Icons.check_circle, size: 12, color: Colors.blueAccent),
-                                                                          ),
-                                                                        )
-                                                                      else
-                                                                        const TextSpan(text: '  '),
-                                                                      TextSpan(text: rcontent.isEmpty ? '-' : rcontent),
-                                                                    ],
+                                                  final rUserIdValue = _userIdFromMap(rUser);
+                                                  return GestureDetector(
+                                                    behavior: HitTestBehavior.opaque,
+                                                    onLongPress: () => _onLongPressReply(cid, replyIndex, rIsMine),
+                                                    child: Padding(
+                                                      padding: const EdgeInsets.symmetric(vertical: 6),
+                                                      child: Row(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                          GestureDetector(
+                                                            onTap: rUserIdValue.isNotEmpty
+                                                                ? () => Navigator.of(context).pushNamed('/profile/$rUserIdValue')
+                                                                : null,
+                                                            child: _avatar(
+                                                                rav, rn.isNotEmpty ? rn[0].toUpperCase() : 'U', size: 14, ring: rav != null && rav.isNotEmpty),
+                                                          ),
+                                                          const SizedBox(width: 8),
+                                                          Expanded(
+                                                            child: Column(
+                                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                                              children: [
+                                                                GestureDetector(
+                                                                  onTap: rUserIdValue.isNotEmpty
+                                                                      ? () => Navigator.of(context).pushNamed('/profile/$rUserIdValue')
+                                                                      : null,
+                                                                  child: RichText(
+                                                                    text: TextSpan(
+                                                                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.15),
+                                                                      children: [
+                                                                        TextSpan(text: rn, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                                                        if (rIsVerified)
+                                                                          const WidgetSpan(
+                                                                            alignment: PlaceholderAlignment.middle,
+                                                                            child: Padding(
+                                                                              padding: EdgeInsets.only(left: 4, right: 4),
+                                                                              child: Icon(Icons.check_circle, size: 12, color: Colors.blueAccent),
+                                                                            ),
+                                                                          )
+                                                                        else
+                                                                          const TextSpan(text: '  '),
+                                                                        TextSpan(text: rcontent.isEmpty ? '-' : rcontent),
+                                                                      ],
+                                                                    ),
                                                                   ),
                                                                 ),
-                                                              ),
-                                                              const SizedBox(height: 2),
-                                                              Row(
-                                                                children: [
-                                                                  Text(_relative(rcreated), style: theme.textTheme.bodySmall),
-                                                                  if (rLikesCount > 0) ...[
-                                                                    const SizedBox(width: 10),
-                                                                    Text(
-                                                                      '$rLikesCount ${rLikesCount == 1 ? 'like' : 'likes'}',
-                                                                      style: theme.textTheme.bodySmall,
-                                                                    ),
+                                                                const SizedBox(height: 2),
+                                                                Row(
+                                                                  children: [
+                                                                    Text(_relative(rcreated), style: theme.textTheme.bodySmall),
+                                                                    if (rLikesCount > 0) ...[
+                                                                      const SizedBox(width: 10),
+                                                                      Text(
+                                                                        '$rLikesCount ${rLikesCount == 1 ? 'like' : 'likes'}',
+                                                                        style: theme.textTheme.bodySmall,
+                                                                      ),
+                                                                    ],
                                                                   ],
-                                                                ],
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        ),
-                                                        SizedBox(
-                                                          width: 34,
-                                                          child: Column(
-                                                            mainAxisSize: MainAxisSize.min,
-                                                            children: [
-                                                              IconButton(
-                                                                onPressed: () => _toggleReplyLike(cid, _replies[cid]!.indexOf(r)),
-                                                                icon: Icon(
-                                                                  rLiked ? Icons.favorite : LucideIcons.heart,
-                                                                  size: 14,
-                                                                  color: rLiked ? Colors.red : theme.colorScheme.onSurfaceVariant,
                                                                 ),
-                                                                padding: EdgeInsets.zero,
-                                                                constraints: const BoxConstraints(),
-                                                              ),
-                                                              if (rLikesCount > 0)
-                                                                Text(
-                                                                  '$rLikesCount',
-                                                                  style: theme.textTheme.bodySmall,
-                                                                ),
-                                                            ],
+                                                              ],
+                                                            ),
                                                           ),
-                                                        ),
-                                                      ],
+                                                          SizedBox(
+                                                            width: 34,
+                                                            child: Column(
+                                                              mainAxisSize: MainAxisSize.min,
+                                                              children: [
+                                                                IconButton(
+                                                                  onPressed: () => _toggleReplyLike(cid, replyIndex),
+                                                                  icon: Icon(
+                                                                    rLiked ? Icons.favorite : LucideIcons.heart,
+                                                                    size: 14,
+                                                                    color: rLiked ? Colors.red : theme.colorScheme.onSurfaceVariant,
+                                                                  ),
+                                                                  padding: EdgeInsets.zero,
+                                                                  constraints: const BoxConstraints(),
+                                                                ),
+                                                                if (rLikesCount > 0)
+                                                                  Text(
+                                                                    '$rLikesCount',
+                                                                    style: theme.textTheme.bodySmall,
+                                                                  ),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
                                                     ),
                                                   );
-                                                })
-                                                .toList(),
+                                                }(),
+                                            ],
                                           ),
                                         ),
                                     ],

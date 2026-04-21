@@ -95,6 +95,12 @@ class FeedPost {
   });
 
   factory FeedPost.fromJson(Map<String, dynamic> json) {
+    int toInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v?.toString() ?? '') ?? 0;
+    }
+
     // 1. Handle the Media URL extraction (The fix for your 404 error)
     List<String> extractedUrls = [];
     final mediaList = json['mediaUrls'] as List? ?? json['media'] as List?;
@@ -169,7 +175,7 @@ class FeedPost {
           final rawAdj = item['adjustments'];
           if (rawAdj is Map) {
             final adj = Map<String, dynamic>.from(rawAdj);
-            int _toInt(dynamic v) {
+            int toIntAdj(dynamic v) {
               if (v is int) return v;
               if (v is num) return v.round();
               return int.tryParse(v?.toString() ?? '') ?? 0;
@@ -177,25 +183,25 @@ class FeedPost {
 
             final out = <String, int>{};
             if (adj.containsKey('brightness')) {
-              out['brightness'] = _toInt(adj['brightness']);
+              out['brightness'] = toIntAdj(adj['brightness']);
             }
             if (adj.containsKey('contrast')) {
-              out['contrast'] = _toInt(adj['contrast']);
+              out['contrast'] = toIntAdj(adj['contrast']);
             }
             if (adj.containsKey('saturation')) {
-              out['saturate'] = _toInt(adj['saturation']);
+              out['saturate'] = toIntAdj(adj['saturation']);
             }
             if (adj.containsKey('temperature')) {
-              out['sepia'] = _toInt(adj['temperature']);
+              out['sepia'] = toIntAdj(adj['temperature']);
             }
             if (adj.containsKey('fade')) {
-              out['opacity'] = _toInt(adj['fade']);
+              out['opacity'] = toIntAdj(adj['fade']);
             }
             if (adj.containsKey('opacity')) {
-              out['opacity'] = _toInt(adj['opacity']);
+              out['opacity'] = toIntAdj(adj['opacity']);
             }
             if (adj.containsKey('vignette')) {
-              out['vignette'] = _toInt(adj['vignette']);
+              out['vignette'] = toIntAdj(adj['vignette']);
             }
             mediaAdjustments.add(out);
           } else {
@@ -207,6 +213,29 @@ class FeedPost {
         }
       }
     }
+
+    final likesCount = toInt(
+      json['likesCount'] ??
+          json['likes_count'] ??
+          json['likeCount'] ??
+          json['like_count'] ??
+          json['likes'],
+    );
+    final commentsCount = toInt(
+      json['commentsCount'] ??
+          json['comments_count'] ??
+          json['commentCount'] ??
+          json['comment_count'] ??
+          json['comments'],
+    );
+    final sharesCount = toInt(
+      json['sharesCount'] ??
+          json['shares_count'] ??
+          json['shareCount'] ??
+          json['share_count'] ??
+          json['shares'],
+    );
+    final viewsCount = toInt(json['viewsCount'] ?? json['views_count'] ?? json['views']);
 
     return FeedPost(
       id: json['_id'] ?? json['id'] ?? '',
@@ -224,10 +253,10 @@ class FeedPost {
       caption: (json['caption'] ?? json['content']) as String?,
       hashtags: List<String>.from(json['hashtags'] ?? []),
       createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : DateTime.now(),
-      likes: json['likesCount'] ?? json['likes'] ?? 0,
-      comments: json['commentsCount'] ?? json['comments'] ?? 0,
-      views: json['views'] ?? 0,
-      shares: json['shares'] ?? 0,
+      likes: likesCount,
+      comments: commentsCount,
+      views: viewsCount,
+      shares: sharesCount,
       isLiked: json['isLiked'] ?? false,
       isSaved: json['isSaved'] ?? false,
       isFollowed: json['isFollowed'] ?? false,
