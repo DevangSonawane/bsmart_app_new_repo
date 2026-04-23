@@ -13,8 +13,10 @@ import '../services/user_account_service.dart';
 import '../models/user_account_model.dart';
 import '../theme/instagram_theme.dart';
 import '../widgets/clay_container.dart';
+import '../widgets/share_content_modal.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
+import '../utils/current_user.dart';
 import 'profile_screen.dart';
 import 'notifications_screen.dart';
 import 'story_viewer_screen.dart';
@@ -32,11 +34,12 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
   final FeedService _feedService = FeedService();
   final WalletService _walletService = WalletService();
   final SupabaseService _supabase = SupabaseService();
-  
+
   late final FeedController _feedController;
   final ScrollController _scrollController = ScrollController();
   bool _isHeaderVisible = true;
   double _lastScrollOffset = 0;
+  String _myUserId = '';
 
   @override
   void initState() {
@@ -47,6 +50,11 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
     );
     _scrollController.addListener(_onScroll);
     _feedController.loadInitial();
+    unawaited(() async {
+      final id = (await CurrentUser.id)?.toString().trim() ?? '';
+      if (!mounted) return;
+      setState(() => _myUserId = id);
+    }());
   }
 
   @override
@@ -116,6 +124,7 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
       (prev) => prev.copyWith(isFollowed: !prev.isFollowed),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -148,6 +157,17 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
 
     if (state.posts.isEmpty) {
       return _buildEmptyState();
+    }
+
+    final visiblePosts = state.posts.where(_shouldShowPostInFeed).toList();
+
+    if (visiblePosts.isEmpty) {
+      return _buildCenteredStatus(
+        title: 'No posts yet',
+        message: 'Follow people or refresh to see new posts.',
+        actionLabel: 'Refresh',
+        onAction: _feedController.refresh,
+      );
     }
 
     return RefreshIndicator(
@@ -186,18 +206,27 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
-                if (index < state.posts.length) {
-                  return _buildPostCard(state.posts[index]);
+                if (index < visiblePosts.length) {
+                  return _buildPostCard(visiblePosts[index]);
                 }
                 return null;
               },
-              childCount: state.posts.length,
+              childCount: visiblePosts.length,
             ),
           ),
           SliverToBoxAdapter(child: _buildBottomStatus(state)),
         ],
       ),
     );
+  }
+
+  bool _shouldShowPostInFeed(FeedPost post) {
+    if (post.isAd) return true;
+    final me = _myUserId.trim();
+    if (me.isNotEmpty && post.userId.trim() == me) return true;
+    if (!post.isAuthorPrivate) return true;
+    // Private author: only show if you follow them (or it's your own post above).
+    return post.isFollowed;
   }
 
   Widget _buildEmptyState() {
@@ -233,7 +262,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
         padding: EdgeInsets.all(16),
         child: Center(
           child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(InstagramTheme.primaryPink),
+            valueColor:
+                AlwaysStoppedAnimation<Color>(InstagramTheme.primaryPink),
           ),
         ),
       );
@@ -295,8 +325,10 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: InstagramTheme.primaryPink,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
               child: Text(actionLabel),
             ),
@@ -306,7 +338,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
     );
   }
 
-  Widget _buildInlineStatus(String message, String actionLabel, VoidCallback onAction) {
+  Widget _buildInlineStatus(
+      String message, String actionLabel, VoidCallback onAction) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: ClayContainer(
@@ -451,10 +484,13 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
           style: const TextStyle(color: InstagramTheme.textBlack),
           decoration: InputDecoration(
             hintText: 'Search',
-            hintStyle: TextStyle(color: InstagramTheme.textGrey.withValues(alpha: 0.5)),
-            prefixIcon: const Icon(Icons.search, size: 20, color: InstagramTheme.textGrey),
+            hintStyle: TextStyle(
+                color: InstagramTheme.textGrey.withValues(alpha: 0.5)),
+            prefixIcon: const Icon(Icons.search,
+                size: 20, color: InstagramTheme.textGrey),
             border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           ),
         ),
       ),
@@ -464,10 +500,12 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
   List<Widget> _buildHeaderActions() {
     return [
       IconButton(
-        icon: const Icon(Icons.favorite_border, color: InstagramTheme.textBlack),
+        icon:
+            const Icon(Icons.favorite_border, color: InstagramTheme.textBlack),
         onPressed: () {
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (context) => const NotificationsScreen()),
+            MaterialPageRoute(
+                builder: (context) => const NotificationsScreen()),
           );
         },
       ),
@@ -489,22 +527,22 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(LucideIcons.coins, color: InstagramTheme.primaryPink, size: 16),
+                    const Icon(LucideIcons.coins,
+                        color: InstagramTheme.primaryPink, size: 16),
                     const SizedBox(height: 2),
                     FutureBuilder<int>(
-                      future: _walletService.getCoinBalance(),
-                      initialData: 0,
-                      builder: (context, snapshot) {
-                        return Text(
-                          '${snapshot.data ?? 0}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: InstagramTheme.textBlack,
-                            fontSize: 11,
-                          ),
-                        );
-                      }
-                    ),
+                        future: _walletService.getCoinBalance(),
+                        initialData: 0,
+                        builder: (context, snapshot) {
+                          return Text(
+                            '${snapshot.data ?? 0}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: InstagramTheme.textBlack,
+                              fontSize: 11,
+                            ),
+                          );
+                        }),
                   ],
                 ),
               ],
@@ -524,7 +562,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: stories.length,
-        itemBuilder: (context, index) => _buildStoryItem(stories, stories[index]),
+        itemBuilder: (context, index) =>
+            _buildStoryItem(stories, stories[index]),
       ),
     );
   }
@@ -559,7 +598,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
                         image: DecorationImage(
-                          image: NetworkImage('https://via.placeholder.com/150'), // Replace with actual
+                          image: NetworkImage(
+                              'https://via.placeholder.com/150'), // Replace with actual
                           fit: BoxFit.cover,
                         ),
                       ),
@@ -585,7 +625,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                     decoration: BoxDecoration(
                       color: Colors.green,
                       shape: BoxShape.circle,
-                      border: Border.all(color: InstagramTheme.surfaceWhite, width: 2),
+                      border: Border.all(
+                          color: InstagramTheme.surfaceWhite, width: 2),
                     ),
                   ),
                 ),
@@ -595,8 +636,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
             Text(
               storyGroup.userName.split(' ').first,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontSize: 12,
-              ),
+                    fontSize: 12,
+                  ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -624,13 +665,14 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                 child: Text(
                   '${post.likes} likes',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
               ),
             if (post.caption != null)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 child: RichText(
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
@@ -674,7 +716,9 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                     radius: 20,
                     backgroundColor: InstagramTheme.dividerGrey,
                     child: Text(
-                      post.userName.isNotEmpty ? post.userName[0].toUpperCase() : '?',
+                      post.userName.isNotEmpty
+                          ? post.userName[0].toUpperCase()
+                          : '?',
                       style: const TextStyle(
                         color: InstagramTheme.primaryPink,
                         fontWeight: FontWeight.bold,
@@ -689,19 +733,23 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                       children: [
                         Text(
                           post.userName,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
                           overflow: TextOverflow.ellipsis,
                         ),
                         if (post.isAd) ...[
                           const SizedBox(height: 2),
                           Text(
                             'Sponsored',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontSize: 11,
-                              color: InstagramTheme.primaryPink,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  fontSize: 11,
+                                  color: InstagramTheme.primaryPink,
+                                ),
                           ),
                         ],
                       ],
@@ -712,7 +760,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.more_horiz, color: InstagramTheme.textGrey, size: 24),
+            icon: const Icon(Icons.more_horiz,
+                color: InstagramTheme.textGrey, size: 24),
             onPressed: () => _showMoreOptions(context, post),
           ),
         ],
@@ -739,25 +788,44 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
           IconButton(
             icon: Icon(
               post.isLiked ? Icons.favorite : Icons.favorite_border,
-              color: post.isLiked ? InstagramTheme.errorRed : InstagramTheme.textBlack,
+              color: post.isLiked
+                  ? InstagramTheme.errorRed
+                  : InstagramTheme.textBlack,
               size: 28,
             ),
             onPressed: () => _handleLike(post),
           ),
           if (!post.commentsDisabled)
             IconButton(
-              icon: const Icon(Icons.comment_outlined, color: InstagramTheme.textBlack, size: 28),
+              icon: const Icon(Icons.comment_outlined,
+                  color: InstagramTheme.textBlack, size: 28),
               onPressed: () {},
             ),
           IconButton(
-            icon: const Icon(Icons.send_outlined, color: InstagramTheme.textBlack, size: 28),
-            onPressed: () {},
+            icon: const Icon(Icons.send_outlined,
+                color: InstagramTheme.textBlack, size: 28),
+            onPressed: () {
+              final type = post.isTweet
+                  ? 'tweet'
+                  : post.isAd
+                      ? 'ad'
+                      : (post.mediaType == PostMediaType.reel ? 'reel' : 'post');
+              ShareContentModal.show(
+                context,
+                contentType: type,
+                contentId: post.id,
+              );
+            },
           ),
           const Spacer(),
           IconButton(
             icon: Icon(
-              post.isFollowed ? Icons.person_add_alt_1 : Icons.person_add_alt_1_outlined,
-              color: post.isFollowed ? InstagramTheme.primaryPink : InstagramTheme.textBlack,
+              post.isFollowed
+                  ? Icons.person_add_alt_1
+                  : Icons.person_add_alt_1_outlined,
+              color: post.isFollowed
+                  ? InstagramTheme.primaryPink
+                  : InstagramTheme.textBlack,
               size: 28,
             ),
             onPressed: () => _handleFollow(post),
@@ -765,7 +833,9 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
           IconButton(
             icon: Icon(
               post.isSaved ? Icons.bookmark : Icons.bookmark_border,
-              color: post.isSaved ? InstagramTheme.primaryPink : InstagramTheme.textBlack,
+              color: post.isSaved
+                  ? InstagramTheme.primaryPink
+                  : InstagramTheme.textBlack,
               size: 28,
             ),
             onPressed: () => _handleSave(post),
@@ -809,7 +879,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
               title: const Text('Report'),
               onTap: () {
                 Navigator.pop(context);
-                messenger.showSnackBar(const SnackBar(content: Text('Report submitted')));
+                messenger.showSnackBar(
+                    const SnackBar(content: Text('Report submitted')));
               },
             ),
             ListTile(
@@ -817,7 +888,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
               title: const Text('Not Interested'),
               onTap: () {
                 Navigator.pop(context);
-                messenger.showSnackBar(const SnackBar(content: Text('We\'ll show you less like this')));
+                messenger.showSnackBar(const SnackBar(
+                    content: Text('We\'ll show you less like this')));
               },
             ),
           ],

@@ -8,9 +8,17 @@ import { supabase } from '../lib/supabase';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
+import {
+  checkFollowStatus,
+  followUser,
+  unfollowUser,
+  cancelFollowRequest,
+  FOLLOW_STATUS_CHANGED_EVENT,
+} from '../services/followService';
 import ContentReportModal from './ContentReportModal';
 import EditContentModal from './EditContentModal';
 import OwnerContentOptionsModal from './OwnerContentOptionsModal';
+import ShareContentModal from './ShareContentModal';
 
 const BASE_URL = 'https://api.bebsmart.in';
 
@@ -24,7 +32,15 @@ const fmt = (n = 0) => {
 const isAdItem = (item) => item?.item_type === 'ad' || (item?.vendor_id && !item?.user_id?.username?.includes);
 const isTweetItem = (item) => item?.item_type === 'tweet';
 const getContentText = (item) => item?.content || item?.caption || '';
-const getCommentsCount = (item) => item?.commentsCount ?? item?.comments_count ?? 0;
+const getCommentsCount = (item) => {
+  const explicit =
+    item?.commentsCount
+    ?? item?.comments_count
+    ?? item?.commentCount
+    ?? item?.comment_count;
+  if (Number.isFinite(Number(explicit))) return Number(explicit);
+  return Array.isArray(item?.comments) ? item.comments.length : 0;
+};
 const getLikeCount = (item) => item?.likesCount ?? item?.likes_count ?? (Array.isArray(item?.likes) ? item.likes.length : 0);
 
 const adAuthHeaders = () => {
@@ -71,23 +87,14 @@ const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
 // ─── People Tag Overlay ────────────────────────────────────────────────────────
 const PeopleTagsOverlay = ({ tags, visible }) => {
   const [showTags, setShowTags] = useState(false);
+
   useEffect(() => {
-    if (visible && tags?.length > 0) {
-      const showT = setTimeout(() => setShowTags(true), 0);
-      const hideT = setTimeout(() => setShowTags(false), 2600);
-      return () => { clearTimeout(showT); clearTimeout(hideT); };
-    }
-  }, [visible, tags]);
+    if (!visible) setShowTags(false);
+  }, [visible]);
+
   if (!tags?.length) return null;
   return (
     <>
-      <style>{`
-        @keyframes igTagPop {
-          0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
-          70%  { transform: translate(-50%,-50%) scale(1.08); }
-          100% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
-        }
-      `}</style>
       <button
         className="absolute bottom-3 left-3 z-10 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 active:scale-90 transition-all"
         onClick={(e) => { e.stopPropagation(); setShowTags(s => !s); }}
@@ -96,30 +103,57 @@ const PeopleTagsOverlay = ({ tags, visible }) => {
           <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
         </svg>
       </button>
-      {showTags && tags.map((tag, idx) => {
-        const x = Math.min(88, Math.max(12, tag.x));
-        const y = Math.min(88, Math.max(12, tag.y));
-        const inBottom = y > 55;
-        
-        // Tags might be members or vendors
-        const profilePath = tag.role === 'vendor' 
-          ? `/vendor/${tag.user_id || ''}/public` 
-          : `/profile/${tag.user_id || ''}`;
+      {showTags ? (
+        <>
+          <div className="absolute inset-0 z-20 bg-black/35" onClick={(e) => { e.stopPropagation(); setShowTags(false); }} />
+          <div
+            className="absolute left-1/2 top-4 z-30 w-[calc(100%-24px)] max-w-[620px] -translate-x-1/2 overflow-hidden rounded-[22px] border border-white/10 bg-[#1f222b]/95 text-white shadow-2xl backdrop-blur-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative border-b border-white/10 px-5 py-3 text-center">
+              <p className="text-lg font-semibold">Tagged</p>
+              <button
+                type="button"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-3xl leading-none text-white/90 hover:text-white"
+                onClick={() => setShowTags(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="max-h-[48vh] overflow-y-auto">
+              {tags.map((tag, idx) => {
+                const profilePath = tag.role === 'vendor'
+                  ? `/vendor/${tag.user_id || ''}/public`
+                  : `/profile/${tag.user_id || ''}`;
+                const username = tag.username || 'user';
+                const fullName = tag.full_name || username;
+                const avatar = tag.avatar_url || tag.profile_picture || tag.avatar || '';
 
-        return (
-          <div key={tag._id || idx} className="absolute z-30 pointer-events-auto"
-            style={{ left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)', animation: `igTagPop 0.28s ${idx * 0.07}s cubic-bezier(0.34,1.56,0.64,1) both` }}>
-            <div className="flex flex-col items-center">
-              {!inBottom && <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-white/90 -mb-[1px]" />}
-              <Link to={profilePath} onClick={e => e.stopPropagation()}
-                className="block bg-white/90 backdrop-blur-sm text-black text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap shadow-xl hover:bg-white">
-                @{tag.username}
-              </Link>
-              {inBottom && <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90 -mt-[1px]" />}
+                return (
+                  <Link
+                    key={tag._id || tag.user_id || idx}
+                    to={profilePath}
+                    onClick={() => setShowTags(false)}
+                    className="flex items-center gap-3 px-5 py-3 hover:bg-white/5"
+                  >
+                    {avatar ? (
+                      <img src={avatar} alt={username} className="h-11 w-11 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-sm font-bold">
+                        {(username || 'U').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold leading-tight">{username}</p>
+                      <p className="truncate text-sm text-white/70 leading-tight">{fullName}</p>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </div>
-        );
-      })}
+        </>
+      ) : null}
     </>
   );
 };
@@ -127,33 +161,85 @@ const PeopleTagsOverlay = ({ tags, visible }) => {
 // ─── Follow Button ─────────────────────────────────────────────────────────────
 const FollowButton = ({ targetUserId }) => {
   const { userObject } = useSelector(s => s.auth);
-  const [following, setFollowing] = useState(false);
+  const [followState, setFollowState] = useState('not_following');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadStatus = async () => {
+      if (!userObject || !targetUserId || String(userObject._id || userObject.id) === String(targetUserId)) {
+        if (isMounted) setFollowState('not_following');
+        return;
+      }
+      try {
+        const status = await checkFollowStatus(targetUserId);
+        if (!isMounted) return;
+        if (status?.isFollowing || status?.status === 'following') {
+          setFollowState('following');
+        } else if (status?.isPending || status?.requestPending || status?.requested || status?.status === 'pending') {
+          setFollowState('requested');
+        } else {
+          setFollowState('not_following');
+        }
+      } catch {
+        if (isMounted) setFollowState('not_following');
+      }
+    };
+    loadStatus();
+    return () => { isMounted = false; };
+  }, [targetUserId, userObject]);
+
+  useEffect(() => {
+    const onFollowStatusChanged = (event) => {
+      const detail = event?.detail || {};
+      if (String(detail.userId || '') !== String(targetUserId || '')) return;
+      if (detail.state === 'following' || detail.state === 'requested' || detail.state === 'not_following') {
+        setFollowState(detail.state);
+      }
+    };
+    window.addEventListener(FOLLOW_STATUS_CHANGED_EVENT, onFollowStatusChanged);
+    return () => window.removeEventListener(FOLLOW_STATUS_CHANGED_EVENT, onFollowStatusChanged);
+  }, [targetUserId]);
 
   const handleClick = useCallback(async (e) => {
     e.stopPropagation();
     if (!userObject || loading) return;
-    const was = following;
-    setFollowing(!was);
+    const prev = followState;
     setLoading(true);
     try {
-      await api.post(was ? '/unfollow' : '/follow', { followedUserId: targetUserId });
+      if (followState === 'following') {
+        await unfollowUser(targetUserId);
+        setFollowState('not_following');
+      } else if (followState === 'requested') {
+        await cancelFollowRequest(targetUserId);
+        setFollowState('not_following');
+      } else {
+        const res = await followUser(targetUserId);
+        if (res?.status === 'pending' || res?.pending || res?.requested || res?.requestPending || res?.isPending) {
+          setFollowState('requested');
+        } else {
+          setFollowState('following');
+        }
+      }
     } catch {
-      setFollowing(was);
+      setFollowState(prev);
     } finally {
       setLoading(false);
     }
-  }, [userObject, loading, following, targetUserId]);
+  }, [userObject, loading, followState, targetUserId]);
+
+  const isFollowing = followState === 'following';
+  const isRequested = followState === 'requested';
 
   return (
     <button onClick={handleClick} disabled={loading}
       className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full border-2 transition-all duration-200 ${loading ? 'opacity-50 cursor-not-allowed' : ''} ${
-        following
+        isFollowing || isRequested
           ? 'border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-red-400 hover:text-red-400'
           : 'border-white text-black dark:text-white bg-white dark:bg-transparent dark:border-white hover:bg-gray-100 dark:hover:bg-white/10'
       }`}>
-      {loading ? <Loader2 size={11} className="animate-spin" /> : following ? <UserCheck size={11} /> : <UserPlus size={11} />}
-      <span>{following ? 'Following' : 'Follow'}</span>
+      {loading ? <Loader2 size={11} className="animate-spin" /> : isFollowing ? <UserCheck size={11} /> : <UserPlus size={11} />}
+      <span>{isFollowing ? 'Following' : isRequested ? 'Requested' : 'Follow'}</span>
     </button>
   );
 };
@@ -232,8 +318,19 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
   const containerRef  = useRef(null);
   const isVisibleRef  = useRef(false);
 
+  const toAbsoluteUrl = (value) => {
+    if (!value) return '';
+    const str = String(value);
+    if (str.startsWith('http')) return str;
+    const normalized = str.replace(/^\/+/, '');
+    return `${BASE_URL}/${normalized.startsWith('uploads/') ? normalized : `uploads/${normalized}`}`;
+  };
+
   const currentItem = mediaItems[currentIndex] || {};
-  const isVideo = currentItem.type === 'video' || currentItem.media_type === 'video';
+  const mediaSrc = toAbsoluteUrl(currentItem.fileUrl || currentItem.url || currentItem.fileName);
+  const isVideo = currentItem.type === 'video'
+    || currentItem.media_type === 'video'
+    || /\.(mp4|mov|webm|ogg|mkv|m4v|m3u8)(\?.*)?$/i.test(String(mediaSrc));
 
   const getThumbnailUrl = (item) => {
     if (!item) return null;
@@ -350,8 +447,8 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
           )}
           <video
             ref={videoRef}
-            key={`${currentItem.fileUrl || currentItem.url}-${currentIndex}`}
-            src={currentItem.fileUrl || currentItem.url}
+            key={`${mediaSrc}-${currentIndex}`}
+            src={mediaSrc}
             className="w-full h-auto max-h-[600px] object-contain"
             style={{ display: videoReady ? 'block' : 'none' }}
             muted={isMuted}
@@ -406,7 +503,7 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
       ) : (
         <div className="relative w-full">
           <img
-            src={currentItem.fileUrl || currentItem.url || currentItem.image}
+            src={mediaSrc || currentItem.image}
             alt="Post"
             className="w-full h-auto max-h-[600px] object-contain"
             style={currentItem.image_editing?.filter?.css ? { filter: currentItem.image_editing.filter.css } : {}}
@@ -483,6 +580,7 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // ── Time formatting ────────────────────────────────────────────────────────
   const [nowTs, setNowTs] = useState(0);
@@ -607,6 +705,8 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
   };
 
   const offer = isAd ? (post.product_offer?.[0] || null) : null;
+  const shareContentType = isTweet ? 'tweet' : isAd ? 'ad' : (post.type === 'reel' ? 'reel' : 'post');
+  const canShareInChat = Boolean(postId && ['post', 'reel', 'ad', 'tweet'].includes(shareContentType));
   const reportContentType = isAd ? 'ad' : isTweet ? 'tweet' : (post.type === 'reel' ? 'reel' : 'post');
   const reportContentUrl = isAd
     ? `${window.location.origin}/ads`
@@ -620,7 +720,7 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
 
   if (isTweet) {
     return (
-      <div className="max-w-[640px] mx-auto bg-white dark:bg-black border-b border-gray-200 dark:border-white/10 px-4 py-3">
+      <div className="max-w-[640px] mx-auto bg-white dark:bg-black border border-gray-200 dark:border-white/10 rounded-2xl px-4 py-3 mb-3">
         <div className="flex gap-3">
           <div className="flex flex-col items-center shrink-0">
             <Link to={profilePath} className="w-10 h-10 rounded-full overflow-hidden block bg-gray-100 dark:bg-gray-800">
@@ -692,7 +792,11 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
                 <MessageCircle size={20} />
               </button>
               
-              <button className="active:scale-90 transition-transform opacity-85 hover:opacity-100" aria-label="Share">
+              <button
+                onClick={() => { if (canShareInChat) setShowShareModal(true); }}
+                className="active:scale-90 transition-transform opacity-85 hover:opacity-100"
+                aria-label="Share"
+              >
                 <Send size={20} />
               </button>
             </div>
@@ -700,7 +804,7 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
             <div className="mt-2 flex items-center gap-3 text-[14px] text-gray-500 dark:text-gray-400">
               {commentsCount > 0 && (
                 <button onClick={() => onCommentClick?.(post)} className="hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
-                  {fmt(commentsCount)} {commentsCount === 1 ? 'reply' : 'replies'}
+                  {fmt(commentsCount)} {commentsCount === 1 ? 'comment' : 'comments'}
                 </button>
               )}
               {likeCount > 0 && (
@@ -717,6 +821,12 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
           contentType={reportContentType}
           contentId={postId}
           contentUrl={reportContentUrl}
+        />
+        <ShareContentModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          contentType={shareContentType}
+          contentId={postId}
         />
       </div>
     );
@@ -847,7 +957,11 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
             </button>
 
             {/* Share */}
-            <button className="hover:opacity-60 transition-opacity" aria-label="Share">
+            <button
+              onClick={() => { if (canShareInChat) setShowShareModal(true); }}
+              className="hover:opacity-60 transition-opacity"
+              aria-label="Share"
+            >
               <Send size={24} className="text-black dark:text-white" />
             </button>
           </div>
@@ -947,6 +1061,13 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
 
         <p className="text-gray-400 dark:text-gray-500 text-[11px] uppercase tracking-wider mt-1">{formattedDate}</p>
       </div>
+
+      <ShareContentModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        contentType={shareContentType}
+        contentId={postId}
+      />
     </div>
   );
 };

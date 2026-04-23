@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Heart, MessageCircle, Send, MoreHorizontal, Music2,
   Volume2, VolumeX, Bookmark, Loader2, X, Trash2, ChevronLeft
@@ -10,6 +10,7 @@ import api from '../lib/api';
 import ContentReportModal from '../components/ContentReportModal';
 import EditContentModal from '../components/EditContentModal';
 import OwnerContentOptionsModal from '../components/OwnerContentOptionsModal';
+import ShareContentModal from '../components/ShareContentModal';
 
 const BASE_URL = 'https://api.bebsmart.in/api';
 
@@ -53,6 +54,16 @@ const formatCount = (count) => {
   if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
   if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
   return count.toString();
+};
+
+const resolveCommentsCount = (item) => {
+  const explicit =
+    item?.commentsCount
+    ?? item?.comments_count
+    ?? item?.commentCount
+    ?? item?.comment_count;
+  if (Number.isFinite(Number(explicit))) return Number(explicit);
+  return Array.isArray(item?.comments) ? item.comments.length : 0;
 };
 
 const formatTimeAgo = (dateString) => {
@@ -138,7 +149,7 @@ const FollowButton = ({ userId, initialFollowing = false }) => {
 const ActionButtons = ({ reel, mobile = false, onLike, onComment, onShare, onSave, onMore }) => {
   const reelId = reel?._id || reel?.post_id;
   const likesCount = reel?.likes_count ?? 0;
-  const commentsCount = reel?.comments_count ?? reel?.comments?.length ?? 0;
+  const commentsCount = resolveCommentsCount(reel);
   const isLiked = !!reel?.is_liked_by_me;
   const isSaved = !!reel?.is_saved_by_me;
   const avatarUrl = reel?.user_id?.avatar_url;
@@ -533,6 +544,7 @@ const CommentsBottomSheet = ({ reel, onClose, userObject }) => (
 // ─── Main Reels Component ─────────────────────────────────────────────────────
 const Reels = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [reels, setReels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -544,6 +556,7 @@ const Reels = () => {
   const [reportReel, setReportReel] = useState(null);
   const [editReel, setEditReel] = useState(null);
   const [ownerOptionsReel, setOwnerOptionsReel] = useState(null);
+  const [shareReel, setShareReel] = useState(null);
   const [isPausedByUser, setIsPausedByUser] = useState(false);
   const [reelProgress, setReelProgress] = useState(0);
   const isAnimatingRef = useRef(false);
@@ -611,6 +624,22 @@ const Reels = () => {
     };
     fetchReels();
   }, []);
+
+  useEffect(() => {
+    const targetReelId = String(searchParams.get('reel') || '').trim();
+    if (!targetReelId || !reels.length) return;
+
+    const targetIndex = reels.findIndex((item) => (
+      String(item?._id || item?.post_id || '') === targetReelId
+    ));
+    if (targetIndex < 0) return;
+    if (targetIndex === currentIndex) return;
+
+    setCurrentIndex(targetIndex);
+    setCommentsOpen(false);
+    setIsPausedByUser(false);
+    setReelProgress(0);
+  }, [reels, searchParams, currentIndex]);
 
   useEffect(() => {
     setReelProgress(0);
@@ -703,10 +732,7 @@ const Reels = () => {
   };
 
   const handleShare = (reel) => {
-    const reelId = reel._id || reel.post_id;
-    const url = `${window.location.origin}/reels/${reelId}`;
-    if (navigator.share) navigator.share({ title: reel.caption || 'Check this reel!', url }).catch(() => {});
-    else navigator.clipboard?.writeText(url);
+    setShareReel(reel || null);
   };
 
   const getVideoUrl = (reel) => reel.media?.[0]?.fileUrl || null;
@@ -760,7 +786,7 @@ const Reels = () => {
 
   const currentReel = reels[currentIndex];
   const currentReelId = currentReel?._id || currentReel?.post_id;
-  const commentCount = currentReel?.comments_count ?? currentReel?.comments?.length ?? 0;
+  const commentCount = resolveCommentsCount(currentReel);
 
   return (
     <>
@@ -1010,6 +1036,12 @@ const Reels = () => {
           const updatedId = updated?._id || updated?.post_id;
           setReels((prev) => prev.map((reel) => ((reel._id || reel.post_id) === updatedId ? { ...reel, ...updated } : reel)));
         }}
+      />
+      <ShareContentModal
+        isOpen={!!shareReel}
+        onClose={() => setShareReel(null)}
+        contentType="reel"
+        contentId={shareReel?._id || shareReel?.post_id}
       />
 
       <style>{`

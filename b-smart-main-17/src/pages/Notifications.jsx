@@ -11,6 +11,7 @@ import {
   Loader2, ChevronLeft, ChevronRight, Bookmark, Star, Wifi, WifiOff
 } from "lucide-react";
 import { useNotificationSocket } from "../hooks/useNotificationSocket";
+import { acceptFollowRequest, declineFollowRequest } from "../services/followService";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const timeAgo = (d) => {
@@ -31,7 +32,9 @@ const timeAgo = (d) => {
 const TYPE_CONFIG = {
   like:    { icon: Heart,          bg: "bg-pink-100 dark:bg-pink-900/30",    color: "text-pink-500",    label: "Like"     },
   comment: { icon: MessageCircle,  bg: "bg-orange-100 dark:bg-orange-900/30",color: "text-orange-500",  label: "Comment"  },
-  follow:  { icon: UserPlus,       bg: "bg-blue-100 dark:bg-blue-900/30",    color: "text-blue-500",    label: "Follow"   },
+  follow:  { icon: UserPlus,       bg: "bg-pink-100 dark:bg-pink-900/30",    color: "text-pink-500",    label: "Follow"   },
+  follow_request:  { icon: UserPlus, bg: "bg-pink-100 dark:bg-pink-900/30", color: "text-pink-500", label: "Follow Request" },
+  follow_accepted: { icon: UserPlus, bg: "bg-orange-100 dark:bg-orange-900/30", color: "text-orange-500", label: "Request Accepted" },
   mention: { icon: AtSign,         bg: "bg-purple-100 dark:bg-purple-900/30",color: "text-purple-500",  label: "Mention"  },
   save:    { icon: Bookmark,       bg: "bg-teal-100 dark:bg-teal-900/30",    color: "text-teal-500",    label: "Save"     },
   reward:  { icon: Star,           bg: "bg-yellow-100 dark:bg-yellow-900/30",color: "text-yellow-500",  label: "Reward"   },
@@ -60,11 +63,13 @@ const WsIndicator = ({ status }) => {
 };
 
 // ─── Single row ───────────────────────────────────────────────────────────────
-const NotifRow = ({ notif, onMarkRead, onDelete }) => {
+const NotifRow = ({ notif, onMarkRead, onDelete, onFollowDecision, actionState }) => {
   const navigate = useNavigate();
   const cfg = getType(notif.type);
   const Icon = cfg.icon;
   const sender = notif.sender?.full_name || notif.sender?.username || "Someone";
+  const isFollowRequest = notif.type === "follow_request";
+  const isActing = Boolean(actionState);
 
   const handleClick = async () => {
     if (!notif.isRead) await onMarkRead(notif._id);
@@ -97,6 +102,32 @@ const NotifRow = ({ notif, onMarkRead, onDelete }) => {
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
           <span className="text-[11px] text-gray-400">{timeAgo(notif.createdAt)}</span>
         </div>
+        {isFollowRequest && (
+          <div className="mt-2.5 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isActing}
+              onClick={(e) => {
+                e.stopPropagation();
+                onFollowDecision?.(notif, "accept");
+              }}
+              className="rounded-lg bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange px-3 py-1.5 text-[11px] font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+            >
+              {actionState === "accept" ? "Accepting..." : "Accept"}
+            </button>
+            <button
+              type="button"
+              disabled={isActing}
+              onClick={(e) => {
+                e.stopPropagation();
+                onFollowDecision?.(notif, "decline");
+              }}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-[11px] font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              {actionState === "decline" ? "Declining..." : "Decline"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Hover actions */}
@@ -121,6 +152,7 @@ export default function Notifications() {
   const [activeTab, setActiveTab] = useState("all");
   const [page,      setPage]      = useState(1);
   const [markingAll, setMarkingAll] = useState(false);
+  const [followActionLoading, setFollowActionLoading] = useState({});
 
   const {
     notifications, unreadCount, total, loading, error, wsStatus,
@@ -135,6 +167,29 @@ export default function Notifications() {
     setMarkingAll(true);
     await markAllRead();
     setMarkingAll(false);
+  };
+
+  const handleFollowDecision = async (notif, decision) => {
+    const notifId = notif?._id;
+    const requesterId = notif?.sender?._id || notif?.sender?.id;
+    if (!notifId || !requesterId || !["accept", "decline"].includes(decision)) return;
+    setFollowActionLoading((prev) => ({ ...prev, [notifId]: decision }));
+    try {
+      if (decision === "accept") {
+        await acceptFollowRequest(requesterId);
+      } else {
+        await declineFollowRequest(requesterId);
+      }
+      await deleteNotif(notifId);
+    } catch (error) {
+      console.error(`Failed to ${decision} follow request`, error);
+    } finally {
+      setFollowActionLoading((prev) => {
+        const next = { ...prev };
+        delete next[notifId];
+        return next;
+      });
+    }
   };
 
   const getPageNums = () => {
@@ -220,7 +275,14 @@ export default function Notifications() {
           ) : (
             <div className="divide-y divide-gray-50 dark:divide-gray-800/80">
               {notifications.map(n => (
-                <NotifRow key={n._id} notif={n} onMarkRead={markRead} onDelete={deleteNotif} />
+                <NotifRow
+                  key={n._id}
+                  notif={n}
+                  onMarkRead={markRead}
+                  onDelete={deleteNotif}
+                  onFollowDecision={handleFollowDecision}
+                  actionState={followActionLoading[n._id] || ""}
+                />
               ))}
             </div>
           )}

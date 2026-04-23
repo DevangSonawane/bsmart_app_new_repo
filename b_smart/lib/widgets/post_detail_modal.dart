@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -48,6 +50,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
   bool _videoReady = false;
   bool _videoLoading = false;
   String? _activeVideoUrl;
+  final Map<String, double> _resolvedImageAspectRatios = <String, double>{};
+  final Set<String> _resolvingImageAspectRatioUrls = <String>{};
   late bool _isTweet;
 
   String? _extractId(dynamic value) {
@@ -606,6 +610,140 @@ class _PostDetailModalState extends State<PostDetailModal> {
         url.contains('.m3u8');
   }
 
+  double? _parseAspectRatio(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is num) {
+      final v = raw.toDouble();
+      return v > 0 ? v : null;
+    }
+    final s = raw.toString().trim();
+    if (s.isEmpty) return null;
+    if (s.contains(':') || s.contains('/')) {
+      final parts = s.split(RegExp(r'[:/]'));
+      if (parts.length >= 2) {
+        final a = double.tryParse(parts[0].trim());
+        final b = double.tryParse(parts[1].trim());
+        if (a != null && b != null && a > 0 && b > 0) return a / b;
+      }
+      return null;
+    }
+    final v = double.tryParse(s);
+    return (v != null && v > 0) ? v : null;
+  }
+
+  double? _aspectRatioFromItem(dynamic item) {
+    if (item is! Map) return null;
+    final map = item;
+    final rawAr = map['aspect_ratio'] ??
+        map['aspectRatio'] ??
+        (map['crop'] is Map ? (map['crop'] as Map)['aspect_ratio'] : null) ??
+        (map['crop'] is Map ? (map['crop'] as Map)['aspectRatio'] : null) ??
+        (map['crop_settings'] is Map
+            ? (map['crop_settings'] as Map)['aspect_ratio']
+            : null) ??
+        (map['crop_settings'] is Map
+            ? (map['crop_settings'] as Map)['aspectRatio']
+            : null);
+    final parsed = _parseAspectRatio(rawAr);
+    if (parsed != null) return parsed;
+
+    final w = map['width'] ?? map['w'];
+    final h = map['height'] ?? map['h'];
+    if (w is num && h is num && w > 0 && h > 0) {
+      return w.toDouble() / h.toDouble();
+    }
+    final ws = double.tryParse(w?.toString() ?? '');
+    final hs = double.tryParse(h?.toString() ?? '');
+    if (ws != null && hs != null && ws > 0 && hs > 0) return ws / hs;
+    return null;
+  }
+
+  bool _isReelLike(dynamic item) {
+    final postType = (_post?['type'] ?? _post?['media_type'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim();
+    if (postType == 'reel' || postType.contains('reel')) return true;
+    if (item is Map) {
+      final t = (item['type'] as String?)?.toLowerCase().trim() ?? '';
+      if (t == 'reel' || t.contains('reel')) return true;
+    }
+    return false;
+  }
+
+  double _currentMediaAspectRatio(dynamic currentItem) {
+    if (_isVideoMedia(currentItem)) {
+      final controller = _videoController;
+      if (_videoReady &&
+          _isControllerInitialized(controller) &&
+          controller != null) {
+        final ar = controller.value.aspectRatio;
+        if (ar > 0) return ar;
+      }
+      final fromMeta = _aspectRatioFromItem(currentItem);
+      if (fromMeta != null && fromMeta > 0) return fromMeta;
+      return _isReelLike(currentItem) ? (9 / 16) : (16 / 9);
+    }
+
+    final url = _mediaUrl(currentItem);
+    final resolved = _resolvedImageAspectRatios[url];
+    if (resolved != null && resolved > 0) return resolved;
+    return _aspectRatioFromItem(currentItem) ?? 4 / 5;
+  }
+
+  Future<void> _ensureCurrentImageAspectRatio() async {
+    if (!mounted) return;
+    final media = _mediaItems;
+    if (media.isEmpty || _currentMediaIndex >= media.length) return;
+    final item = media[_currentMediaIndex];
+    if (_isVideoMedia(item)) return;
+    final url = _mediaUrl(item);
+    if (url.isEmpty) return;
+    if (_resolvedImageAspectRatios.containsKey(url)) return;
+    if (_resolvingImageAspectRatioUrls.contains(url)) return;
+    _resolvingImageAspectRatioUrls.add(url);
+    try {
+      final token = await ApiClient().getToken();
+      final headers = <String, String>{};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      final provider = CachedNetworkImageProvider(
+        url,
+        headers: headers.isEmpty ? null : headers,
+      );
+      final stream = provider.resolve(const ImageConfiguration());
+      ImageStreamListener? listener;
+      final completer = Completer<ImageInfo>();
+      listener = ImageStreamListener(
+        (info, _) {
+          if (!completer.isCompleted) completer.complete(info);
+        },
+        onError: (error, stackTrace) {
+          if (!completer.isCompleted)
+            completer.completeError(error, stackTrace);
+        },
+      );
+      stream.addListener(listener);
+      try {
+        final info = await completer.future.timeout(const Duration(seconds: 8));
+        final w = info.image.width.toDouble();
+        final h = info.image.height.toDouble();
+        if (w > 0 && h > 0 && mounted) {
+          setState(() {
+            _resolvedImageAspectRatios[url] = w / h;
+          });
+        }
+      } finally {
+        stream.removeListener(listener);
+      }
+    } catch (_) {
+      // ignore
+    } finally {
+      _resolvingImageAspectRatioUrls.remove(url);
+    }
+  }
+
   Future<void> _syncCurrentMediaPlayback() async {
     final media = _mediaItems;
     if (media.isEmpty || _currentMediaIndex >= media.length) {
@@ -768,139 +906,176 @@ class _PostDetailModalState extends State<PostDetailModal> {
       );
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        PageView.builder(
-          controller: _mediaPageController,
-          itemCount: media.length,
-          onPageChanged: (index) {
-            setState(() {
-              _currentMediaIndex = index;
-            });
-            _syncCurrentMediaPlayback();
-          },
-          itemBuilder: (_, index) {
-            final item = media[index];
-            final url = _mediaUrl(item);
-            final isVideo = _isVideoMedia(item);
-            if (url.isEmpty) {
-              return const Center(
-                child:
-                    Icon(LucideIcons.imageOff, size: 64, color: Colors.white54),
-              );
-            }
-            if (isVideo) {
-              final isCurrent = index == _currentMediaIndex;
-              final controller = _videoController;
-              return Container(
-                color: Colors.black,
-                child: Center(
-                  child: isCurrent &&
-                          _videoReady &&
-                          _isControllerInitialized(controller)
-                      ? GestureDetector(
-                          onTap: () {
-                            if (!_isControllerUsable(controller)) return;
-                            if (_isControllerPlaying(controller)) {
-                              controller!.pause();
-                            } else {
-                              controller!.play();
-                            }
-                            if (mounted) setState(() {});
-                          },
-                          child: AspectRatio(
-                            aspectRatio: _controllerAspectRatio(controller),
-                            child: VideoPlayer(controller!),
-                          ),
-                        )
-                      : _videoLoading && isCurrent
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Icon(LucideIcons.video,
-                              size: 48,
-                              color: Colors.white.withValues(alpha: 0.7)),
+    final currentItem = media[_currentMediaIndex.clamp(0, media.length - 1)];
+    final clampedAspectRatio =
+        _currentMediaAspectRatio(currentItem).clamp(0.35, 4.0);
+
+    // Best-effort resolve of real image dimensions to avoid letterboxing.
+    unawaited(_ensureCurrentImageAspectRatio());
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        final maxH = constraints.maxHeight;
+        double w = maxW;
+        double h = w / clampedAspectRatio;
+        if (h > maxH) {
+          h = maxH;
+          w = h * clampedAspectRatio;
+        }
+
+        return Center(
+          child: SizedBox(
+            width: w,
+            height: h,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                PageView.builder(
+                  controller: _mediaPageController,
+                  itemCount: media.length,
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentMediaIndex = index;
+                    });
+                    _syncCurrentMediaPlayback();
+                    unawaited(_ensureCurrentImageAspectRatio());
+                  },
+                  itemBuilder: (_, index) {
+                    final item = media[index];
+                    final url = _mediaUrl(item);
+                    final isVideo = _isVideoMedia(item);
+                    if (url.isEmpty) {
+                      return const Center(
+                        child: Icon(LucideIcons.imageOff,
+                            size: 64, color: Colors.white54),
+                      );
+                    }
+                    if (isVideo) {
+                      final isCurrent = index == _currentMediaIndex;
+                      final controller = _videoController;
+                      return Container(
+                        color: Colors.black,
+                        child: Center(
+                          child: isCurrent &&
+                                  _videoReady &&
+                                  _isControllerInitialized(controller)
+                              ? GestureDetector(
+                                  onTap: () {
+                                    if (!_isControllerUsable(controller)) {
+                                      return;
+                                    }
+                                    if (_isControllerPlaying(controller)) {
+                                      controller!.pause();
+                                    } else {
+                                      controller!.play();
+                                    }
+                                    if (mounted) setState(() {});
+                                  },
+                                  child: AspectRatio(
+                                    aspectRatio:
+                                        _controllerAspectRatio(controller),
+                                    child: VideoPlayer(controller!),
+                                  ),
+                                )
+                              : _videoLoading && isCurrent
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white)
+                                  : Icon(LucideIcons.video,
+                                      size: 48,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.7)),
+                        ),
+                      );
+                    }
+                    return Container(
+                      color: Colors.black,
+                      child: Center(
+                        child: CachedNetworkImage(
+                          imageUrl: url,
+                          fit: BoxFit.contain,
+                          placeholder: (_, __) => const Center(
+                              child: CircularProgressIndicator(
+                                  color: Colors.white)),
+                          errorWidget: (_, __, ___) => const Icon(
+                              LucideIcons.imageOff,
+                              size: 64,
+                              color: Colors.white54),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            }
-            return Container(
-              color: Colors.black,
-              child: Center(
-                child: CachedNetworkImage(
-                  imageUrl: url,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => const Center(
-                      child: CircularProgressIndicator(color: Colors.white)),
-                  errorWidget: (_, __, ___) => const Icon(LucideIcons.imageOff,
-                      size: 64, color: Colors.white54),
-                ),
-              ),
-            );
-          },
-        ),
-        if (media.length > 1) ...[
-          Positioned(
-            left: 8,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: IconButton(
-                icon: const Icon(LucideIcons.chevronLeft, color: Colors.white),
-                onPressed: () {
-                  final next =
-                      (_currentMediaIndex - 1).clamp(0, media.length - 1);
-                  _mediaPageController.animateToPage(
-                    next,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOut,
-                  );
-                },
-              ),
-            ),
-          ),
-          Positioned(
-            right: 8,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: IconButton(
-                icon: const Icon(LucideIcons.chevronRight, color: Colors.white),
-                onPressed: () {
-                  final next =
-                      (_currentMediaIndex + 1).clamp(0, media.length - 1);
-                  _mediaPageController.animateToPage(
-                    next,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOut,
-                  );
-                },
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 12,
-            left: 0,
-            right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                media.length,
-                (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: index == _currentMediaIndex
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.45),
-                    shape: BoxShape.circle,
+                if (media.length > 1) ...[
+                  Positioned(
+                    left: 8,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: IconButton(
+                        icon: const Icon(LucideIcons.chevronLeft,
+                            color: Colors.white),
+                        onPressed: () {
+                          final next = (_currentMediaIndex - 1)
+                              .clamp(0, media.length - 1);
+                          _mediaPageController.animateToPage(
+                            next,
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOut,
+                          );
+                        },
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                  Positioned(
+                    right: 8,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: IconButton(
+                        icon: const Icon(LucideIcons.chevronRight,
+                            color: Colors.white),
+                        onPressed: () {
+                          final next = (_currentMediaIndex + 1)
+                              .clamp(0, media.length - 1);
+                          _mediaPageController.animateToPage(
+                            next,
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOut,
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 12,
+                    left: 0,
+                    right: 0,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        media.length,
+                        (index) => AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: index == _currentMediaIndex
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.45),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-        ],
-      ],
+        );
+      },
     );
   }
 

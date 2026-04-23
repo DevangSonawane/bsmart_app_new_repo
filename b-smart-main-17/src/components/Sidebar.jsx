@@ -14,6 +14,7 @@ import {
 import { useNotificationSocket } from '../hooks/useNotificationSocket';
 import { initChatSocket, removeChatSocketCallbacks } from '../socket/chatSocket';
 import { getConversations as getChatConversations } from '../services/chatService';
+import { acceptFollowRequest, declineFollowRequest } from '../services/followService';
 import { store } from '../store/store';
 import PostDetailModal from './PostDetailModal';
 
@@ -168,6 +169,7 @@ const Sidebar = ({ onOpenCreateModal }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showVendorNotValidated, setShowVendorNotValidated] = useState(false);
   const [nowTs, setNowTs] = useState(() => Date.now());
+  const [followRequestActionLoading, setFollowRequestActionLoading] = useState({});
   const dropdownRef = useRef(null);
   const moreDropdownRef = useRef(null);
   const notificationsRef = useRef(null);
@@ -210,10 +212,34 @@ const Sidebar = ({ onOpenCreateModal }) => {
     return `${Math.floor(h / 24)}d ago`;
   };
 
-  const NOTIF_ICON = { like: <Heart size={12} className="text-pink-500" />, comment: <MessageCircle size={12} className="text-orange-500" />, follow: <User size={12} className="text-blue-500" />, mention: <Bell size={12} className="text-purple-500" />, ad_approved: <Megaphone size={12} className="text-green-500" />, ad_rejected: <Megaphone size={12} className="text-red-500" />, ad_spend: <CreditCard size={12} className="text-amber-500" />, wallet_credit: <CreditCard size={12} className="text-emerald-500" /> };
-  const NOTIF_BG   = { like: "bg-pink-50 dark:bg-pink-900/20", comment: "bg-orange-50 dark:bg-orange-900/20", follow: "bg-blue-50 dark:bg-blue-900/20", mention: "bg-purple-50 dark:bg-purple-900/20", ad_approved: "bg-green-50 dark:bg-green-900/20", ad_rejected: "bg-red-50 dark:bg-red-900/20", ad_spend: "bg-amber-50 dark:bg-amber-900/20", wallet_credit: "bg-emerald-50 dark:bg-emerald-900/20" };
+  const NOTIF_ICON = { like: <Heart size={12} className="text-pink-500" />, comment: <MessageCircle size={12} className="text-orange-500" />, follow: <User size={12} className="text-pink-500" />, follow_request: <User size={12} className="text-pink-500" />, follow_accepted: <User size={12} className="text-orange-500" />, mention: <Bell size={12} className="text-purple-500" />, ad_approved: <Megaphone size={12} className="text-green-500" />, ad_rejected: <Megaphone size={12} className="text-red-500" />, ad_spend: <CreditCard size={12} className="text-amber-500" />, wallet_credit: <CreditCard size={12} className="text-emerald-500" /> };
+  const NOTIF_BG   = { like: "bg-pink-50 dark:bg-pink-900/20", comment: "bg-orange-50 dark:bg-orange-900/20", follow: "bg-pink-50 dark:bg-pink-900/20", follow_request: "bg-pink-50 dark:bg-pink-900/20", follow_accepted: "bg-orange-50 dark:bg-orange-900/20", mention: "bg-purple-50 dark:bg-purple-900/20", ad_approved: "bg-green-50 dark:bg-green-900/20", ad_rejected: "bg-red-50 dark:bg-red-900/20", ad_spend: "bg-amber-50 dark:bg-amber-900/20", wallet_credit: "bg-emerald-50 dark:bg-emerald-900/20" };
   const notifTypeIcon = (type) => NOTIF_ICON[type] || <Bell size={12} className="text-gray-500" />;
   const notifTypeBg   = (type) => NOTIF_BG[type]   || "bg-gray-100 dark:bg-gray-800";
+
+  const handleFollowRequestAction = async (notif, decision, event) => {
+    event.stopPropagation();
+    const notifId = notif?._id;
+    const requesterId = notif?.sender?._id || notif?.sender?.id;
+    if (!notifId || !requesterId || !['accept', 'decline'].includes(decision)) return;
+    setFollowRequestActionLoading((prev) => ({ ...prev, [notifId]: decision }));
+    try {
+      if (decision === 'accept') {
+        await acceptFollowRequest(requesterId);
+      } else {
+        await declineFollowRequest(requesterId);
+      }
+      await deleteNotif(notifId);
+    } catch (error) {
+      console.error(`Failed to ${decision} follow request:`, error);
+    } finally {
+      setFollowRequestActionLoading((prev) => {
+        const next = { ...prev };
+        delete next[notifId];
+        return next;
+      });
+    }
+  };
 
   const syncChatConversations = useCallback(async () => {
     if (!userId) return;
@@ -695,6 +721,26 @@ const Sidebar = ({ onOpenCreateModal }) => {
                           <div className="flex-1 min-w-0">
                             <p className={`text-xs leading-snug ${!n.isRead ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300'}`}>{n.message}</p>
                             <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">{timeAgo(n.createdAt)}</p>
+                            {n.type === 'follow_request' && (
+                              <div className="mt-2 flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={Boolean(followRequestActionLoading[n._id])}
+                                  onClick={(e) => handleFollowRequestAction(n, 'accept', e)}
+                                  className="rounded-md bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange px-2 py-1 text-[10px] font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+                                >
+                                  {followRequestActionLoading[n._id] === 'accept' ? 'Accepting...' : 'Accept'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(followRequestActionLoading[n._id])}
+                                  onClick={(e) => handleFollowRequestAction(n, 'decline', e)}
+                                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                                >
+                                  {followRequestActionLoading[n._id] === 'decline' ? 'Declining...' : 'Decline'}
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <button onClick={e => { e.stopPropagation(); deleteNotif(n._id); }}
                             className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30">

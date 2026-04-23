@@ -25,6 +25,11 @@ export const createGroupConversation = async (payload) => {
   return response.data;
 };
 
+export const shareContentToUsers = async (payload) => {
+  const response = await api.post('/chat/share', payload);
+  return response.data;
+};
+
 export const updateGroupConversation = async (conversationId, payload) => {
   const response = await api.patch(`/chat/groups/${conversationId}`, payload);
   return response.data;
@@ -37,6 +42,16 @@ export const addGroupMember = async (conversationId, userId) => {
 
 export const removeGroupMember = async (conversationId, userId) => {
   const response = await api.delete(`/chat/groups/${conversationId}/members/${userId}`);
+  return response.data;
+};
+
+export const leaveGroupConversation = async (conversationId) => {
+  const response = await api.post(`/chat/groups/${conversationId}/leave`);
+  return response.data;
+};
+
+export const deleteGroupConversationForUser = async (conversationId) => {
+  const response = await api.delete(`/chat/groups/${conversationId}/delete`);
   return response.data;
 };
 

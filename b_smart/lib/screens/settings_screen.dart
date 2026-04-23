@@ -29,7 +29,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
         setState(() => _loggingOut = false);
       }
     }
@@ -45,10 +46,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: theme.appBarTheme.backgroundColor,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(LucideIcons.arrowLeft, color: theme.appBarTheme.foregroundColor),
+          icon: Icon(LucideIcons.arrowLeft,
+              color: theme.appBarTheme.foregroundColor),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text('Settings', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: theme.appBarTheme.foregroundColor)),
+        title: Text('Settings',
+            style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 18,
+                color: theme.appBarTheme.foregroundColor)),
         centerTitle: true,
       ),
       body: ListView(
@@ -57,22 +63,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _sectionTitle('Preferences'),
           _darkModeTile(context, isDark),
           _floatingMessageTile(),
-          _settingTile(icon: LucideIcons.globe, label: 'Language / Region', subLabel: 'Default: English', onTap: () {}),
-          _settingTile(icon: LucideIcons.bell, label: 'Notifications', subLabel: 'Manage notifications', onTap: () {}),
+          _settingTile(
+              icon: LucideIcons.globe,
+              label: 'Language / Region',
+              subLabel: 'Default: English',
+              onTap: () {}),
+          _settingTile(
+              icon: LucideIcons.bell,
+              label: 'Notifications',
+              subLabel: 'Manage notifications',
+              onTap: () {}),
           const SizedBox(height: 24),
           _sectionTitle('Account'),
-          _settingTile(icon: LucideIcons.shield, label: 'Privacy', subLabel: 'Privacy settings', onTap: () {}),
+          _settingTile(
+            icon: LucideIcons.shield,
+            label: 'Privacy',
+            subLabel: 'Account privacy & follow requests',
+            onTap: () => Navigator.of(context).pushNamed('/privacy'),
+          ),
           _settingTile(
             icon: LucideIcons.lock,
             label: 'Security',
             subLabel: 'Password, 2FA',
             onTap: () => Navigator.of(context).pushNamed('/security'),
           ),
-          _settingTile(icon: LucideIcons.slidersHorizontal, label: 'Content Settings', subLabel: 'Moderation & restrictions', onTap: () {}),
+          _settingTile(
+              icon: LucideIcons.slidersHorizontal,
+              label: 'Content Settings',
+              subLabel: 'Moderation & restrictions',
+              onTap: () {}),
           const SizedBox(height: 24),
           _sectionTitle('About'),
-          _settingTile(icon: LucideIcons.info, label: 'About b Smart', subLabel: 'Version 1.0.0', onTap: () {}),
-          _settingTile(icon: LucideIcons.info, label: 'Help & Support', subLabel: 'Contact support', onTap: () {}),
+          _settingTile(
+              icon: LucideIcons.info,
+              label: 'About b Smart',
+              subLabel: 'Version 1.0.0',
+              onTap: () {}),
+          _settingTile(
+              icon: LucideIcons.info,
+              label: 'Help & Support',
+              subLabel: 'Contact support',
+              onTap: () {}),
           const SizedBox(height: 24),
           _sectionTitle('Actions'),
           Material(
@@ -88,17 +119,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Container(
                       width: 40,
                       height: 40,
-                      decoration: BoxDecoration(color: Colors.red.shade50, shape: BoxShape.circle),
-                      child: _loggingOut ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red.shade700)) : Icon(LucideIcons.logOut, color: Colors.red.shade700, size: 20),
+                      decoration: BoxDecoration(
+                          color: Colors.red.shade50, shape: BoxShape.circle),
+                      child: _loggingOut
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.red.shade700))
+                          : Icon(LucideIcons.logOut,
+                              color: Colors.red.shade700, size: 20),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(_loggingOut ? 'Logging out...' : 'Log Out', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red.shade700)),
+                          Text(_loggingOut ? 'Logging out...' : 'Log Out',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red.shade700)),
                           const SizedBox(height: 2),
-                          Text('Sign out of your account', style: TextStyle(fontSize: 12, color: theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600)),
+                          Text('Sign out of your account',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: theme.textTheme.bodyMedium?.color ??
+                                      Colors.grey.shade600)),
                         ],
                       ),
                     ),
@@ -115,7 +161,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: DesignTokens.instaPink, letterSpacing: 0.5)),
+      child: Text(title.toUpperCase(),
+          style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: DesignTokens.instaPink,
+              letterSpacing: 0.5)),
     );
   }
 
@@ -136,17 +187,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(color: DesignTokens.instaPink.withOpacity(0.12), shape: BoxShape.circle),
-                  child: Icon(isDark ? LucideIcons.moon : LucideIcons.sun, color: DesignTokens.instaPink, size: 20),
+                  decoration: BoxDecoration(
+                      color: DesignTokens.instaPink.withOpacity(0.12),
+                      shape: BoxShape.circle),
+                  child: Icon(isDark ? LucideIcons.moon : LucideIcons.sun,
+                      color: DesignTokens.instaPink, size: 20),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Dark mode', style: TextStyle(fontWeight: FontWeight.w500, color: theme.textTheme.bodyLarge?.color)),
+                      Text('Dark mode',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              color: theme.textTheme.bodyLarge?.color)),
                       const SizedBox(height: 2),
-                      Text(isDark ? 'On' : 'Off', style: TextStyle(fontSize: 12, color: theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600)),
+                      Text(isDark ? 'On' : 'Off',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: theme.textTheme.bodyMedium?.color ??
+                                  Colors.grey.shade600)),
                     ],
                   ),
                 ),
@@ -182,17 +243,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Container(
                       width: 40,
                       height: 40,
-                      decoration: BoxDecoration(color: DesignTokens.instaPink.withOpacity(0.12), shape: BoxShape.circle),
-                      child: const Icon(LucideIcons.messageCircle, color: DesignTokens.instaPink, size: 20),
+                      decoration: BoxDecoration(
+                          color: DesignTokens.instaPink.withOpacity(0.12),
+                          shape: BoxShape.circle),
+                      child: const Icon(LucideIcons.messageCircle,
+                          color: DesignTokens.instaPink, size: 20),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Floating messages', style: TextStyle(fontWeight: FontWeight.w500, color: theme.textTheme.bodyLarge?.color)),
+                          Text('Floating messages',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  color: theme.textTheme.bodyLarge?.color)),
                           const SizedBox(height: 2),
-                          Text(show ? 'Shown on main tabs' : 'Hidden', style: TextStyle(fontSize: 12, color: theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600)),
+                          Text(show ? 'Shown on main tabs' : 'Hidden',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: theme.textTheme.bodyMedium?.color ??
+                                      Colors.grey.shade600)),
                         ],
                       ),
                     ),
@@ -210,7 +281,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _settingTile({required IconData icon, required String label, String? subLabel, VoidCallback? onTap}) {
+  Widget _settingTile(
+      {required IconData icon,
+      required String label,
+      String? subLabel,
+      VoidCallback? onTap}) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -227,7 +302,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(color: DesignTokens.instaPink.withOpacity(0.12), shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                      color: DesignTokens.instaPink.withOpacity(0.12),
+                      shape: BoxShape.circle),
                   child: Icon(icon, color: DesignTokens.instaPink, size: 20),
                 ),
                 const SizedBox(width: 16),
@@ -235,15 +312,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(label, style: TextStyle(fontWeight: FontWeight.w500, color: theme.textTheme.bodyLarge?.color)),
+                      Text(label,
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              color: theme.textTheme.bodyLarge?.color)),
                       if (subLabel != null) ...[
                         const SizedBox(height: 2),
-                        Text(subLabel, style: TextStyle(fontSize: 12, color: theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600)),
+                        Text(subLabel,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: theme.textTheme.bodyMedium?.color ??
+                                    Colors.grey.shade600)),
                       ],
                     ],
                   ),
                 ),
-                Icon(LucideIcons.chevronRight, color: theme.iconTheme.color ?? Colors.grey.shade400, size: 20),
+                Icon(LucideIcons.chevronRight,
+                    color: theme.iconTheme.color ?? Colors.grey.shade400,
+                    size: 20),
               ],
             ),
           ),

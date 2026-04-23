@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Settings, Video, Menu, Grid, Plus, Heart, MessageCircle, Wallet, ArrowLeft, MoreHorizontal, Megaphone, Loader2, Eye, Building2, FileText, Hash, Calendar, Briefcase, Share2, Star } from 'lucide-react';
+import { Settings, Video, Menu, Grid, Plus, Heart, MessageCircle, Wallet, ArrowLeft, MoreHorizontal, Megaphone, Loader2, Eye, Building2, FileText, Hash, Calendar, Briefcase, Share2, Star, Lock } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { supabase } from '../lib/supabase';
@@ -16,6 +16,8 @@ import {
     followUser,
     getFollowCounts,
     unfollowUser,
+    cancelFollowRequest,
+    FOLLOW_STATUS_CHANGED_EVENT,
 } from '../services/followService';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -32,23 +34,23 @@ const Profile = () => {
     const dispatch = useDispatch();
     const { userId } = useParams();
     const { userObject: currentUser } = useSelector((state) => state.auth);
-    // Read wallet from Redux wallet slice (kept live by Layout.jsx)
     const walletBalance = useSelector((state) => state.wallet?.balance ?? 0);
 
     const [profileUser, setProfileUser] = useState(null);
     const isOwnProfile = !userId || (currentUser && (userId === currentUser.id || userId === currentUser._id));
 
-    const [activeTab, setActiveTab] = useState(null); // initialized after profileUser loads
+    const [activeTab, setActiveTab] = useState(null);
     const [userPosts, setUserPosts] = useState([]);
     const [loadingPosts, setLoadingPosts] = useState(true);
     const [selectedPost, setSelectedPost] = useState(null);
     const [selectedAd, setSelectedAd] = useState(null);
     const [showAvatarModal, setShowAvatarModal] = useState(false);
 
-    // Vendor-specific state
     const [userAds, setUserAds] = useState([]);
     const [loadingAds, setLoadingAds] = useState(false);
-    const [followed, setFollowed] = useState(false);
+
+    // Follow state: null = unknown, 'following', 'requested', 'not_following'
+    const [followState, setFollowState] = useState('not_following');
     const [followLoading, setFollowLoading] = useState(false);
     const [messageLoading, setMessageLoading] = useState(false);
     const [vendorInfo, setVendorInfo] = useState(null);
@@ -85,6 +87,11 @@ const Profile = () => {
         activeTab === 'posts' ? onlyPosts :
         userPosts;
     const profileTargetUserId = profileUser?._id || profileUser?.id || userId || '';
+
+    // Derived: is the profile private and content hidden from current user?
+    const isProfilePrivate = Boolean(profileUser?.isPrivate);
+    const isFollowing = followState === 'following';
+    const contentLocked = isProfilePrivate && !isOwnProfile && !isFollowing;
 
     // ── Fetch profile user ──────────────────────────────────────────────────
     useEffect(() => {
@@ -151,10 +158,12 @@ const Profile = () => {
             setActiveTab(profileUser.role === 'vendor' ? 'ads' : 'all');
         }
     }, [profileUser?.role]);
+
     useEffect(() => {
         const fetchPosts = async () => {
             const profileUserId = profileUser?._id || profileUser?.id;
             if (!profileUserId) return;
+            if (contentLocked) { setLoadingPosts(false); return; }
             try {
                 setLoadingPosts(true);
                 const response = await api.get(`/users/${profileUserId}/posts`);
@@ -171,7 +180,7 @@ const Profile = () => {
             }
         };
         fetchPosts();
-    }, [profileUser]);
+    }, [profileUser, contentLocked]);
 
     // ── Fetch ads (for vendor profiles) ────────────────────────────────────
     const fetchAds = useCallback(async () => {
@@ -180,7 +189,6 @@ const Profile = () => {
         setLoadingAds(true);
         try {
             let list = [];
-            // Try multiple endpoints to get this vendor's ads
             const attempts = [
                 () => api.get(`/ads`, { params: { vendor_id: profileUserId, status: 'active', limit: 50 } }),
                 () => api.get(`/ads/feed`, { params: { vendor_id: profileUserId, limit: 50 } }),
@@ -203,14 +211,12 @@ const Profile = () => {
         }
     }, [profileUser]);
 
-    // Auto-fetch ads when we know it's a vendor and the ads tab is opened
     useEffect(() => {
         if (profileUser?.role === 'vendor' && activeTab === 'ads' && userAds.length === 0) {
             fetchAds();
         }
     }, [activeTab, profileUser, fetchAds, userAds.length]);
 
-    // Also pre-fetch ads right after profile loads (so the count shows)
     useEffect(() => {
         if (profileUser?.role === 'vendor') {
             fetchAds();
@@ -232,23 +238,49 @@ const Profile = () => {
         };
         fetchVendorInfo();
     }, [profileUser?._id, profileUser?.id, profileUser?.role]); // eslint-disable-line
+
+    // ── Follow status: also detect 'requested' state ────────────────────────
     useEffect(() => {
         if (!profileTargetUserId || isOwnProfile) {
-            setFollowed(false);
+            setFollowState('not_following');
             return;
         }
 
         const loadFollowStatus = async () => {
             try {
                 const status = await checkFollowStatus(profileTargetUserId);
-                setFollowed(Boolean(status?.isFollowing));
+                if (status?.isFollowing || status?.status === 'following') {
+                    setFollowState('following');
+                } else if (
+                    status?.isPending
+                    || status?.requestPending
+                    || status?.requested
+                    || status?.status === 'pending'
+                ) {
+                    setFollowState('requested');
+                } else {
+                    setFollowState('not_following');
+                }
             } catch (error) {
                 console.error('Error checking follow status:', error);
-                setFollowed(false);
+                setFollowState('not_following');
             }
         };
 
         loadFollowStatus();
+    }, [isOwnProfile, profileTargetUserId]);
+
+    useEffect(() => {
+        if (!profileTargetUserId || isOwnProfile) return undefined;
+        const onFollowStatusChanged = (event) => {
+            const detail = event?.detail || {};
+            if (String(detail.userId || '') !== String(profileTargetUserId)) return;
+            if (detail.state === 'following' || detail.state === 'requested' || detail.state === 'not_following') {
+                setFollowState(detail.state);
+            }
+        };
+        window.addEventListener(FOLLOW_STATUS_CHANGED_EVENT, onFollowStatusChanged);
+        return () => window.removeEventListener(FOLLOW_STATUS_CHANGED_EVENT, onFollowStatusChanged);
     }, [isOwnProfile, profileTargetUserId]);
 
     const refreshProfileFollowCounts = useCallback(async () => {
@@ -269,22 +301,40 @@ const Profile = () => {
         }
     }, [profileTargetUserId]);
 
+    // ── Follow / Unfollow / Request / Cancel ──────────────────────────────
     const handleFollow = async () => {
         if (followLoading) return;
         if (!profileTargetUserId || isOwnProfile) return;
         setFollowLoading(true);
-        const was = followed;
+        const prev = followState;
         try {
-            if (was) {
+            if (followState === 'following') {
                 await unfollowUser(profileTargetUserId);
+                setFollowState('not_following');
+                await refreshProfileFollowCounts();
+            } else if (followState === 'requested') {
+                // Cancel the pending follow request
+                await cancelFollowRequest(profileTargetUserId);
+                setFollowState('not_following');
             } else {
-                await followUser(profileTargetUserId);
+                // Send follow (may return pending if account is private)
+                const result = await followUser(profileTargetUserId);
+                if (
+                    result?.status === 'pending'
+                    || result?.pending
+                    || result?.requested
+                    || result?.requestPending
+                    || result?.isPending
+                ) {
+                    setFollowState('requested');
+                } else {
+                    setFollowState('following');
+                    await refreshProfileFollowCounts();
+                }
             }
-            setFollowed(!was);
-            await refreshProfileFollowCounts();
         } catch (error) {
             console.error('Error updating follow status:', error);
-            setFollowed(was);
+            setFollowState(prev);
         } finally {
             setFollowLoading(false);
         }
@@ -398,11 +448,9 @@ const Profile = () => {
         return media.fileUrl || media.image || 'https://via.placeholder.com/300';
     };
 
-    // Get thumbnail for ad
     const getAdThumbnail = (ad) => {
         const m = ad.media?.[0];
         if (!m) return null;
-        // For video ads prefer the thumbnail image
         if (m.media_type === 'video' && m.thumbnails?.length > 0) {
             const t = m.thumbnails[0];
             if (t.fileUrl && t.fileUrl.startsWith('http')) return t.fileUrl;
@@ -477,9 +525,6 @@ const Profile = () => {
         }
     };
 
-
-
-
     if (!profileUser) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-black">
@@ -487,6 +532,34 @@ const Profile = () => {
             </div>
         );
     }
+
+    // ── Follow button label & style ──────────────────────────────────────────
+    const getFollowButtonLabel = () => {
+        if (followLoading) return <Loader2 size={14} className="animate-spin" />;
+        if (followState === 'following') {
+            // Check if they follow back — show "Follow Back" label on their profile when they follow you
+            if (profileUser?.followsYouBack) return 'Following';
+            return 'Following';
+        }
+        if (followState === 'requested') return 'Requested';
+        // If they follow you but you don't follow them: "Follow Back"
+        if (profileUser?.isFollowingYou) return 'Follow Back';
+        return 'Follow';
+    };
+
+    const getFollowButtonClass = (size = 'md') => {
+        const base = size === 'md'
+            ? 'px-6 py-2 text-sm font-bold rounded-xl flex items-center justify-center gap-1 transition-all'
+            : 'px-10 py-2.5 text-sm font-bold rounded-xl flex items-center gap-1.5 transition-all';
+
+        if (followState === 'requested') {
+            return `${base} bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700`;
+        }
+        if (followState === 'following') {
+            return `${base} bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700`;
+        }
+        return `${base} bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-md shadow-pink-500/20 hover:opacity-90 disabled:opacity-60`;
+    };
 
     const VerifiedBadge = () => (
         <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-blue-500 flex-shrink-0">
@@ -516,6 +589,17 @@ const Profile = () => {
             { key: 'posts', label: 'Posts', icon: <Grid size={22} /> },
             { key: 'reels', label: 'Reels', icon: <Video size={22} /> },
           ];
+
+    // ── Private Profile Wall ──────────────────────────────────────────────────
+    const PrivateProfileWall = () => (
+        <div className="flex flex-col items-center justify-center py-16 px-8 text-center bg-white dark:bg-black">
+            <div className="w-16 h-16 rounded-full border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center mb-4">
+                <Lock size={28} className="text-gray-400 dark:text-gray-500" />
+            </div>
+            <h3 className="font-semibold text-base text-gray-900 dark:text-white mb-1">This profile is private</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Follow to see their photos and videos.</p>
+        </div>
+    );
 
     // ── Vendor Business Info Card ─────────────────────────────────────────────
     const VendorBusinessCard = () => {
@@ -555,11 +639,13 @@ const Profile = () => {
 
     const renderContent = () => {
         if (activeTab === null) return null;
+        if (contentLocked) return <PrivateProfileWall />;
         if (activeTab === 'ads') return <AdsGrid />;
         return <PostGrid />;
     };
     const renderContentMobile = () => {
         if (activeTab === null) return null;
+        if (contentLocked) return <PrivateProfileWall />;
         if (activeTab === 'ads') return <AdsGrid containerClass="" />;
         return <PostGrid containerClass="" />;
     };
@@ -590,7 +676,6 @@ const Profile = () => {
                             <div key={ad._id || ad.id}
                                 className="aspect-square bg-gray-100 dark:bg-gray-900 relative group cursor-pointer overflow-hidden"
                                 onClick={() => setSelectedAd({ ...ad, item_type: 'ad' })}>
-                                {/* Active badge */}
                                 {ad.status === 'active' && (
                                     <div className="absolute top-1.5 left-1.5 z-10">
                                         <span className="text-[9px] font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full">AD</span>
@@ -608,7 +693,6 @@ const Profile = () => {
                                         <Megaphone size={28} className="text-orange-400 dark:text-gray-500" />
                                     </div>
                                 )}
-                                {/* Hover overlay */}
                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center justify-center gap-4 text-white font-bold">
                                     <div className="flex items-center gap-1.5"><Heart fill="white" size={16}/> {fmt(ad.likes_count || 0)}</div>
                                     <div className="flex items-center gap-1.5"><Eye size={16}/> {fmt(ad.views_count || ad.unique_views_count || 0)}</div>
@@ -621,7 +705,6 @@ const Profile = () => {
         </div>
     );
 
-    // ── Posts Grid ────────────────────────────────────────────────────────────
     const PostGrid = ({ containerClass = '' }) => (
         <div className={`grid grid-cols-3 gap-[1px] bg-gray-200 dark:bg-gray-800 ${containerClass}`}>
             {loadingPosts ? (
@@ -663,6 +746,36 @@ const Profile = () => {
         </div>
     );
 
+    // ── Follower mutual avatars (small stack shown under username) ────────────
+    const MutualFollowers = () => {
+        if (!profileUser?.mutual_followers?.length) return null;
+        const shown = profileUser.mutual_followers.slice(0, 3);
+        const extra = profileUser.mutual_followers_count - shown.length;
+        return (
+            <div className="flex items-center gap-2 mt-2 mb-1">
+                <div className="flex -space-x-2">
+                    {shown.map((f, i) => (
+                        <div key={i} className="w-5 h-5 rounded-full border-2 border-white dark:border-black overflow-hidden bg-gray-200">
+                            {f.avatar_url
+                                ? <img src={f.avatar_url} alt="" className="w-full h-full object-cover" />
+                                : <div className="w-full h-full bg-gradient-to-br from-orange-300 to-pink-400" />}
+                        </div>
+                    ))}
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Followed by{' '}
+                    {shown.map((f, i) => (
+                        <span key={i}>
+                            <span className="font-semibold text-gray-700 dark:text-gray-300">{f.username}</span>
+                            {i < shown.length - 1 ? ', ' : ''}
+                        </span>
+                    ))}
+                    {extra > 0 && ` and ${extra} more`}
+                </p>
+            </div>
+        );
+    };
+
     return (
         <div className="min-h-screen bg-white dark:bg-black md:bg-gray-50 md:dark:bg-black">
             {rewardToast && (
@@ -678,7 +791,6 @@ const Profile = () => {
             {/* ═══════ MOBILE ═══════ */}
             <div className="md:hidden flex flex-col h-[calc(120vh-60px)]">
 
-                {/* ── Fixed header block (username bar + profile info + tabs) ── */}
                 <div className="flex-shrink-0 bg-white dark:bg-black">
                     <div className="bg-white/95 dark:bg-black/95 backdrop-blur-sm border-b border-gray-100 dark:border-gray-800 px-4 py-3 flex justify-between items-center">
                         <div className="flex items-center gap-1 min-w-0">
@@ -687,11 +799,6 @@ const Profile = () => {
                                     <ArrowLeft size={24} className="text-gray-900 dark:text-white" />
                                 </button>
                             )}
-                            {/* Username only if not already on the right next to avatar? Actually, keep it small or just remove it if we want to match the image exactly. Let's keep it here but smaller. */}
-                            {/* <h1 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-1.5 truncate">
-                                {profileUser.username}
-                                {isVendor && vendorValidated && <VerifiedBadge />}
-                            </h1> */}
                         </div>
                         {isOwnProfile && (
                             <div className="flex items-center gap-4 text-gray-900 dark:text-white flex-shrink-0">
@@ -724,15 +831,18 @@ const Profile = () => {
 
                             {/* Info */}
                             <div className="flex flex-col flex-1 pt-1 min-w-0">
-                                {/* Row 1: Username */}
+                                {/* Username row */}
                                 <div className="flex items-center gap-2 mb-3">
                                     <h1 className="text-2xl font-light text-gray-900 dark:text-white truncate">
                                         {profileUser.username}
                                     </h1>
                                     {isVendor && vendorValidated && <VerifiedBadge />}
+                                    {isProfilePrivate && !isOwnProfile && (
+                                        <Lock size={14} className="text-gray-400 flex-shrink-0" />
+                                    )}
                                 </div>
 
-                                {/* Row 2: Actions */}
+                                {/* Actions row */}
                                 <div className="flex flex-wrap items-center gap-2 mb-4">
                                     {isOwnProfile ? (
                                         <>
@@ -757,9 +867,8 @@ const Profile = () => {
                                     ) : (
                                         <>
                                             <button onClick={handleFollow} disabled={followLoading}
-                                                className="px-6 py-2 bg-gradient-to-r from-orange-500 to-pink-500 text-white text-sm font-bold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center justify-center gap-1 shadow-md shadow-pink-500/20">
-                                                {followLoading && <Loader2 size={14} className="animate-spin" />}
-                                                {followed ? 'Following' : 'Follow'}
+                                                className={getFollowButtonClass('md')}>
+                                                {getFollowButtonLabel()}
                                             </button>
                                             <button type="button" onClick={handleShareProfile} className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm" aria-label="Share profile">
                                                 <Share2 size={18} />
@@ -809,7 +918,7 @@ const Profile = () => {
                                     )}
                                 </div>
 
-                                {/* Row 4: Stats */}
+                                {/* Stats */}
                                 <div className="flex gap-4 mb-4">
                                     {[
                                         { val: profileUser.posts_count ?? userPosts.length, label: 'posts' },
@@ -842,7 +951,7 @@ const Profile = () => {
                                     })}
                                 </div>
 
-                                {/* Row 5: Name + Bio */}
+                                {/* Name + Bio */}
                                 <div className="min-w-0">
                                     <div className="font-bold text-base text-gray-900 dark:text-white">{profileUser.full_name || profileUser.username}</div>
                                     {profileUser.bio && (
@@ -861,18 +970,22 @@ const Profile = () => {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Mutual followers */}
+                                <MutualFollowers />
                             </div>
                         </div>
 
-                        <div className="pb-4">
-                            <HighlightsRail
-                                users={profileUser ? [profileUser] : []}
-                                variant="profile"
-                                allowCreate={isOwnProfile}
-                            />
-                        </div>
+                        {!contentLocked && (
+                            <div className="pb-4">
+                                <HighlightsRail
+                                    users={profileUser ? [profileUser] : []}
+                                    variant="profile"
+                                    allowCreate={isOwnProfile}
+                                />
+                            </div>
+                        )}
 
-                        {/* Vendor Business Info (mobile) */}
                         {isVendor && vendorInfo && (
                             <div className="pb-2">
                                 <VendorBusinessCard />
@@ -880,22 +993,23 @@ const Profile = () => {
                         )}
                     </div>
 
-                    {/* Tabs — fixed, never scroll away */}
-                    <div className="flex border-t border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
-                        {tabConfig.map(tab => (
-                            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                                className={`flex-1 py-3 flex justify-center items-center border-b-[2px] transition-all ${
-                                    activeTab === tab.key
-                                        ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white'
-                                        : 'border-transparent text-gray-400 dark:text-gray-600'
-                                }`}>
-                                {tab.icon}
-                            </button>
-                        ))}
-                    </div>
+                    {/* Tabs — only show when not locked */}
+                    {!contentLocked && (
+                        <div className="flex border-t border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
+                            {tabConfig.map(tab => (
+                                <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                                    className={`flex-1 py-3 flex justify-center items-center border-b-[2px] transition-all ${
+                                        activeTab === tab.key
+                                            ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white'
+                                            : 'border-transparent text-gray-400 dark:text-gray-600'
+                                    }`}>
+                                    {tab.icon}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
-                {/* ── Scrollable grid only ── */}
                 <div className="flex-1 overflow-y-auto">
                     {renderContentMobile()}
                 </div>
@@ -905,7 +1019,6 @@ const Profile = () => {
             {/* ═══════ DESKTOP ═══════ */}
             <div className="hidden md:flex flex-col h-[calc(100vh-0px)]">
 
-                {/* Static header — doesn't scroll */}
                 <div className="flex-shrink-0 max-w-[935px] mx-auto w-full pt-12 px-8">
 
                     {/* Profile Header */}
@@ -934,13 +1047,16 @@ const Profile = () => {
 
                         {/* Info */}
                         <div className="flex flex-col flex-1 pt-2 min-w-0">
-                            {/* Row 1: Username */}
+                            {/* Username row */}
                             <div className="flex items-center gap-4 mb-4">
                                 <h2 className="text-4xl font-light text-gray-900 dark:text-white tracking-tight">{profileUser.username}</h2>
                                 {isVendor && vendorValidated && <VerifiedBadge />}
+                                {isProfilePrivate && !isOwnProfile && (
+                                    <Lock size={16} className="text-gray-400 flex-shrink-0" />
+                                )}
                             </div>
                             
-                            {/* Row 2: Actions */}
+                            {/* Actions row */}
                             <div className="flex items-center gap-2 mb-6">
                                 {isOwnProfile ? (
                                     <>
@@ -975,16 +1091,15 @@ const Profile = () => {
                                         >
                                             <MessageCircle size={20} />
                                         </button>
-                                        <Link to="/settings" className="w-12 h-12 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors shadow-sm hover:opacity-70 transition-opacity">
+                                        <Link to="/settings" className="w-12 h-12 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors shadow-sm hover:opacity-70">
                                             <Settings size={24} />
                                         </Link>
                                     </>
                                 ) : (
                                     <>
                                         <button onClick={handleFollow} disabled={followLoading}
-                                            className="px-10 py-2.5 bg-gradient-to-r from-orange-500 to-pink-500 text-white font-bold rounded-xl text-sm hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center gap-1.5 shadow-md shadow-pink-500/10">
-                                            {followLoading && <Loader2 size={14} className="animate-spin" />}
-                                            {followed ? 'Following' : 'Follow'}
+                                            className={getFollowButtonClass('lg')}>
+                                            {getFollowButtonLabel()}
                                         </button>
                                         <button
                                             type="button"
@@ -1052,7 +1167,7 @@ const Profile = () => {
                                 )}
                             </div>
 
-                            {/* Row 4: Stats */}
+                            {/* Stats */}
                             <div className="flex gap-10 mb-6">
                                 {[
                                     { val: profileUser.posts_count ?? userPosts.length, label: 'posts' },
@@ -1083,7 +1198,7 @@ const Profile = () => {
                                 })}
                             </div>
 
-                            {/* Row 5: Name + Bio */}
+                            {/* Name + Bio */}
                             <div className="max-w-md">
                                 <div className="font-bold text-xl text-gray-900 dark:text-white mb-1">{profileUser.full_name || profileUser.username}</div>
                                 {isVendor && isOwnProfile && (
@@ -1106,34 +1221,39 @@ const Profile = () => {
                                         ) : null}
                                     </div>
                                 )}
+                                {/* Mutual followers */}
+                                <MutualFollowers />
                             </div>
                         </div>
                     </div>
 
-                    <div className="px-4 pb-8">
-                        <HighlightsRail
-                            users={profileUser ? [profileUser] : []}
-                            variant="profile"
-                            allowCreate={isOwnProfile}
-                        />
-                    </div>
+                    {!contentLocked && (
+                        <div className="px-4 pb-8">
+                            <HighlightsRail
+                                users={profileUser ? [profileUser] : []}
+                                variant="profile"
+                                allowCreate={isOwnProfile}
+                            />
+                        </div>
+                    )}
 
-                    {/* Vendor Business Info */}
                     <VendorBusinessCard />
 
-                    {/* Desktop Tabs — fixed, never scroll away */}
-                    <div className="flex justify-center gap-14 border-t border-gray-200 dark:border-gray-800 -mt-px">
-                        {tabConfig.map(tab => (
-                            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                                className={`flex items-center gap-1.5 py-4 border-t-[1px] text-[11px] font-semibold tracking-widest uppercase transition-all ${
-                                    activeTab === tab.key
-                                        ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white'
-                                        : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                                }`}>
-                                {React.cloneElement(tab.icon, { size: 12 })} {tab.label}
-                            </button>
-                        ))}
-                    </div>
+                    {/* Tabs — only show when not locked */}
+                    {!contentLocked && (
+                        <div className="flex justify-center gap-14 border-t border-gray-200 dark:border-gray-800 -mt-px">
+                            {tabConfig.map(tab => (
+                                <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                                    className={`flex items-center gap-1.5 py-4 border-t-[1px] text-[11px] font-semibold tracking-widest uppercase transition-all ${
+                                        activeTab === tab.key
+                                            ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white'
+                                            : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                                    }`}>
+                                    {React.cloneElement(tab.icon, { size: 12 })} {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Scrollable grid only */}

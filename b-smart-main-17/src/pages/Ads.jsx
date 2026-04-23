@@ -12,6 +12,7 @@ import api from '../lib/api';
 import ContentReportModal from '../components/ContentReportModal';
 import EditContentModal from '../components/EditContentModal';
 import OwnerContentOptionsModal from '../components/OwnerContentOptionsModal';
+import ShareContentModal from '../components/ShareContentModal';
 
 const BASE_URL = 'https://api.bebsmart.in';
 const IMAGE_AD_DURATION = 15; // seconds for image ads
@@ -401,7 +402,7 @@ const FollowButton = ({ userId, mobile = false }) => {
 };
 
 // ─── Action Buttons ────────────────────────────────────────────────────────────
-const ActionButtons = ({ ad, likedIds, toggleLike, savedIds, toggleSave, mobile = false, onComment, onMore }) => (
+const ActionButtons = ({ ad, likedIds, toggleLike, savedIds, toggleSave, mobile = false, onComment, onMore, onShare }) => (
   <div className="flex flex-col items-center gap-4">
     {/* Like */}
     <button onClick={() => toggleLike(ad._id)} className="flex flex-col items-center gap-1">
@@ -431,7 +432,7 @@ const ActionButtons = ({ ad, likedIds, toggleLike, savedIds, toggleSave, mobile 
     </button>
 
     {/* Share */}
-    <button className="flex flex-col items-center gap-1">
+    <button onClick={() => onShare?.(ad)} className="flex flex-col items-center gap-1">
       <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
         ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
         <Send size={18} className={`-rotate-12 relative left-[-2px] ${mobile ? 'text-white' : 'text-gray-800 dark:text-white'}`} />
@@ -574,6 +575,7 @@ const Ads = ({ feedMode = 'user' }) => {
   const [reportAd, setReportAd] = useState(null);
   const [editAd, setEditAd] = useState(null);
   const [ownerOptionsAd, setOwnerOptionsAd] = useState(null);
+  const [shareAd, setShareAd] = useState(null);
 
   // Track which ad IDs the current user has already viewed this session.
   // Using a ref so it never triggers re-renders and persists across index changes.
@@ -724,6 +726,9 @@ const Ads = ({ feedMode = 'user' }) => {
       return;
     }
     setReportAd(ad);
+  };
+  const handleAdShare = (ad) => {
+    setShareAd(ad || null);
   };
 
   // Close dropdown on outside click
@@ -1915,6 +1920,7 @@ const Ads = ({ feedMode = 'user' }) => {
                             toggleSave={toggleSave}
                             onComment={openComments}
                             onMore={handleAdMore}
+                            onShare={handleAdShare}
                           />
                         </div>
                       )}
@@ -1936,6 +1942,7 @@ const Ads = ({ feedMode = 'user' }) => {
                 toggleSave={toggleSave}
                 onComment={openComments}
                 onMore={handleAdMore}
+                onShare={handleAdShare}
               />
             </div>
           )}
@@ -2205,6 +2212,12 @@ const Ads = ({ feedMode = 'user' }) => {
           const updatedId = updated?._id;
           setAds((prev) => prev.map((ad) => (ad._id === updatedId ? { ...ad, ...updated } : ad)));
         }}
+      />
+      <ShareContentModal
+        isOpen={!!shareAd}
+        onClose={() => setShareAd(null)}
+        contentType="ad"
+        contentId={shareAd?._id}
       />
 
       <style>{`

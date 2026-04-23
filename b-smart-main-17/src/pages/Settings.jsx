@@ -9,8 +9,16 @@ import {
   ArrowLeft, Globe2, Bell, Shield, Lock, SlidersHorizontal,
   Info, HelpCircle, ChevronRight, LogOut, Loader2, Moon, Sun,
   ShieldCheck, KeyRound, Mail, Eye, EyeOff, CheckCircle2,
-  AlertCircle, X, RefreshCw, Smartphone
+  AlertCircle, X, RefreshCw, Smartphone, Users, UserCheck,
+  UserX, Clock, Check,
 } from 'lucide-react';
+import {
+  getPrivacyStatus,
+  setAccountPrivacy,
+  getFollowRequests,
+  acceptFollowRequest,
+  declineFollowRequest,
+} from '../services/followService';
 
 const BASE = "https://api.bebsmart.in";
 
@@ -511,6 +519,296 @@ const SecurityScreen = ({ onBack, email, userId }) => {
   );
 };
 
+// ── Account Privacy Screen ────────────────────────────────────────────────────
+const PrivacyScreen = ({ onBack }) => {
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState(false);
+  const [requests, setRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [showRequests, setShowRequests] = useState(false);
+  const [actionLoading, setActionLoading] = useState({}); // { [userId]: 'accept'|'decline' }
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const status = await getPrivacyStatus();
+        setIsPrivate(status.isPrivate);
+        setPendingCount(status.pendingRequestsCount || 0);
+      } catch (e) {
+        console.error('Failed to load privacy status:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleTogglePrivacy = async () => {
+    if (toggling) return;
+    setToggling(true);
+    try {
+      const result = await setAccountPrivacy(!isPrivate);
+      setIsPrivate(result.isPrivate);
+      if (!result.isPrivate) {
+        // Going public auto-accepts all pending
+        setPendingCount(0);
+        setRequests([]);
+      }
+      showToast(result.message || `Account is now ${result.isPrivate ? 'private' : 'public'}`);
+    } catch (e) {
+      console.error('Failed to toggle privacy:', e);
+      showToast('Failed to update privacy settings.', 'error');
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const handleLoadRequests = async () => {
+    if (showRequests) {
+      setShowRequests(false);
+      return;
+    }
+    setLoadingRequests(true);
+    setShowRequests(true);
+    try {
+      const data = await getFollowRequests();
+      setRequests(data.requests || []);
+      setPendingCount(data.count || 0);
+    } catch (e) {
+      console.error('Failed to load follow requests:', e);
+      showToast('Failed to load follow requests.', 'error');
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  const handleAccept = async (requesterId) => {
+    setActionLoading(prev => ({ ...prev, [requesterId]: 'accept' }));
+    try {
+      await acceptFollowRequest(requesterId);
+      setRequests(prev => prev.filter(r => (r._id || r.id) !== requesterId));
+      setPendingCount(prev => Math.max(0, prev - 1));
+      showToast('Follow request accepted.');
+    } catch (e) {
+      showToast('Failed to accept request.', 'error');
+    } finally {
+      setActionLoading(prev => { const n = { ...prev }; delete n[requesterId]; return n; });
+    }
+  };
+
+  const handleDecline = async (requesterId) => {
+    setActionLoading(prev => ({ ...prev, [requesterId]: 'decline' }));
+    try {
+      await declineFollowRequest(requesterId);
+      setRequests(prev => prev.filter(r => (r._id || r.id) !== requesterId));
+      setPendingCount(prev => Math.max(0, prev - 1));
+      showToast('Follow request declined.');
+    } catch (e) {
+      showToast('Failed to decline request.', 'error');
+    } finally {
+      setActionLoading(prev => { const n = { ...prev }; delete n[requesterId]; return n; });
+    }
+  };
+
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-black pb-20">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-20 right-4 z-[80] rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
+          toast.type === 'success'
+            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+        }`}>
+          {toast.msg}
+        </div>
+      )}
+
+      <div className="sticky top-0 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center gap-3 z-40">
+        <button onClick={onBack} className="text-gray-800 dark:text-white">
+          <ArrowLeft size={22} />
+        </button>
+        <h1 className="text-base font-semibold dark:text-white">Account Privacy</h1>
+      </div>
+
+      <div className="max-w-2xl mx-auto pt-4 px-4 space-y-4">
+
+        {/* Private Account Toggle Card */}
+        <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-pink-50 dark:bg-gray-800 flex items-center justify-center text-[#fa3f5e]">
+              <Lock size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-gray-900 dark:text-white text-sm">Private Account</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {loading ? 'Loading…' : isPrivate ? 'Only approved followers can see your posts' : 'Anyone can follow and see your posts'}
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+              <input
+                type="checkbox"
+                checked={isPrivate}
+                onChange={handleTogglePrivacy}
+                disabled={loading || toggling}
+                className="sr-only peer"
+              />
+              <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${isPrivate ? 'bg-[#fa3f5e]' : 'bg-gray-300 dark:bg-gray-700'} peer-disabled:opacity-50`} />
+              <div className={`absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transform transition-transform duration-200 ${isPrivate ? 'translate-x-5' : 'translate-x-0'}`}>
+                {toggling && <Loader2 size={12} className="animate-spin text-gray-400 m-0.5" />}
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {/* Explanation Card */}
+        <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Users size={16} className="text-gray-500" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-800 dark:text-white">When your account is <span className="text-green-600 dark:text-green-400">public</span></p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
+                Your profile and posts can be seen by anyone. Anyone can follow you without approval.
+              </p>
+            </div>
+          </div>
+          <div className="h-px bg-gray-100 dark:bg-gray-800" />
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Lock size={16} className="text-gray-500" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-800 dark:text-white">When your account is <span className="text-[#fa3f5e]">private</span></p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
+                Only followers you approve can see your photos and videos. Existing followers won't be affected.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Follow Requests — only visible when account is private */}
+        {isPrivate && (
+          <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-sm overflow-hidden">
+            <button
+              onClick={handleLoadRequests}
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-pink-50 dark:bg-gray-800 flex items-center justify-center text-[#fa3f5e]">
+                  <Clock size={20} />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-gray-900 dark:text-white text-sm">Follow Requests</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {pendingCount > 0 ? `${pendingCount} pending request${pendingCount > 1 ? 's' : ''}` : 'No pending requests'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {pendingCount > 0 && (
+                  <span className="text-xs font-bold bg-[#fa3f5e] text-white w-5 h-5 rounded-full flex items-center justify-center">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
+                <ChevronRight size={16} className={`text-gray-400 transition-transform ${showRequests ? 'rotate-90' : ''}`} />
+              </div>
+            </button>
+
+            {showRequests && (
+              <div className="border-t border-gray-100 dark:border-gray-800">
+                {loadingRequests ? (
+                  <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
+                    <Loader2 size={18} className="animate-spin" />
+                    <span className="text-sm">Loading requests…</span>
+                  </div>
+                ) : requests.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center px-4">
+                    <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+                      <UserCheck size={22} className="text-gray-400" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">No pending requests</p>
+                    <p className="text-xs text-gray-400 mt-1">Follow requests will appear here</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {requests.map((req) => {
+                      const reqId = req._id || req.id;
+                      const isActing = actionLoading[reqId];
+                      return (
+                        <div key={reqId} className="flex items-center gap-3 px-4 py-3">
+                          {/* Avatar */}
+                          <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex-shrink-0">
+                            {req.profilePicture ? (
+                              <img src={req.profilePicture} alt={req.username} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-sm font-bold text-gray-500 dark:text-gray-400">
+                                {getInitials(req.username)}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">{req.username}</p>
+                            {req.bio && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{req.bio}</p>}
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                              {fmt(req.followers_count || 0)} followers
+                            </p>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => handleAccept(reqId)}
+                              disabled={!!isActing}
+                              className="px-3.5 py-1.5 bg-[#fa3f5e] text-white text-xs font-bold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-1"
+                            >
+                              {isActing === 'accept' ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => handleDecline(reqId)}
+                              disabled={!!isActing}
+                              className="px-3.5 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                            >
+                              {isActing === 'decline' ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const fmt = (n = 0) => {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+};
+
 // ── Main Settings ─────────────────────────────────────────────────────────────
 const settingsSections = [
   {
@@ -523,7 +821,7 @@ const settingsSections = [
   {
     title: 'Account',
     items: [
-      { icon: Shield, label: 'Privacy', subLabel: 'Privacy settings' },
+      { icon: Shield, label: 'Privacy', subLabel: 'Account privacy & follow requests', key: 'privacy' },
       { icon: Lock, label: 'Security', subLabel: 'Password & 2FA', key: 'security' },
       { icon: SlidersHorizontal, label: 'Content Settings', subLabel: 'Moderation & restrictions' },
     ],
@@ -543,7 +841,7 @@ const Settings = () => {
   const { mode } = useSelector((state) => state.theme);
   const { userObject } = useSelector((state) => state.auth);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [screen, setScreen] = useState(null); // null | "security"
+  const [screen, setScreen] = useState(null); // null | "security" | "privacy"
 
   const userEmail = userObject?.email || "";
   const userId = userObject?._id || userObject?.id;
@@ -563,6 +861,10 @@ const Settings = () => {
 
   if (screen === "security") {
     return <SecurityScreen onBack={() => setScreen(null)} email={userEmail} userId={userId} />;
+  }
+
+  if (screen === "privacy") {
+    return <PrivacyScreen onBack={() => setScreen(null)} />;
   }
 
   return (
@@ -605,7 +907,10 @@ const Settings = () => {
                 return (
                   <button
                     key={item.label}
-                    onClick={() => item.key === 'security' ? setScreen('security') : undefined}
+                    onClick={() => {
+                      if (item.key === 'security') setScreen('security');
+                      else if (item.key === 'privacy') setScreen('privacy');
+                    }}
                     className="w-full flex items-center justify-between p-4 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
                   >
                     <div className="flex items-center gap-4">

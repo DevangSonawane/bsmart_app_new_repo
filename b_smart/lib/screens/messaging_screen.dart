@@ -32,8 +32,10 @@ class _MessagingScreenState extends State<MessagingScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool _loading = true;
+  bool _onlineLoading = false;
   String? _error;
   List<Map<String, dynamic>> _conversations = const [];
+  Set<String> _onlineUserIds = const <String>{};
 
   @override
   void initState() {
@@ -51,6 +53,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
     if (!mounted) return;
     setState(() => _currentUserId = uid);
     await Future.wait([_loadMe(), _load()]);
+    await _refreshOnlineUsers();
     if (!mounted) return;
     final cid = widget.initialConversationId;
     if (cid != null && cid.isNotEmpty) {
@@ -169,12 +172,38 @@ class _MessagingScreenState extends State<MessagingScreen> {
       if (type == 'normal') {
         ChatUnreadService().setFromConversations(data);
       }
+      _refreshOnlineUsers();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _refreshAll() async {
+    await _load();
+  }
+
+  Future<void> _refreshOnlineUsers() async {
+    if (_onlineLoading) return;
+    final ids = _candidateOnlineUserIds().toList();
+    if (ids.isEmpty) {
+      if (!mounted) return;
+      setState(() => _onlineUserIds = const <String>{});
+      return;
+    }
+
+    if (mounted) setState(() => _onlineLoading = true);
+    try {
+      final list = await _chatApi.getOnlineUsers(ids: ids);
+      if (!mounted) return;
+      setState(() => _onlineUserIds = list.toSet());
+    } catch (_) {
+      // Best-effort: keep previous value on failure.
+    } finally {
+      if (mounted) setState(() => _onlineLoading = false);
     }
   }
 
@@ -236,7 +265,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
           const Divider(height: 1),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: _load,
+              onRefresh: _refreshAll,
               child: _loading
                   ? const Center(
                       child: CircularProgressIndicator(
@@ -446,7 +475,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
       if (_isCommunity(conv) || _isRequest(conv)) continue;
       final other = _otherParticipant(conv);
       if (other == null) continue;
-      final id = (other['_id'] ?? other['id'] ?? other['user_id'])?.toString();
+      final id = _userId(other);
       if (id == null || id.isEmpty) continue;
       if (uid != null && uid.isNotEmpty && id == uid) continue;
       if (seen.add(id)) users.add(other);
@@ -455,9 +484,56 @@ class _MessagingScreenState extends State<MessagingScreen> {
     return users;
   }
 
-  Widget _buildActiveUsersRow(BuildContext context) {
+  List<Map<String, dynamic>> _onlineActiveUsers() {
+    final online = _onlineUserIds;
+    if (online.isEmpty) return const <Map<String, dynamic>>[];
     final users = _activeUsers();
-    if (users.isEmpty) return const SizedBox.shrink();
+    return users.where((u) {
+      final id = _userId(u);
+      return id != null && id.isNotEmpty && online.contains(id);
+    }).toList();
+  }
+
+  Set<String> _candidateOnlineUserIds() {
+    final out = <String>{};
+    final uid = _currentUserId?.trim();
+    for (final conv in _conversations) {
+      if (_isCommunity(conv) || _isRequest(conv) || _isGroup(conv)) continue;
+      final other = _otherParticipant(conv);
+      final id = _userId(other);
+      if (id == null || id.isEmpty) continue;
+      if (uid != null && uid.isNotEmpty && id == uid) continue;
+      out.add(id);
+    }
+    return out;
+  }
+
+  Widget _buildActiveUsersRow(BuildContext context) {
+    final all = _activeUsers();
+    if (all.isEmpty) return const SizedBox.shrink();
+
+    final users = _onlineActiveUsers();
+    if (users.isEmpty) {
+      return SizedBox(
+        height: 52,
+        child: Center(
+          child: Text(
+            _onlineLoading
+                ? 'Checking who’s online…'
+                : 'No one online right now',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.color
+                          ?.withValues(alpha: 0.65) ??
+                      Colors.grey,
+                ),
+          ),
+        ),
+      );
+    }
 
     return SizedBox(
       height: 78,
@@ -470,17 +546,16 @@ class _MessagingScreenState extends State<MessagingScreen> {
           final user = users[index];
           final name = _userName(user);
           final avatarUrl = _avatar(user);
+          final id = _userId(user);
+          final online = id != null && _onlineUserIds.contains(id);
           return InkWell(
             onTap: () {
-              final userId =
-                  (user['_id'] ?? user['id'] ?? user['user_id'])?.toString();
+              final userId = _userId(user);
               if (userId == null || userId.isEmpty) return;
               final existing = _conversations.firstWhere(
                 (c) {
                   final other = _otherParticipant(c);
-                  final oid =
-                      (other?['_id'] ?? other?['id'] ?? other?['user_id'])
-                          ?.toString();
+                  final oid = _userId(other);
                   return oid == userId;
                 },
                 orElse: () => const <String, dynamic>{},
@@ -517,22 +592,24 @@ class _MessagingScreenState extends State<MessagingScreen> {
                             ),
                           ),
                         ),
-                      Positioned(
-                        right: -1,
-                        bottom: -1,
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2ECC71),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Theme.of(context).scaffoldBackgroundColor,
-                              width: 2,
+                      if (online)
+                        Positioned(
+                          right: -1,
+                          bottom: -1,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2ECC71),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color:
+                                    Theme.of(context).scaffoldBackgroundColor,
+                                width: 2,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -638,6 +715,13 @@ class _MessagingScreenState extends State<MessagingScreen> {
     return p0 is Map ? Map<String, dynamic>.from(p0) : null;
   }
 
+  String? _userId(Map<String, dynamic>? user) {
+    if (user == null) return null;
+    return (user['_id'] ?? user['id'] ?? user['user_id'] ?? user['userId'])
+        ?.toString()
+        .trim();
+  }
+
   String _userName(Map<String, dynamic>? user) {
     if (user == null) return 'User';
     return (user['full_name'] ?? user['name'] ?? user['username'] ?? 'User')
@@ -706,6 +790,12 @@ class _MessagingScreenState extends State<MessagingScreen> {
     final isCommunity = _isCommunity(conversation);
     final isGroup = _isGroup(conversation);
     final other = _otherParticipant(conversation);
+    final otherId = _userId(other);
+    final showOnlineDot = !isCommunity &&
+        !isGroup &&
+        otherId != null &&
+        otherId.isNotEmpty &&
+        _onlineUserIds.contains(otherId);
     final name = isCommunity
         ? (conversation['name']?.toString() ?? 'Community')
         : isGroup
@@ -751,29 +841,51 @@ class _MessagingScreenState extends State<MessagingScreen> {
             padding: const EdgeInsets.all(14),
             child: Row(
               children: [
-                if (avatarUrl != null && avatarUrl.trim().isNotEmpty)
-                  ClipOval(
-                    child: SafeNetworkImage(
-                        url: avatarUrl,
-                        width: 44,
-                        height: 44,
-                        fit: BoxFit.cover),
-                  )
-                else
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: isCommunity
-                        ? DesignTokens.instaOrange
-                        : DesignTokens.instaPink,
-                    child: Text(
-                      (name.trim().isNotEmpty ? name.trim() : 'G')
-                          .characters
-                          .first
-                          .toUpperCase(),
-                      style: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.w700),
-                    ),
-                  ),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    if (avatarUrl != null && avatarUrl.trim().isNotEmpty)
+                      ClipOval(
+                        child: SafeNetworkImage(
+                            url: avatarUrl,
+                            width: 44,
+                            height: 44,
+                            fit: BoxFit.cover),
+                      )
+                    else
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: isCommunity
+                            ? DesignTokens.instaOrange
+                            : DesignTokens.instaPink,
+                        child: Text(
+                          (name.trim().isNotEmpty ? name.trim() : 'G')
+                              .characters
+                              .first
+                              .toUpperCase(),
+                          style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    if (showOnlineDot)
+                      Positioned(
+                        right: -1,
+                        bottom: -1,
+                        child: Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2ECC71),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(context).cardColor,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(

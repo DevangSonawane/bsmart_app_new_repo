@@ -734,6 +734,17 @@ class _PostCardState extends State<PostCard> {
               padding: const EdgeInsets.only(top: 6),
               child: _buildTweetActionBar(post, theme),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+              child: Text(
+                _formatTimestamp(post.createdAt).toUpperCase(),
+                style: const TextStyle(
+                  color: Color(0xFF8A8A8A),
+                  fontSize: 10.5,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ),
           ],
         ),
       ),

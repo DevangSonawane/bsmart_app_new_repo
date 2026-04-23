@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import api from "../lib/api";
+import { emitFollowStatusChanged } from "../services/followService";
 
 const WS_BASE      = (import.meta.env.VITE_WS_URL || "wss://api.bebsmart.in");
 const ENABLE_NOTIFICATION_WS = import.meta.env.VITE_ENABLE_NOTIFICATION_WS === "true";
@@ -120,6 +121,10 @@ export function useNotificationSocket({ limit = 20, page = 1, typeFilter = "" } 
         setNotifications(prev => [msg.data, ...prev.slice(0, limit - 1)]);
         setUnreadCount(c => c + 1);
         setTotal(t => t + 1);
+        if (msg?.data?.type === "follow_accepted") {
+          const accepterId = msg?.data?.sender?._id || msg?.data?.sender?.id;
+          emitFollowStatusChanged({ userId: accepterId, state: "following" });
+        }
         break;
       case "notification_read":
         setNotifications(prev => prev.map(n => n._id === msg.id ? { ...n, isRead: true } : n));

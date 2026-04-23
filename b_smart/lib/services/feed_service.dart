@@ -326,8 +326,14 @@ class FeedService {
           final postId = item['_id'] as String? ?? item['id'] as String? ?? '';
           // The API nests the author info inside `user_id` as a populated object.
           Map<String, dynamic> user = {};
-          for (final key
-              in ['user_id', 'users', 'author', 'user', 'created_by', 'creator']) {
+          for (final key in [
+            'user_id',
+            'users',
+            'author',
+            'user',
+            'created_by',
+            'creator'
+          ]) {
             final val = item[key];
             if (val is Map) {
               user = Map<String, dynamic>.from(val);
@@ -810,10 +816,9 @@ class FeedService {
           String? resolvedUserName =
               (isAdItem ? (authorName ?? vendorName) : authorName);
           if (resolvedUserName == null || resolvedUserName.trim().isEmpty) {
-            final fallback = (user['full_name'] ??
-                    user['name'] ??
-                    item['full_name'])
-                ?.toString();
+            final fallback =
+                (user['full_name'] ?? user['name'] ?? item['full_name'])
+                    ?.toString();
             if (fallback != null && fallback.trim().isNotEmpty) {
               resolvedUserName = fallback;
             }
@@ -871,6 +876,23 @@ class FeedService {
             fullName: resolvedFullName,
             userAvatar: resolvedAvatar,
             isVerified: user['is_verified'] as bool? ?? false,
+            isAuthorPrivate: (() {
+              bool toBool(dynamic v) {
+                if (v is bool) return v;
+                if (v is num) return v != 0;
+                final s = v?.toString().trim().toLowerCase() ?? '';
+                return s == 'true' || s == '1' || s == 'yes';
+              }
+
+              return toBool(
+                user['is_private'] ??
+                    user['isPrivate'] ??
+                    user['private'] ??
+                    item['is_private'] ??
+                    item['isPrivate'] ??
+                    item['private'],
+              );
+            })(),
             mediaType: mediaType,
             mediaUrls: mediaUrls,
             thumbnailUrl: bustedThumb,
@@ -879,9 +901,8 @@ class FeedService {
             mediaAdjustments:
                 mediaAdjustments.isEmpty ? null : mediaAdjustments,
             caption: (isTweetItem
-                    ? (item['content'] ?? item['caption'])
-                    : item['caption'])
-                as String?,
+                ? (item['content'] ?? item['caption'])
+                : item['caption']) as String?,
             hashtags: ((item['tags'] as List<dynamic>?) ?? [])
                 .map((e) => e.toString())
                 .toList(),
@@ -900,7 +921,8 @@ class FeedService {
                     item['comment_count'],
               );
               if (explicit != null) return explicit;
-              if (item['comments'] is List) return (item['comments'] as List).length;
+              if (item['comments'] is List)
+                return (item['comments'] as List).length;
               return toInt(item['comments']);
             }(),
             views: 0,

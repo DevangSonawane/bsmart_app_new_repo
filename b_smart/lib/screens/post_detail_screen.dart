@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -48,6 +50,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _videoReady = false;
   bool _videoLoading = false;
   String? _activeVideoUrl;
+  final Map<String, double> _resolvedImageAspectRatios = <String, double>{};
+  final Set<String> _resolvingImageAspectRatioUrls = <String>{};
 
   bool _isReelPost() {
     final post = _post;
@@ -290,6 +294,59 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           (post['comments'] as int?) ??
           topLevelComments.length;
       _dispatchCommentsCount(serverCount);
+    }
+  }
+
+  Future<void> _ensureCurrentImageAspectRatio() async {
+    if (!mounted) return;
+    final media = _mediaItems;
+    if (media.isEmpty || _currentMediaIndex >= media.length) return;
+    final item = media[_currentMediaIndex];
+    if (_isVideoMedia(item)) return;
+    final url = _mediaUrl(item);
+    if (url.isEmpty) return;
+    if (_resolvedImageAspectRatios.containsKey(url)) return;
+    if (_resolvingImageAspectRatioUrls.contains(url)) return;
+    _resolvingImageAspectRatioUrls.add(url);
+    try {
+      final token = await ApiClient().getToken();
+      final headers = <String, String>{};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      final provider = CachedNetworkImageProvider(
+        url,
+        headers: headers.isEmpty ? null : headers,
+      );
+      final stream = provider.resolve(const ImageConfiguration());
+      ImageStreamListener? listener;
+      final completer = Completer<ImageInfo>();
+      listener = ImageStreamListener(
+        (info, _) {
+          if (!completer.isCompleted) completer.complete(info);
+        },
+        onError: (error, stackTrace) {
+          if (!completer.isCompleted)
+            completer.completeError(error, stackTrace);
+        },
+      );
+      stream.addListener(listener);
+      try {
+        final info = await completer.future.timeout(const Duration(seconds: 8));
+        final w = info.image.width.toDouble();
+        final h = info.image.height.toDouble();
+        if (w > 0 && h > 0 && mounted) {
+          setState(() {
+            _resolvedImageAspectRatios[url] = w / h;
+          });
+        }
+      } finally {
+        stream.removeListener(listener);
+      }
+    } catch (_) {
+      // ignore
+    } finally {
+      _resolvingImageAspectRatioUrls.remove(url);
     }
   }
 
@@ -733,6 +790,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return _isReelPost() ? (9 / 16) : (16 / 9);
     }
 
+    final url = _mediaUrl(currentItem);
+    final resolved = _resolvedImageAspectRatios[url];
+    if (resolved != null && resolved > 0) return resolved;
     return _aspectRatioFromItem(currentItem) ?? 4 / 5;
   }
 
@@ -758,7 +818,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         : null;
     final aspectRatio =
         currentItem == null ? 4 / 5 : _currentMediaAspectRatio(currentItem);
-    final clampedAspectRatio = aspectRatio.clamp(0.45, 2.2);
+    final clampedAspectRatio = aspectRatio.clamp(0.35, 4.0);
     if (media.isEmpty) {
       return AspectRatio(
         aspectRatio: 4 / 5,
@@ -784,6 +844,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 _currentMediaIndex = index;
               });
               _syncCurrentMediaPlayback();
+              unawaited(_ensureCurrentImageAspectRatio());
             },
             itemBuilder: (_, index) {
               final item = media[index];
@@ -1066,6 +1127,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final isOwner = ownerId != null &&
         _currentUserId != null &&
         ownerId.toString() == _currentUserId.toString();
+
+    // Kick off a best-effort aspect ratio resolve for images so the media section
+    // can size itself to the real dimensions (prevents side bars for non-4:5 posts).
+    unawaited(_ensureCurrentImageAspectRatio());
 
     return Scaffold(
       backgroundColor: pageBg,

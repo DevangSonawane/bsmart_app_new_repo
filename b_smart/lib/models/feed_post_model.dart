@@ -14,9 +14,10 @@ class FeedPost {
   final String? fullName;
   final String? userAvatar;
   final bool isVerified;
+  final bool isAuthorPrivate;
   final PostMediaType mediaType;
-  final List<String> mediaUrls; 
-  final String? thumbnailUrl; 
+  final List<String> mediaUrls;
+  final String? thumbnailUrl;
   final double? aspectRatio;
   final List<String?>? mediaFilters;
   final List<Map<String, int>>? mediaAdjustments;
@@ -25,7 +26,7 @@ class FeedPost {
   final DateTime createdAt;
   final int likes;
   final int comments;
-  final int views; 
+  final int views;
   final int shares;
   final bool isLiked;
   final bool isSaved;
@@ -57,6 +58,7 @@ class FeedPost {
     this.fullName,
     this.userAvatar,
     this.isVerified = false,
+    this.isAuthorPrivate = false,
     required this.mediaType,
     required this.mediaUrls,
     this.thumbnailUrl,
@@ -101,6 +103,16 @@ class FeedPost {
       return int.tryParse(v?.toString() ?? '') ?? 0;
     }
 
+    bool toBool(dynamic v) {
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      if (v is String) {
+        final s = v.trim().toLowerCase();
+        return s == 'true' || s == '1' || s == 'yes';
+      }
+      return false;
+    }
+
     // 1. Handle the Media URL extraction (The fix for your 404 error)
     List<String> extractedUrls = [];
     final mediaList = json['mediaUrls'] as List? ?? json['media'] as List?;
@@ -126,27 +138,38 @@ class FeedPost {
       }
     }
 
-      // 2. Map Media Type String to Enum
+    // 2. Map Media Type String to Enum
     PostMediaType type;
     switch (json['mediaType']?.toString().toLowerCase()) {
-      case 'video': type = PostMediaType.video; break;
-      case 'reel': type = PostMediaType.reel; break;
-      case 'carousel': type = PostMediaType.carousel; break;
-      default: type = PostMediaType.image;
+      case 'video':
+        type = PostMediaType.video;
+        break;
+      case 'reel':
+        type = PostMediaType.reel;
+        break;
+      case 'carousel':
+        type = PostMediaType.carousel;
+        break;
+      default:
+        type = PostMediaType.image;
     }
 
-    String thumbUrl = UrlHelper.normalizeUrl(json['thumbnailUrl'] ?? json['thumbnail']);
-    
+    String thumbUrl =
+        UrlHelper.normalizeUrl(json['thumbnailUrl'] ?? json['thumbnail']);
+
     // Fallback: Check if first media item is a map and has a thumbnail
-    if (thumbUrl.isEmpty && json['mediaUrls'] != null && (json['mediaUrls'] as List).isNotEmpty) {
+    if (thumbUrl.isEmpty &&
+        json['mediaUrls'] != null &&
+        (json['mediaUrls'] as List).isNotEmpty) {
       final first = (json['mediaUrls'] as List).first;
       if (first is Map) {
         final t = first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
         if (t is String) {
           thumbUrl = UrlHelper.normalizeUrl(t);
         } else if (t is List && t.isNotEmpty && t.first is Map) {
-           // Handle structured thumbnail object from reel payload
-          thumbUrl = UrlHelper.normalizeUrl((t.first as Map)['url'] ?? (t.first as Map)['fileUrl']);
+          // Handle structured thumbnail object from reel payload
+          thumbUrl = UrlHelper.normalizeUrl(
+              (t.first as Map)['url'] ?? (t.first as Map)['fileUrl']);
         }
       }
     }
@@ -163,7 +186,8 @@ class FeedPost {
           if (rawFilter is String) {
             filterName = rawFilter;
           } else if (rawFilter is Map) {
-            final name = rawFilter['name'] ?? rawFilter['filter'] ?? rawFilter['id'];
+            final name =
+                rawFilter['name'] ?? rawFilter['filter'] ?? rawFilter['id'];
             if (name != null) filterName = name.toString();
           }
           filterName ??= item['filterName']?.toString();
@@ -235,24 +259,37 @@ class FeedPost {
           json['share_count'] ??
           json['shares'],
     );
-    final viewsCount = toInt(json['viewsCount'] ?? json['views_count'] ?? json['views']);
+    final viewsCount =
+        toInt(json['viewsCount'] ?? json['views_count'] ?? json['views']);
 
     return FeedPost(
       id: json['_id'] ?? json['id'] ?? '',
       userId: json['user_id'] ?? json['userId'] ?? '',
       userName: json['username'] ?? json['userName'] ?? 'User',
       fullName: json['fullName'],
-      userAvatar: UrlHelper.normalizeUrl(json['userAvatar'] ?? json['avatar_url']),
+      userAvatar:
+          UrlHelper.normalizeUrl(json['userAvatar'] ?? json['avatar_url']),
       isVerified: json['isVerified'] ?? false,
+      isAuthorPrivate: toBool(
+        json['isAuthorPrivate'] ??
+            json['author_is_private'] ??
+            json['authorIsPrivate'] ??
+            json['is_private'] ??
+            json['isPrivate'],
+      ),
       mediaType: type,
       mediaUrls: extractedUrls.where((url) => url.isNotEmpty).toList(),
       thumbnailUrl: thumbUrl,
-      aspectRatio: json['aspectRatio'] != null ? double.tryParse(json['aspectRatio'].toString()) : null,
+      aspectRatio: json['aspectRatio'] != null
+          ? double.tryParse(json['aspectRatio'].toString())
+          : null,
       mediaFilters: mediaFilters.isEmpty ? null : mediaFilters,
       mediaAdjustments: mediaAdjustments.isEmpty ? null : mediaAdjustments,
       caption: (json['caption'] ?? json['content']) as String?,
       hashtags: List<String>.from(json['hashtags'] ?? []),
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : DateTime.now(),
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : DateTime.now(),
       likes: likesCount,
       comments: commentsCount,
       views: viewsCount,
@@ -264,17 +301,21 @@ class FeedPost {
       isShared: json['isShared'] ?? false,
       sharedFrom: json['sharedFrom'],
       isAd: json['isAd'] ?? false,
-      isTweet: (json['item_type'] ?? json['itemType'] ?? '').toString().toLowerCase() == 'tweet' || (json['isTweet'] ?? false) == true,
+      isTweet: (json['item_type'] ?? json['itemType'] ?? '')
+                  .toString()
+                  .toLowerCase() ==
+              'tweet' ||
+          (json['isTweet'] ?? false) == true,
       adTitle: json['adTitle'],
       adCompanyId: json['adCompanyId'],
       adCompanyName: json['adCompanyName'],
       adCategory: json['adCategory'] ?? json['category'],
       totalBudgetCoins:
           json['total_budget_coins'] ?? json['totalBudgetCoins'] ?? 0,
-      targetLocations: _asStringList(
-          json['targetLocations'] ?? json['target_location']),
-      targetLanguages: _asStringList(
-          json['targetLanguages'] ?? json['target_language']),
+      targetLocations:
+          _asStringList(json['targetLocations'] ?? json['target_location']),
+      targetLanguages:
+          _asStringList(json['targetLanguages'] ?? json['target_language']),
       commentsDisabled: json['turn_off_commenting'] ??
           json['commentsDisabled'] ??
           json['comments_disabled'] ??
@@ -282,8 +323,12 @@ class FeedPost {
       location: json['location'], // Map location
       latestCommentUser: json['latestCommentUser'],
       latestCommentText: json['latestCommentText'],
-      rawLikes: (json['likes_data'] as List?)?.map((e) => e as Map<String, dynamic>).toList(),
-      peopleTags: (json['people_tags'] as List?)?.map((e) => e as Map<String, dynamic>).toList(),
+      rawLikes: (json['likes_data'] as List?)
+          ?.map((e) => e as Map<String, dynamic>)
+          .toList(),
+      peopleTags: (json['people_tags'] as List?)
+          ?.map((e) => e as Map<String, dynamic>)
+          .toList(),
       hideLikesCount: json['hide_likes_count'] ??
           json['hideLikesCount'] ??
           json['hide_likes'] ??
@@ -311,6 +356,7 @@ class FeedPost {
     String? fullName,
     String? userAvatar,
     bool? isVerified,
+    bool? isAuthorPrivate,
     PostMediaType? mediaType,
     List<String>? mediaUrls,
     String? thumbnailUrl,
@@ -353,6 +399,7 @@ class FeedPost {
       fullName: fullName ?? this.fullName,
       userAvatar: userAvatar ?? this.userAvatar,
       isVerified: isVerified ?? this.isVerified,
+      isAuthorPrivate: isAuthorPrivate ?? this.isAuthorPrivate,
       mediaType: mediaType ?? this.mediaType,
       mediaUrls: mediaUrls ?? this.mediaUrls,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,

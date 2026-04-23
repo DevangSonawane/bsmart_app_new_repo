@@ -16,6 +16,7 @@ import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/comments_sheet.dart';
+import '../widgets/share_content_modal.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
 
 class ReelsScreen extends StatefulWidget {
@@ -798,11 +799,10 @@ class _ReelsScreenState extends State<ReelsScreen>
   Future<void> _shareCurrent() async {
     if (_reels.isEmpty) return;
     unawaited(_reelsService.incrementShares(_reels[_currentIndex].id));
-    final url = _buildShareUrl(_reels[_currentIndex].id);
-    await Clipboard.setData(ClipboardData(text: url));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reel link copied')),
+    await ShareContentModal.show(
+      context,
+      contentType: 'reel',
+      contentId: _reels[_currentIndex].id,
     );
   }
 

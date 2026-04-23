@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/auth_api.dart';
+import '../api/follow_requests_api.dart';
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
+import 'follow_requests_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -16,10 +18,14 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final NotificationService _notificationService = NotificationService();
+  final FollowRequestsApi _followRequestsApi = FollowRequestsApi();
   List<NotificationItem> _notifications = const [];
   bool _isLoading = true;
   String? _error;
   int _unreadCount = 0;
+  int _followRequestsCount = 0;
+  bool _isPrivateAccount = false;
+  bool _followRequestsLoading = false;
   int _page = 1;
   int _total = 0;
   String _activeTab = 'all';
@@ -45,10 +51,34 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _init() async {
     await _loadRole();
     await _loadNotifications();
+    unawaited(_loadFollowRequestsCount());
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _loadNotifications(force: true);
+      _loadFollowRequestsCount();
     });
+  }
+
+  Future<void> _loadFollowRequestsCount() async {
+    if (_followRequestsLoading) return;
+    setState(() => _followRequestsLoading = true);
+    try {
+      final status = await _followRequestsApi.getPrivacyStatus();
+      if (status != null) {
+        if (!mounted) return;
+        setState(() => _followRequestsCount = status.pendingRequestsCount);
+        setState(() => _isPrivateAccount = status.isPrivate);
+        return;
+      }
+
+      final page = await _followRequestsApi.getFollowRequests();
+      if (!mounted) return;
+      setState(() => _followRequestsCount = page.count);
+    } catch (_) {
+      // ignore; keep previous count
+    } finally {
+      if (mounted) setState(() => _followRequestsLoading = false);
+    }
   }
 
   Future<void> _loadRole() async {
@@ -138,8 +168,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final relatedId = notification.relatedId?.trim();
     if (relatedId != null && relatedId.isNotEmpty) {
       if (notification.typeKey.contains('reel')) {
-        Navigator.of(context).pushNamed('/reels',
-            arguments: {'initialReelId': relatedId});
+        Navigator.of(context)
+            .pushNamed('/reels', arguments: {'initialReelId': relatedId});
         return;
       }
       if (notification.typeKey.contains('post')) {
@@ -202,6 +232,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
                 child: _buildHeader(isDark),
               ),
+              const SizedBox(height: 14),
+              if (_isPrivateAccount)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildFollowRequestsTile(isDark),
+                ),
               const SizedBox(height: 16),
               _buildTabs(isDark),
               const SizedBox(height: 14),
@@ -211,6 +247,112 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFollowRequestsTile(bool isDark) {
+    final theme = Theme.of(context);
+    final border =
+        (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08);
+    final bg = isDark ? const Color(0xFF111827) : Colors.white;
+    final secondary = theme.colorScheme.onSurfaceVariant
+        .withValues(alpha: isDark ? 0.9 : 1.0);
+    final count = _followRequestsCount;
+
+    return InkWell(
+      onTap: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const FollowRequestsScreen()),
+        );
+        if (!mounted) return;
+        unawaited(_loadFollowRequestsCount());
+        unawaited(_loadNotifications(force: true));
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF2563EB), Color(0xFF60A5FA)],
+                ),
+              ),
+              child: const Icon(
+                LucideIcons.userPlus,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Follow requests',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _followRequestsLoading
+                        ? 'Checking…'
+                        : (count == 0
+                            ? 'No pending requests'
+                            : '$count pending'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: secondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (count > 0 && !_followRequestsLoading)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$count',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
+              ),
+            const SizedBox(width: 8),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 18,
+              color: secondary,
+            ),
+          ],
         ),
       ),
     );
@@ -260,14 +402,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             children: [
               Text(
                 title,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
               Row(
                 children: [
                   if (_isVendor)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFEDD5),
                         borderRadius: BorderRadius.circular(999),
@@ -285,7 +429,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     const SizedBox(width: 8),
                     Text(
                       '$_unreadCount unread',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2563EB)),
                     ),
                   ],
                   const SizedBox(width: 8),
@@ -314,9 +461,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   backgroundColor: _isVendor
                       ? const Color(0xFFF97316)
                       : const Color(0xFF2563EB),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  textStyle: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w700),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
               ),
           ],
@@ -490,7 +640,8 @@ class _NotificationRow extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final isUnread = !notification.isRead;
     final sender = notification.sender ?? const <String, dynamic>{};
-    final name = (sender['full_name'] ?? sender['username'] ?? 'Someone').toString();
+    final name =
+        (sender['full_name'] ?? sender['username'] ?? 'Someone').toString();
     final avatar = sender['avatar_url']?.toString();
 
     return InkWell(
@@ -499,13 +650,12 @@ class _NotificationRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
           color: isUnread
-              ? (isDark
-                  ? const Color(0xFF0B2239)
-                  : const Color(0xFFEFF6FF))
+              ? (isDark ? const Color(0xFF0B2239) : const Color(0xFFEFF6FF))
               : Colors.transparent,
           border: Border(
             bottom: BorderSide(
-              color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06),
+              color: (isDark ? Colors.white : Colors.black)
+                  .withValues(alpha: 0.06),
             ),
           ),
         ),
@@ -577,7 +727,8 @@ class _NotificationRow extends StatelessWidget {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: config.bgColor,
                           borderRadius: BorderRadius.circular(999),
@@ -606,7 +757,8 @@ class _NotificationRow extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
                         '📢 ${notification.metadata?['adTitle']}',
-                        style: const TextStyle(fontSize: 11, color: Color(0xFFF97316)),
+                        style: const TextStyle(
+                            fontSize: 11, color: Color(0xFFF97316)),
                       ),
                     ),
                 ],
@@ -625,7 +777,8 @@ class _NotificationRow extends StatelessWidget {
                       color: Color(0xFF3B82F6),
                     ),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
                     splashRadius: 20,
                   ),
                 IconButton(
@@ -636,7 +789,8 @@ class _NotificationRow extends StatelessWidget {
                     color: Color(0xFFF87171),
                   ),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 36),
                   splashRadius: 20,
                 ),
               ],
@@ -655,12 +809,22 @@ class _WsIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (status == 'open') {
-      return const Text('Live', style: TextStyle(fontSize: 10, color: Color(0xFF16A34A), fontWeight: FontWeight.w700));
+      return const Text('Live',
+          style: TextStyle(
+              fontSize: 10,
+              color: Color(0xFF16A34A),
+              fontWeight: FontWeight.w700));
     }
     if (status == 'polling') {
-      return const Text('Polling', style: TextStyle(fontSize: 10, color: Color(0xFFF59E0B), fontWeight: FontWeight.w700));
+      return const Text('Polling',
+          style: TextStyle(
+              fontSize: 10,
+              color: Color(0xFFF59E0B),
+              fontWeight: FontWeight.w700));
     }
-    return const Text('Connecting…', style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700));
+    return const Text('Connecting…',
+        style: TextStyle(
+            fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700));
   }
 }
 
@@ -687,7 +851,8 @@ class _PaginationBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
+        border: Border(
+            top: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -713,7 +878,8 @@ class _PaginationBar extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: active ? Colors.black : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.black.withValues(alpha: 0.1)),
+                        border: Border.all(
+                            color: Colors.black.withValues(alpha: 0.1)),
                       ),
                       child: Text(
                         '$p',

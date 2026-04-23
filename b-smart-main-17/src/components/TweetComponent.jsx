@@ -106,6 +106,13 @@ const TweetComponent = ({ tweet }) => {
   const authorUsername = author.username || 'Unknown';
   const authorFullName = author.full_name || author.name || '';
   const authorAvatar = author.avatar_url || author.profilePicture || '';
+  const mediaItems = Array.isArray(tweet?.media) ? tweet.media : [];
+  const rawMediaUrl = mediaItems[0]?.fileUrl || mediaItems[0]?.url || mediaItems[0]?.fileName;
+  const mediaUrl = rawMediaUrl
+    ? (String(rawMediaUrl).startsWith('http')
+      ? rawMediaUrl
+      : `https://api.bebsmart.in/uploads/${String(rawMediaUrl).replace(/^\/+/, '').replace(/^uploads\//, '')}`)
+    : null;
 
   useEffect(() => {
     if (tweet) {
@@ -119,15 +126,20 @@ const TweetComponent = ({ tweet }) => {
     if (!id) return;
     setLoadingComments(true);
     try {
-      const { data } = await tweetCommentService.getComments(id);
-      setComments(data);
+      const commentsData = await tweetCommentService.getComments(id);
+      const normalizedComments = Array.isArray(commentsData)
+        ? commentsData
+        : (commentsData?.data || []);
+      setComments(normalizedComments);
       // Pre-load replies for all comments
       const newReplies = {};
       const newExpandedComments = {};
-      for (const comment of data) {
+      for (const comment of normalizedComments) {
         if (comment.reply_count > 0) {
-          const { data: replyData } = await tweetCommentService.getReplies(comment._id || comment.id);
-          newReplies[comment._id || comment.id] = replyData;
+          const repliesData = await tweetCommentService.getReplies(comment._id || comment.id);
+          newReplies[comment._id || comment.id] = Array.isArray(repliesData)
+            ? repliesData
+            : (repliesData?.data || []);
           newExpandedComments[comment._id || comment.id] = false; // Keep replies collapsed initially
         }
       }
@@ -142,8 +154,11 @@ const TweetComponent = ({ tweet }) => {
 
   const loadReplies = useCallback(async (commentId) => {
     try {
-      const { data } = await tweetCommentService.getReplies(commentId);
-      setReplies(prev => ({ ...prev, [commentId]: data }));
+      const repliesData = await tweetCommentService.getReplies(commentId);
+      const normalizedReplies = Array.isArray(repliesData)
+        ? repliesData
+        : (repliesData?.data || []);
+      setReplies(prev => ({ ...prev, [commentId]: normalizedReplies }));
     } catch (error) {
       console.error('Error loading replies:', error);
     }
@@ -251,6 +266,15 @@ const TweetComponent = ({ tweet }) => {
             </span>
           </div>
           <p className="dark:text-white text-gray-800 mt-2">{tweet.content}</p>
+          {mediaItems.length > 0 && mediaUrl && (
+            <div className="mt-3 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+              <img
+                src={mediaUrl}
+                alt="Tweet media"
+                className="w-full h-auto max-h-[320px] md:max-h-none object-cover"
+              />
+            </div>
+          )}
 
           <div className="flex items-center gap-4 mt-4 text-gray-500 dark:text-gray-400">
             <button onClick={handleLikeTweet} className="flex items-center gap-1 hover:text-red-500 transition-colors">
@@ -272,57 +296,64 @@ const TweetComponent = ({ tweet }) => {
       </div>
 
       {/* Comment Section */}
-      <div className="border-t border-gray-200 dark:border-gray-800 p-4">
-        <h3 className="font-semibold text-lg dark:text-white mb-3">Comments</h3>
-        {loadingComments ? (
-          <div className="flex justify-center py-4">
-            <Loader2 size={24} className="animate-spin text-gray-400" />
+      <div className="border-t border-gray-200 dark:border-gray-800">
+        <div className="p-4">
+          <h3 className="font-semibold text-lg dark:text-white mb-3">Comments</h3>
+          <div className="max-h-[36vh] overflow-y-auto pr-1 md:max-h-none md:overflow-visible md:pr-0">
+            {loadingComments ? (
+              <div className="flex justify-center py-4">
+                <Loader2 size={24} className="animate-spin text-gray-400" />
+              </div>
+            ) : comments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-400 text-sm">
+                <MessageCircle size={32} className="mb-2 opacity-40" />
+                <p>No comments yet. Be the first!</p>
+              </div>
+            ) : (
+              comments.map(comment => (
+                <CommentRow
+                  key={comment._id || comment.id}
+                  comment={comment}
+                  replies={replies}
+                  expanded={expandedComments[comment._id || comment.id]}
+                  onToggleReplies={onToggleReplies}
+                  onReply={(user) => setReplyTo({ id: comment._id || comment.id, rootCommentId: comment._id || comment.id, username: user.username })}
+                  onLike={handleLikeComment}
+                  onDelete={handleDeleteComment}
+                  onLikeReply={handleLikeReply}
+                  onDeleteReply={handleDeleteReply}
+                  currentUserId={currentUserId}
+                />
+              ))
+            )}
           </div>
-        ) : comments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-gray-400 text-sm">
-            <MessageCircle size={32} className="mb-2 opacity-40" />
-            <p>No comments yet. Be the first!</p>
-          </div>
-        ) : (
-          comments.map(comment => (
-            <CommentRow
-              key={comment._id || comment.id}
-              comment={comment}
-              replies={replies}
-              expanded={expandedComments[comment._id || comment.id]}
-              onToggleReplies={onToggleReplies}
-              onReply={(user) => setReplyTo({ id: comment._id || comment.id, rootCommentId: comment._id || comment.id, username: user.username })}
-              onLike={handleLikeComment}
-              onDelete={handleDeleteComment}
-              onLikeReply={handleLikeReply}
-              onDeleteReply={handleDeleteReply}
-              currentUserId={currentUserId}
-            />
-          ))
-        )}
+        </div>
 
-        {/* Reply banner */}
         {replyTo && (
-          <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 rounded-md mt-4">
+          <div className="px-3 md:px-4 py-2 bg-gray-50 dark:bg-gray-900 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 md:mt-4 md:rounded-md">
             <span>Replying to <span className="font-semibold text-blue-500">@{replyTo.username}</span></span>
             <button onClick={() => setReplyTo(null)}><X size={14} /></button>
           </div>
         )}
 
-        {/* Comment input */}
-        <form onSubmit={handlePostComment} className="flex items-center gap-3 mt-4">
-          <Avatar src={userObject?.avatar_url} username={userObject?.username} size="sm" />
+        <form onSubmit={handlePostComment} className="border-t border-gray-100 dark:border-gray-800 p-3 flex items-center gap-3 md:border-0 md:p-0 md:mt-4">
+          <button type="button" className="text-gray-900 dark:text-white hover:opacity-50 shrink-0 md:hidden">
+            <Smile size={22} />
+          </button>
+          <div className="hidden md:block shrink-0">
+            <Avatar src={userObject?.avatar_url} username={userObject?.username} size="sm" />
+          </div>
           <input
             type="text"
-            placeholder={replyTo ? `Replying to @${replyTo.username}...` : 'Add a comment...'}
-            className="flex-1 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-full py-2 px-4 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder={replyTo ? `Reply to @${replyTo.username}...` : 'Add a comment...'}
+            className="flex-1 text-sm outline-none text-gray-900 dark:text-white bg-transparent placeholder-gray-400 dark:placeholder-gray-500 md:bg-gray-100 md:dark:bg-gray-900 md:border md:border-gray-300 md:dark:border-gray-700 md:rounded-full md:py-2 md:px-4"
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
             disabled={postingComment}
           />
           <button
             type="submit"
-            className="text-blue-500 font-semibold text-sm hover:text-blue-600 transition-colors disabled:opacity-50"
+            className="text-blue-500 font-semibold text-sm shrink-0 hover:text-blue-700 disabled:opacity-40"
             disabled={!newComment.trim() || postingComment}
           >
             {postingComment ? <Loader2 size={16} className="animate-spin" /> : 'Post'}

@@ -233,6 +233,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
   const [isDragging, setIsDragging] = useState(false);
   const [step, setStep] = useState('select');
   const { userObject } = useSelector((state) => state.auth);
+  const mode = useSelector((state) => state.theme?.mode || 'light');
   const userId = userObject?._id || userObject?.id;
   const [postType, setPostType] = useState(initialType);
   
@@ -2406,17 +2407,17 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             </div>
           </div>
         ) : postType === 'tweet' ? (
-          <div className="flex-1 bg-[#111111] text-white flex flex-col">
-            <div className="md:hidden flex items-center justify-between px-5 pt-4 pb-5 border-b border-white/10">
-              <button onClick={handleClose} className="text-white">
+          <div className="flex-1 bg-white dark:bg-[#111111] text-gray-900 dark:text-white flex flex-col">
+            <div className="md:hidden flex items-center justify-between px-5 pt-4 pb-5 border-b border-gray-200 dark:border-white/10">
+              <button onClick={handleClose} className="text-gray-900 dark:text-white">
                 <X size={34} strokeWidth={2.2} />
               </button>
               <h2 className="text-[20px] font-bold tracking-[-0.02em]">New thread</h2>
               <div className="flex items-center gap-4">
-                <button type="button" className="text-white/95">
+                <button type="button" className="text-gray-700 dark:text-white/95">
                   <FileText size={32} strokeWidth={2.1} />
                 </button>
-                <button type="button" className="text-white/95">
+                <button type="button" className="text-gray-700 dark:text-white/95">
                   <Ellipsis size={32} strokeWidth={2.1} />
                 </button>
               </div>
@@ -2425,25 +2426,25 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             <div className="flex-1 overflow-y-auto px-5 py-5 pb-[13.5rem] md:pb-5">
               <div className="hidden md:flex gap-4">
                 <div className="flex flex-col items-center shrink-0">
-                  <div className="w-11 h-11 rounded-full bg-[#222] overflow-hidden flex items-center justify-center">
+                  <div className="w-11 h-11 rounded-full bg-gray-200 dark:bg-[#222] overflow-hidden flex items-center justify-center">
                     {userObject?.avatar_url ? (
                       <img src={userObject.avatar_url} className="w-full h-full object-cover" alt={userObject.username} />
                     ) : (
-                      <span className="text-sm font-semibold text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
+                      <span className="text-sm font-semibold text-gray-800 dark:text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
                     )}
                   </div>
-                  <div className="w-px flex-1 bg-white/10 my-3" />
+                  <div className="w-px flex-1 bg-gray-200 dark:bg-white/10 my-3" />
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 text-sm mb-2">
-                    <span className="font-semibold text-white">{userObject?.username || 'User'}</span>
-                    <span className="text-white/35">›</span>
-                    <span className="text-white/35">Add a topic</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">{userObject?.username || 'User'}</span>
+                    <span className="text-gray-400 dark:text-white/35">›</span>
+                    <span className="text-gray-400 dark:text-white/35">Add a topic</span>
                   </div>
 
                   <textarea
-                    className="w-full min-h-[140px] resize-none bg-transparent outline-none text-[17px] leading-7 text-white placeholder:text-white/35"
+                    className="w-full min-h-[140px] resize-none bg-transparent outline-none text-[17px] leading-7 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/35"
                     placeholder="What's new?"
                     value={caption}
                     onChange={(e) => setCaption(e.target.value)}
@@ -2466,15 +2467,15 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     </div>
                   )}
 
-                  <div className="mt-5 flex items-center gap-4 text-white/55">
-                    <button onClick={handleButtonClick} className="hover:text-white transition-colors">
+                  <div className="mt-5 flex items-center gap-4 text-gray-500 dark:text-white/55">
+                    <button onClick={handleButtonClick} className="hover:text-gray-700 dark:hover:text-white transition-colors">
                       <Image size={20} />
                     </button>
                     <div ref={emojiPickerRef} className="relative">
                       {showEmojiPicker && (
                         <div className="absolute bottom-full left-0 mb-3 z-[80]">
                           <EmojiPicker
-                            theme="dark"
+                            theme={mode === 'dark' ? 'dark' : 'light'}
                             onEmojiClick={handleEmojiClick}
                             lazyLoadEmojis
                             skinTonesDisabled
@@ -2486,7 +2487,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       <button
                         type="button"
                         onClick={() => setShowEmojiPicker((prev) => !prev)}
-                        className="hover:text-white transition-colors"
+                        className="hover:text-gray-700 dark:hover:text-white transition-colors"
                         aria-label="Toggle emoji picker"
                       >
                         <Smile size={20} />
@@ -2500,8 +2501,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     </button>
                   </div>
 
-                  <div className="mt-6 flex items-center gap-3 text-white/30">
-                    <div className="w-7 h-7 rounded-full bg-[#1a1a1a] flex items-center justify-center text-[10px]">+</div>
+                  <div className="mt-6 flex items-center gap-3 text-gray-400 dark:text-white/30">
+                    <div className="w-7 h-7 rounded-full bg-gray-100 dark:bg-[#1a1a1a] flex items-center justify-center text-[10px]">+</div>
                     <span className="text-sm">Add to thread</span>
                   </div>
                 </div>
@@ -2509,11 +2510,11 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
 
               <div className="md:hidden flex gap-4 min-h-full">
                 <div className="flex flex-col items-center shrink-0 pt-2">
-                  <div className="w-[42px] h-[42px] rounded-full bg-[#262626] overflow-hidden flex items-center justify-center">
+                  <div className="w-[42px] h-[42px] rounded-full bg-gray-200 dark:bg-[#262626] overflow-hidden flex items-center justify-center">
                     {userObject?.avatar_url ? (
                       <img src={userObject.avatar_url} className="w-full h-full object-cover" alt={userObject.username} />
                     ) : (
-                      <span className="text-lg font-semibold text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
+                      <span className="text-lg font-semibold text-gray-800 dark:text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
                     )}
                   </div>
                   
@@ -2523,8 +2524,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="font-bold text-[14px] truncate">{userObject?.username || 'User'}</span>
-                      <ChevronRight size={16} className="text-white/35 shrink-0" />
-                      <span className="text-white/35 text-[14px] truncate">Community or topic</span>
+                      <ChevronRight size={16} className="text-gray-400 dark:text-white/35 shrink-0" />
+                      <span className="text-gray-400 dark:text-white/35 text-[14px] truncate">Community or topic</span>
                     </div>
                     {(caption.trim() || media.length > 0) && (
                       <button
@@ -2534,7 +2535,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                           setMedia([]);
                           setCurrentIndex(0);
                         }}
-                        className="text-white/35 shrink-0"
+                        className="text-gray-500 dark:text-white/35 shrink-0"
                       >
                         <X size={24} />
                       </button>
@@ -2542,7 +2543,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                   </div>
 
                   <textarea
-                    className="mt-1 w-full min-h-[60px] resize-none bg-transparent outline-none text-[16px] leading-[1.35] tracking-[-0.02em] text-white placeholder:text-white/35"
+                    className="mt-1 w-full min-h-[60px] resize-none bg-transparent outline-none text-[16px] leading-[1.35] tracking-[-0.02em] text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/35"
                     placeholder="What's new?"
                     value={caption}
                     onChange={(e) => setCaption(e.target.value)}
@@ -2565,15 +2566,15 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     </div>
                   )}
 
-                  <div className="mt-5 flex items-center gap-5 text-white/50">
-                    <button onClick={handleButtonClick} className="hover:text-white transition-colors">
+                  <div className="mt-5 flex items-center gap-5 text-gray-500 dark:text-white/50">
+                    <button onClick={handleButtonClick} className="hover:text-gray-700 dark:hover:text-white transition-colors">
                       <Image size={28} strokeWidth={1.8} />
                     </button>
                     <div ref={emojiPickerRef} className="relative">
                       {showEmojiPicker && (
                         <div className="absolute bottom-full left-0 mb-3 z-[80]">
                           <EmojiPicker
-                            theme="dark"
+                            theme={mode === 'dark' ? 'dark' : 'light'}
                             onEmojiClick={handleEmojiClick}
                             lazyLoadEmojis
                             skinTonesDisabled
@@ -2585,7 +2586,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       <button
                         type="button"
                         onClick={() => setShowEmojiPicker((prev) => !prev)}
-                        className="hover:text-white transition-colors"
+                        className="hover:text-gray-700 dark:hover:text-white transition-colors"
                         aria-label="Toggle emoji picker"
                       >
                         <Smile size={28} strokeWidth={1.8} />
@@ -2602,16 +2603,16 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     </button>
                   </div>
 
-                  <div className="mt-9 flex items-center gap-4 text-white/35">
-                      <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center text-sm">+</div>
+                  <div className="mt-9 flex items-center gap-4 text-gray-400 dark:text-white/35">
+                      <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/15 flex items-center justify-center text-sm">+</div>
                     <span className="text-[14px]">Add to thread</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="hidden md:flex border-t border-white/10 px-5 py-4 items-center justify-between">
-              <span className="text-sm text-white/45">Reply options</span>
+            <div className="hidden md:flex border-t border-gray-200 dark:border-white/10 px-5 py-4 items-center justify-between">
+              <span className="text-sm text-gray-500 dark:text-white/45">Reply options</span>
               <button
                 onClick={() => handleNextStep('publish')}
                 disabled={isSubmitting || (!caption.trim() && media.length === 0)}
@@ -2621,7 +2622,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
               </button>
             </div>
 
-            <div className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-[#111111] px-8 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white dark:bg-[#111111] border-t border-gray-200 dark:border-white/10 px-8 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
               <div className="flex items-center justify-end gap-4">
                 
 
@@ -2630,7 +2631,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                   disabled={isSubmitting || (!caption.trim() && media.length === 0)}
                   className={`h-[40px] min-w-[80px] rounded-full text-[14px] font-semibold transition-all ${
                     isSubmitting || (!caption.trim() && media.length === 0)
-                      ? 'bg-white/10 text-black/45'
+                      ? 'bg-gray-200 text-gray-500 dark:bg-white/10 dark:text-black/45'
                       : 'bg-white text-black'
                   }`}
                 >

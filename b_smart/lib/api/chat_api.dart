@@ -298,19 +298,93 @@ class ChatApi {
     return <String, dynamic>{};
   }
 
-  /// Returns online user ids (best-effort; backend dependent).
-  Future<List<String>> getOnlineUsers() async {
-    final res = await _client.get('/chat/online-users');
-    final list = res is Map<String, dynamic>
-        ? (res['data'] ?? res['users'] ?? res['items'])
-        : res;
-    if (list is List) {
-      return list
-          .map((e) => e?.toString().trim() ?? '')
-          .where((e) => e.isNotEmpty)
-          .toList();
+  /// Returns online user IDs.
+  ///
+  /// Endpoint: `GET /api/chat/online-users`
+  /// Optional query param: `ids=<comma-separated-ids>`
+  Future<List<String>> getOnlineUsers({List<String>? ids}) async {
+    final normalizedIds = (ids ?? const <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final queryParams = normalizedIds.isEmpty
+        ? null
+        : <String, String>{'ids': normalizedIds.join(',')};
+
+    final res = await _client.get(
+      '/chat/online-users',
+      queryParams: queryParams,
+    );
+
+    dynamic list;
+    if (res is Map<String, dynamic>) {
+      final data = res['data'];
+      list = res['onlineUserIds'] ??
+          res['online_user_ids'] ??
+          res['onlineUsers'] ??
+          res['online_users'] ??
+          res['users'] ??
+          res['items'] ??
+          (data is Map
+              ? (data['onlineUserIds'] ??
+                  data['online_user_ids'] ??
+                  data['onlineUsers'] ??
+                  data['online_users'] ??
+                  data['users'] ??
+                  data['items'])
+              : null) ??
+          data;
+    } else {
+      list = res;
     }
-    return const <String>[];
+
+    if (list is! List) return const <String>[];
+
+    final seen = <String>{};
+    final out = <String>[];
+    for (final e in list) {
+      final id = e?.toString().trim() ?? '';
+      if (id.isEmpty) continue;
+      if (seen.add(id)) out.add(id);
+    }
+    return out;
+  }
+
+  /// Share a post/reel/ad/tweet to chat recipients (web parity).
+  ///
+  /// POST /chat/share
+  /// Body: { recipientIds: [], conversationIds: [], contentType, contentId }
+  Future<Map<String, dynamic>> shareContentToUsers({
+    required String contentType,
+    required String contentId,
+    List<String> recipientIds = const <String>[],
+    List<String> conversationIds = const <String>[],
+  }) async {
+    final type = contentType.trim();
+    final id = contentId.trim();
+    if (type.isEmpty || id.isEmpty) return <String, dynamic>{};
+
+    final recipients = recipientIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    final conversations = conversationIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final res = await _client.post(
+      '/chat/share',
+      body: <String, dynamic>{
+        'recipientIds': recipients,
+        'conversationIds': conversations,
+        'contentType': type,
+        'contentId': id,
+      },
+    );
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   /// Accepts a pending message request conversation.

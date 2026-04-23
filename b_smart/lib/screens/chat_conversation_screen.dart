@@ -15,6 +15,7 @@ import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/safe_network_image.dart';
+import '../widgets/post_detail_modal.dart';
 import '../widgets/voice_recorder_sheet.dart';
 
 class ChatConversationScreen extends StatefulWidget {
@@ -59,6 +60,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   bool _refreshingLatest = false;
   int _pendingNewCount = 0;
   bool _requestActionLoading = false;
+  Timer? _presenceTimer;
+  bool _otherOnline = false;
+  bool _refreshingPresence = false;
 
   static const int _pageLimit = 20;
 
@@ -71,12 +75,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     _scrollController.addListener(_handleScroll);
     _inputController.addListener(_handleComposerChanged);
     _startPolling();
+    _startPresencePolling();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopPolling();
+    _stopPresencePolling();
     _inputController.removeListener(_handleComposerChanged);
     _scrollController.dispose();
     _inputController.dispose();
@@ -88,13 +94,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _startPolling();
+      _startPresencePolling();
       unawaited(_refreshLatest());
+      unawaited(_refreshOtherOnlineStatus());
       return;
     }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
       _stopPolling();
+      _stopPresencePolling();
     }
   }
 
@@ -126,11 +135,46 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     _pollTimer = null;
   }
 
+  void _startPresencePolling() {
+    _presenceTimer?.cancel();
+    _presenceTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      unawaited(_refreshOtherOnlineStatus());
+    });
+  }
+
+  void _stopPresencePolling() {
+    _presenceTimer?.cancel();
+    _presenceTimer = null;
+  }
+
+  String _otherParticipantId() {
+    final other = _otherProfile ?? _otherParticipant();
+    return (_idFor(other) ?? '').trim();
+  }
+
+  Future<void> _refreshOtherOnlineStatus() async {
+    if (_refreshingPresence) return;
+    final otherId = _otherParticipantId();
+    if (otherId.isEmpty) return;
+    _refreshingPresence = true;
+    try {
+      final online = await _chatApi.getOnlineUsers(ids: [otherId]);
+      if (!mounted) return;
+      final next = online.contains(otherId);
+      if (next != _otherOnline) setState(() => _otherOnline = next);
+    } catch (_) {
+      // Best-effort: ignore errors.
+    } finally {
+      _refreshingPresence = false;
+    }
+  }
+
   Future<void> _init() async {
     final uid = await CurrentUser.id;
     if (!mounted) return;
     setState(() => _currentUserId = uid);
     await _load(page: 1, replace: true);
+    unawaited(_refreshOtherOnlineStatus());
   }
 
   Map<String, dynamic>? _otherParticipant() {
@@ -898,29 +942,53 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         titleSpacing: 0,
         title: Row(
           children: [
-            if (otherAvatar != null && otherAvatar.trim().isNotEmpty)
-              ClipOval(
-                child: SafeNetworkImage(
-                  url: otherAvatar,
-                  width: 32,
-                  height: 32,
-                  fit: BoxFit.cover,
-                ),
-              )
-            else
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: DesignTokens.instaPink,
-                child: Text(
-                  otherName.isNotEmpty
-                      ? otherName.characters.first.toUpperCase()
-                      : 'U',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                if (otherAvatar != null && otherAvatar.trim().isNotEmpty)
+                  ClipOval(
+                    child: SafeNetworkImage(
+                      url: otherAvatar,
+                      width: 32,
+                      height: 32,
+                      fit: BoxFit.cover,
+                    ),
+                  )
+                else
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: DesignTokens.instaPink,
+                    child: Text(
+                      otherName.isNotEmpty
+                          ? otherName.characters.first.toUpperCase()
+                          : 'U',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                if (_otherOnline && otherId.isNotEmpty)
+                  Positioned(
+                    right: -1,
+                    bottom: -1,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2ECC71),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color:
+                              Theme.of(context).appBarTheme.backgroundColor ??
+                                  Theme.of(context).scaffoldBackgroundColor,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -936,6 +1004,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                  if (_otherOnline && otherId.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Text(
+                        'Online',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF2ECC71),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1817,6 +1897,234 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     );
   }
 
+  Map<String, dynamic>? _sharedContentFor(Map<String, dynamic> message) {
+    final raw = message['sharedContent'] ?? message['shared_content'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return null;
+  }
+
+  String _sharedContentType(Map<String, dynamic> shared) {
+    return (shared['contentType'] ?? shared['content_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+  }
+
+  String _sharedContentId(Map<String, dynamic> shared) {
+    final raw = shared['contentId'] ?? shared['content_id'] ?? shared['id'];
+    if (raw is Map) {
+      return ((raw['_id'] ?? raw['id'])?.toString() ?? '').trim();
+    }
+    return (raw?.toString() ?? '').trim();
+  }
+
+  String _sharedCreatorId(Map<String, dynamic> shared) {
+    final raw = shared['creatorId'] ?? shared['creator_id'] ?? shared['userId'];
+    if (raw is Map) {
+      return ((raw['_id'] ?? raw['id'])?.toString() ?? '').trim();
+    }
+    return (raw?.toString() ?? '').trim();
+  }
+
+  String _sharedCreatorName(Map<String, dynamic> shared) {
+    return (shared['creatorUsername'] ??
+            shared['creator_username'] ??
+            shared['creatorName'] ??
+            shared['creator_name'] ??
+            shared['title'])
+        .toString()
+        .trim();
+  }
+
+  String _sharedCreatorAvatar(Map<String, dynamic> shared) {
+    return (shared['creatorAvatarUrl'] ??
+            shared['creator_avatar_url'] ??
+            shared['creatorAvatar'] ??
+            shared['creator_avatar'])
+        .toString()
+        .trim();
+  }
+
+  String _sharedPreviewUrl(Map<String, dynamic> shared) {
+    return UrlHelper.normalizeUrl(
+      (shared['previewUrl'] ?? shared['preview_url'] ?? '').toString(),
+    );
+  }
+
+  String _sharedCaption(Map<String, dynamic> shared) {
+    final v = (shared['caption'] ?? shared['message'] ?? shared['title'])
+        ?.toString()
+        .trim();
+    return v ?? '';
+  }
+
+  Future<void> _openSharedContent(Map<String, dynamic> shared) async {
+    final type = _sharedContentType(shared);
+    final id = _sharedContentId(shared);
+    if (type.isEmpty || id.isEmpty) return;
+
+    if (type == 'reel') {
+      Navigator.of(context).pushNamed(
+        '/reels',
+        arguments: <String, dynamic>{'initialReelId': id},
+      );
+      return;
+    }
+    if (type == 'ad') {
+      Navigator.of(context).pushNamed('/ad/$id');
+      return;
+    }
+    if (type == 'tweet') {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PostDetailModal(postId: id, isTweet: true),
+        ),
+      );
+      return;
+    }
+    if (type == 'post') {
+      Navigator.of(context).pushNamed('/post/$id');
+      return;
+    }
+  }
+
+  Widget _sharedContentCard(Map<String, dynamic> shared, bool mine) {
+    final type = _sharedContentType(shared);
+    if (type.isEmpty) return const SizedBox.shrink();
+    final creator = _sharedCreatorName(shared);
+    final creatorAvatar = _sharedCreatorAvatar(shared);
+    final preview = _sharedPreviewUrl(shared);
+    final caption = _sharedCaption(shared);
+    final verified = shared['creatorVerified'] == true ||
+        (shared['creator_verified'] == true);
+
+    final borderColor = mine
+        ? Colors.white.withValues(alpha: 0.20)
+        : Colors.white.withValues(alpha: 0.10);
+    final bgColor = mine
+        ? const Color(0xFF4F46E5).withValues(alpha: 0.35)
+        : const Color(0xFF1D1F27);
+
+    return InkWell(
+      onTap: () => unawaited(_openSharedContent(shared)),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: borderColor),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                children: [
+                  ClipOval(
+                    child: creatorAvatar.isNotEmpty
+                        ? SafeNetworkImage(
+                            url: creatorAvatar,
+                            width: 26,
+                            height: 26,
+                            fit: BoxFit.cover,
+                          )
+                        : Container(
+                            width: 26,
+                            height: 26,
+                            color: Colors.white.withValues(alpha: 0.10),
+                            alignment: Alignment.center,
+                            child: Text(
+                              (creator.isNotEmpty ? creator : 'U')
+                                  .characters
+                                  .first
+                                  .toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      creator.isNotEmpty ? creator : 'Shared',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  if (verified)
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF0095F6),
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '✓',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (preview.isNotEmpty)
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: SafeNetworkImage(
+                  url: preview,
+                  fit: BoxFit.cover,
+                ),
+              )
+            else
+              Container(
+                height: 150,
+                color: Colors.black.withValues(alpha: 0.18),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'Open shared $type',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            if (caption.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                child: Text(
+                  caption,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _bubble(
     Map<String, dynamic> message,
     bool mine, {
@@ -1966,8 +2274,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final replied = _repliedMessageFor(message);
     final replySender = _senderLabelForMessage(replied);
     final replyPreview = _previewForMessage(replied);
+    final shared = _sharedContentFor(message);
+    final sharedCard = shared == null ? null : _sharedContentCard(shared, mine);
     final hasMedia = mediaUrl.trim().isNotEmpty;
-    final hasText = text.trim().isNotEmpty;
+    final cleanedText = shared != null
+        ? text.replaceAll(RegExp(r'https?:\\/\\/\\S+', caseSensitive: false), '')
+        : text;
+    final hasText = cleanedText.trim().isNotEmpty;
 
     final bubble = GestureDetector(
       onDoubleTap: () => _reactToMessage(message, '❤️'),
@@ -2004,6 +2317,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (sharedCard != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                          child: sharedCard,
+                        ),
                       if (replied != null)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
@@ -2069,7 +2387,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         Padding(
                           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                           child: Text(
-                            text,
+                            cleanedText.trim(),
                             style: TextStyle(
                               color: fg,
                               fontSize: 14,
@@ -2082,6 +2400,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (sharedCard != null) sharedCard,
+                      if (sharedCard != null && (replied != null || hasText))
+                        const SizedBox(height: 8),
                       if (replied != null)
                         Container(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -2138,7 +2459,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         ),
                       if (hasText)
                         Text(
-                          text,
+                          cleanedText.trim(),
                           style:
                               TextStyle(color: fg, fontSize: 14, height: 1.25),
                         ),

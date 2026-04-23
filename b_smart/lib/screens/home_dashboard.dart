@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:redux/redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -23,6 +24,7 @@ import '../models/reel_model.dart';
 import '../models/media_model.dart';
 import '../widgets/post_detail_modal.dart';
 import '../widgets/comments_sheet.dart';
+import '../widgets/share_content_modal.dart';
 import 'ads_page_screen.dart';
 import 'promote_screen.dart';
 import 'reels_screen.dart';
@@ -31,6 +33,7 @@ import 'story_viewer_screen.dart';
 import 'own_story_viewer_screen.dart';
 import 'create_upload_screen.dart';
 import '../utils/current_user.dart';
+import '../utils/share_links.dart';
 import '../api/auth_api.dart';
 import '../api/api_exceptions.dart';
 import '../api/api_client.dart';
@@ -1869,11 +1872,15 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   void _onSharePost(FeedPost post) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Share link copied'),
-        behavior: SnackBarBehavior.floating,
-      ),
+    final type = post.isTweet
+        ? 'tweet'
+        : post.isAd
+            ? 'ad'
+            : (post.mediaType == PostMediaType.reel ? 'reel' : 'post');
+    ShareContentModal.show(
+      context,
+      contentType: type,
+      contentId: post.id,
     );
   }
 
@@ -1981,6 +1988,18 @@ class _HomeDashboardState extends State<HomeDashboard>
               title: const Text('Copy link'),
               onTap: () {
                 Navigator.pop(ctx);
+                final type = post.isTweet
+                    ? 'tweet'
+                    : post.isAd
+                        ? 'ad'
+                        : (post.mediaType == PostMediaType.reel
+                            ? 'reel'
+                            : 'post');
+                final url = ShareLinks.urlForContent(
+                  contentType: type,
+                  contentId: post.id,
+                );
+                Clipboard.setData(ClipboardData(text: url));
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                       content: Text('Link copied'),
