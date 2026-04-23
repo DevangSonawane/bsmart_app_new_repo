@@ -13,6 +13,7 @@ import '../api/api_client.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
+import '../widgets/share_content_modal.dart';
 
 /// Modal matching React PostDetailModal: image left, details + comments right.
 class PostDetailModal extends StatefulWidget {
@@ -1559,7 +1560,16 @@ class _PostDetailModalState extends State<PostDetailModal> {
               IconButton(
                   icon: const Icon(LucideIcons.messageCircle),
                   onPressed: () {}),
-              IconButton(icon: const Icon(LucideIcons.send), onPressed: () {}),
+              IconButton(
+                icon: const Icon(LucideIcons.send),
+                onPressed: () {
+                  ShareContentModal.show(
+                    context,
+                    contentType: _isTweet ? 'tweet' : 'post',
+                    contentId: widget.postId,
+                  );
+                },
+              ),
               const Spacer(),
               if (!_isTweet)
                 IconButton(

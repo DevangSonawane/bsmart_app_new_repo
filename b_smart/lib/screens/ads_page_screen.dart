@@ -24,6 +24,7 @@ import '../widgets/app_popups/app_toast.dart';
 import '../widgets/app_popups/like_reward_popup_card.dart';
 import '../widgets/app_popups/popup_visibility_controller.dart';
 import '../widgets/app_popups/view_recorded_popup_card.dart';
+import '../widgets/share_content_modal.dart';
 import 'ad_company_detail_screen.dart';
 import 'external_link_screen.dart';
 
@@ -2521,7 +2522,13 @@ class _AdVideoItemState extends State<AdVideoItem>
                 _buildGlassAction(
                   icon: LucideIcons.send,
                   label: '',
-                  onTap: () {},
+                  onTap: () {
+                    ShareContentModal.show(
+                      context,
+                      contentType: 'ad',
+                      contentId: widget.ad.id,
+                    );
+                  },
                   rotate: -0.2, // ~12 degrees
                 ),
                 const SizedBox(height: 16),
@@ -2650,9 +2657,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 child: Text(
                                   _isFollowLoading
                                       ? '...'
-                                      : (_isFollowing
-                                          ? 'Following'
-                                          : 'Follow'),
+                                      : (_isFollowing ? 'Following' : 'Follow'),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 11,
@@ -2740,8 +2745,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                                     WidgetSpan(
                                       alignment: PlaceholderAlignment.middle,
                                       child: GestureDetector(
-                                        onTap: () =>
-                                            _showCaptionSheet(caption),
+                                        onTap: () => _showCaptionSheet(caption),
                                         child: const Padding(
                                           padding: EdgeInsets.only(left: 3),
                                           child: Text(

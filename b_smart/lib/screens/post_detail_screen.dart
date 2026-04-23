@@ -14,6 +14,7 @@ import 'package:flutter_redux/flutter_redux.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
 import '../models/feed_post_model.dart';
+import '../widgets/share_content_modal.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final String postId;
@@ -1532,7 +1533,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           count: _shareCount,
                           primaryText: primaryText,
                           secondaryText: secondaryText,
-                          onTap: () {},
+                          onTap: () {
+                            ShareContentModal.show(
+                              context,
+                              contentType: 'post',
+                              contentId: widget.postId,
+                            );
+                          },
                         ),
                         const Spacer(),
                         IconButton(

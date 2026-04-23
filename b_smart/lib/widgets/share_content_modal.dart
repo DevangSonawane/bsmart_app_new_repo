@@ -1,13 +1,19 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/chat_api.dart';
 import '../api/follows_api.dart';
+import '../screens/create_screen.dart';
+import '../screens/new_group_chat_screen.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
+import '../utils/share_links.dart';
 import '../widgets/safe_network_image.dart';
 
 class ShareContentModal extends StatefulWidget {
@@ -25,34 +31,16 @@ class ShareContentModal extends StatefulWidget {
     required String contentType,
     required String contentId,
   }) {
-    return showGeneralDialog<void>(
+    return showModalBottomSheet<void>(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Share',
-      barrierColor: Colors.black.withValues(alpha: 0.70),
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (context, _, __) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Center(
-            child: ShareContentModal(
-              contentType: contentType,
-              contentId: contentId,
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (context, animation, _, child) {
-        final curved =
-            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-        return FadeTransition(
-          opacity: curved,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.98, end: 1.0).animate(curved),
-            child: child,
-          ),
-        );
-      },
+      isScrollControlled: true,
+      useSafeArea: false,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (_) => ShareContentModal(
+        contentType: contentType,
+        contentId: contentId,
+      ),
     );
   }
 
@@ -96,6 +84,70 @@ class _ShareContentModalState extends State<ShareContentModal> {
     super.dispose();
   }
 
+  String get _shareUrl => ShareLinks.urlForContent(
+        contentType: widget.contentType,
+        contentId: widget.contentId,
+      );
+
+  Future<void> _copyLink() async {
+    final url = _shareUrl.trim();
+    if (url.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Link copied'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _shareToSystem() async {
+    final url = _shareUrl.trim();
+    if (url.isEmpty) return;
+    await Share.share(url);
+  }
+
+  Future<void> _shareToWhatsApp() async {
+    final url = _shareUrl.trim();
+    if (url.isEmpty) return;
+    final wa = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(url)}');
+    final ok = await launchUrl(wa, mode: LaunchMode.externalApplication);
+    if (!ok) await Share.share(url);
+  }
+
+  Future<void> _addToStory() async {
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    rootNav.pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      rootNav.push(MaterialPageRoute(builder: (_) => const CreateScreen()));
+    });
+  }
+
+  Future<void> _openNewGroup() async {
+    if (_submitting) return;
+    final res = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NewGroupChatScreen(suggestedUsers: _followingUsers),
+      ),
+    );
+    if (!mounted) return;
+    if (res is! Map) return;
+    final conversation = Map<String, dynamic>.from(res);
+    final id = _conversationId(conversation);
+    if (id.isEmpty) return;
+
+    setState(() {
+      _conversations = [
+        conversation,
+        ..._conversations.where((c) => _conversationId(c) != id),
+      ];
+      _selectedConversationIds.add(id);
+      _loadingConversations = false;
+    });
+    unawaited(_refreshOnlineUsers());
+  }
+
   String _normalizeId(dynamic v) => (v ?? '').toString().trim();
 
   String _userId(Map<String, dynamic>? u) =>
@@ -125,8 +177,8 @@ class _ShareContentModalState extends State<ShareContentModal> {
   }
 
   bool _isRequestConversation(Map<String, dynamic> c) {
-    final status = _normalizeId(c['requestStatus'] ?? c['request_status'])
-        .toLowerCase();
+    final status =
+        _normalizeId(c['requestStatus'] ?? c['request_status']).toLowerCase();
     if (status == 'pending' || status == 'requested') return true;
     final isRequest = c['isRequest'] == true ||
         c['is_request'] == true ||
@@ -415,303 +467,372 @@ class _ShareContentModalState extends State<ShareContentModal> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final w = MediaQuery.sizeOf(context).width;
-    final maxWidth = w < 700 ? w - 32 : 600.0;
-    final maxHeight = MediaQuery.sizeOf(context).height * 0.78;
     final targets = _displayTargets();
+
+    final size = MediaQuery.sizeOf(context);
+    final sheetHeight = (size.height * 0.62).clamp(420.0, size.height * 0.82);
+    final viewInsetsBottom = MediaQuery.viewInsetsOf(context).bottom;
+    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
+    final footerBottomPadding = 12.0 + safeBottom;
+    const footerContentHeight = 96.0;
+    const footerTopPadding = 12.0;
+    final footerTotalHeight =
+        footerContentHeight + footerTopPadding + footerBottomPadding;
 
     return Material(
       color: Colors.transparent,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF1F2430),
-              Color(0xFF1A1E28),
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: viewInsetsBottom),
+        child: Container(
+          height: sheetHeight,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1E28),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 30,
+                offset: const Offset(0, -10),
+              ),
             ],
           ),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.45),
-              blurRadius: 40,
-              offset: const Offset(0, 20),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 10, 8, 6),
-              child: Row(
+          child: Stack(
+            children: [
+              Column(
                 children: [
-                  IconButton(
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(LucideIcons.x, color: Colors.white),
-                  ),
-                  const Expanded(
-                    child: Center(
-                      child: Text(
-                        'Share',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(999),
                     ),
                   ),
-                  const SizedBox(width: 48),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF252B36),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    Icon(LucideIcons.search,
-                        size: 18, color: Colors.white.withValues(alpha: 0.55)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Search',
-                          hintStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontWeight: FontWeight.w600,
-                          ),
-                          border: InputBorder.none,
-                          isCollapsed: true,
-                        ),
-                      ),
-                    ),
-                    if (_searchController.text.trim().isNotEmpty)
-                      InkWell(
-                        onTap: () => _searchController.clear(),
-                        borderRadius: BorderRadius.circular(999),
-                        child: Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Icon(LucideIcons.x,
-                              size: 16,
-                              color: Colors.white.withValues(alpha: 0.75)),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Column(
-                  children: [
-                    if (_loadingUsers || _loadingConversations)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 22),
-                        child: Text(
-                          'Loading...',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    if (!_loadingUsers &&
-                        !_loadingConversations &&
-                        targets.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 22),
-                        child: Text(
-                          'No results found.',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    if (!_loadingUsers &&
-                        !_loadingConversations &&
-                        targets.isNotEmpty)
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final width = constraints.maxWidth;
-                          int crossAxisCount = 3;
-                          if (width >= 520) crossAxisCount = 4;
-                          if (width >= 640) crossAxisCount = 5;
-                          return GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 16,
-                              childAspectRatio: 0.86,
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF252B36),
+                              borderRadius: BorderRadius.circular(18),
                             ),
-                            itemCount: targets.length,
-                            itemBuilder: (context, index) {
-                              final t = targets[index];
-                              final online = t.onlineUserId.isNotEmpty &&
-                                  _onlineUserIds.contains(t.onlineUserId);
-                              return InkWell(
-                                onTap: () => _toggleTarget(t),
-                                borderRadius: BorderRadius.circular(18),
-                                child: Column(
-                                  children: [
-                                    SizedBox(
-                                      width: 64,
-                                      height: 64,
-                                      child: Stack(
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          Positioned.fill(
-                                            child: _TargetAvatar(
-                                              label: t.label,
-                                              avatarUrl: t.avatarUrl,
-                                              conversation: t.conversation,
-                                              type: t.type,
-                                              currentUserId: _currentUserId,
-                                            ),
-                                          ),
-                                          if (online)
-                                            Positioned(
-                                              right: 2,
-                                              bottom: 2,
-                                              child: Container(
-                                                width: 14,
-                                                height: 14,
-                                                decoration: BoxDecoration(
-                                                  color:
-                                                      const Color(0xFF38D430),
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(
-                                                    color:
-                                                        const Color(0xFF1A1E28),
-                                                    width: 2,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          if (t.selected)
-                                            Positioned(
-                                              right: -6,
-                                              bottom: -6,
-                                              child: Container(
-                                                width: 24,
-                                                height: 24,
-                                                decoration: BoxDecoration(
-                                                  color:
-                                                      const Color(0xFF2A2F9F),
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(
-                                                    color:
-                                                        const Color(0xFF1A1E28),
-                                                    width: 2,
-                                                  ),
-                                                ),
-                                                child: const Center(
-                                                  child: Icon(
-                                                    LucideIcons.check,
-                                                    size: 14,
-                                                    color: Colors.white,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Expanded(
-                                      child: Text(
-                                        t.label,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.95),
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                          height: 1.1,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                            child: Row(
+                              children: [
+                                Icon(
+                                  LucideIcons.search,
+                                  size: 18,
+                                  color: Colors.white.withValues(alpha: 0.55),
                                 ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _searchController,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: 'Search',
+                                      hintStyle: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.50),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      border: InputBorder.none,
+                                      isCollapsed: true,
+                                    ),
+                                  ),
+                                ),
+                                if (_searchController.text.trim().isNotEmpty)
+                                  InkWell(
+                                    onTap: () => _searchController.clear(),
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(6),
+                                      child: Icon(
+                                        LucideIcons.x,
+                                        size: 16,
+                                        color: Colors.white
+                                            .withValues(alpha: 0.75),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        InkWell(
+                          onTap: _openNewGroup,
+                          borderRadius: BorderRadius.circular(999),
+                          child: Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF252B36),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.10),
+                              ),
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                LucideIcons.userPlus,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Builder(
+                        builder: (context) {
+                          if (_loadingUsers || _loadingConversations) {
+                            return Center(
+                              child: Text(
+                                'Loading...',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.65),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          }
+                          if (targets.isEmpty) {
+                            return Center(
+                              child: Text(
+                                'No results found.',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.65),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          }
+                          return LayoutBuilder(
+                            builder: (context, constraints) {
+                              final width = constraints.maxWidth;
+                              int crossAxisCount = 3;
+                              if (width >= 520) crossAxisCount = 4;
+                              if (width >= 640) crossAxisCount = 5;
+                              return GridView.builder(
+                                padding: EdgeInsets.only(
+                                  bottom: _selectedTotal == 0 ? 8 : (8 + 56),
+                                ),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: crossAxisCount,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 0.86,
+                                ),
+                                itemCount: targets.length,
+                                itemBuilder: (context, index) {
+                                  final t = targets[index];
+                                  final online = t.onlineUserId.isNotEmpty &&
+                                      _onlineUserIds.contains(t.onlineUserId);
+                                  return InkWell(
+                                    onTap: () => _toggleTarget(t),
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: Column(
+                                      children: [
+                                        SizedBox(
+                                          width: 64,
+                                          height: 64,
+                                          child: Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              Positioned.fill(
+                                                child: _TargetAvatar(
+                                                  label: t.label,
+                                                  avatarUrl: t.avatarUrl,
+                                                  conversation: t.conversation,
+                                                  type: t.type,
+                                                  currentUserId: _currentUserId,
+                                                ),
+                                              ),
+                                              if (online)
+                                                Positioned(
+                                                  right: 2,
+                                                  bottom: 2,
+                                                  child: Container(
+                                                    width: 14,
+                                                    height: 14,
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                          0xFF38D430),
+                                                      shape: BoxShape.circle,
+                                                      border: Border.all(
+                                                        color: const Color(
+                                                            0xFF1A1E28),
+                                                        width: 2,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              if (t.selected)
+                                                Positioned(
+                                                  right: -6,
+                                                  bottom: -6,
+                                                  child: Container(
+                                                    width: 24,
+                                                    height: 24,
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                          0xFF2A2F9F),
+                                                      shape: BoxShape.circle,
+                                                      border: Border.all(
+                                                        color: const Color(
+                                                            0xFF1A1E28),
+                                                        width: 2,
+                                                      ),
+                                                    ),
+                                                    child: const Icon(
+                                                      LucideIcons.check,
+                                                      size: 14,
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          t.label,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            height: 1.1,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
                               );
                             },
                           );
                         },
                       ),
-                  ],
-                ),
-              ),
-            ),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1F2A),
-                border: Border(
-                  top: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.10),
-                  ),
-                ),
-              ),
-              child: SizedBox(
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed:
-                      (_selectedTotal == 0 || _submitting) ? null : _send,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4F58FF),
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: const Color(0xFF3A3F5D),
-                    disabledForegroundColor:
-                        Colors.white.withValues(alpha: 0.6),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
                     ),
                   ),
-                  icon: Icon(
-                    LucideIcons.send,
-                    size: 16,
-                    color: (_selectedTotal == 0 || _submitting)
-                        ? Colors.white.withValues(alpha: 0.6)
-                        : Colors.white,
+                  Container(
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      footerTopPadding,
+                      12,
+                      footerBottomPadding,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF151922),
+                      border: Border(
+                        top: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
+                      ),
+                    ),
+                    child: SizedBox(
+                      height: footerContentHeight,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _FooterAction(
+                              label: 'Share to...',
+                              icon: LucideIcons.share2,
+                              onTap: _shareToSystem,
+                            ),
+                          ),
+                          Expanded(
+                            child: _FooterAction(
+                              label: 'Add to story',
+                              icon: LucideIcons.plus,
+                              onTap: _addToStory,
+                            ),
+                          ),
+                          Expanded(
+                            child: _FooterAction(
+                              label: 'Copy link',
+                              icon: LucideIcons.link,
+                              onTap: _copyLink,
+                            ),
+                          ),
+                          Expanded(
+                            child: _FooterAction(
+                              label: 'WhatsApp',
+                              faIcon: FontAwesomeIcons.whatsapp,
+                              color: const Color(0xFF25D366),
+                              onTap: _shareToWhatsApp,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  label: Text(
-                    _submitting
-                        ? 'Sharing...'
-                        : 'Share ($_selectedTotal)',
+                ],
+              ),
+              if (_selectedTotal > 0)
+                Positioned(
+                  right: 16,
+                  bottom: footerTotalHeight + 12,
+                  child: ElevatedButton.icon(
+                    onPressed: _submitting ? null : _send,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: DesignTokens.instaPink,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor:
+                          Colors.white.withValues(alpha: 0.12),
+                      disabledForegroundColor:
+                          Colors.white.withValues(alpha: 0.60),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      elevation: 10,
+                      shadowColor: Colors.black.withValues(alpha: 0.35),
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(LucideIcons.send, size: 16),
+                    label: Text(
+                        _submitting ? 'Sending...' : 'Send ($_selectedTotal)'),
                   ),
                 ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -719,6 +840,66 @@ class _ShareContentModalState extends State<ShareContentModal> {
 }
 
 enum _ShareTargetType { user, conversation }
+
+class _FooterAction extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final IconData? faIcon;
+  final Color? color;
+  final VoidCallback onTap;
+
+  const _FooterAction({
+    required this.label,
+    required this.onTap,
+    this.icon,
+    this.faIcon,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final iconColor = color ?? Colors.white;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: const Color(0xFF252B36),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Center(
+              child: faIcon != null
+                  ? FaIcon(faIcon, color: iconColor, size: 22)
+                  : Icon(icon, color: iconColor, size: 22),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.05,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _ShareTarget {
   final String id;
@@ -819,18 +1000,6 @@ class _TargetAvatar extends StatelessWidget {
         .toList();
   }
 
-  Map<String, dynamic>? _otherParticipant(Map<String, dynamic> c) {
-    final participants = _participants(c);
-    if (currentUserId.trim().isEmpty) {
-      return participants.isNotEmpty ? participants.first : null;
-    }
-    for (final p in participants) {
-      final id = _userId(p);
-      if (id.isNotEmpty && id != currentUserId) return p;
-    }
-    return participants.isNotEmpty ? participants.first : null;
-  }
-
   @override
   Widget build(BuildContext context) {
     final base = avatarUrl.trim();
@@ -876,7 +1045,8 @@ class _TargetAvatar extends StatelessWidget {
     }
 
     if (type == _ShareTargetType.conversation &&
-        (conversation?['isGroup'] == true || conversation?['is_group'] == true)) {
+        (conversation?['isGroup'] == true ||
+            conversation?['is_group'] == true)) {
       final conv = conversation!;
       final members = _participants(conv)
           .where((p) => _userId(p) != currentUserId)
@@ -912,4 +1082,3 @@ class _TargetAvatar extends StatelessWidget {
     return circle(url: base, label: initial);
   }
 }
-
