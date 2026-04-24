@@ -19,8 +19,14 @@ import '../widgets/share_content_modal.dart';
 class PostDetailScreen extends StatefulWidget {
   final String postId;
   final FeedPost? initialPost;
+  final bool isTweet;
 
-  const PostDetailScreen({super.key, required this.postId, this.initialPost});
+  const PostDetailScreen({
+    super.key,
+    required this.postId,
+    this.initialPost,
+    this.isTweet = false,
+  });
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -53,6 +59,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _activeVideoUrl;
   final Map<String, double> _resolvedImageAspectRatios = <String, double>{};
   final Set<String> _resolvingImageAspectRatioUrls = <String>{};
+  bool _isTweet = false;
 
   bool _isReelPost() {
     final post = _post;
@@ -120,9 +127,86 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return null;
   }
 
+  String? _extractPostUserId(Map<String, dynamic> post) {
+    final candidates = <dynamic>[
+      post['user_id'],
+      post['user'],
+      post['users'],
+      post['userId'],
+      post['userID'],
+      post['author'],
+      post['createdBy'],
+      post['created_by'],
+      post['vendor_id'],
+      post['vendorId'],
+      post['sender'],
+    ];
+    for (final c in candidates) {
+      final id = _extractId(c);
+      if (id != null && id.trim().isNotEmpty) return id.trim();
+    }
+    return null;
+  }
+
   Map<String, dynamic>? _extractUserMap(dynamic value) {
     if (value is Map) return Map<String, dynamic>.from(value);
     return null;
+  }
+
+  Map<String, dynamic>? _extractPostUserMap(Map<String, dynamic> post) {
+    final candidates = <dynamic>[
+      post['user'],
+      post['users'],
+      post['author'],
+      post['user_id'],
+      post['userId'],
+      post['createdBy'],
+      post['created_by'],
+      post['sender'],
+    ];
+    for (final c in candidates) {
+      final map = _extractUserMap(c);
+      if (map == null || map.isEmpty) continue;
+      final normalized = Map<String, dynamic>.from(map);
+      final id = _extractId(normalized['id']) ??
+          _extractId(normalized['_id']) ??
+          _extractId(normalized);
+      if (id != null && id.isNotEmpty) {
+        normalized['id'] = id;
+        normalized['_id'] = id;
+      }
+      normalized['username'] = (normalized['username'] ??
+              normalized['handle'] ??
+              normalized['user_name'] ??
+              normalized['full_name'] ??
+              normalized['name'] ??
+              post['username'] ??
+              post['user_name'])
+          ?.toString()
+          .trim();
+      normalized['avatar_url'] = (normalized['avatar_url'] ??
+              normalized['avatar'] ??
+              normalized['profile_picture'] ??
+              normalized['profilePicture'] ??
+              normalized['profile_pic'] ??
+              normalized['photo'] ??
+              post['avatar_url'])
+          ?.toString()
+          .trim();
+      return normalized;
+    }
+    return null;
+  }
+
+  String _extractTweetText(Map<String, dynamic> post) {
+    final v = (post['text'] ??
+            post['content'] ??
+            post['tweet'] ??
+            post['message'] ??
+            post['body'])
+        ?.toString()
+        .trim();
+    return v ?? '';
   }
 
   bool _asBool(dynamic value) {
@@ -138,6 +222,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _isTweet = widget.isTweet || (widget.initialPost?.isTweet ?? false);
     _load();
   }
 
@@ -169,6 +254,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         'is_liked_by_me': initial.isLiked,
         'is_saved_by_me': initial.isSaved,
         'is_followed_by_me': initial.isFollowed,
+        'item_type': initial.isTweet ? 'tweet' : 'post',
       };
       eagerUser = {
         'id': initial.userId,
@@ -179,6 +265,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       eagerLiked = initial.isLiked;
       eagerSaved = initial.isSaved;
       eagerFollowed = initial.isFollowed;
+      _isTweet = _isTweet || initial.isTweet;
     }
 
     meId ??= (await CurrentUser.id)?.toString();
@@ -200,24 +287,39 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       });
     }
 
-    final post = await _svc.getPostById(widget.postId);
+    final post = await _svc.getPostById(widget.postId, isTweet: _isTweet);
     if (post == null || !mounted) {
       if (mounted && _post == null) {
         setState(() => _loadingPost = false);
       }
       return;
     }
-    final userId = _extractId(post['user_id']) ??
-        _extractId(post['user']) ??
-        _extractId(post['users']);
-    Map<String, dynamic>? user = _extractUserMap(post['user']) ??
-        _extractUserMap(post['users']) ??
-        _extractUserMap(post['user_id']);
+    final itemType = (post['item_type'] ??
+            post['itemType'] ??
+            post['type'] ??
+            post['content_type'] ??
+            post['contentType'] ??
+            '')
+        .toString()
+        .toLowerCase()
+        .trim();
+    _isTweet = itemType == 'tweet' || itemType.contains('tweet') || _isTweet;
+
+    if (_isTweet) {
+      final tweetText = _extractTweetText(post);
+      final existingCaption = (post['caption'] ?? '').toString().trim();
+      if (existingCaption.isEmpty && tweetText.isNotEmpty) {
+        post['caption'] = tweetText;
+        post['text'] = tweetText;
+      }
+    }
+    final userId = _extractPostUserId(post);
+    Map<String, dynamic>? user = _extractPostUserMap(post);
     if (userId != null) {
       final fetched = await _svc.getUserById(userId);
       if (fetched != null) user = fetched;
     }
-    final comments = await _svc.getComments(widget.postId);
+    final comments = await _svc.getComments(widget.postId, isTweet: _isTweet);
     final seededReplies = <String, List<Map<String, dynamic>>>{};
     final topLevelComments = <Map<String, dynamic>>[];
     for (final c in comments) {
@@ -268,8 +370,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     }
     final meId2 = currentUserId?.toString();
-    final isSaved =
-        _asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']);
+    final isSaved = _isTweet
+        ? false
+        : (_asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']));
     bool isFollowed = (post['is_followed_by_me'] as bool?) ??
         (user?['is_followed_by_me'] as bool?) ??
         false;
@@ -362,7 +465,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (isTopLevel) {
         _dispatchCommentsCount(_comments.length + 1);
       }
-      await _svc.addComment(widget.postId, userId, content, parentId: parentId);
+      await _svc.addComment(
+        widget.postId,
+        userId,
+        content,
+        parentId: parentId,
+        isTweet: _isTweet,
+      );
       _commentController.clear();
       if (parentId != null && parentId.isNotEmpty) {
         _expandedComments.add(parentId);
@@ -376,6 +485,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _handleSave() async {
+    if (_isTweet) return;
     if (_post == null) return;
     final hasToken = await ApiClient().hasToken;
     if (!hasToken) {
@@ -392,10 +502,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     StoreProvider.of<AppState>(context, listen: false)
         .dispatch(UpdatePostSaved(widget.postId, desired));
 
-    final saved = await _svc.setPostSaved(widget.postId, save: desired);
+    final saved =
+        await _svc.setPostSaved(widget.postId, save: desired, isTweet: _isTweet);
     if (!mounted) return;
     try {
-      final p = await _svc.getPostById(widget.postId);
+      final p = await _svc.getPostById(widget.postId, isTweet: _isTweet);
       final serverSaved =
           _asBool(p?['is_saved_by_me']) || _asBool(p?['saved_by_me']) || saved;
       setState(() => _isSaved = serverSaved);
@@ -440,7 +551,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _loadRepliesFor(String commentId) async {
     if (commentId.isEmpty || _loadingReplies.contains(commentId)) return;
     setState(() => _loadingReplies.add(commentId));
-    final list = await _svc.getReplies(commentId, page: 1, limit: 50);
+    final list =
+        await _svc.getReplies(commentId, page: 1, limit: 50, isTweet: _isTweet);
     if (!mounted) return;
     setState(() {
       _replies[commentId] = list;
@@ -456,7 +568,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (_loadingReplies.contains(cid)) continue;
       if ((_replies[cid]?.isNotEmpty ?? false)) continue;
 
-      final list = await _svc.getReplies(cid, page: 1, limit: 50);
+      final list =
+          await _svc.getReplies(cid, page: 1, limit: 50, isTweet: _isTweet);
       if (!mounted) return;
       if (list.isEmpty) continue;
       setState(() {
@@ -1113,18 +1226,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
     }
 
-    final username = _postUser?['username'] as String? ?? 'User';
-    final avatarUrl = _postUser?['avatar_url'] as String?;
+    final usernameCandidate = (_postUser?['username'] ??
+            _postUser?['handle'] ??
+            _postUser?['user_name'] ??
+            _postUser?['full_name'] ??
+            _postUser?['name'])
+        ?.toString()
+        .trim();
+    final username =
+        (usernameCandidate != null && usernameCandidate.isNotEmpty)
+            ? usernameCandidate
+            : 'User';
+    final avatarUrl = (_postUser?['avatar_url'] ??
+            _postUser?['avatar'] ??
+            _postUser?['profile_picture'] ??
+            _postUser?['profilePicture'] ??
+            _postUser?['profile_pic'])
+        ?.toString();
     final caption = _post?['caption'] as String? ?? '';
     final location = _post?['location'] as String?;
     final createdAt = _parsePostCreatedAt();
     final createdAtLabel = createdAt == null
         ? ''
         : _formatRelativeTime(createdAt.toIso8601String()).toUpperCase();
-    final ownerId = _extractId(_postUser?['id']) ??
-        _extractId(_post?['user_id']) ??
-        _extractId(_post?['user']) ??
-        _extractId(_post?['users']);
+    final ownerId =
+        _extractId(_postUser?['id']) ?? (_post == null ? null : _extractPostUserId(_post!));
     final isOwner = ownerId != null &&
         _currentUserId != null &&
         ownerId.toString() == _currentUserId.toString();
@@ -1427,7 +1553,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                                                 () async {
                                                                               setState(() => isDeleting = true);
                                                                               try {
-                                                                                final ok = await _svc.deletePost(widget.postId);
+                                                                                final ok = await _svc.deletePost(
+                                                                                  widget.postId,
+                                                                                  isTweet: _isTweet,
+                                                                                );
                                                                                 await Future.delayed(const Duration(milliseconds: 1500));
                                                                                 if (ok) {
                                                                                   if (mounted) {
@@ -1515,6 +1644,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             final liked = await _svc.setPostLike(
                               widget.postId,
                               like: desired,
+                              isTweet: _isTweet,
                             );
                             if (!mounted) return;
                             setState(() => _isLiked = liked);
@@ -1536,19 +1666,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           onTap: () {
                             ShareContentModal.show(
                               context,
-                              contentType: 'post',
+                              contentType: _isTweet ? 'tweet' : 'post',
                               contentId: widget.postId,
                             );
                           },
                         ),
                         const Spacer(),
-                        IconButton(
-                            icon: Icon(
-                              _isSaved ? Icons.bookmark : LucideIcons.bookmark,
-                              size: 28,
-                            ),
-                            color: primaryText,
-                            onPressed: _handleSave),
+                        if (!_isTweet)
+                          IconButton(
+                              icon: Icon(
+                                _isSaved
+                                    ? Icons.bookmark
+                                    : LucideIcons.bookmark,
+                                size: 28,
+                              ),
+                              color: primaryText,
+                              onPressed: _handleSave),
                       ],
                     ),
                   ),

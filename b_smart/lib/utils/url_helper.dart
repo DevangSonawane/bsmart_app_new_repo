@@ -40,7 +40,13 @@ class UrlHelper {
     try {
       final uri = Uri.parse(fixed);
       final host = uri.host.toLowerCase();
+      // NOTE: The API host may serve uploads over plain HTTP in some
+      // environments (especially older Android clients). Upgrading those
+      // URLs to HTTPS can cause the server to return non-image payloads
+      // (redirect/HTML), which then fails image decoding.
+      final isApiHost = host.startsWith('api.');
       if (uri.scheme == 'http' &&
+          !isApiHost &&
           (host.contains('bsmart') || host.contains('asynk.store'))) {
         fixed = uri.replace(scheme: 'https').toString();
       }

@@ -365,10 +365,15 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
         // /post/:postId
         if (segments.length == 2 && segments[0] == 'post') {
           final postId = segments[1];
+          final type = (uri.queryParameters['type'] ?? '').toLowerCase().trim();
+          final isTweet = type == 'tweet';
           debugPrint('[Router] → PostDetailScreen postId=$postId');
           return MaterialPageRoute<void>(
             settings: settings,
-            builder: (ctx) => PostDetailScreen(postId: postId),
+            builder: (ctx) => PostDetailScreen(
+              postId: postId,
+              isTweet: isTweet,
+            ),
           );
         }
 

@@ -13,6 +13,7 @@ import '../api/chat_api.dart';
 import '../api/api_client.dart';
 import '../api/users_api.dart';
 import '../services/chat_unread_service.dart';
+import '../services/ads_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
@@ -44,6 +45,7 @@ class _GroupChatConversationScreenState
   final _inputController = TextEditingController();
   final _inputFocusNode = FocusNode();
   final _picker = ImagePicker();
+  final _adsService = AdsService();
 
   static const bool _showCallButtons = false;
 
@@ -69,6 +71,8 @@ class _GroupChatConversationScreenState
 
   final Map<String, double> _sharedPreviewAspectRatios = <String, double>{};
   final Set<String> _resolvingSharedPreviewAspectRatioUrls = <String>{};
+  final Map<String, String> _sharedAdPreviewById = <String, String>{};
+  final Set<String> _loadingSharedAdIds = <String>{};
 
   static const int _pageLimit = 20;
 
@@ -2253,7 +2257,7 @@ class _GroupChatConversationScreenState
   double _defaultSharedAspectRatioForType(String type) {
     if (type == 'reel') return 4 / 5;
     if (type == 'post' || type == 'tweet') return 4 / 5;
-    if (type == 'ad') return 16 / 9;
+    if (type == 'ad') return 4 / 5;
     return 4 / 5;
   }
 
@@ -2297,6 +2301,38 @@ class _GroupChatConversationScreenState
       },
     );
     stream.addListener(listener);
+  }
+
+  void _ensureSharedAdPreview(String adId) {
+    final id = adId.trim();
+    if (id.isEmpty) return;
+    if (_sharedAdPreviewById.containsKey(id)) return;
+    if (_loadingSharedAdIds.contains(id)) return;
+    _loadingSharedAdIds.add(id);
+
+    unawaited(() async {
+      try {
+        final ad = await _adsService.fetchAdById(id);
+        final url = UrlHelper.normalizeUrl(ad?.imageUrl ?? '');
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _sharedAdPreviewById[id] = url;
+            _loadingSharedAdIds.remove(id);
+          });
+        });
+      } catch (_) {
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _sharedAdPreviewById[id] = '';
+            _loadingSharedAdIds.remove(id);
+          });
+        });
+      }
+    }());
   }
 
   String _inferSharedTypeFromUrl(String url) {
@@ -2386,9 +2422,94 @@ class _GroupChatConversationScreenState
   }
 
   String _sharedPreviewUrl(Map<String, dynamic> shared) {
-    return UrlHelper.normalizeUrl(
-      (shared['previewUrl'] ?? shared['preview_url'] ?? '').toString(),
-    );
+    bool isVideoLike(String url) {
+      final u = url.trim().toLowerCase();
+      return u.endsWith('.m3u8') ||
+          u.contains('.m3u8?') ||
+          u.endsWith('.mp4') ||
+          u.contains('.mp4?') ||
+          u.endsWith('.mov') ||
+          u.endsWith('.m4v') ||
+          u.endsWith('.webm') ||
+          u.endsWith('.mkv');
+    }
+
+    String norm(dynamic v) =>
+        UrlHelper.normalizeUrl((v ?? '').toString().trim());
+
+    String pickFirstThumbnail(dynamic media) {
+      if (media is Map) return pickFirstThumbnail([media]);
+      if (media is! List) return '';
+      for (final raw in media) {
+        if (raw is! Map) continue;
+        final m = Map<String, dynamic>.from(raw);
+
+        final thumbKeys = [
+          'thumbnailUrl',
+          'thumbnail_url',
+          'thumbUrl',
+          'thumb_url',
+          'thumb',
+          'thumbnail',
+          'imageUrl',
+          'image_url',
+        ];
+        for (final k in thumbKeys) {
+          final u = norm(m[k]);
+          if (u.isNotEmpty && !isVideoLike(u)) return u;
+        }
+
+        final thumbs = m['thumbnails'] ?? m['thumbs'];
+        if (thumbs is List) {
+          for (final tRaw in thumbs) {
+            if (tRaw is! Map) continue;
+            final t = Map<String, dynamic>.from(tRaw);
+            final u = norm(t['fileUrl'] ?? t['file_url'] ?? t['url'] ?? t['path']);
+            if (u.isNotEmpty && !isVideoLike(u)) return u;
+          }
+        }
+
+        final mediaType = (m['media_type'] ?? m['type'] ?? m['mediaType'] ?? '')
+            .toString()
+            .toLowerCase()
+            .trim();
+        final fileUrl = norm(m['fileUrl'] ?? m['file_url'] ?? m['url'] ?? m['path']);
+        if (fileUrl.isNotEmpty &&
+            (mediaType.contains('image') || !isVideoLike(fileUrl)) &&
+            !isVideoLike(fileUrl)) {
+          return fileUrl;
+        }
+      }
+      return '';
+    }
+
+    final direct = norm(shared['previewUrl'] ?? shared['preview_url']);
+    if (direct.isNotEmpty && !isVideoLike(direct)) return direct;
+
+    final fallbacks = [
+      shared['thumbnailUrl'] ?? shared['thumbnail_url'],
+      shared['thumbUrl'] ?? shared['thumb_url'],
+      shared['imageUrl'] ?? shared['image_url'],
+      shared['image'],
+    ];
+    for (final v in fallbacks) {
+      final u = norm(v);
+      if (u.isNotEmpty && !isVideoLike(u)) return u;
+    }
+
+    final media = shared['media'] ??
+        shared['medias'] ??
+        shared['assets'] ??
+        shared['items'];
+    final fromMedia = pickFirstThumbnail(media);
+    if (fromMedia.isNotEmpty) return fromMedia;
+
+    if (direct.isNotEmpty && isVideoLike(direct)) {
+      final thumbFromMedia = pickFirstThumbnail(media);
+      if (thumbFromMedia.isNotEmpty) return thumbFromMedia;
+    }
+
+    return '';
   }
 
   String _sharedCaption(Map<String, dynamic> shared) {
@@ -2418,7 +2539,7 @@ class _GroupChatConversationScreenState
     if (type == 'tweet') {
       final isMobile = MediaQuery.sizeOf(context).width < 600;
       if (isMobile) {
-        Navigator.of(context).pushNamed('/post/$id');
+        Navigator.of(context).pushNamed('/post/$id?type=tweet');
       } else {
         showDialog(
           context: context,
@@ -2466,7 +2587,15 @@ class _GroupChatConversationScreenState
     if (type.isEmpty) return const SizedBox.shrink();
     final creator = _sharedCreatorName(shared);
     final creatorAvatar = _sharedCreatorAvatar(shared);
-    final preview = _sharedPreviewUrl(shared);
+    var preview = _sharedPreviewUrl(shared);
+    if (preview.isEmpty && type == 'ad') {
+      final cached = _sharedAdPreviewById[resolved.id]?.trim() ?? '';
+      if (cached.isNotEmpty) {
+        preview = cached;
+      } else {
+        _ensureSharedAdPreview(resolved.id);
+      }
+    }
     final caption = _sharedCaption(shared);
     final verified = shared['creatorVerified'] == true ||
         (shared['creator_verified'] == true);
@@ -2483,7 +2612,7 @@ class _GroupChatConversationScreenState
       _ => type,
     };
 
-    final isReelShare = type == 'reel';
+    final isReelShare = type == 'reel' || type == 'ad';
     final isPostOrTweetShare = type == 'post' || type == 'tweet';
 
     final cardBg = isDark ? theme.cardColor : Colors.white;
@@ -2662,6 +2791,22 @@ class _GroupChatConversationScreenState
     );
 
     Widget previewFrame({required BoxFit fit, required bool contain}) {
+      bool isLikelyRasterImage(String url) {
+        final u = url.toLowerCase();
+        return u.endsWith('.png') ||
+            u.contains('.png?') ||
+            u.endsWith('.jpg') ||
+            u.contains('.jpg?') ||
+            u.endsWith('.jpeg') ||
+            u.contains('.jpeg?') ||
+            u.endsWith('.webp') ||
+            u.contains('.webp?') ||
+            u.endsWith('.gif') ||
+            u.contains('.gif?') ||
+            u.endsWith('.bmp') ||
+            u.contains('.bmp?');
+      }
+
       return LayoutBuilder(
         builder: (context, constraints) {
           final availableWidth =
@@ -2680,7 +2825,8 @@ class _GroupChatConversationScreenState
                   ? SafeNetworkImage(
                       url: preview,
                       fit: fit,
-                      trustExtension: false,
+                      assumeRaster: isLikelyRasterImage(preview),
+                      trustExtension: isLikelyRasterImage(preview),
                       placeholder: previewPlaceholder(
                         'Loading $contentLabel…',
                         height: height,

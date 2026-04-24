@@ -703,22 +703,63 @@ class SupabaseService {
     out['reply_count'] = repliesCount;
     out['replies_count'] = repliesCount;
 
-    dynamic userRaw =
-        out['user'] ?? out['users'] ?? out['author'] ?? out['user_id'];
+    dynamic pickUserRaw() {
+      // Prefer embedded user objects over plain ids. Some endpoints include
+      // both `user: "<id>"` and `user_id: { ...user... }`; the old logic would
+      // pick the string and lose the rich object, causing usernames to show as
+      // the fallback "user".
+      final candidates = <dynamic>[
+        out['user'],
+        out['users'],
+        out['author'],
+        out['user_id'],
+        out['userId'],
+        out['userID'],
+        out['created_by'],
+        out['createdBy'],
+        out['sender'],
+      ];
+      for (final c in candidates) {
+        if (c is Map) return c;
+      }
+      for (final c in candidates) {
+        if (c != null) return c;
+      }
+      return null;
+    }
+
+    final userRaw = pickUserRaw();
     Map<String, dynamic> user = {};
     if (userRaw is Map) {
       user = Map<String, dynamic>.from(userRaw);
-      final userId = (user['id'] ?? user['_id'] ?? out['user_id'])?.toString();
+      final userId = (user['id'] ??
+              user['_id'] ??
+              (out['user_id'] is String || out['user_id'] is num
+                  ? out['user_id']
+                  : null) ??
+              out['userId'] ??
+              out['userID'])
+          ?.toString();
       if (userId != null && userId.isNotEmpty) {
         user['id'] = userId;
         user['_id'] = userId;
         out['user_id'] = userId;
       }
       user['username'] =
-          (user['username'] ?? user['name'] ?? out['username'] ?? 'user')
+          (user['username'] ??
+                  user['handle'] ??
+                  user['name'] ??
+                  user['full_name'] ??
+                  out['username'] ??
+                  out['user_name'] ??
+                  'User')
               .toString();
       user['avatar_url'] =
-          (user['avatar_url'] ?? user['avatar'] ?? out['avatar_url'])
+          (user['avatar_url'] ??
+                  user['avatar'] ??
+                  user['profile_picture'] ??
+                  user['profilePicture'] ??
+                  out['avatar_url'])
               ?.toString();
     } else if (userRaw != null) {
       final userId = userRaw.toString();
@@ -727,7 +768,7 @@ class SupabaseService {
         user = {
           'id': userId,
           '_id': userId,
-          'username': (out['username'] ?? 'user').toString(),
+          'username': (out['username'] ?? out['user_name'] ?? 'User').toString(),
           'avatar_url': out['avatar_url']?.toString(),
         };
       }
