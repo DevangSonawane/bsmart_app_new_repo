@@ -25,6 +25,7 @@ class SafeNetworkImage extends StatelessWidget {
   final String? cacheKey;
   final String? debugLabel;
   final bool assumeRaster;
+  final bool trustExtension;
 
   const SafeNetworkImage({
     super.key,
@@ -39,6 +40,7 @@ class SafeNetworkImage extends StatelessWidget {
     this.cacheKey,
     this.debugLabel,
     this.assumeRaster = false,
+    this.trustExtension = true,
   });
 
   static final Map<String, Future<_ProbeResult>> _probeCache =
@@ -57,7 +59,7 @@ class SafeNetworkImage extends StatelessWidget {
     if (kindFromExt == _ImageKind.unsupported) {
       return _error();
     }
-    if (assumeRaster || kindFromExt == _ImageKind.raster) {
+    if (assumeRaster || (trustExtension && kindFromExt == _ImageKind.raster)) {
       return _cachedRaster();
     }
 
@@ -78,7 +80,12 @@ class SafeNetworkImage extends StatelessWidget {
           case _ImageKind.unsupported:
             return _error();
           case _ImageKind.raster:
+            return _cachedRaster();
           case _ImageKind.unknown:
+            // In strict mode (trustExtension=false), don't attempt to decode
+            // ambiguous/unknown content; it often ends up being HTML/JSON and
+            // triggers noisy platform decode errors.
+            if (!trustExtension) return _error();
             return _cachedRaster();
         }
       },

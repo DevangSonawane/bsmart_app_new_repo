@@ -21,6 +21,7 @@ import 'screens/post_detail_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/ad_detail_screen.dart';
 import 'screens/ad_public_detail_screen.dart';
+import 'screens/reels_screen.dart';
 import 'screens/vendor_public_profile_react_screen.dart';
 import 'utils/system_ui.dart';
 import 'widgets/profile_setup_gate.dart';
@@ -368,6 +369,26 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
           return MaterialPageRoute<void>(
             settings: settings,
             builder: (ctx) => PostDetailScreen(postId: postId),
+          );
+        }
+
+        // React parity: /posts/:postId → PostDetailScreen(postId)
+        if (segments.length == 2 && segments[0] == 'posts') {
+          final postId = segments[1];
+          debugPrint('[Router] → PostDetailScreen (posts) postId=$postId');
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (ctx) => PostDetailScreen(postId: postId),
+          );
+        }
+
+        // React parity: /reels/:reelId → ReelsScreen(initialReelId)
+        if (segments.length == 2 && segments[0] == 'reels') {
+          final reelId = segments[1];
+          debugPrint('[Router] → ReelsScreen initialReelId=$reelId');
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (ctx) => ReelsScreen(initialReelId: reelId),
           );
         }
 

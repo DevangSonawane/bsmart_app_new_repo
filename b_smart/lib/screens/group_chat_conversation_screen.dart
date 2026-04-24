@@ -67,6 +67,9 @@ class _GroupChatConversationScreenState
   bool _refreshingLatest = false;
   int _pendingNewCount = 0;
 
+  final Map<String, double> _sharedPreviewAspectRatios = <String, double>{};
+  final Set<String> _resolvingSharedPreviewAspectRatioUrls = <String>{};
+
   static const int _pageLimit = 20;
 
   bool _isGroupConversation() => true;
@@ -1020,7 +1023,9 @@ class _GroupChatConversationScreenState
 
       return Container(
         margin: const EdgeInsets.only(top: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        constraints: const BoxConstraints(minHeight: 28),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF0B0B0B) : Colors.white,
           borderRadius: BorderRadius.circular(999),
@@ -1035,7 +1040,15 @@ class _GroupChatConversationScreenState
         ),
         child: Text(
           label,
-          style: const TextStyle(fontSize: 14, height: 1.0),
+          textAlign: TextAlign.center,
+          textHeightBehavior: const TextHeightBehavior(
+            applyHeightToFirstAscent: false,
+            applyHeightToLastDescent: false,
+          ),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       );
     }
@@ -2207,10 +2220,15 @@ class _GroupChatConversationScreenState
   }
 
   String _sharedContentType(Map<String, dynamic> shared) {
-    return (shared['contentType'] ?? shared['content_type'] ?? '')
+    final raw = (shared['contentType'] ?? shared['content_type'] ?? '')
         .toString()
         .trim()
         .toLowerCase();
+    if (raw == 'reels') return 'reel';
+    if (raw == 'ads') return 'ad';
+    if (raw == 'posts') return 'post';
+    if (raw == 'tweets') return 'tweet';
+    return raw;
   }
 
   String _sharedContentId(Map<String, dynamic> shared) {
@@ -2219,6 +2237,133 @@ class _GroupChatConversationScreenState
       return ((raw['_id'] ?? raw['id'])?.toString() ?? '').trim();
     }
     return (raw?.toString() ?? '').trim();
+  }
+
+  String _sharedShareUrl(Map<String, dynamic> shared) {
+    return (shared['shareUrl'] ?? shared['share_url'] ?? '').toString().trim();
+  }
+
+  double _quantizeSharedAspectRatio(double ratio) {
+    if (ratio <= 0 || ratio.isNaN || ratio.isInfinite) return 4 / 5;
+    if (ratio >= 1.25) return 16 / 9;
+    if (ratio >= 0.95) return 1.0;
+    return 4 / 5;
+  }
+
+  double _defaultSharedAspectRatioForType(String type) {
+    if (type == 'reel') return 4 / 5;
+    if (type == 'post' || type == 'tweet') return 4 / 5;
+    if (type == 'ad') return 16 / 9;
+    return 4 / 5;
+  }
+
+  void _ensureSharedPreviewAspectRatio(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return;
+    if (_sharedPreviewAspectRatios.containsKey(trimmed)) return;
+    if (_resolvingSharedPreviewAspectRatioUrls.contains(trimmed)) return;
+    _resolvingSharedPreviewAspectRatioUrls.add(trimmed);
+
+    final provider = CachedNetworkImageProvider(trimmed);
+    final stream = provider.resolve(ImageConfiguration.empty);
+
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (ImageInfo info, bool _) {
+        stream.removeListener(listener);
+        _resolvingSharedPreviewAspectRatioUrls.remove(trimmed);
+        final w = info.image.width.toDouble();
+        final h = info.image.height.toDouble();
+        if (w <= 0 || h <= 0) return;
+        final ratio = w / h;
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _sharedPreviewAspectRatios[trimmed] = ratio;
+          });
+        });
+      },
+      onError: (Object _, StackTrace? __) {
+        stream.removeListener(listener);
+        _resolvingSharedPreviewAspectRatioUrls.remove(trimmed);
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _sharedPreviewAspectRatios.putIfAbsent(trimmed, () => -1);
+          });
+        });
+      },
+    );
+    stream.addListener(listener);
+  }
+
+  String _inferSharedTypeFromUrl(String url) {
+    if (url.isEmpty) return '';
+    final uri = Uri.tryParse(url);
+    final path = uri?.path.isNotEmpty == true ? uri!.path : url;
+    final lower = path.toLowerCase();
+    if (lower.contains('/reels/')) return 'reel';
+    if (lower.contains('/ads/') && lower.contains('/details')) return 'ad';
+    if (lower.contains('/ad/')) return 'ad';
+    if (lower.contains('/post/')) {
+      final qp = uri?.queryParameters;
+      if (qp != null && (qp['type'] ?? '').toLowerCase().trim() == 'tweet') {
+        return 'tweet';
+      }
+      return 'post';
+    }
+    if (lower.contains('/posts/')) return 'post';
+    return '';
+  }
+
+  String _inferSharedIdFromUrl(String url, String type) {
+    if (url.isEmpty) return '';
+    final uri = Uri.tryParse(url);
+    final path = uri?.path.isNotEmpty == true ? uri!.path : url;
+
+    String? matchGroup(Pattern pattern) {
+      final m = RegExp(pattern.toString(), caseSensitive: false).firstMatch(path);
+      final v = m?.groupCount == 1 ? m?.group(1) : null;
+      return v?.trim();
+    }
+
+    String? candidate;
+    if (type == 'reel') candidate = matchGroup(r'\/reels\/([^\/?#]+)');
+    if (type == 'ad') {
+      candidate ??= matchGroup(r'\/ads\/([^\/?#]+)\/details');
+      candidate ??= matchGroup(r'\/ad\/([^\/?#]+)');
+    }
+    if (type == 'tweet' || type == 'post') {
+      candidate ??= matchGroup(r'\/post\/([^\/?#]+)');
+      candidate ??= matchGroup(r'\/posts\/([^\/?#]+)');
+    }
+    if (candidate == null || candidate.isEmpty) return '';
+    try {
+      return Uri.decodeComponent(candidate);
+    } catch (_) {
+      return candidate;
+    }
+  }
+
+  ({String type, String id}) _resolveSharedContent(Map<String, dynamic> shared) {
+    var type = _sharedContentType(shared);
+    var id = _sharedContentId(shared);
+    final shareUrl = _sharedShareUrl(shared);
+
+    final inferredType = _inferSharedTypeFromUrl(shareUrl);
+    if (inferredType.isNotEmpty) {
+      type = inferredType;
+    }
+
+    if (id.isEmpty && type.isNotEmpty) {
+      id = _inferSharedIdFromUrl(shareUrl, type);
+    }
+    if (type.isEmpty && id.isNotEmpty) {
+      type = 'post';
+    }
+    return (type: type, id: id);
   }
 
   String _sharedCreatorName(Map<String, dynamic> shared) {
@@ -2254,8 +2399,9 @@ class _GroupChatConversationScreenState
   }
 
   Future<void> _openSharedContent(Map<String, dynamic> shared) async {
-    final type = _sharedContentType(shared);
-    final id = _sharedContentId(shared);
+    final resolved = _resolveSharedContent(shared);
+    final type = resolved.type;
+    final id = resolved.id;
     if (type.isEmpty || id.isEmpty) return;
 
     if (type == 'reel') {
@@ -2266,25 +2412,57 @@ class _GroupChatConversationScreenState
       return;
     }
     if (type == 'ad') {
-      Navigator.of(context).pushNamed('/ad/$id');
+      Navigator.of(context).pushNamed('/ads/$id/details');
       return;
     }
     if (type == 'tweet') {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => PostDetailModal(postId: id, isTweet: true),
-        ),
-      );
+      final isMobile = MediaQuery.sizeOf(context).width < 600;
+      if (isMobile) {
+        Navigator.of(context).pushNamed('/post/$id');
+      } else {
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (ctx) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: PostDetailModal(
+              postId: id,
+              isTweet: true,
+              onClose: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+        );
+      }
       return;
     }
     if (type == 'post') {
-      Navigator.of(context).pushNamed('/post/$id');
+      final isMobile = MediaQuery.sizeOf(context).width < 600;
+      if (isMobile) {
+        Navigator.of(context).pushNamed('/post/$id');
+      } else {
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (ctx) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: PostDetailModal(
+              postId: id,
+              onClose: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+        );
+      }
       return;
     }
   }
 
   Widget _sharedContentCard(Map<String, dynamic> shared, bool mine) {
-    final type = _sharedContentType(shared);
+    final resolved = _resolveSharedContent(shared);
+    final type = resolved.type;
     if (type.isEmpty) return const SizedBox.shrink();
     final creator = _sharedCreatorName(shared);
     final creatorAvatar = _sharedCreatorAvatar(shared);
@@ -2293,128 +2471,347 @@ class _GroupChatConversationScreenState
     final verified = shared['creatorVerified'] == true ||
         (shared['creator_verified'] == true);
 
-    final borderColor = mine
-        ? Colors.white.withValues(alpha: 0.20)
-        : Colors.white.withValues(alpha: 0.10);
-    final bgColor = mine
-        ? const Color(0xFF4F46E5).withValues(alpha: 0.35)
-        : const Color(0xFF1D1F27);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
-    return InkWell(
-      onTap: () => unawaited(_openSharedContent(shared)),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
+    final contentLabel = switch (type) {
+      'reel' => 'Reel',
+      'post' => 'Post',
+      'tweet' => 'Tweet',
+      'ad' => 'Ad',
+      _ => type,
+    };
+
+    final isReelShare = type == 'reel';
+    final isPostOrTweetShare = type == 'post' || type == 'tweet';
+
+    final cardBg = isDark ? theme.cardColor : Colors.white;
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.10);
+    final textColor = isDark ? Colors.white : cs.onSurface;
+    final mutedText =
+        isDark ? Colors.white.withValues(alpha: 0.75) : cs.onSurface.withValues(alpha: 0.70);
+    final pillBg =
+        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.06);
+    final pillBorder =
+        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.08);
+    final headerBg =
+        isDark ? Colors.black.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.03);
+    final captionBg =
+        isDark ? Colors.black.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.04);
+
+    Widget typePill() {
+      IconData icon = LucideIcons.share2;
+      if (type == 'reel') icon = LucideIcons.clapperboard;
+      if (type == 'post') icon = LucideIcons.image;
+      if (type == 'tweet') icon = LucideIcons.messageSquare;
+      if (type == 'ad') icon = LucideIcons.megaphone;
+
+      return Container(
+        constraints: const BoxConstraints(minHeight: 30),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: borderColor),
+          color: pillBg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: pillBorder),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            Icon(icon, size: 14, color: textColor.withValues(alpha: 0.92)),
+            const SizedBox(width: 6),
+            Text(
+              contentLabel,
+              textAlign: TextAlign.center,
+              textHeightBehavior: const TextHeightBehavior(
+                applyHeightToFirstAscent: false,
+                applyHeightToLastDescent: false,
+              ),
+              style: TextStyle(
+                color: textColor.withValues(alpha: 0.92),
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget avatar() {
+      return ClipOval(
+        child: creatorAvatar.isNotEmpty
+            ? SafeNetworkImage(
+                url: creatorAvatar,
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+              )
+            : Container(
+                width: 28,
+                height: 28,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.10)
+                    : Colors.black.withValues(alpha: 0.06),
+                alignment: Alignment.center,
+                child: Text(
+                  (creator.isNotEmpty ? creator : 'U')
+                      .characters
+                      .first
+                      .toUpperCase(),
+                  style: TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+      );
+    }
+
+    Widget verifiedBadge() {
+      if (!verified) return const SizedBox.shrink();
+      return Container(
+        width: 16,
+        height: 16,
+        decoration: const BoxDecoration(
+          color: Color(0xFF0095F6),
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: const Text(
+          '✓',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      );
+    }
+
+    Widget header({EdgeInsets padding = const EdgeInsets.all(12)}) {
+      return Padding(
+        padding: padding,
+        child: Row(
+          children: [
+            avatar(),
+            const SizedBox(width: 10),
+            Expanded(
               child: Row(
                 children: [
-                  ClipOval(
-                    child: creatorAvatar.isNotEmpty
-                        ? SafeNetworkImage(
-                            url: creatorAvatar,
-                            width: 26,
-                            height: 26,
-                            fit: BoxFit.cover,
-                          )
-                        : Container(
-                            width: 26,
-                            height: 26,
-                            color: Colors.white.withValues(alpha: 0.10),
-                            alignment: Alignment.center,
-                            child: Text(
-                              (creator.isNotEmpty ? creator : 'U')
-                                  .characters
-                                  .first
-                                  .toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
+                  Flexible(
                     child: Text(
                       creator.isNotEmpty ? creator : 'Shared',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: textColor,
                         fontWeight: FontWeight.w800,
-                        fontSize: 13,
+                        fontSize: 14,
                       ),
                     ),
                   ),
-                  if (verified)
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF0095F6),
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        '✓',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
+                  const SizedBox(width: 6),
+                  verifiedBadge(),
                 ],
               ),
             ),
-            if (preview.isNotEmpty)
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: SafeNetworkImage(
-                  url: preview,
-                  fit: BoxFit.cover,
-                ),
-              )
-            else
-              Container(
-                height: 150,
-                color: Colors.black.withValues(alpha: 0.18),
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  'Open shared $type',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.75),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            if (caption.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                child: Text(
-                  caption,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                    height: 1.2,
-                  ),
-                ),
-              ),
+            const SizedBox(width: 8),
+            typePill(),
           ],
+        ),
+      );
+    }
+
+    Widget previewPlaceholder(String label, {double height = 260}) {
+      return Container(
+        height: height,
+        color:
+            isDark ? Colors.black.withValues(alpha: 0.20) : Colors.black.withValues(alpha: 0.06),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: mutedText,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+
+    final maxCardWidth = (type == 'reel' || type == 'ad')
+        ? 280.0
+        : (isPostOrTweetShare ? 320.0 : 300.0);
+
+    final resolvedRaw =
+        preview.isNotEmpty ? _sharedPreviewAspectRatios[preview] : null;
+    if (preview.isNotEmpty && resolvedRaw == null && type != 'ad') {
+      _ensureSharedPreviewAspectRatio(preview);
+    }
+    final resolvedRatio = (resolvedRaw != null && resolvedRaw > 0)
+        ? resolvedRaw
+        : null;
+    final frameAspect = _quantizeSharedAspectRatio(
+      resolvedRatio ?? _defaultSharedAspectRatioForType(type),
+    );
+
+    Widget previewFrame({required BoxFit fit, required bool contain}) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final availableWidth =
+              constraints.maxWidth.isFinite ? constraints.maxWidth : maxCardWidth;
+          final width = min(availableWidth, maxCardWidth);
+          final height = width / frameAspect;
+          final bg = contain
+              ? (isDark ? Colors.black.withValues(alpha: 0.18) : Colors.black.withValues(alpha: 0.04))
+              : Colors.transparent;
+          return SizedBox(
+            width: width,
+            height: height,
+            child: Container(
+              color: bg,
+              child: preview.isNotEmpty
+                  ? SafeNetworkImage(
+                      url: preview,
+                      fit: fit,
+                      trustExtension: false,
+                      placeholder: previewPlaceholder(
+                        'Loading $contentLabel…',
+                        height: height,
+                      ),
+                      errorWidget: previewPlaceholder(
+                        '$contentLabel preview unavailable',
+                        height: height,
+                      ),
+                    )
+                  : previewPlaceholder(
+                      'Open shared $contentLabel',
+                      height: height,
+                    ),
+            ),
+          );
+        },
+      );
+    }
+
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxCardWidth),
+        child: InkWell(
+          onTap: () => unawaited(_openSharedContent(shared)),
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: borderColor),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: isReelShare
+                ? Stack(
+                    children: [
+                      previewFrame(fit: BoxFit.cover, contain: false),
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.65),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              avatar(),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        creator.isNotEmpty ? creator : 'Reel',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 18,
+                                          height: 1.1,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    verifiedBadge(),
+                                  ],
+                                ),
+                              ),
+                              typePill(),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 12,
+                        left: 12,
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(color: headerBg, child: header()),
+                      previewFrame(
+                        fit: isPostOrTweetShare ? BoxFit.contain : BoxFit.cover,
+                        contain: isPostOrTweetShare,
+                      ),
+                      Container(
+                        color: captionBg,
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                        child: Text(
+                          caption.isNotEmpty
+                              ? caption
+                              : 'Open shared $contentLabel',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: textColor.withValues(alpha: 0.95),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            height: 1.25,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );
@@ -2586,23 +2983,43 @@ class _GroupChatConversationScreenState
     final replied = _repliedMessageFor(message);
     final replySender = _senderLabelForMessage(replied);
     final replyPreview = _previewForMessage(replied);
+    final shared = _sharedContentFor(message);
+    final sharedCard = shared == null ? null : _sharedContentCard(shared, mine);
     final hasMedia = mediaUrl.trim().isNotEmpty;
-    final hasText = text.trim().isNotEmpty;
+    final cleanedText = shared != null
+        ? text.replaceAll(RegExp(r'https?:\\/\\/\\S+', caseSensitive: false), '')
+        : text;
+    final hasText = cleanedText.trim().isNotEmpty;
+    final sharedOnly = !isDeleted &&
+        !hasMedia &&
+        sharedCard != null &&
+        replied == null &&
+        !hasText;
 
     final bubble = GestureDetector(
       onDoubleTap: () => _reactToMessage(message, '❤️'),
       onLongPress: () => _showMessageActions(context, message, mine: mine),
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: hasMedia
+        padding: sharedOnly
             ? EdgeInsets.zero
-            : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            : hasMedia
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         constraints: BoxConstraints(maxWidth: maxBubbleWidth),
         decoration: BoxDecoration(
-          color: hasMedia ? Colors.transparent : bg,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: hasMedia ? Colors.transparent : border),
-          boxShadow: mine
+          color: (hasMedia || sharedOnly) ? Colors.transparent : bg,
+          borderRadius: sharedOnly
+              ? BorderRadius.zero
+              : BorderRadius.only(
+                  topLeft: const Radius.circular(22),
+                  topRight: const Radius.circular(22),
+                  bottomLeft: Radius.circular(mine ? 22 : 8),
+                  bottomRight: Radius.circular(mine ? 8 : 22),
+                ),
+          border: Border.all(
+              color: (hasMedia || sharedOnly) ? Colors.transparent : border),
+          boxShadow: mine || sharedOnly
               ? const []
               : [
                   BoxShadow(
@@ -2624,9 +3041,19 @@ class _GroupChatConversationScreenState
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (replied != null)
+                      if (sharedCard != null)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                          child: sharedCard,
+                        ),
+                      if (replied != null)
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            12,
+                            sharedCard != null ? 0 : 10,
+                            12,
+                            8,
+                          ),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8),
@@ -2687,13 +3114,23 @@ class _GroupChatConversationScreenState
                       ),
                       if (hasText)
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                          child: Text(
-                            text,
-                            style: TextStyle(
-                              color: fg,
-                              fontSize: 14,
-                              height: 1.25,
+                          padding: const EdgeInsets.fromLTRB(12, 5, 12, 5),
+                          child: Transform.translate(
+                            offset: const Offset(0, -1),
+                            child: Text(
+                              cleanedText.trim(),
+                              textHeightBehavior: const TextHeightBehavior(
+                                applyHeightToFirstAscent: false,
+                                applyHeightToLastDescent: false,
+                              ),
+                              style: TextStyle(
+                                color: fg,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                height: 1.0,
+                                leadingDistribution:
+                                    TextLeadingDistribution.even,
+                              ),
                             ),
                           ),
                         ),
@@ -2702,6 +3139,9 @@ class _GroupChatConversationScreenState
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (sharedCard != null) sharedCard,
+                      if (sharedCard != null && (replied != null || hasText))
+                        const SizedBox(height: 8),
                       if (replied != null)
                         Container(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -2757,10 +3197,23 @@ class _GroupChatConversationScreenState
                           ),
                         ),
                       if (hasText)
-                        Text(
-                          text,
-                          style:
-                              TextStyle(color: fg, fontSize: 14, height: 1.25),
+                        Transform.translate(
+                          offset: const Offset(0, -1),
+                          child: Text(
+                            cleanedText.trim(),
+                            textHeightBehavior: const TextHeightBehavior(
+                              applyHeightToFirstAscent: false,
+                              applyHeightToLastDescent: false,
+                            ),
+                            style: TextStyle(
+                              color: fg,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              height: 1.0,
+                              leadingDistribution:
+                                  TextLeadingDistribution.even,
+                            ),
+                          ),
                         ),
                     ],
                   )),
