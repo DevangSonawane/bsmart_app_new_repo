@@ -68,6 +68,8 @@ class _GroupChatConversationScreenState
   Timer? _pollTimer;
   bool _refreshingLatest = false;
   int _pendingNewCount = 0;
+  Timer? _scrollPinTimer;
+  int _scrollPinAttempts = 0;
 
   final Map<String, double> _sharedPreviewAspectRatios = <String, double>{};
   final Set<String> _resolvingSharedPreviewAspectRatioUrls = <String>{};
@@ -453,6 +455,7 @@ class _GroupChatConversationScreenState
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopPolling();
+    _scrollPinTimer?.cancel();
     _inputController.removeListener(_handleComposerChanged);
     _scrollController.dispose();
     _inputController.dispose();
@@ -605,13 +608,7 @@ class _GroupChatConversationScreenState
       unawaited(_loadOtherProfileIfNeeded());
 
       if (replace) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          if (_scrollController.hasClients) {
-            _scrollController
-                .jumpTo(_scrollController.position.maxScrollExtent);
-          }
-        });
+        _pinToBottom(force: true);
       }
     } catch (e) {
       if (!mounted) return;
@@ -717,7 +714,7 @@ class _GroupChatConversationScreenState
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _scrollToBottom();
+        _pinToBottom(force: true);
       });
     } catch (e) {
       if (!mounted) return;
@@ -737,6 +734,31 @@ class _GroupChatConversationScreenState
         curve: Curves.easeOut,
       );
     }
+  }
+
+  void _pinToBottom({bool force = false}) {
+    if (!mounted) return;
+    if (!force && !_isNearBottom()) return;
+    _scrollPinTimer?.cancel();
+    _scrollPinAttempts = 4;
+
+    void tick() {
+      if (!mounted) return;
+      if (_scrollPinAttempts <= 0) return;
+      _scrollPinAttempts--;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!_scrollController.hasClients) return;
+        try {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        } catch (_) {}
+      });
+      if (_scrollPinAttempts > 0) {
+        _scrollPinTimer = Timer(const Duration(milliseconds: 140), tick);
+      }
+    }
+
+    tick();
   }
 
   Future<void> _refreshLatest() async {
@@ -791,12 +813,7 @@ class _GroupChatConversationScreenState
           _messages = next;
           if (!wasNearBottom) _pendingNewCount += appended;
         });
-        if (wasNearBottom) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _scrollToBottom();
-          });
-        }
+        if (wasNearBottom) _pinToBottom();
       }
 
       // Best-effort.
@@ -834,7 +851,7 @@ class _GroupChatConversationScreenState
             _replyToMessage = null;
           });
           WidgetsBinding.instance
-              .addPostFrameCallback((_) => _scrollToBottom());
+              .addPostFrameCallback((_) => _pinToBottom(force: true));
         }
       }
     } catch (e) {
