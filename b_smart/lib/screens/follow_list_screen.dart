@@ -680,7 +680,7 @@ class _FollowListScreenState extends State<FollowListScreen>
           ),
           if (_showConnectContacts)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+              padding: const EdgeInsets.fromLTRB(14, 0, 4, 10),
               child: _ConnectContactsCard(
                 onClose: () => setState(() => _showConnectContacts = false),
                 onConnect: () {
@@ -741,7 +741,7 @@ class _FollowListScreenState extends State<FollowListScreen>
           ? () => Navigator.of(context).pushNamed('/profile/$uid')
           : null,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
         child: Row(
           children: [
             _AvatarCircle(username: username, avatarUrl: avatar),
@@ -812,12 +812,26 @@ class _FollowListScreenState extends State<FollowListScreen>
             else if (mode == FollowListMode.followers &&
                 widget.isOwnProfile &&
                 canAct)
-              _ActionButton(
-                label: _actionUserId == uid ? 'Removing...' : 'Remove',
-                kind: _ActionButtonKind.neutral,
-                disabled: _actionUserId.isNotEmpty,
-                onPressed: () => _removeFollower(uid),
-              )
+              isFollowing
+                  ? _ActionButton(
+                      label: _openingConversationForUserId == uid
+                          ? 'Opening...'
+                          : 'Message',
+                      kind: _ActionButtonKind.neutral,
+                      disabled: _actionUserId.isNotEmpty ||
+                          _openingConversationForUserId.isNotEmpty,
+                      onPressed: () {
+                        unawaited(_openChatForUser(participantId: uid));
+                      },
+                    )
+                  : _ActionButton(
+                      label: _actionUserId == uid ? 'Updating...' : 'Follow back',
+                      kind: _ActionButtonKind.primary,
+                      backgroundOverride: const Color(0xFF3B82F6),
+                      foregroundOverride: Colors.white,
+                      disabled: _actionUserId.isNotEmpty,
+                      onPressed: () => _toggleFollow(uid, false),
+                    )
             else if ((mode == FollowListMode.followers ||
                     mode == FollowListMode.vendors) &&
                 canAct)
@@ -831,7 +845,7 @@ class _FollowListScreenState extends State<FollowListScreen>
                 disabled: _actionUserId.isNotEmpty,
                 onPressed: () => _toggleFollow(uid, isFollowing),
               ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 0),
             if (mode == FollowListMode.followers)
               IconButton(
                 onPressed: (widget.isOwnProfile && canAct)
@@ -841,6 +855,9 @@ class _FollowListScreenState extends State<FollowListScreen>
                           avatarUrl: avatar,
                         )
                     : null,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                splashRadius: 18,
                 icon: Icon(
                   LucideIcons.x,
                   color: muted,
@@ -856,6 +873,9 @@ class _FollowListScreenState extends State<FollowListScreen>
                           isFollowing: isFollowing,
                         )
                     : null,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                splashRadius: 18,
                 icon: Icon(
                   LucideIcons.ellipsis,
                   color: muted,
@@ -1599,6 +1619,9 @@ class _ConnectContactsCard extends StatelessWidget {
           ),
           IconButton(
             onPressed: onClose,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            splashRadius: 18,
             icon: Icon(
               LucideIcons.x,
               color: cs.onSurface.withValues(alpha: 0.70),
@@ -1895,20 +1918,25 @@ class _ActionButton extends StatelessWidget {
   final _ActionButtonKind kind;
   final bool disabled;
   final VoidCallback onPressed;
+  final Color? backgroundOverride;
+  final Color? foregroundOverride;
 
   const _ActionButton({
     required this.label,
     required this.kind,
     required this.disabled,
     required this.onPressed,
+    this.backgroundOverride,
+    this.foregroundOverride,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isPrimary = kind == _ActionButtonKind.primary;
-    final bg = isPrimary ? cs.primary : cs.onSurface.withValues(alpha: 0.10);
-    final fg = isPrimary ? cs.onPrimary : cs.onSurface;
+    final bg = backgroundOverride ??
+        (isPrimary ? cs.primary : cs.onSurface.withValues(alpha: 0.10));
+    final fg = foregroundOverride ?? (isPrimary ? cs.onPrimary : cs.onSurface);
     return SizedBox(
       height: 32,
       child: OutlinedButton(
