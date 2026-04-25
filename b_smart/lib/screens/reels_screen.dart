@@ -55,6 +55,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   bool _isLoadingMore = false;
   bool _hasMore = true;
   String? _currentUserId;
+  bool _userPaused = false;
   Timer? _navigationUnlockTimer;
   String? _error;
   Map<String, String>? _mediaHeaders;
@@ -554,13 +555,42 @@ class _ReelsScreenState extends State<ReelsScreen>
     for (final i in otherIndexes) {
       await _pauseControllerForIndex(i);
     }
+    if (_userPaused) return;
     await _playControllerForIndex(index);
+  }
+
+  Future<void> _togglePlayPause() async {
+    if (_reels.isEmpty) return;
+    if (!widget.isActive) return;
+    if (_isCommentsOpen) return;
+    final index = _currentIndex;
+    final controller = _controllerForIndex(index);
+    if (controller == null) return;
+    if (!_isControllerInitialized(controller)) return;
+    try {
+      if (controller.value.isPlaying) {
+        _userPaused = true;
+        await controller.pause();
+      } else {
+        _userPaused = false;
+        await controller.setVolume(
+          (widget.isActive && _audioGateOpen && !_isMuted) ? 1 : 0,
+        );
+        await controller.play();
+        _lastStartedIndex = index;
+      }
+    } catch (_) {
+      // ignore
+    }
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _onPageChanged(int index) {
     if (_reels.isEmpty || index < 0 || index >= _reels.length) return;
     setState(() {
       _currentIndex = index;
+      _userPaused = false;
     });
     _prewarmRequested.clear();
     // The active index changed; reevaluate audio gate based on page settling.
@@ -958,67 +988,64 @@ class _ReelsScreenState extends State<ReelsScreen>
               event.scrollDelta.dy > 0 ? _currentIndex + 1 : _currentIndex - 1,
             );
           },
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              if (!_keyboardFocusNode.hasFocus) {
-                _keyboardFocusNode.requestFocus();
-              }
-            },
-            child: Padding(
-              padding: EdgeInsets.only(bottom: bottomSystemInset),
-              child: MediaQuery.removePadding(
-                context: context,
-                removeTop: true,
-                removeBottom: true,
-                child: Stack(
-                  children: [
-                    if (!isDesktop)
-                      _buildVideoCard(isDesktop: false)
-                    else
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Center(
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 16),
-                                child: SizedBox(
-                                  width: 380,
-                                  child: _buildVideoCard(isDesktop: true),
-                                ),
+          onPointerDown: (_) {
+            if (!_keyboardFocusNode.hasFocus) {
+              _keyboardFocusNode.requestFocus();
+            }
+          },
+          child: Padding(
+            padding: EdgeInsets.only(bottom: bottomSystemInset),
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              removeBottom: true,
+              child: Stack(
+                children: [
+                  if (!isDesktop)
+                    _buildVideoCard(isDesktop: false)
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              child: SizedBox(
+                                width: 380,
+                                child: _buildVideoCard(isDesktop: true),
                               ),
                             ),
                           ),
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(right: 28, bottom: 26),
-                            child: Align(
-                              alignment: Alignment.bottomCenter,
-                              child: _buildDesktopActions(),
-                            ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 28, bottom: 26),
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: _buildDesktopActions(),
                           ),
-                        ],
-                      ),
-                    Positioned(
-                      left: 12,
-                      right: 12,
-                      top: topSystemInset + 8,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          IconButton(
-                            icon: const Icon(LucideIcons.search,
-                                color: Colors.white, size: 24),
-                            onPressed: () =>
-                                Navigator.of(context).pushNamed('/search'),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    if (isDesktop) _buildDesktopArrows(),
-                  ],
-                ),
+                  Positioned(
+                    right: 4,
+                    top: topSystemInset + 8,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 36,
+                        height: 36,
+                      ),
+                      icon: const Icon(
+                        LucideIcons.search,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                      onPressed: () =>
+                          Navigator.of(context).pushNamed('/search'),
+                    ),
+                  ),
+                  if (isDesktop) _buildDesktopArrows(),
+                ],
               ),
             ),
           ),
@@ -1059,6 +1086,33 @@ class _ReelsScreenState extends State<ReelsScreen>
                 );
               },
             ),
+            if (_userPaused && widget.isActive)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  child: Center(
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
+                      ),
+                      child: const Icon(
+                        LucideIcons.play,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             const Positioned(
               left: 0,
               right: 0,
@@ -1147,6 +1201,7 @@ class _ReelsScreenState extends State<ReelsScreen>
         isActive: isActive,
         isFailed: false,
         onRetry: null,
+        onTap: isActive ? _togglePlayPause : null,
       ),
     );
   }
@@ -1768,6 +1823,7 @@ class _ReelPlayerItem extends StatefulWidget {
   final bool isActive;
   final bool isFailed;
   final VoidCallback? onRetry;
+  final VoidCallback? onTap;
 
   const _ReelPlayerItem({
     super.key,
@@ -1777,6 +1833,7 @@ class _ReelPlayerItem extends StatefulWidget {
     required this.isActive,
     required this.isFailed,
     required this.onRetry,
+    required this.onTap,
   });
 
   @override
@@ -1824,40 +1881,44 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ClipRect(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
-                  CachedNetworkImage(
-                    imageUrl: thumbnailUrl,
-                    fit: BoxFit.cover,
-                    httpHeaders: widget.headers,
-                    placeholder: (_, __) => _fallbackPlaceholder(),
-                    errorWidget: (_, __, ___) => _fallbackPlaceholder(),
-                  )
-                else
-                  _fallbackPlaceholder(),
-                // Only render the video texture for the active reel.
-                // Non-active reels should show only the thumbnail/poster (no white/black flashes).
-                if (widget.isActive &&
-                    controller != null &&
-                    isInitialized &&
-                    videoSize != null)
-                  AnimatedOpacity(
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOut,
-                    opacity: 1,
-                    child: FittedBox(
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onTap,
+            child: ClipRect(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
+                    CachedNetworkImage(
+                      imageUrl: thumbnailUrl,
                       fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: videoSize.width,
-                        height: videoSize.height,
-                        child: VideoPlayer(controller),
+                      httpHeaders: widget.headers,
+                      placeholder: (_, __) => _fallbackPlaceholder(),
+                      errorWidget: (_, __, ___) => _fallbackPlaceholder(),
+                    )
+                  else
+                    _fallbackPlaceholder(),
+                  // Only render the video texture for the active reel.
+                  // Non-active reels should show only the thumbnail/poster (no white/black flashes).
+                  if (widget.isActive &&
+                      controller != null &&
+                      isInitialized &&
+                      videoSize != null)
+                    AnimatedOpacity(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      opacity: 1,
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: videoSize.width,
+                          height: videoSize.height,
+                          child: VideoPlayer(controller),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
           if (widget.isActive && widget.isFailed && widget.onRetry != null)

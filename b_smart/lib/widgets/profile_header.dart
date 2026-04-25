@@ -333,14 +333,16 @@ class ProfileHeader extends StatelessWidget {
                     onTap: onMessage,
                   ),
                 ),
-                const SizedBox(width: 8),
-                _actionIconButton(
-                  context,
-                  icon: isSuggestionsOpen
-                      ? Icons.people_alt
-                      : Icons.people_alt_outlined,
-                  onTap: onUser ?? () {},
-                ),
+                if (onUser != null) ...[
+                  const SizedBox(width: 8),
+                  _actionIconButton(
+                    context,
+                    icon: isSuggestionsOpen
+                        ? Icons.people_alt
+                        : Icons.people_alt_outlined,
+                    onTap: onUser!,
+                  ),
+                ],
                 const SizedBox(width: 8),
                 _actionIconButton(
                   context,
@@ -459,7 +461,6 @@ class ProfileHeader extends StatelessWidget {
     BuildContext context, {
     required IconData icon,
     required VoidCallback onTap,
-    bool useFloatingStyle = false,
     bool selected = false,
   }) {
     final theme = Theme.of(context);

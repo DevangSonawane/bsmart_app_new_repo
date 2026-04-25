@@ -335,6 +335,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildFollowSuggestionsBlock(BuildContext context) {
+    if (!_isOwnProfile) return const SizedBox.shrink();
     if (!_showFollowSuggestions) return const SizedBox.shrink();
     final isLoading = _followSuggestionsLoading || _followSuggestions.isEmpty;
     final visible = _followSuggestions
@@ -2022,7 +2023,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           (displayProfile?['is_followed_by_me'] as bool?) ??
                               false,
                       isFavorite: _isFavoriteProfile,
-                      isSuggestionsOpen: _showFollowSuggestions,
+                      isSuggestionsOpen: isMe ? _showFollowSuggestions : false,
                       hasStory: _hasStory,
                       onEdit: isMe ? _onEdit : null,
                       onFollow: isMe ? null : _onFollow,
@@ -2030,7 +2031,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onFavorite: () => _toggleFavoriteProfile(username),
                       onMore: () => _showProfileMoreActions(displayProfile),
                       onMessage: _openMessaging,
-                      onUser: _toggleFollowSuggestions,
+                      onUser: isMe ? _toggleFollowSuggestions : null,
                       onAvatarTap: _openStoriesFromProfile,
                       onAvatarEdit: isMe && !_avatarUploading
                           ? _showAvatarOptionsSheet

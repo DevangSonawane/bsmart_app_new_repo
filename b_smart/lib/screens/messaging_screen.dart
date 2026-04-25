@@ -34,7 +34,8 @@ class _MessagingScreenState extends State<MessagingScreen> {
   bool _loading = true;
   bool _onlineLoading = false;
   String? _error;
-  List<Map<String, dynamic>> _conversations = const [];
+  List<Map<String, dynamic>> _normalConversations = const [];
+  List<Map<String, dynamic>> _requestConversations = const [];
   Set<String> _onlineUserIds = const <String>{};
 
   @override
@@ -52,15 +53,27 @@ class _MessagingScreenState extends State<MessagingScreen> {
     final uid = await CurrentUser.id;
     if (!mounted) return;
     setState(() => _currentUserId = uid);
-    await Future.wait([_loadMe(), _load()]);
+    await Future.wait([_loadMe(), _loadNormal()]);
     await _refreshOnlineUsers();
     if (!mounted) return;
     final cid = widget.initialConversationId;
     if (cid != null && cid.isNotEmpty) {
-      final conv = _conversations.firstWhere(
+      var conv = _normalConversations.firstWhere(
         (c) => (c['_id']?.toString() ?? c['id']?.toString()) == cid,
         orElse: () => const <String, dynamic>{},
       );
+      if (conv.isEmpty) {
+        try {
+          await _loadRequests();
+          if (!mounted) return;
+          conv = _requestConversations.firstWhere(
+            (c) => (c['_id']?.toString() ?? c['id']?.toString()) == cid,
+            orElse: () => const <String, dynamic>{},
+          );
+        } catch (_) {
+          // Ignore.
+        }
+      }
       if (conv.isNotEmpty) {
         _openConversation(conv);
       }
@@ -149,41 +162,89 @@ class _MessagingScreenState extends State<MessagingScreen> {
     return map;
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
+  List<Map<String, dynamic>> _currentConversations() {
+    return _selectedFilter == 3 ? _requestConversations : _normalConversations;
+  }
+
+  List<Map<String, dynamic>> _sortByLastMessageAt(
+      List<Map<String, dynamic>> data) {
+    data.sort((a, b) {
+      final aAt = DateTime.tryParse((a['lastMessageAt'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bAt = DateTime.tryParse((b['lastMessageAt'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return bAt.compareTo(aAt);
     });
-    try {
-      final type = _selectedFilter == 3 ? 'requests' : 'normal';
-      final data = await _chatApi.getConversations(type: type);
-      if (!mounted) return;
-      data.sort((a, b) {
-        final aAt = DateTime.tryParse((a['lastMessageAt'] ?? '').toString()) ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        final bAt = DateTime.tryParse((b['lastMessageAt'] ?? '').toString()) ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        return bAt.compareTo(aAt);
-      });
+    return data;
+  }
+
+  Future<void> _loadNormal({bool showLoading = true}) async {
+    if (showLoading) {
       setState(() {
-        _conversations = data;
-        _loading = false;
+        _loading = true;
+        _error = null;
       });
-      if (type == 'normal') {
-        ChatUnreadService().setFromConversations(data);
-      }
+    }
+    try {
+      final data = await _chatApi.getConversations(type: 'normal');
+      if (!mounted) return;
+      _sortByLastMessageAt(data);
+      setState(() => _normalConversations = data);
+      if (showLoading) setState(() => _loading = false);
+      ChatUnreadService().setFromConversations(data);
       _refreshOnlineUsers();
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _loading = false;
-      });
+      if (showLoading) {
+        setState(() {
+          _error = e.toString().replaceAll('Exception: ', '');
+          _loading = false;
+        });
+      }
     }
   }
 
+  Future<void> _loadRequests({bool showLoading = true}) async {
+    if (showLoading) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final data = await _chatApi.getConversations(type: 'requests');
+      if (!mounted) return;
+      _sortByLastMessageAt(data);
+      setState(() => _requestConversations = data);
+      if (showLoading) setState(() => _loading = false);
+    } catch (e) {
+      if (!mounted) return;
+      if (showLoading) {
+        setState(() {
+          _error = e.toString().replaceAll('Exception: ', '');
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadCurrent() async {
+    if (_selectedFilter == 3) {
+      await _loadRequests();
+      return;
+    }
+    await _loadNormal();
+  }
+
   Future<void> _refreshAll() async {
-    await _load();
+    if (_selectedFilter == 3) {
+      await Future.wait([
+        _loadNormal(showLoading: false),
+        _loadRequests(showLoading: true),
+      ]);
+      return;
+    }
+    await _loadNormal();
   }
 
   Future<void> _refreshOnlineUsers() async {
@@ -218,6 +279,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
     final title = _currentUserName?.trim().isNotEmpty == true
         ? _currentUserName!.trim()
         : '...';
+    final visibleConversations = _filteredConversations();
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
@@ -239,7 +301,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
                 _openConversation(Map<String, dynamic>.from(res));
                 return;
               }
-              _load();
+              _loadNormal();
             },
           ),
         ],
@@ -282,7 +344,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
                             const SizedBox(height: 12),
                             Center(
                               child: TextButton.icon(
-                                onPressed: _load,
+                                onPressed: _loadCurrent,
                                 icon:
                                     const Icon(LucideIcons.refreshCw, size: 16),
                                 label: const Text('Retry'),
@@ -293,12 +355,11 @@ class _MessagingScreenState extends State<MessagingScreen> {
                       : ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
-                          itemCount: _filteredConversations().isEmpty
+                          itemCount: visibleConversations.isEmpty
                               ? 1
-                              : _filteredConversations().length,
+                              : visibleConversations.length,
                           itemBuilder: (context, index) {
-                            final list = _filteredConversations();
-                            if (list.isEmpty) {
+                            if (visibleConversations.isEmpty) {
                               final q = _searchQuery.trim();
                               final msg = q.isNotEmpty
                                   ? 'No results for "$q"'
@@ -325,7 +386,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
                                 ),
                               );
                             }
-                            final conv = list[index];
+                            final conv = visibleConversations[index];
                             return _conversationTile(conv);
                           },
                         ),
@@ -337,7 +398,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
   }
 
   List<Map<String, dynamic>> _filteredConversations() {
-    var list = _conversations;
+    var list = _currentConversations();
 
     if (_selectedFilter == 0) {
       // Primary conversations: backend already returns `type=normal` by default.
@@ -361,7 +422,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
       list = list.where((c) => _conversationSearchText(c).contains(q)).toList();
     }
 
-    return list;
+    return _reorderToMatchActiveHeader(list);
   }
 
   bool _isCommunity(Map<String, dynamic> conversation) {
@@ -471,7 +532,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
     final uid = _currentUserId;
     final seen = <String>{};
     final users = <Map<String, dynamic>>[];
-    for (final conv in _conversations) {
+    for (final conv in _normalConversations) {
       if (_isCommunity(conv) || _isRequest(conv)) continue;
       final other = _otherParticipant(conv);
       if (other == null) continue;
@@ -497,7 +558,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
   Set<String> _candidateOnlineUserIds() {
     final out = <String>{};
     final uid = _currentUserId?.trim();
-    for (final conv in _conversations) {
+    for (final conv in _normalConversations) {
       if (_isCommunity(conv) || _isRequest(conv) || _isGroup(conv)) continue;
       final other = _otherParticipant(conv);
       final id = _userId(other);
@@ -505,6 +566,40 @@ class _MessagingScreenState extends State<MessagingScreen> {
       if (uid != null && uid.isNotEmpty && id == uid) continue;
       out.add(id);
     }
+    return out;
+  }
+
+  List<Map<String, dynamic>> _reorderToMatchActiveHeader(
+      List<Map<String, dynamic>> list) {
+    final orderedOnlineIds = <String>[];
+    for (final u in _onlineActiveUsers()) {
+      final id = _userId(u);
+      if (id != null && id.isNotEmpty) orderedOnlineIds.add(id);
+    }
+    if (orderedOnlineIds.isEmpty) return list;
+    final orderedOnlineSet = orderedOnlineIds.toSet();
+
+    final buckets = <String, List<Map<String, dynamic>>>{};
+    final remaining = <Map<String, dynamic>>[];
+
+    for (final conv in list) {
+      final other = _otherParticipant(conv);
+      final otherId = _userId(other);
+      if (otherId != null &&
+          otherId.isNotEmpty &&
+          orderedOnlineSet.contains(otherId)) {
+        (buckets[otherId] ??= <Map<String, dynamic>>[]).add(conv);
+      } else {
+        remaining.add(conv);
+      }
+    }
+
+    final out = <Map<String, dynamic>>[];
+    for (final id in orderedOnlineIds) {
+      final bucket = buckets[id];
+      if (bucket != null && bucket.isNotEmpty) out.addAll(bucket);
+    }
+    out.addAll(remaining);
     return out;
   }
 
@@ -549,14 +644,14 @@ class _MessagingScreenState extends State<MessagingScreen> {
           final id = _userId(user);
           final online = id != null && _onlineUserIds.contains(id);
           return InkWell(
-            onTap: () {
-              final userId = _userId(user);
-              if (userId == null || userId.isEmpty) return;
-              final existing = _conversations.firstWhere(
-                (c) {
-                  final other = _otherParticipant(c);
-                  final oid = _userId(other);
-                  return oid == userId;
+              onTap: () {
+                final userId = _userId(user);
+                if (userId == null || userId.isEmpty) return;
+                final existing = _normalConversations.firstWhere(
+                  (c) {
+                    final other = _otherParticipant(c);
+                    final oid = _userId(other);
+                    return oid == userId;
                 },
                 orElse: () => const <String, dynamic>{},
               );
@@ -657,7 +752,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
                         onTap: () {
                           if (_selectedFilter == index) return;
                           setState(() => _selectedFilter = index);
-                          _load();
+                          _loadCurrent();
                         },
                         borderRadius: BorderRadius.circular(999),
                         child: AnimatedContainer(
@@ -782,7 +877,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
                   ),
           ),
         )
-        .then((_) => _load());
+        .then((_) => _refreshAll());
   }
 
   Widget _conversationTile(Map<String, dynamic> conversation) {
