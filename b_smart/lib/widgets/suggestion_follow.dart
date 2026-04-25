@@ -270,6 +270,7 @@ class _SuggestionCard extends StatelessWidget {
         : Colors.black.withValues(alpha: 0.45);
     const primary = Color(0xFF3B82F6);
     final w = compact ? 160.0 : 160.0;
+    final h = compact ? 220.0 : 220.0;
     final avatarSize = compact ? 56.0 : 56.0;
     final avatarRadius = avatarSize / 2;
     final gapSm = compact ? 10.0 : 10.0;
@@ -406,6 +407,7 @@ class _SuggestionCard extends StatelessWidget {
 
     return SizedBox(
       width: w,
+      height: h,
       child: Material(
         color: cardBg,
         borderRadius: BorderRadius.circular(14),
@@ -444,7 +446,7 @@ class _SuggestionCard extends StatelessWidget {
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.max,
                   children: [
                     // Reserve space for the top-right close button so the
                     // avatar can sit at the very top without overlapping.
@@ -469,17 +471,19 @@ class _SuggestionCard extends StatelessWidget {
                         ),
                       )
                     else
-                      Text(
-                        user.title,
-                        style: TextStyle(
-                          color: titleColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                      ),
+                      (user.title.trim().isEmpty
+                          ? const SizedBox(height: 14)
+                          : Text(
+                              user.title,
+                              style: TextStyle(
+                                color: titleColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            )),
                     if (!_loading &&
                         user.subtitle != null &&
                         user.subtitle!.trim().isNotEmpty) ...[
@@ -496,7 +500,7 @@ class _SuggestionCard extends StatelessWidget {
                         textAlign: TextAlign.center,
                       ),
                     ],
-                    SizedBox(height: gapSm + 12),
+                    const Spacer(),
                     followButton(),
                   ],
                 ),
