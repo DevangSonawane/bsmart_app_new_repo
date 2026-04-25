@@ -114,7 +114,7 @@ void main() async {
     PaintingBinding.instance.imageCache.maximumSize = 200; // max 200 images
     PaintingBinding.instance.imageCache.maximumSizeBytes =
         150 * 1024 * 1024; // 150MB
-
+          
     try {
       await dotenv.load(fileName: ".env");
     } catch (e) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_redux/flutter_redux.dart';
@@ -3113,11 +3114,12 @@ class _HomeDashboardState extends State<HomeDashboard>
       ],
     );
 
+    Widget body;
     if (isDesktop) {
       final isFullScreen = _currentIndex == 1 ||
           _currentIndex == 3 ||
           _currentIndex == 4; // Ads, Promote, Reels
-      return Row(
+      body = Row(
         children: [
           Sidebar(
             currentIndex: _currentIndex,
@@ -3173,8 +3175,25 @@ class _HomeDashboardState extends State<HomeDashboard>
           ),
         ],
       );
+    } else {
+      body = content;
     }
-    return content;
+
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        if (_currentIndex != 0) {
+          _onNavTap(0);
+          return;
+        }
+        if (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.fuchsia) {
+          SystemNavigator.pop();
+        }
+      },
+      child: body,
+    );
   }
 }
 
