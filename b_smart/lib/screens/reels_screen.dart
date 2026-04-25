@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
@@ -56,6 +57,12 @@ class _ReelsScreenState extends State<ReelsScreen>
   bool _hasMore = true;
   String? _currentUserId;
   bool _userPaused = false;
+  bool _isScrubbing = false;
+  double _scrubFraction = 0.0;
+  bool _resumeAfterScrub = false;
+  double? _pendingScrubFraction;
+  bool _scrubSeekScheduled = false;
+  bool _progressPointerDown = false;
   Timer? _navigationUnlockTimer;
   String? _error;
   Map<String, String>? _mediaHeaders;
@@ -563,6 +570,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (_reels.isEmpty) return;
     if (!widget.isActive) return;
     if (_isCommentsOpen) return;
+    if (_isScrubbing) return;
     final index = _currentIndex;
     final controller = _controllerForIndex(index);
     if (controller == null) return;
@@ -591,6 +599,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     setState(() {
       _currentIndex = index;
       _userPaused = false;
+      _isScrubbing = false;
     });
     _prewarmRequested.clear();
     // The active index changed; reevaluate audio gate based on page settling.
@@ -964,7 +973,11 @@ class _ReelsScreenState extends State<ReelsScreen>
     }
 
     final isDesktop = MediaQuery.of(context).size.width >= 768;
-    final bottomSystemInset = MediaQuery.of(context).viewPadding.bottom;
+    final mq = MediaQuery.of(context);
+    final bottomSystemInset = math.max(
+      mq.viewPadding.bottom,
+      mq.systemGestureInsets.bottom,
+    );
     final topSystemInset = MediaQuery.of(context).viewPadding.top;
 
     return Scaffold(
@@ -1062,8 +1075,24 @@ class _ReelsScreenState extends State<ReelsScreen>
     // SizedBox(12) + avatar(36). Align the username/content row with the mute slot.
     const actionsAvatarGap = 12.0;
     const actionsAvatarSize = 36.0;
-    const infoBottomMobile =
-        actionsBottomMobile + actionsAvatarGap + actionsAvatarSize;
+    const actionButtonSize = 36.0;
+    const muteCenterLineMobile = actionsBottomMobile +
+        actionsAvatarGap +
+        actionsAvatarSize +
+        (actionButtonSize / 2);
+    const muteCenterLineDesktop = actionsBottomDesktop +
+        actionsAvatarGap +
+        actionsAvatarSize +
+        (actionButtonSize / 2);
+    const minimalBottomPadding = 8.0;
+    final caption = (current.caption ?? '').trim();
+    final hasBottomText = caption.isNotEmpty || current.hashtags.isNotEmpty;
+    final infoBottomMobile = minimalBottomPadding;
+    final infoBottomDesktop = minimalBottomPadding;
+    final maxInfoHeightMobile = (muteCenterLineMobile - minimalBottomPadding)
+        .clamp(48.0, 240.0);
+    final maxInfoHeightDesktop = (muteCenterLineDesktop - minimalBottomPadding)
+        .clamp(48.0, 240.0);
 
     return ClipRRect(
       borderRadius: isDesktop ? BorderRadius.circular(20) : BorderRadius.zero,
@@ -1074,7 +1103,9 @@ class _ReelsScreenState extends State<ReelsScreen>
             PageView.builder(
               controller: _pageController,
               scrollDirection: Axis.vertical,
-              physics: const BouncingScrollPhysics(),
+              physics: _isScrubbing
+                  ? const NeverScrollableScrollPhysics()
+                  : const BouncingScrollPhysics(),
               allowImplicitScrolling: false,
               itemCount: _reels.length,
               onPageChanged: _onPageChanged,
@@ -1146,8 +1177,16 @@ class _ReelsScreenState extends State<ReelsScreen>
               curve: Curves.easeInOutCubic,
               left: 16,
               right: isDesktop ? 14 : 92,
-              bottom: isDesktop ? actionsBottomDesktop : infoBottomMobile,
-              child: _buildBottomInfo(current),
+              bottom: isDesktop ? infoBottomDesktop : infoBottomMobile,
+              child: hasBottomText
+                  ? ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight:
+                            isDesktop ? maxInfoHeightDesktop : maxInfoHeightMobile,
+                      ),
+                      child: _buildBottomInfo(current),
+                    )
+                  : _buildBottomInfo(current),
             ),
             // Progress Bar — keep as the top-most overlay so the bottom gradient/info
             // doesn't visually hide it. Matches Ads bar styling/behavior.
@@ -1155,16 +1194,7 @@ class _ReelsScreenState extends State<ReelsScreen>
               left: 0,
               right: 0,
               bottom: 0,
-              child: IgnorePointer(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: Container(
-                    height: 4,
-                    color: Colors.white.withValues(alpha: 0.22),
-                    child: _buildReelPlaybackProgress(),
-                  ),
-                ),
-              ),
+              child: _buildScrubbableProgressBar(),
             ),
           ],
         ),
@@ -1180,6 +1210,329 @@ class _ReelsScreenState extends State<ReelsScreen>
       return const SizedBox.shrink();
     }
     return _SmoothReelProgressBar(controller: controller!);
+  }
+
+  String _formatScrubTime(Duration d) {
+    final totalSeconds = d.inSeconds.clamp(0, 24 * 60 * 60);
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    final mm = minutes.toString();
+    final ss = seconds.toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
+
+  double _clamp01(double v) => v.clamp(0.0, 1.0);
+
+  Duration _durationFor(VideoPlayerController controller) {
+    try {
+      final d = controller.value.duration;
+      return d.isNegative ? Duration.zero : d;
+    } catch (_) {
+      return Duration.zero;
+    }
+  }
+
+  Duration _positionFor(VideoPlayerController controller) {
+    try {
+      final p = controller.value.position;
+      return p.isNegative ? Duration.zero : p;
+    } catch (_) {
+      return Duration.zero;
+    }
+  }
+
+  bool _isPlaying(VideoPlayerController controller) {
+    try {
+      return controller.value.isPlaying;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _beginScrub(double dx, double width) async {
+    if (!mounted) return;
+    if (_reels.isEmpty) return;
+    if (!widget.isActive) return;
+    if (_isCommentsOpen) return;
+    final controller = _controllerForIndex(_currentIndex);
+    if (controller == null) return;
+    if (!_isControllerInitialized(controller)) return;
+    final duration = _durationFor(controller);
+    if (duration <= Duration.zero) return;
+
+    final wasPlaying = _isPlaying(controller);
+    _resumeAfterScrub = wasPlaying && !_userPaused;
+    _isScrubbing = true;
+    _scrubFraction = _clamp01(width <= 0 ? 0.0 : dx / width);
+    setState(() {});
+    try {
+      await controller.pause();
+    } catch (_) {}
+    await _seekToScrubFraction(controller, _scrubFraction);
+  }
+
+  Future<void> _seekToScrubFraction(
+      VideoPlayerController controller, double fraction) async {
+    final duration = _durationFor(controller);
+    if (duration <= Duration.zero) return;
+    final targetMs =
+        (duration.inMilliseconds * _clamp01(fraction)).round().clamp(0, duration.inMilliseconds);
+    try {
+      await controller.seekTo(Duration(milliseconds: targetMs));
+    } catch (_) {}
+  }
+
+  void _updateScrub(double dx, double width) {
+    if (!_isScrubbing) return;
+    final controller = _controllerForIndex(_currentIndex);
+    if (controller == null) return;
+    final duration = _durationFor(controller);
+    if (duration <= Duration.zero) return;
+    final next = _clamp01(width <= 0 ? 0.0 : dx / width);
+    if ((_scrubFraction - next).abs() < 0.0005) return;
+    _scrubFraction = next;
+    setState(() {});
+    _pendingScrubFraction = next;
+    _scheduleScrubSeek(controller);
+  }
+
+  void _scheduleScrubSeek(VideoPlayerController controller) {
+    if (_scrubSeekScheduled) return;
+    _scrubSeekScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _scrubSeekScheduled = false;
+      if (!_isScrubbing) return;
+      final fraction = _pendingScrubFraction;
+      if (fraction == null) return;
+      _pendingScrubFraction = null;
+      unawaited(_seekToScrubFraction(controller, fraction));
+    });
+  }
+
+  Future<void> _endScrub() async {
+    if (!_isScrubbing) return;
+    final controller = _controllerForIndex(_currentIndex);
+    _isScrubbing = false;
+    _pendingScrubFraction = null;
+    setState(() {});
+    if (controller == null) return;
+    if (!_isControllerInitialized(controller)) return;
+    if (_resumeAfterScrub && widget.isActive) {
+      try {
+        await controller.setVolume(
+          (widget.isActive && _audioGateOpen && !_isMuted) ? 1 : 0,
+        );
+        await controller.play();
+        _lastStartedIndex = _currentIndex;
+      } catch (_) {}
+    }
+    _resumeAfterScrub = false;
+  }
+
+  void _endProgressPointer() {
+    if (!_progressPointerDown) return;
+    _progressPointerDown = false;
+    if (_isScrubbing) {
+      unawaited(_endScrub());
+      return;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildScrubbableProgressBar() {
+    final controller = _controllerForIndex(_currentIndex);
+    final canScrub = controller != null && _isControllerInitialized(controller);
+    final duration = canScrub ? _durationFor(controller!) : Duration.zero;
+    final pos = canScrub ? _positionFor(controller!) : Duration.zero;
+    final baseFraction = duration.inMilliseconds > 0
+        ? pos.inMilliseconds / duration.inMilliseconds
+        : 0.0;
+    final fraction = _isScrubbing ? _scrubFraction : _clamp01(baseFraction);
+    final displayPos = duration.inMilliseconds > 0
+        ? Duration(
+            milliseconds:
+                (duration.inMilliseconds * _clamp01(fraction)).round(),
+          )
+        : Duration.zero;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final knobLeft = (width * fraction).clamp(0.0, width);
+        final barHeight = 4.0;
+        final previewWidth = (width * 0.28).clamp(96.0, 140.0);
+        final previewHeight = previewWidth * (16 / 9);
+        final previewLeft = (knobLeft - (previewWidth / 2))
+            .clamp(12.0, width - previewWidth - 12.0);
+
+        final pillText = duration > Duration.zero
+            ? '${_formatScrubTime(displayPos)} / ${_formatScrubTime(duration)}'
+            : '';
+        const pillStyle = TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+          shadows: [
+            Shadow(
+              color: Colors.black45,
+              offset: Offset(0, 1),
+              blurRadius: 2,
+            ),
+          ],
+        );
+        final pillPainter = TextPainter(
+          text: TextSpan(text: pillText, style: pillStyle),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout(maxWidth: width - 24);
+        final pillWidth = (pillPainter.width + 20).clamp(96.0, width - 24.0);
+        final pillLeft =
+            (knobLeft - (pillWidth / 2)).clamp(12.0, width - pillWidth - 12.0);
+
+        return SizedBox(
+          height: _isScrubbing ? (previewHeight + 58) : 40,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            children: [
+              if (_isScrubbing && canScrub)
+                Positioned(
+                  left: previewLeft,
+                  bottom: 40,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      width: previewWidth,
+                      height: previewHeight,
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          width: 1,
+                        ),
+                      ),
+                      child: Builder(
+                        builder: (context) {
+                          Size? videoSize;
+                          if (controller != null) {
+                            try {
+                              final v = controller.value;
+                              if (v.isInitialized) videoSize = v.size;
+                            } catch (_) {
+                              videoSize = null;
+                            }
+                          }
+                          if (controller == null ||
+                              !_isControllerInitialized(controller) ||
+                              videoSize == null ||
+                              videoSize!.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          return ClipRect(
+                            child: FittedBox(
+                              fit: BoxFit.cover,
+                              child: SizedBox(
+                                width: videoSize!.width,
+                                height: videoSize!.height,
+                                child: VideoPlayer(controller),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              if (_isScrubbing && duration > Duration.zero)
+                Positioned(
+                  left: pillLeft,
+                  bottom: 18,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    child: Text(pillText, style: pillStyle),
+                  ),
+                ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    height: barHeight,
+                    color: Colors.white.withValues(alpha: 0.22),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: _clamp01(fraction),
+                        child: Container(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              if (_isScrubbing)
+                Positioned(
+                  left: knobLeft - 6,
+                  bottom: -4,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Positioned.fill(
+                child: RawGestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  gestures: {
+                    EagerGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                            EagerGestureRecognizer>(
+                      () => EagerGestureRecognizer(),
+                      (_) {},
+                    ),
+                  },
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (e) {
+                      if (!_progressPointerDown) {
+                        setState(() => _progressPointerDown = true);
+                      }
+                      if (!canScrub) return;
+                      unawaited(_beginScrub(e.localPosition.dx, width));
+                    },
+                    onPointerMove: (e) {
+                      if (!canScrub) return;
+                      _updateScrub(e.localPosition.dx, width);
+                    },
+                    onPointerUp: (_) => _endProgressPointer(),
+                    onPointerCancel: (_) => _endProgressPointer(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildReelPlayer(int index, Reel reel, {required bool isDesktop}) {
@@ -1375,17 +1728,98 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget _buildBottomInfo(Reel reel) {
     final isOwn =
         _currentUserId != null && reel.userId.trim() == _currentUserId;
-    final canShowFollow = reel.userId.trim().isNotEmpty && !isOwn;
+    final canShowFollow = reel.userId.trim().isNotEmpty &&
+        !isOwn &&
+        reel.isFollowing == false;
     final isExpanded = _captionExpanded[reel.id] ?? false;
-    final caption = reel.caption ?? '';
+    final caption = (reel.caption ?? '').trim();
+    final hasCaption = caption.isNotEmpty;
+    final hasHashtags = reel.hashtags.isNotEmpty;
+    if (!hasCaption && !hasHashtags) {
+      return SizedBox(
+        height: 36,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            InkWell(
+              onTap: () => unawaited(_openUserProfile(reel.userId)),
+              borderRadius: BorderRadius.circular(999),
+              child: CircleAvatar(
+                radius: 15,
+                backgroundColor: Colors.grey[700],
+                backgroundImage:
+                    reel.userAvatarUrl != null && reel.userAvatarUrl!.isNotEmpty
+                        ? CachedNetworkImageProvider(
+                            UrlHelper.absoluteUrl(reel.userAvatarUrl!),
+                          )
+                        : null,
+                child: reel.userAvatarUrl == null || reel.userAvatarUrl!.isEmpty
+                    ? Text(
+                        (reel.userName.isEmpty ? 'U' : reel.userName[0])
+                            .toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: InkWell(
+                onTap: () => unawaited(_openUserProfile(reel.userId)),
+                child: Text(
+                  reel.userName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            if (canShowFollow) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.10),
+                  border: Border.all(color: Colors.white54),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: GestureDetector(
+                  onTap: _isFollowLoading
+                      ? null
+                      : () => unawaited(_toggleFollow()),
+                  child: Text(
+                    _isFollowLoading ? '...' : 'Follow',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
     final words = caption.trim().isEmpty
         ? <String>[]
         : caption.trim().split(RegExp(r'\s+'));
     final isLong = words.length > 5;
     final preview = isLong ? words.take(5).join(' ') : caption;
 
-    return Stack(
-      clipBehavior: Clip.none,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
           height: 36,
@@ -1401,7 +1835,8 @@ class _ReelsScreenState extends State<ReelsScreen>
                   backgroundImage: reel.userAvatarUrl != null &&
                           reel.userAvatarUrl!.isNotEmpty
                       ? CachedNetworkImageProvider(
-                          UrlHelper.absoluteUrl(reel.userAvatarUrl!))
+                          UrlHelper.absoluteUrl(reel.userAvatarUrl!),
+                        )
                       : null,
                   child:
                       reel.userAvatarUrl == null || reel.userAvatarUrl!.isEmpty
@@ -1440,14 +1875,12 @@ class _ReelsScreenState extends State<ReelsScreen>
                     if (canShowFollow)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 2),
+                          horizontal: 10,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.10),
-                          border: Border.all(
-                            color: reel.isFollowing
-                                ? Colors.white30
-                                : Colors.white54,
-                          ),
+                          border: Border.all(color: Colors.white54),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: GestureDetector(
@@ -1455,9 +1888,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                               ? null
                               : () => unawaited(_toggleFollow()),
                           child: Text(
-                            _isFollowLoading
-                                ? '...'
-                                : (reel.isFollowing ? 'Following' : 'Follow'),
+                            _isFollowLoading ? '...' : 'Follow',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 11,
@@ -1472,19 +1903,21 @@ class _ReelsScreenState extends State<ReelsScreen>
             ],
           ),
         ),
-        Positioned(
-          top: 40,
-          left: 42,
-          right: 0,
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.only(left: 42),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               if (caption.isNotEmpty)
-                RichText(
-                  text: TextSpan(
+                Text.rich(
+                  TextSpan(
                     style: const TextStyle(
-                        color: Colors.white, fontSize: 13, height: 1.35),
+                      color: Colors.white,
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
                     children: [
                       TextSpan(text: isExpanded || !isLong ? caption : preview),
                       if (isLong)
@@ -1501,15 +1934,18 @@ class _ReelsScreenState extends State<ReelsScreen>
                               child: Text(
                                 isExpanded ? 'less' : '... more',
                                 style: const TextStyle(
-                                    color: Colors.white60,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600),
+                                  color: Colors.white60,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
                         ),
                     ],
                   ),
+                  maxLines: isExpanded ? 3 : 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               if (reel.hashtags.isNotEmpty) ...[
                 const SizedBox(height: 5),
@@ -1520,28 +1956,6 @@ class _ReelsScreenState extends State<ReelsScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
-              const SizedBox(height: 40),
-              ExcludeSemantics(
-                child: Opacity(
-                  opacity: 0,
-                  child: Row(
-                    children: [
-                      const Icon(LucideIcons.music2,
-                          color: Colors.white, size: 11),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          'Original Audio - ${reel.userName}',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 11),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
         ),
