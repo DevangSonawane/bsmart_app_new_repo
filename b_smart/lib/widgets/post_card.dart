@@ -554,6 +554,26 @@ class _PostCardState extends State<PostCard> {
     final mediaUrls = post.mediaUrls;
     final content = (post.caption ?? '').trim();
 
+    void openTweetImagePreview(List<String> urls, int initialIndex) {
+      if (urls.isEmpty) return;
+      final safeIndex = initialIndex < 0
+          ? 0
+          : (initialIndex >= urls.length ? urls.length - 1 : initialIndex);
+      Navigator.of(context).push(
+        PageRouteBuilder(
+          opaque: false,
+          barrierColor: Colors.black,
+          pageBuilder: (_, __, ___) => _TweetImagePreviewScreen(
+            urls: urls,
+            initialIndex: safeIndex,
+          ),
+          transitionsBuilder: (_, animation, __, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+        ),
+      );
+    }
+
     Widget media() {
       if (mediaUrls.isEmpty) return const SizedBox.shrink();
 
@@ -568,6 +588,11 @@ class _PostCardState extends State<PostCard> {
       final activeUrl = isCarousel ? mediaUrls[safeIndex] : mediaUrls.first;
       final activeIsVideo = _isVideoUrl(activeUrl);
 
+      final hasVideo = mediaUrls.any(_isVideoUrl);
+      final imageUrls = hasVideo
+          ? const <String>[]
+          : mediaUrls.map((u) => u.trim()).where((u) => u.isNotEmpty).toList();
+
       Widget mediaBody;
       if (!isCarousel) {
         mediaBody = RepaintBoundary(
@@ -581,6 +606,62 @@ class _PostCardState extends State<PostCard> {
             filterName: null,
             adjustments: null,
           ),
+        );
+      } else if (imageUrls.isNotEmpty) {
+        // Tweet image layout (Twitter-style): small 2-up grid with rounded corners.
+        final radius = BorderRadius.circular(18);
+        const gap = 8.0;
+        final showTwoUp = imageUrls.length >= 2;
+
+        Widget tile({
+          required String url,
+          required int index,
+          required double height,
+        }) {
+          return SizedBox(
+            height: height,
+            child: ClipRRect(
+              borderRadius: radius,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onDoubleTap: _handleDoubleTap,
+                onTap: () => openTweetImagePreview(imageUrls, index),
+                child: SafeNetworkImage(
+                  url: UrlHelper.absoluteUrl(url),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          );
+        }
+
+        mediaBody = LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final tileW = showTwoUp ? ((w - gap) / 2) : w;
+            final tileH = tileW.clamp(120.0, 190.0);
+            return Row(
+              children: [
+                Expanded(
+                  child: tile(
+                    url: imageUrls[0],
+                    index: 0,
+                    height: tileH,
+                  ),
+                ),
+                if (showTwoUp) ...[
+                  const SizedBox(width: gap),
+                  Expanded(
+                    child: tile(
+                      url: imageUrls[1],
+                      index: 1,
+                      height: tileH,
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
         );
       } else {
         mediaBody = AspectRatio(
@@ -606,6 +687,43 @@ class _PostCardState extends State<PostCard> {
                 ),
               );
             },
+          ),
+        );
+      }
+
+      // Image-only tweets use the smaller grid without an outer tap target to avoid
+      // conflicting gesture arenas (each tile handles its own tap).
+      if (imageUrls.isNotEmpty) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+          child: Stack(
+            children: [
+              mediaBody,
+              if (imageUrls.length > 1)
+                Positioned(
+                  left: 10,
+                  bottom: 10,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.42),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    child: Text(
+                      '1/${imageUrls.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         );
       }
@@ -713,7 +831,7 @@ class _PostCardState extends State<PostCard> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1210,6 +1328,102 @@ class _PostCardState extends State<PostCard> {
       'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
+  }
+}
+
+class _TweetImagePreviewScreen extends StatefulWidget {
+  final List<String> urls;
+  final int initialIndex;
+
+  const _TweetImagePreviewScreen({
+    required this.urls,
+    required this.initialIndex,
+  });
+
+  @override
+  State<_TweetImagePreviewScreen> createState() =>
+      _TweetImagePreviewScreenState();
+}
+
+class _TweetImagePreviewScreenState extends State<_TweetImagePreviewScreen> {
+  late final PageController _controller =
+      PageController(initialPage: widget.initialIndex);
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = widget.urls.length;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _controller,
+              itemCount: total,
+              onPageChanged: (i) => setState(() => _index = i),
+              itemBuilder: (context, i) {
+                final url = UrlHelper.absoluteUrl(widget.urls[i]);
+                return Center(
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 4,
+                    child: SafeNetworkImage(
+                      url: url,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                );
+              },
+            ),
+            Positioned(
+              top: 10,
+              left: 10,
+              child: IconButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.close, color: Colors.white),
+              ),
+            ),
+            if (total > 1)
+              Positioned(
+                top: 18,
+                right: 14,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.12),
+                    ),
+                  ),
+                  child: Text(
+                    '${_index + 1}/$total',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

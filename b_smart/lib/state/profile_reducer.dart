@@ -2,6 +2,7 @@ import 'package:redux/redux.dart';
 import 'profile_state.dart';
 import 'profile_actions.dart';
 import 'feed_actions.dart';
+import '../utils/value_parsers.dart';
 
 final profileReducer = combineReducers<ProfileState>([
   TypedReducer<ProfileState, SetProfile>(_setProfile).call,
@@ -22,7 +23,7 @@ ProfileState _adjustFollowingCount(ProfileState state, AdjustFollowingCount acti
   final profile = state.profile;
   if (profile == null) return state;
   final next = Map<String, dynamic>.from(profile);
-  final current = (next['following_count'] as int?) ?? 0;
+  final current = parseInt(next['following_count']);
   final updated =
       ((current + action.delta).toDouble().clamp(0, double.maxFinite)).toInt();
   next['following_count'] = updated;
@@ -36,7 +37,7 @@ ProfileState _removePost(ProfileState state, RemovePost action) {
   final next = Map<String, dynamic>.from(profile);
   
   // Update posts_count
-  final currentCount = (next['posts_count'] as int?) ?? 0;
+  final currentCount = parseInt(next['posts_count']);
   if (currentCount > 0) {
     next['posts_count'] = currentCount - 1;
   }

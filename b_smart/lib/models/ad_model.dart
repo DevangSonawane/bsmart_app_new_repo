@@ -73,6 +73,53 @@ class Ad {
     this.isActive = true,
   });
 
+  Ad copyWith({
+    int? likesCount,
+    bool? isLikedByMe,
+    bool? isDislikedByMe,
+    bool? isSavedByMe,
+    int? currentViews,
+    int? commentsCount,
+    int? sharesCount,
+  }) {
+    return Ad(
+      id: id,
+      companyId: companyId,
+      companyName: companyName,
+      companyLogo: companyLogo,
+      title: title,
+      description: description,
+      caption: caption,
+      category: category,
+      hashtags: hashtags,
+      videoUrl: videoUrl,
+      imageUrl: imageUrl,
+      coinReward: coinReward,
+      watchDurationSeconds: watchDurationSeconds,
+      maxRewardableViews: maxRewardableViews,
+      currentViews: currentViews ?? this.currentViews,
+      likesCount: likesCount ?? this.likesCount,
+      commentsCount: commentsCount ?? this.commentsCount,
+      sharesCount: sharesCount ?? this.sharesCount,
+      isLikedByMe: isLikedByMe ?? this.isLikedByMe,
+      isDislikedByMe: isDislikedByMe ?? this.isDislikedByMe,
+      isSavedByMe: isSavedByMe ?? this.isSavedByMe,
+      userId: userId,
+      userName: userName,
+      userAvatarUrl: userAvatarUrl,
+      vendorBusinessName: vendorBusinessName,
+      totalBudgetCoins: totalBudgetCoins,
+      targetLocations: targetLocations,
+      targetLanguages: targetLanguages,
+      targetCategories: targetCategories,
+      targetLocation: targetLocation,
+      isVerified: isVerified,
+      websiteUrl: websiteUrl,
+      createdAt: createdAt,
+      isActive: isActive,
+    );
+  }
+
   factory Ad.fromApi(Map<String, dynamic> raw) {
     final vendor = raw['vendor_id'] is Map
         ? Map<String, dynamic>.from(raw['vendor_id'] as Map)

@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import '../utils/value_parsers.dart';
 
 /// REST API wrapper for follow / followers endpoints.
 ///
@@ -287,7 +288,7 @@ class FollowsApi {
               .map((e) => Map<String, dynamic>.from(e))
               .toList()
           : <Map<String, dynamic>>[];
-      final total = totalRaw is num ? totalRaw.toInt() : users.length;
+      final total = tryParseInt(totalRaw) ?? users.length;
       return <String, dynamic>{
         'users': users,
         'total': total,

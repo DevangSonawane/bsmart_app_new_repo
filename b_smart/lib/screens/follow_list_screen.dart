@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/follows_api.dart';
 import '../api/chat_api.dart';
 import '../state/app_state.dart';
+import '../utils/value_parsers.dart';
 import '../widgets/safe_network_image.dart';
 import 'chat_conversation_screen.dart';
 import 'messaging_screen.dart';
@@ -98,6 +99,8 @@ class _FollowListScreenState extends State<FollowListScreen>
   int _followingCount = 0;
   int _vendorsCount = 0;
   bool _countsLoading = false;
+  bool _followersCountLockedToList = false;
+  bool _followingCountLockedToList = false;
 
   bool _showConnectContacts = true;
 
@@ -209,7 +212,26 @@ class _FollowListScreenState extends State<FollowListScreen>
   }
 
   String _idOf(Map<String, dynamic> u) =>
-      (u['_id'] as String?) ?? (u['id'] as String?) ?? '';
+      (u['_id'] as String?) ??
+      (u['id'] as String?) ??
+      (u['userId'] as String?) ??
+      (u['uid'] as String?) ??
+      '';
+
+  List<Map<String, dynamic>> _normalizeUsers(List<Map<String, dynamic>> users) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final u in users) {
+      final id = _idOf(u).trim();
+      if (id.isEmpty) continue;
+      // Keep first-seen order but allow later items to enrich the map.
+      if (byId.containsKey(id)) {
+        byId[id] = <String, dynamic>{...byId[id]!, ...u};
+      } else {
+        byId[id] = u;
+      }
+    }
+    return byId.values.toList();
+  }
 
   String _usernameOf(Map<String, dynamic> u) =>
       (u['username'] as String?)?.trim().isNotEmpty == true
@@ -284,9 +306,12 @@ class _FollowListScreenState extends State<FollowListScreen>
           res['vendorCount']);
       if (!mounted) return;
       setState(() {
-        if (followers is num) _followersCount = followers.toInt();
-        if (following is num) _followingCount = following.toInt();
-        if (vendors is num) _vendorsCount = vendors.toInt();
+        final f = tryParseInt(followers);
+        final g = tryParseInt(following);
+        final v = tryParseInt(vendors);
+        if (!_followersCountLockedToList && f != null) _followersCount = f;
+        if (!_followingCountLockedToList && g != null) _followingCount = g;
+        if (v != null) _vendorsCount = v;
       });
     } catch (_) {
       // ignore
@@ -316,6 +341,7 @@ class _FollowListScreenState extends State<FollowListScreen>
 
     try {
       final trimmedSearch = _search.trim();
+      final isUnfiltered = trimmedSearch.isEmpty;
 
       if (mode == FollowListMode.vendors) {
         final res = await _api.getSuggestions(limit: 30);
@@ -393,7 +419,7 @@ class _FollowListScreenState extends State<FollowListScreen>
               .map((e) => Map<String, dynamic>.from(e))
               .toList()
           : <Map<String, dynamic>>[];
-      final nextTotal = nextTotalRaw is num ? nextTotalRaw.toInt() : 0;
+      final nextTotal = tryParseInt(nextTotalRaw) ?? 0;
 
       final ids = nextUsers.map(_idOf).where((e) => e.isNotEmpty).toList();
       if (ids.isNotEmpty && currentUserId.isNotEmpty) {
@@ -428,18 +454,38 @@ class _FollowListScreenState extends State<FollowListScreen>
 
       if (!mounted) return;
       setState(() {
+        final normalizedNext = _normalizeUsers(nextUsers);
+        final mergedUsers = replace
+            ? normalizedNext
+            : _normalizeUsers(<Map<String, dynamic>>[
+                ...tab.users,
+                ...normalizedNext,
+              ]);
         tab.page = page;
         tab.hasMore = nextTotal > 0
             ? page * _pageLimit < nextTotal
-            : nextUsers.length == _pageLimit;
-        tab.users = replace
-            ? nextUsers
-            : <Map<String, dynamic>>[...tab.users, ...nextUsers];
-        if (mode == FollowListMode.followers && nextTotal > 0) {
-          _followersCount = nextTotal;
+            : normalizedNext.length == _pageLimit;
+        tab.users = mergedUsers;
+
+        // If the server reports a total that doesn't match what we can actually
+        // render (e.g. stale totals, deleted accounts), prefer the rendered
+        // unique list length once we know there are no more pages.
+        final displayedTotal = mergedUsers.length;
+        final effectiveTotal = (!tab.hasMore && displayedTotal > 0)
+            ? displayedTotal
+            : (nextTotal > 0 ? nextTotal : displayedTotal);
+
+        if (mode == FollowListMode.followers) {
+          _followersCount = isUnfiltered ? effectiveTotal : _followersCount;
+          if (isUnfiltered && !tab.hasMore) {
+            _followersCountLockedToList = true;
+          }
         }
-        if (mode == FollowListMode.following && nextTotal > 0) {
-          _followingCount = nextTotal;
+        if (mode == FollowListMode.following) {
+          _followingCount = isUnfiltered ? effectiveTotal : _followingCount;
+          if (isUnfiltered && !tab.hasMore) {
+            _followingCountLockedToList = true;
+          }
         }
       });
     } catch (_) {

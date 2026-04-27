@@ -104,6 +104,39 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   int _focusedIndex = 0;
   double _cachedBottomInset = 0;
 
+  void _upsertAd(Ad updated) {
+    final id = updated.id.trim();
+    if (id.isEmpty) return;
+    setState(() {
+      final idx = _ads.indexWhere((a) => a.id == id);
+      if (idx >= 0) _ads[idx] = updated;
+      final sidx = _searchAds.indexWhere((a) => a.id == id);
+      if (sidx >= 0) _searchAds[sidx] = updated;
+    });
+  }
+
+  Future<List<Ad>> _enrichAds(List<Ad> ads) async {
+    if (ads.isEmpty) return ads;
+    final futures = ads.map((ad) async {
+      try {
+        final detail = await _adsService.fetchAdById(ad.id);
+        if (detail == null) return ad;
+        return ad.copyWith(
+          likesCount: detail.likesCount,
+          commentsCount: detail.commentsCount,
+          sharesCount: detail.sharesCount,
+          currentViews: detail.currentViews,
+          isLikedByMe: detail.isLikedByMe,
+          isDislikedByMe: detail.isDislikedByMe,
+          isSavedByMe: detail.isSavedByMe,
+        );
+      } catch (_) {
+        return ad;
+      }
+    }).toList();
+    return Future.wait(futures);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -232,11 +265,13 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
       }
 
       if (!mounted) return;
+      final enriched = await _enrichAds(ads);
+      if (!mounted) return;
       setState(() {
         if (reset) {
-          _ads = ads;
+          _ads = enriched;
         } else {
-          _ads.addAll(ads);
+          _ads.addAll(enriched);
         }
         _hasMore = ads.length >= _pageSize && _page < totalPages;
         _page += 1;
@@ -648,6 +683,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
                   clipFeedBottomInsetForAndroid ? 0 : bottomSystemInset,
               popupVisibility: _popupVisibility,
               onCompletedView: () => _recordViewForAd(ad),
+              onAdChanged: _upsertAd,
               onAutoNext: () {
                 if (index + 1 < _ads.length) {
                   _goToPage(index + 1);
@@ -1358,6 +1394,7 @@ class AdVideoItem extends StatefulWidget {
   final Future<void> Function() onCompletedView;
   final Future<void> Function() onOpenComments;
   final VoidCallback onAutoNext;
+  final void Function(Ad updatedAd)? onAdChanged;
 
   const AdVideoItem({
     super.key,
@@ -1368,6 +1405,7 @@ class AdVideoItem extends StatefulWidget {
     required this.onCompletedView,
     required this.onOpenComments,
     required this.onAutoNext,
+    this.onAdChanged,
   });
 
   @override
@@ -1388,6 +1426,7 @@ class _AdVideoItemState extends State<AdVideoItem>
   bool _isFollowing = false;
   bool _isMuted = false;
   bool _isLikeLoading = false;
+  bool _isSaveLoading = false;
   bool _isFollowLoading = false;
   int _likesCount = 0;
   bool _userPaused = false;
@@ -1599,6 +1638,19 @@ class _AdVideoItemState extends State<AdVideoItem>
       unawaited(_loadFollowState());
       _initializeVideo();
       _startOrStopProgress();
+    }
+    if (oldWidget.ad.id == widget.ad.id) {
+      if (!_isLikeLoading &&
+          widget.ad.isLikedByMe != oldWidget.ad.isLikedByMe) {
+        _isLiked = widget.ad.isLikedByMe;
+      }
+      if (!_isSaveLoading &&
+          widget.ad.isSavedByMe != oldWidget.ad.isSavedByMe) {
+        _isSaved = widget.ad.isSavedByMe;
+      }
+      if (!_isLikeLoading && widget.ad.likesCount != oldWidget.ad.likesCount) {
+        _likesCount = widget.ad.likesCount;
+      }
     }
     if (widget.isActive != oldWidget.isActive) {
       if (widget.isActive) {
@@ -2098,6 +2150,45 @@ class _AdVideoItemState extends State<AdVideoItem>
     );
   }
 
+  bool? _readBool(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final value = data[key];
+      if (value is bool) return value;
+      if (value is num) return value != 0;
+      if (value is String) {
+        final lower = value.trim().toLowerCase();
+        if (lower == 'true' || lower == '1') return true;
+        if (lower == 'false' || lower == '0') return false;
+      }
+    }
+    return null;
+  }
+
+  int? _readInt(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final value = data[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) {
+        final parsed = int.tryParse(value);
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
+  }
+
+  void _emitAdChanged() {
+    final cb = widget.onAdChanged;
+    if (cb == null) return;
+    cb(
+      widget.ad.copyWith(
+        likesCount: _likesCount,
+        isLikedByMe: _isLiked,
+        isSavedByMe: _isSaved,
+      ),
+    );
+  }
+
   Future<void> _toggleLike() async {
     if (_isLikeLoading || widget.ad.id.isEmpty) return;
 
@@ -2113,46 +2204,24 @@ class _AdVideoItemState extends State<AdVideoItem>
       _isLiked = nextLiked;
       _likesCount = nextLikes;
     });
+    _emitAdChanged();
 
     try {
+      final hasToken = await ApiClient().hasToken;
+      if (!hasToken) {
+        throw Exception('Please log in to like ads');
+      }
       final currentUserId = await CurrentUser.id;
       final userId = currentUserId?.trim();
       if (userId == null || userId.isEmpty) {
         throw Exception('Please log in to like ads');
       }
 
-      bool? readBool(Map<String, dynamic> data, List<String> keys) {
-        for (final key in keys) {
-          final value = data[key];
-          if (value is bool) return value;
-          if (value is num) return value != 0;
-          if (value is String) {
-            final lower = value.trim().toLowerCase();
-            if (lower == 'true' || lower == '1') return true;
-            if (lower == 'false' || lower == '0') return false;
-          }
-        }
-        return null;
-      }
-
-      int? readInt(Map<String, dynamic> data, List<String> keys) {
-        for (final key in keys) {
-          final value = data[key];
-          if (value is int) return value;
-          if (value is num) return value.toInt();
-          if (value is String) {
-            final parsed = int.tryParse(value);
-            if (parsed != null) return parsed;
-          }
-        }
-        return null;
-      }
-
       if (nextLiked) {
         final res =
             await _adsService.likeAd(adId: widget.ad.id, userId: userId);
-        final serverLikes = readInt(res, const ['likes_count', 'likesCount']);
-        final serverLiked = readBool(
+        final serverLikes = _readInt(res, const ['likes_count', 'likesCount']);
+        final serverLiked = _readBool(
           res,
           const [
             'is_liked',
@@ -2171,6 +2240,7 @@ class _AdVideoItemState extends State<AdVideoItem>
               _isLiked = serverLiked;
             }
           });
+          _emitAdChanged();
         }
         if (mounted) {
           unawaited(_showLikeRewardPopup(isLike: true));
@@ -2178,10 +2248,10 @@ class _AdVideoItemState extends State<AdVideoItem>
       } else {
         final res =
             await _adsService.dislikeAd(adId: widget.ad.id, userId: userId);
-        final serverLikes = readInt(res, const ['likes_count', 'likesCount']);
+        final serverLikes = _readInt(res, const ['likes_count', 'likesCount']);
         final isDisliked =
-            readBool(res, const ['is_disliked', 'disliked', 'isDisliked']);
-        final serverLiked = readBool(
+            _readBool(res, const ['is_disliked', 'disliked', 'isDisliked']);
+        final serverLiked = _readBool(
           res,
           const [
             'is_liked',
@@ -2203,6 +2273,7 @@ class _AdVideoItemState extends State<AdVideoItem>
               _isLiked = false;
             }
           });
+          _emitAdChanged();
         }
         if (mounted) {
           unawaited(_showLikeRewardPopup(isLike: false));
@@ -2229,12 +2300,14 @@ class _AdVideoItemState extends State<AdVideoItem>
           _likesCount = previousLikes;
         });
       }
+      _emitAdChanged();
     } catch (_) {
       if (mounted) {
         setState(() {
           _isLiked = previousLiked;
           _likesCount = previousLikes;
         });
+        _emitAdChanged();
       }
     } finally {
       if (mounted) {
@@ -2305,10 +2378,44 @@ class _AdVideoItemState extends State<AdVideoItem>
   }
 
   Future<void> _toggleSaveAd() async {
-    if (widget.ad.id.isEmpty) return;
+    if (_isSaveLoading || widget.ad.id.isEmpty) return;
+    final previous = _isSaved;
+    final next = !previous;
     setState(() {
-      _isSaved = !_isSaved;
+      _isSaveLoading = true;
+      _isSaved = next;
     });
+    _emitAdChanged();
+
+    try {
+      final hasToken = await ApiClient().hasToken;
+      if (!hasToken) {
+        throw Exception('Please log in to save ads');
+      }
+      final res = next
+          ? await _adsService.saveAd(widget.ad.id)
+          : await _adsService.unsaveAd(widget.ad.id);
+      final serverSaved = _readBool(
+        res,
+        const [
+          'is_saved',
+          'saved',
+          'isSaved',
+          'is_saved_by_me',
+          'saved_by_me',
+        ],
+      );
+      if (mounted && serverSaved != null) {
+        setState(() => _isSaved = serverSaved);
+        _emitAdChanged();
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSaved = previous);
+      _emitAdChanged();
+    } finally {
+      if (mounted) setState(() => _isSaveLoading = false);
+    }
   }
 
   @override

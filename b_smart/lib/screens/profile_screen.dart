@@ -24,6 +24,7 @@ import '../state/profile_actions.dart';
 import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/current_user.dart';
+import '../utils/value_parsers.dart';
 import '../services/user_account_service.dart';
 import '../services/wallet_service.dart';
 import '../api/auth_api.dart';
@@ -1041,24 +1042,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final store = StoreProvider.of<AppState>(context);
         final cached = store.state.profileState.profile;
         if (cached != null) {
-          followersCount = cached['followers_count'] as int?;
-          followingCount = cached['following_count'] as int?;
+          followersCount = tryReadInt(cached, const [
+            'followers_count',
+            'followersCount',
+            'followers',
+            'follower_count',
+          ]);
+          followingCount = tryReadInt(cached, const [
+            'following_count',
+            'followingCount',
+            'following',
+          ]);
         }
       } catch (_) {}
     }
     // 2. Fallback to local _profile
     if (followersCount == null && _profile != null) {
-      followersCount = _profile!['followers_count'] as int?;
+      followersCount = tryReadInt(_profile, const [
+        'followers_count',
+        'followersCount',
+        'followers',
+        'follower_count',
+      ]);
     }
     if (followingCount == null && _profile != null) {
-      followingCount = _profile!['following_count'] as int?;
+      followingCount = tryReadInt(_profile, const [
+        'following_count',
+        'followingCount',
+        'following',
+      ]);
     }
     // 3. Fallback to API profile response (if available)
     if (followersCount == null && profile != null) {
-      followersCount = profile['followers_count'] as int?;
+      followersCount = tryReadInt(profile, const [
+        'followers_count',
+        'followersCount',
+        'followers',
+        'follower_count',
+      ]);
     }
     if (followingCount == null && profile != null) {
-      followingCount = profile['following_count'] as int?;
+      followingCount = tryReadInt(profile, const [
+        'following_count',
+        'followingCount',
+        'following',
+      ]);
     }
 
     // 4. Update with fresh API data (only if successful and valid)
@@ -1067,13 +1095,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final count = await _svc.getFollowersCount(targetId);
       if (count > 0) {
         followersCount = count;
+        // If the backend count is slightly off (duplicates/deleted accounts),
+        // reconcile against the actual visible follower list for small totals.
+        if (count <= 200) {
+          try {
+            final page = await _followsApi.getFollowersPage(
+              targetId,
+              page: 1,
+              limit: 200,
+            );
+            final total = tryParseInt(page['total']) ?? 0;
+            final usersRaw = page['users'];
+            final users = usersRaw is List
+                ? usersRaw
+                    .whereType<Map>()
+                    .map((e) => Map<String, dynamic>.from(e))
+                    .toList()
+                : const <Map<String, dynamic>>[];
+            if (total <= 200 || users.length < 200) {
+              String idOf(Map<String, dynamic> u) {
+                final v = u['_id'] ?? u['id'] ?? u['userId'] ?? u['uid'];
+                return (v?.toString() ?? '').trim();
+              }
+
+              final uniqueIds =
+                  users.map(idOf).where((e) => e.isNotEmpty).toSet();
+              if (uniqueIds.isNotEmpty) {
+                followersCount = uniqueIds.length;
+              }
+            }
+          } catch (_) {}
+        }
       } else {
         // API returned 0 (or failed silently). Check Redux state before accepting 0.
         if (widget.userId == null) {
           try {
             final store = StoreProvider.of<AppState>(context);
             final cached = store.state.profileState.profile;
-            final cachedCount = cached?['followers_count'] as int?;
+            final cachedCount = tryReadInt(cached, const [
+              'followers_count',
+              'followersCount',
+              'followers',
+              'follower_count',
+            ]);
             if (cachedCount != null && cachedCount > 0) {
               // Keep the cached non-zero value instead of overwriting with 0
               followersCount = cachedCount;
@@ -1090,12 +1154,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final count = await _svc.getFollowingCount(targetId);
       if (count > 0) {
         followingCount = count;
+        if (count <= 200) {
+          try {
+            final page = await _followsApi.getFollowingPage(
+              targetId,
+              page: 1,
+              limit: 200,
+            );
+            final total = tryParseInt(page['total']) ?? 0;
+            final usersRaw = page['users'];
+            final users = usersRaw is List
+                ? usersRaw
+                    .whereType<Map>()
+                    .map((e) => Map<String, dynamic>.from(e))
+                    .toList()
+                : const <Map<String, dynamic>>[];
+            if (total <= 200 || users.length < 200) {
+              String idOf(Map<String, dynamic> u) {
+                final v = u['_id'] ?? u['id'] ?? u['userId'] ?? u['uid'];
+                return (v?.toString() ?? '').trim();
+              }
+
+              final uniqueIds =
+                  users.map(idOf).where((e) => e.isNotEmpty).toSet();
+              if (uniqueIds.isNotEmpty) {
+                followingCount = uniqueIds.length;
+              }
+            }
+          } catch (_) {}
+        }
       } else {
         if (widget.userId == null) {
           try {
             final store = StoreProvider.of<AppState>(context);
             final cached = store.state.profileState.profile;
-            final cachedCount = cached?['following_count'] as int?;
+            final cachedCount = tryReadInt(cached, const [
+              'following_count',
+              'followingCount',
+              'following',
+            ]);
             if (cachedCount != null && cachedCount > 0) {
               followingCount = cachedCount;
             } else {
@@ -1514,7 +1611,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _followLoading = true;
     final current = (_profile?['is_followed_by_me'] as bool?) ?? false;
     final next = !current;
-    int followersCount = (_profile?['followers_count'] as int?) ?? 0;
+    int followersCount = tryReadInt(_profile, const [
+          'followers_count',
+          'followersCount',
+          'followers',
+          'follower_count',
+        ]) ??
+        0;
     final delta = next ? 1 : -1;
     final nextFollowers =
         ((followersCount + delta).toDouble().clamp(0, double.maxFinite))
@@ -1840,8 +1943,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ].map(_asId).firstWhere((s) => s.isNotEmpty, orElse: () => '');
         final postsCount =
             (displayProfile?['posts_count'] as int?) ?? _posts.length;
-        final followers = (displayProfile?['followers_count'] as int?) ?? 0;
-        final following = (displayProfile?['following_count'] as int?) ?? 0;
+        final followers = tryReadInt(displayProfile, const [
+              'followers_count',
+              'followersCount',
+              'followers',
+              'follower_count',
+            ]) ??
+            0;
+        final following = tryReadInt(displayProfile, const [
+              'following_count',
+              'followingCount',
+              'following',
+            ]) ??
+            0;
         final isVendor =
             (displayProfile?['role'] as String?)?.toLowerCase() == 'vendor';
         final vendorMap = displayProfile?['vendor'];
