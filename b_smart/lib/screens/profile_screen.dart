@@ -1013,10 +1013,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
           peopleTags: (map['people_tags'] as List?)
               ?.map((e) => Map<String, dynamic>.from(e))
               .toList(),
-          likes: (map['likes_count'] as int?) ??
-              (map['likes'] is int ? map['likes'] as int : 0),
-          comments: (map['comments_count'] as int?) ??
-              (map['comments'] is int ? map['comments'] as int : 0),
+          likes: tryParseInt(
+                map['likes_count'] ?? map['likesCount'] ?? map['likes'],
+              ) ??
+              ((map['likes'] is List) ? (map['likes'] as List).length : 0),
+          comments: tryParseInt(
+                map['comments_count'] ??
+                    map['commentsCount'] ??
+                    map['comments'] ??
+                    map['commentCount'],
+              ) ??
+              ((map['comments'] is List)
+                  ? (map['comments'] as List).length
+                  : 0),
           isLiked: toBool(map['is_liked_by_me']) || toBool(map['liked_by_me']),
           isSaved: toBool(map['is_saved_by_me']) || toBool(map['saved_by_me']),
           isFollowed:

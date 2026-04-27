@@ -150,6 +150,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
             final item = _promotes[index];
             final products = (item['products'] as List<dynamic>?) ?? [];
             final controller = _controllers[index];
+            final actionsBottom = 96.0 + bottomSystemInset;
             return Stack(
               fit: StackFit.expand,
               children: [
@@ -204,7 +205,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
                 // Right side actions (aligned with Ads layout)
                 Positioned(
                   right: 4,
-                  bottom: 96.0 + bottomSystemInset,
+                  bottom: actionsBottom,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -248,138 +249,41 @@ class _PromoteScreenState extends State<PromoteScreen> {
                     ],
                   ),
                 ),
-                // Bottom: gradient strip + content (match React: px-4 pb-2 pt-10, gradient from-black/90 via-black/40 to-transparent)
+                // Bottom: brand + username (aligned with mute icon)
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: bottomSystemInset,
-                  child: Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.4),
-                          Colors.black.withValues(alpha: 0.9),
-                        ],
+                  left: 16,
+                  right: 92,
+                  bottom: actionsBottom,
+                  child: _PromoteUsernamePill(item: item),
+                ),
+                if (products.isNotEmpty)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: bottomSystemInset + 6,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragStart: (_) {},
+                      onVerticalDragUpdate: (_) {},
+                      child: SizedBox(
+                        height: 82,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: products.length.clamp(0, 8),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(width: 10),
+                          itemBuilder: (context, i) {
+                            final p = products[i] is Map
+                                ? Map<String, dynamic>.from(products[i] as Map)
+                                : <String, dynamic>{};
+                            return _MiniProductCard(product: p);
+                          },
+                        ),
                       ),
                     ),
-                    padding: const EdgeInsets.fromLTRB(16, 40, 92, 8),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Brand row: purple icon + name
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: DesignTokens.instaPurple,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                ((item['brandName'] as String?) ?? 'G')[0]
-                                    .toUpperCase(),
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 20),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    (item['brandName'] as String?) ??
-                                        (item['username'] as String? ?? ''),
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      Text('Sponsored',
-                                          style: TextStyle(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.85),
-                                              fontSize: 12)),
-                                      Text(' • ',
-                                          style: TextStyle(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.85),
-                                              fontSize: 12)),
-                                      const Icon(LucideIcons.star,
-                                          color: Colors.amber, size: 14),
-                                      Text(' ${item['rating']} ',
-                                          style: TextStyle(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.85),
-                                              fontSize: 12)),
-                                      Text(' • ',
-                                          style: TextStyle(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.85),
-                                              fontSize: 12)),
-                                      Text('FREE',
-                                          style: TextStyle(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.85),
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600)),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        // Description
-                        Text(
-                          (item['description'] as String?) ?? '',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 14),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 14),
-                        // View Products (transparent / outline button)
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              _showFeaturedProductsSheet(context, products);
-                            },
-                            icon: const Icon(LucideIcons.shoppingBag,
-                                color: Colors.white, size: 20),
-                            label: const Text('View Products',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600)),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Colors.white),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        // (Install button removed)
-                      ],
-                    ),
                   ),
-                ),
               ],
             );
           },
@@ -475,5 +379,259 @@ class _PromoteScreenState extends State<PromoteScreen> {
         ),
       ),
     ).then((_) => setState(() {}));
+  }
+}
+
+class _PromoteUsernamePill extends StatelessWidget {
+  final Map<String, dynamic> item;
+  const _PromoteUsernamePill({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 36,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withValues(alpha: 0.00),
+            Colors.black.withValues(alpha: 0.35),
+            Colors.black.withValues(alpha: 0.65),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: DesignTokens.instaPurple,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              ((item['brandName'] as String?) ?? 'G')[0].toUpperCase(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              (item['username'] as String?) ??
+                  (item['brandName'] as String?) ??
+                  '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniProductCard extends StatelessWidget {
+  final Map<String, dynamic> product;
+  const _MiniProductCard({required this.product});
+
+  int _seed() {
+    final id = product['id'];
+    if (id is int) return id;
+    return (product['title']?.toString() ?? '').hashCode.abs();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seed = _seed();
+    final title = (product['title'] as String?)?.trim().isNotEmpty == true
+        ? (product['title'] as String).trim()
+        : 'Product';
+    final imageUrl = (product['image'] as String?)?.trim() ?? '';
+
+    final price = (product['price'] as num?)?.toInt() ?? (599 + (seed % 400));
+    final mrp = (product['mrp'] as num?)?.toInt() ?? (price + 900 + seed % 600);
+    final off = mrp > 0 ? (((mrp - price) * 100) / mrp).round() : 0;
+    final rating =
+        (product['rating'] as num?)?.toDouble() ?? (4.0 + (seed % 3) * 0.1);
+
+    return Container(
+      width: 260,
+      height: 82,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 10,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 78,
+            height: double.infinity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (imageUrl.isNotEmpty)
+                  CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => const ColoredBox(
+                      color: Color(0xFFF1F5F9),
+                      child: Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                    errorWidget: (_, __, ___) => const ColoredBox(
+                      color: Color(0xFFF1F5F9),
+                      child: Center(child: Icon(LucideIcons.imageOff, size: 18)),
+                    ),
+                  )
+                else
+                  const ColoredBox(
+                    color: Color(0xFFF1F5F9),
+                    child: Center(child: Icon(LucideIcons.image, size: 18)),
+                  ),
+                Positioned(
+                  left: 6,
+                  bottom: 6,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          rating.toStringAsFixed(1),
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(
+                          LucideIcons.star,
+                          size: 14,
+                          color: Color(0xFF16A34A),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        '₹$price',
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '₹$mrp',
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.lineThrough,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${off.clamp(0, 99)}% off',
+                        style: const TextStyle(
+                          color: Color(0xFF16A34A),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  SizedBox(
+                    height: 28,
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {},
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        padding: EdgeInsets.zero,
+                      ),
+                      child: const Text(
+                        'Add to Cart',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

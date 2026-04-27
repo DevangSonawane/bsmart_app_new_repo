@@ -3,6 +3,7 @@ import '../api/api.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/current_user.dart';
+import '../utils/value_parsers.dart';
 
 /// Service layer that was previously calling Supabase directly.
 ///
@@ -22,12 +23,71 @@ class SupabaseService {
   final UploadApi _uploadApi = UploadApi();
   final FollowsApi _followsApi = FollowsApi();
   final Map<String, bool> _commentLikeOverrides = {};
+  String _commentLikeOverridesLoadedForUserId = '';
+
+  Future<void> _ensureCommentLikeOverridesLoaded() async {
+    final uid = (await CurrentUser.id)?.trim() ?? '';
+    if (uid.isEmpty) return;
+    if (_commentLikeOverridesLoadedForUserId == uid) return;
+    _commentLikeOverridesLoadedForUserId = uid;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('comment_like_overrides_$uid');
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      for (final entry in decoded.entries) {
+        final key = entry.key.toString().trim();
+        if (key.isEmpty) continue;
+        final v = entry.value;
+        final liked = v == true || v == 1 || v == '1' || v == 'true';
+        _commentLikeOverrides[key] = liked;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistCommentLikeOverride(String commentId, bool liked) async {
+    final uid = (await CurrentUser.id)?.trim() ?? '';
+    if (uid.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'comment_like_overrides_$uid';
+      final raw = prefs.getString(key);
+      final next = <String, dynamic>{};
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map) {
+            for (final e in decoded.entries) {
+              next[e.key.toString()] = e.value;
+            }
+          }
+        } catch (_) {}
+      }
+      next[commentId] = liked;
+      await prefs.setString(key, jsonEncode(next));
+    } catch (_) {}
+  }
+
   void setCommentLikeOverride(String commentId, bool liked) {
-    _commentLikeOverrides[commentId] = liked;
+    final id = commentId.trim();
+    if (id.isEmpty) return;
+    _commentLikeOverrides[id] = liked;
+    () async {
+      await _persistCommentLikeOverride(id, liked);
+    }();
   }
 
   bool? getCommentLikeOverride(String commentId) {
-    return _commentLikeOverrides[commentId];
+    final id = commentId.trim();
+    if (id.isEmpty) return null;
+    // Best-effort: load persisted overrides lazily. Do not block reads.
+    if (_commentLikeOverridesLoadedForUserId.isEmpty) {
+      () async {
+        await _ensureCommentLikeOverridesLoaded();
+      }();
+    }
+    return _commentLikeOverrides[id];
   }
 
   final Map<String, List<Map<String, dynamic>>> _repliesCache = {};
@@ -663,6 +723,15 @@ class SupabaseService {
       return 0;
     }
 
+    bool toBool(dynamic v) {
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      final s = v?.toString().trim().toLowerCase();
+      if (s == 'true' || s == '1') return true;
+      if (s == 'false' || s == '0') return false;
+      return false;
+    }
+
     final id = (out['_id'] ?? out['id'])?.toString();
     if (id != null && id.isNotEmpty) {
       out['_id'] = id;
@@ -687,7 +756,23 @@ class SupabaseService {
         out['likesCount'] ??
         (out['likes'] is List ? (out['likes'] as List).length : null) ??
         0;
-    out['likes_count'] = likesCount;
+    final likesCountInt = tryParseInt(likesCount) ?? 0;
+    out['likes_count'] = likesCountInt;
+    out['likesCount'] = likesCountInt;
+
+    // Normalize common "liked by me" flags so UIs can reliably read them.
+    if (out.containsKey('is_liked_by_me') ||
+        out.containsKey('liked_by_me') ||
+        out.containsKey('isLikedByMe') ||
+        out.containsKey('liked')) {
+      final likedByMe = toBool(out['is_liked_by_me']) ||
+          toBool(out['liked_by_me']) ||
+          toBool(out['isLikedByMe']) ||
+          toBool(out['liked']);
+      out['is_liked_by_me'] = likedByMe;
+      out['liked_by_me'] = likedByMe;
+      out['liked'] = likedByMe;
+    }
 
     final repliesCount = toInt(out['reply_count']) > 0
         ? toInt(out['reply_count'])
@@ -888,14 +973,18 @@ class SupabaseService {
     }
   }
 
-  Future<Map<String, dynamic>?> likeComment(String commentId,
-      {bool? isTweet}) async {
+  Future<Map<String, dynamic>?> likeComment(
+    String commentId, {
+    bool? isTweet,
+    bool throwOnError = false,
+  }) async {
     try {
       final res = (isTweet == true)
           ? await _tweetCommentsApi.likeComment(commentId)
           : await _commentsApi.likeComment(commentId);
       return res;
     } catch (e) {
+      if (throwOnError) rethrow;
       if (isTweet == true) return null;
       try {
         return await _tweetCommentsApi.likeComment(commentId);
@@ -904,14 +993,18 @@ class SupabaseService {
     }
   }
 
-  Future<Map<String, dynamic>?> unlikeComment(String commentId,
-      {bool? isTweet}) async {
+  Future<Map<String, dynamic>?> unlikeComment(
+    String commentId, {
+    bool? isTweet,
+    bool throwOnError = false,
+  }) async {
     try {
       final res = (isTweet == true)
           ? await _tweetCommentsApi.unlikeComment(commentId)
           : await _commentsApi.unlikeComment(commentId);
       return res;
     } catch (e) {
+      if (throwOnError) rethrow;
       if (isTweet == true) return null;
       try {
         return await _tweetCommentsApi.unlikeComment(commentId);

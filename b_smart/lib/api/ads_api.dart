@@ -662,7 +662,7 @@ class AdsApi {
     }
     final res =
         await _client.post('$_basePath/ads/comments/$normalizedCommentId/like');
-    return (res as Map).cast<String, dynamic>();
+    return _normalizeLikeResponse(res);
   }
 
   Future<Map<String, dynamic>> toggleAdCommentDislike(String commentId) async {
@@ -680,12 +680,69 @@ class AdsApi {
     for (final path in candidates) {
       try {
         final res = await _client.post(path);
-        return (res as Map).cast<String, dynamic>();
+        return _normalizeLikeResponse(res);
       } on ApiException catch (e) {
         lastApiError = e;
       }
     }
     throw lastApiError ?? ApiException(statusCode: 0, message: 'Unknown API error');
+  }
+
+  Map<String, dynamic> _normalizeLikeResponse(dynamic res) {
+    Map<String, dynamic> map = <String, dynamic>{};
+    if (res is Map) map = Map<String, dynamic>.from(res);
+    final nested =
+        map['data'] ?? map['result'] ?? map['comment'] ?? map['payload'];
+    if (nested is Map) {
+      map = <String, dynamic>{...map, ...Map<String, dynamic>.from(nested)};
+    }
+
+    bool? readBool(List<String> keys) {
+      for (final k in keys) {
+        if (!map.containsKey(k)) continue;
+        final v = map[k];
+        if (v is bool) return v;
+        if (v is num) return v != 0;
+        if (v is String) {
+          final s = v.trim().toLowerCase();
+          if (s == 'true' || s == '1') return true;
+          if (s == 'false' || s == '0') return false;
+        }
+      }
+      return null;
+    }
+
+    int? readInt(List<String> keys) {
+      for (final k in keys) {
+        if (!map.containsKey(k)) continue;
+        final v = map[k];
+        if (v is int) return v;
+        if (v is num) return v.toInt();
+        if (v is String) return int.tryParse(v);
+      }
+      return null;
+    }
+
+    final liked = readBool(const [
+      'liked',
+      'is_liked',
+      'isLiked',
+      'is_liked_by_me',
+      'liked_by_me',
+    ]);
+    final likes = readInt(const [
+      'likes_count',
+      'likesCount',
+      'count',
+      'total',
+      'totalCount',
+    ]);
+
+    return <String, dynamic>{
+      ...map,
+      if (liked != null) 'liked': liked,
+      if (likes != null) 'likes_count': likes,
+    };
   }
 
   Future<Map<String, dynamic>> adminUpdateAdStatus({

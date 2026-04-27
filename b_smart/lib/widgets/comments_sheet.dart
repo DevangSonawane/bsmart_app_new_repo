@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../api/api_client.dart';
+import '../api/api_exceptions.dart';
 import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
 import '../theme/design_tokens.dart';
@@ -54,6 +56,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
   late bool _isTweet;
 
   String _toId(dynamic v) => (v ?? '').toString().trim();
+
+  String _commentIdOf(Map<String, dynamic> c) {
+    return _toId(c['_id'] ?? c['id'] ?? c['comment_id'] ?? c['commentId']);
+  }
 
   String _userIdFromMap(Map<String, dynamic>? user) {
     if (user == null) return '';
@@ -112,7 +118,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
     final ids = <String>[];
     for (final c in list) {
       try {
-        final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
+        final cid = _commentIdOf(c);
         if (cid.isNotEmpty) ids.add(cid);
         bool likedByMe = false;
         if (c['is_liked_by_me'] == true ||
@@ -483,8 +489,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
         _replies[parentId] = existingReplies;
         _svc.setRepliesCache(parentId, existingReplies);
         final parentIndex = _comments.indexWhere((c) {
-          final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
-          return cid == parentId;
+          return _commentIdOf(c) == parentId;
         });
         if (parentIndex >= 0) {
           final updatedParent =
@@ -548,8 +553,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
           _replies[parentId] = existingReplies;
           _svc.setRepliesCache(parentId, existingReplies);
           final parentIndex = _comments.indexWhere((c) {
-            final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
-            return cid == parentId;
+            return _commentIdOf(c) == parentId;
           });
           if (!bumpedParentReplyCount && parentIndex >= 0) {
             final updatedParent =
@@ -599,9 +603,19 @@ class _CommentsSheetState extends State<CommentsSheet> {
   }
 
   Future<void> _toggleLike(Map<String, dynamic> c, int index) async {
-    final id = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
+    final id = _commentIdOf(c);
     if (id.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to like comments')),
+      );
+      return;
+    }
     final liked = _liked.contains(id);
+    final prevLiked = liked;
+    final prevCount = ((c['likes_count'] as int?) ?? 0);
     setState(() {
       if (liked) {
         _liked.remove(id);
@@ -613,53 +627,79 @@ class _CommentsSheetState extends State<CommentsSheet> {
       cc['likes_count'] = liked ? (count - 1).clamp(0, 1 << 31) : count + 1;
       _comments[index] = cc;
     });
-    if (liked) {
-      final res = await _svc.unlikeComment(id, isTweet: _isTweet);
-      if (res != null) {
-        setState(() {
-          final cc = Map<String, dynamic>.from(_comments[index]);
-          if (res.containsKey('likes_count')) {
-            cc['likes_count'] = res['likes_count'] as int? ?? cc['likes_count'];
+    try {
+      final res = liked
+          ? await _svc.unlikeComment(
+              id,
+              isTweet: _isTweet,
+              throwOnError: true,
+            )
+          : await _svc.likeComment(
+              id,
+              isTweet: _isTweet,
+              throwOnError: true,
+            );
+      if (res == null || !mounted) return;
+      setState(() {
+        final cc = Map<String, dynamic>.from(_comments[index]);
+        if (res.containsKey('likes_count')) {
+          cc['likes_count'] = res['likes_count'] as int? ?? cc['likes_count'];
+        }
+        final likedNow = res['liked'] as bool?;
+        if (likedNow != null) {
+          if (likedNow) {
+            _liked.add(id);
+          } else {
+            _liked.remove(id);
           }
-          final likedNow =
-              res['liked'] as bool?; // API returns authoritative state
-          if (likedNow != null) {
-            if (likedNow) {
-              _liked.add(id);
-            } else {
-              _liked.remove(id);
-            }
-            _svc.setCommentLikeOverride(id, likedNow);
-          }
-          _comments[index] = cc;
-        });
-      }
-    } else {
-      final res = await _svc.likeComment(id, isTweet: _isTweet);
-      if (res != null) {
-        setState(() {
-          final cc = Map<String, dynamic>.from(_comments[index]);
-          if (res.containsKey('likes_count')) {
-            cc['likes_count'] = res['likes_count'] as int? ?? cc['likes_count'];
-          }
-          final likedNow = res['liked'] as bool?;
-          if (likedNow != null) {
-            if (likedNow) {
-              _liked.add(id);
-            } else {
-              _liked.remove(id);
-            }
-            _svc.setCommentLikeOverride(id, likedNow);
-          }
-          _comments[index] = cc;
-        });
-      }
+          _svc.setCommentLikeOverride(id, likedNow);
+        }
+        _comments[index] = cc;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        final cc = Map<String, dynamic>.from(_comments[index]);
+        cc['likes_count'] = prevCount;
+        _comments[index] = cc;
+        if (prevLiked) {
+          _liked.add(id);
+        } else {
+          _liked.remove(id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to like comment: ${e.message}')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        final cc = Map<String, dynamic>.from(_comments[index]);
+        cc['likes_count'] = prevCount;
+        _comments[index] = cc;
+        if (prevLiked) {
+          _liked.add(id);
+        } else {
+          _liked.remove(id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to like comment')),
+      );
     }
   }
 
   Future<void> _delete(Map<String, dynamic> c, int index) async {
-    final id = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
+    final id = _commentIdOf(c);
     if (id.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to delete comments')),
+      );
+      return;
+    }
     if (id.startsWith('temp-')) {
       setState(() => _comments.removeAt(index));
       return;
@@ -682,8 +722,16 @@ class _CommentsSheetState extends State<CommentsSheet> {
     final list = _replies[parentId];
     if (list == null || replyIndex < 0 || replyIndex >= list.length) return;
     final reply = Map<String, dynamic>.from(list[replyIndex]);
-    final id = _toId(reply['_id'] ?? reply['id']);
+    final id = _commentIdOf(reply);
     if (id.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to delete comments')),
+      );
+      return;
+    }
 
     if (id.startsWith('temp-')) {
       setState(() {
@@ -705,8 +753,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
         _svc.setRepliesCache(parentId, next);
 
         final parentIndex = _comments.indexWhere((c) {
-          final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
-          return cid == parentId;
+          return _commentIdOf(c) == parentId;
         });
         if (parentIndex >= 0) {
           final updatedParent =
@@ -766,7 +813,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   }
 
   Future<void> _toggleReplies(Map<String, dynamic> c) async {
-    final cid = (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
+    final cid = _commentIdOf(c);
     if (cid.isEmpty) return;
 
     if (_expandedComments.contains(cid)) {
@@ -848,10 +895,20 @@ class _CommentsSheetState extends State<CommentsSheet> {
     final list = _replies[parentId];
     if (list == null || replyIndex < 0 || replyIndex >= list.length) return;
     final reply = Map<String, dynamic>.from(list[replyIndex]);
-    final id = (reply['_id'] as String?) ?? (reply['id'] as String?) ?? '';
+    final id = _commentIdOf(reply);
     if (id.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to like comments')),
+      );
+      return;
+    }
 
     final liked = _liked.contains(id);
+    final prevLiked = liked;
+    final prevCount = (reply['likes_count'] as int?) ?? 0;
     setState(() {
       if (liked) {
         _liked.remove(id);
@@ -863,27 +920,67 @@ class _CommentsSheetState extends State<CommentsSheet> {
       list[replyIndex] = reply;
     });
 
-    final res = liked
-        ? await _svc.unlikeComment(id, isTweet: _isTweet)
-        : await _svc.likeComment(id, isTweet: _isTweet);
-    if (res == null || !mounted) return;
-    setState(() {
-      final latest = Map<String, dynamic>.from(list[replyIndex]);
-      if (res.containsKey('likes_count')) {
-        latest['likes_count'] =
-            res['likes_count'] as int? ?? latest['likes_count'];
-      }
-      final likedNow = res['liked'] as bool?;
-      if (likedNow != null) {
-        if (likedNow) {
+    try {
+      final res = liked
+          ? await _svc.unlikeComment(
+              id,
+              isTweet: _isTweet,
+              throwOnError: true,
+            )
+          : await _svc.likeComment(
+              id,
+              isTweet: _isTweet,
+              throwOnError: true,
+            );
+      if (res == null || !mounted) return;
+      setState(() {
+        final latest = Map<String, dynamic>.from(list[replyIndex]);
+        if (res.containsKey('likes_count')) {
+          latest['likes_count'] =
+              res['likes_count'] as int? ?? latest['likes_count'];
+        }
+        final likedNow = res['liked'] as bool?;
+        if (likedNow != null) {
+          if (likedNow) {
+            _liked.add(id);
+          } else {
+            _liked.remove(id);
+          }
+          _svc.setCommentLikeOverride(id, likedNow);
+        }
+        list[replyIndex] = latest;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        final latest = Map<String, dynamic>.from(list[replyIndex]);
+        latest['likes_count'] = prevCount;
+        list[replyIndex] = latest;
+        if (prevLiked) {
           _liked.add(id);
         } else {
           _liked.remove(id);
         }
-        _svc.setCommentLikeOverride(id, likedNow);
-      }
-      list[replyIndex] = latest;
-    });
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to like reply: ${e.message}')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        final latest = Map<String, dynamic>.from(list[replyIndex]);
+        latest['likes_count'] = prevCount;
+        list[replyIndex] = latest;
+        if (prevLiked) {
+          _liked.add(id);
+        } else {
+          _liked.remove(id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to like reply')),
+      );
+    }
   }
 
   @override
@@ -972,8 +1069,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                         final created = c['created_at'] as String? ??
                             c['createdAt'] as String? ??
                             '';
-                        final cid =
-                            (c['_id'] as String?) ?? (c['id'] as String?) ?? '';
+                        final cid = _commentIdOf(c);
                         final isVerified = _commentVerified(c);
                         final u = _commentUserMap(c);
                         final userIdValue = _userIdFromMap(u);
@@ -1237,10 +1333,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                                     _commentUserMap(r);
                                                 final rIsMine =
                                                     _isMineUser(rUser, myId);
-                                                final rid =
-                                                    (r['_id'] as String?) ??
-                                                        (r['id'] as String?) ??
-                                                        '';
+                                                final rid = _commentIdOf(r);
                                                 final rLiked =
                                                     _liked.contains(rid);
                                                 final rLikesCount =

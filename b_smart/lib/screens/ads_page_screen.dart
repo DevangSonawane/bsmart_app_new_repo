@@ -3529,7 +3529,10 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
   }
 
   String _commentId(Map<String, dynamic> c) {
-    return ((c['_id'] ?? c['id'])?.toString() ?? '').trim();
+    return ((c['_id'] ?? c['id'] ?? c['comment_id'] ?? c['commentId'])
+                ?.toString() ??
+            '')
+        .trim();
   }
 
   String _commentText(Map<String, dynamic> c) {
@@ -3638,6 +3641,14 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     String? parentId,
   }) async {
     if (commentId.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to like comments')),
+      );
+      return;
+    }
 
     Map<String, dynamic>? target;
     int? targetIndex;
@@ -3737,6 +3748,14 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     String? parentId,
   }) async {
     if (commentId.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to dislike comments')),
+      );
+      return;
+    }
 
     Map<String, dynamic>? target;
     int? targetIndex;
@@ -3880,6 +3899,14 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     String? parentId,
   }) async {
     if (commentId.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to delete comments')),
+      );
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

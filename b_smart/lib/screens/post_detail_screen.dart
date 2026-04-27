@@ -15,6 +15,7 @@ import '../state/app_state.dart';
 import '../state/feed_actions.dart';
 import '../models/feed_post_model.dart';
 import '../widgets/share_content_modal.dart';
+import '../utils/value_parsers.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final String postId;
@@ -347,7 +348,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     final likes = post['likes'] as List<dynamic>? ?? [];
     final currentUserId = await CurrentUser.id;
-    bool isLiked = false;
+    bool isLiked = _asBool(post['is_liked_by_me']) ||
+        _asBool(post['liked_by_me']) ||
+        _asBool(post['is_liked']) ||
+        _asBool(post['liked']);
     for (final e in likes) {
       if (e is Map) {
         String? uid = _extractId(e['user_id']) ??
@@ -373,9 +377,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final isSaved = _isTweet
         ? false
         : (_asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']));
-    bool isFollowed = (post['is_followed_by_me'] as bool?) ??
-        (user?['is_followed_by_me'] as bool?) ??
-        false;
+    bool isFollowed = _asBool(post['is_followed_by_me']) ||
+        _asBool(user?['is_followed_by_me']);
     if (mounted) {
       setState(() {
         _post = post;
@@ -393,9 +396,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       });
       _syncCurrentMediaPlayback();
       _prefetchRepliesForTopLevelComments(topLevelComments);
-      final serverCount = (post['comments_count'] as int?) ??
-          (post['commentCount'] as int?) ??
-          (post['comments'] as int?) ??
+      final serverCount = tryParseInt(
+            post['comments_count'] ??
+                post['commentsCount'] ??
+                post['commentCount'] ??
+                post['comment_count'] ??
+                post['comments'],
+          ) ??
           topLevelComments.length;
       _dispatchCommentsCount(serverCount);
     }
@@ -1093,9 +1100,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   int get _likeCount {
-    final flag = _post?['likes_count'] as int?;
-    if (flag != null) return flag;
-    final likes = _post?['likes'] as List<dynamic>? ?? [];
+    final post = _post;
+    if (post == null) return 0;
+    final parsed = tryParseInt(
+      post['likes_count'] ??
+          post['likesCount'] ??
+          post['likeCount'] ??
+          post['likes_total'] ??
+          post['likesTotal'],
+    );
+    if (parsed != null) return parsed;
+    final likes = post['likes'] as List<dynamic>? ?? const <dynamic>[];
     return likes.length;
   }
 
@@ -1766,7 +1781,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             final createdAt =
                                 (c['created_at'] ?? c['createdAt'] ?? '')
                                     .toString();
-                            final likesCount = (c['likes_count'] as int?) ??
+                            final likesCount = tryParseInt(
+                                  c['likes_count'] ??
+                                      c['likesCount'] ??
+                                      c['likes'],
+                                ) ??
                                 ((c['likes'] is List)
                                     ? (c['likes'] as List).length
                                     : 0);
