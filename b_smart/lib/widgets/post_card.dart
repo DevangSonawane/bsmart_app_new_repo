@@ -550,9 +550,18 @@ class _PostCardState extends State<PostCard> {
 
   Widget _buildTweetCard(FeedPost post, ThemeData theme, bool isDark) {
     final colors = theme.colorScheme;
-    final primaryText = isDark ? Colors.white : Colors.black;
     final mediaUrls = post.mediaUrls;
     final content = (post.caption ?? '').trim();
+    final avatarUrl =
+        post.userAvatar != null ? UrlHelper.absoluteUrl(post.userAvatar!) : '';
+    final subtitle = (post.fullName ?? '').trim();
+    final primaryText =
+        theme.brightness == Brightness.dark ? Colors.white : Colors.black;
+    final secondaryText = theme.brightness == Brightness.dark
+        ? const Color(0xFF9CA3AF)
+        : const Color(0xFF6B7280);
+    const mentionBlue = Color(0xFF1D9BF0);
+    final captionStorageKey = 'tweet_caption_expanded_${post.id}';
 
     void openTweetImagePreview(List<String> urls, int initialIndex) {
       if (urls.isEmpty) return;
@@ -574,24 +583,302 @@ class _PostCardState extends State<PostCard> {
       );
     }
 
+    Widget avatar() {
+      return GestureDetector(
+        onTap: widget.onUserTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          padding: const EdgeInsets.all(2),
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFFFACC15),
+                Color(0xFFF97316),
+                Color(0xFFEC4899),
+              ],
+            ),
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: theme.scaffoldBackgroundColor,
+            ),
+            padding: const EdgeInsets.all(1),
+            child: CircleAvatar(
+              backgroundColor:
+                  isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
+              child: avatarUrl.isEmpty
+                  ? Text(
+                      post.userName.isNotEmpty
+                          ? post.userName[0].toUpperCase()
+                          : 'U',
+                      style: TextStyle(color: theme.colorScheme.onSurface),
+                    )
+                  : ClipOval(
+                      child: SafeNetworkImage(
+                        url: avatarUrl,
+                        width: 34,
+                        height: 34,
+                        fit: BoxFit.cover,
+                        placeholder: const SizedBox.shrink(),
+                        errorWidget: const SizedBox.shrink(),
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget doubleTapOverlay() {
+      return Positioned.fill(
+        child: IgnorePointer(
+          child: Center(
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 180),
+              opacity: _showDoubleTapLike ? 1 : 0,
+              child: AnimatedScale(
+                duration: const Duration(milliseconds: 260),
+                scale: _showDoubleTapLike ? 1 : 0.6,
+                curve: Curves.easeOutBack,
+                child: const Icon(
+                  Icons.favorite,
+                  size: 70,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black54,
+                      blurRadius: 14,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget caption() {
+      if (content.isEmpty) return const SizedBox.shrink();
+
+      final baseStyle = theme.textTheme.bodyMedium?.copyWith(
+            color: primaryText,
+            height: 1.25,
+            fontSize: 14,
+          ) ??
+          TextStyle(
+            color: primaryText,
+            height: 1.25,
+            fontSize: 14,
+          );
+
+      List<InlineSpan> spans() {
+        final exp = RegExp(r'(@[A-Za-z0-9_]+)');
+        final out = <InlineSpan>[];
+        int start = 0;
+        for (final m in exp.allMatches(content)) {
+          if (m.start > start) {
+            out.add(TextSpan(text: content.substring(start, m.start)));
+          }
+          out.add(
+            TextSpan(
+              text: content.substring(m.start, m.end),
+              style: baseStyle.copyWith(
+                color: mentionBlue,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+          start = m.end;
+        }
+        if (start < content.length) {
+          out.add(TextSpan(text: content.substring(start)));
+        }
+        return out;
+      }
+
+      final pageStorage = PageStorage.of(context);
+      final expanded =
+          (pageStorage.readState(context, identifier: captionStorageKey) as bool?) ??
+              false;
+
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final tp = TextPainter(
+            text: TextSpan(style: baseStyle, children: spans()),
+            maxLines: 5,
+            textDirection: Directionality.of(context),
+          )..layout(maxWidth: constraints.maxWidth);
+
+          final exceeds = tp.didExceedMaxLines;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: widget.onComment,
+                child: RichText(
+                  text: TextSpan(style: baseStyle, children: spans()),
+                  maxLines: expanded ? null : 5,
+                  overflow: expanded
+                      ? TextOverflow.visible
+                      : TextOverflow.ellipsis,
+                ),
+              ),
+              if (!expanded && exceeds) ...[
+                const SizedBox(height: 4),
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    pageStorage.writeState(
+                      context,
+                      true,
+                      identifier: captionStorageKey,
+                    );
+                    setState(() {});
+                  },
+                  child: const Text(
+                    'Read more',
+                    style: TextStyle(
+                      color: mentionBlue,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
+      );
+    }
+
     Widget media() {
       if (mediaUrls.isEmpty) return const SizedBox.shrink();
-
-      final isCarousel = mediaUrls.length > 1;
-      final aspect = post.aspectRatio ?? 4 / 5;
-
-      final safeIndex = _mediaIndex < 0
-          ? 0
-          : (_mediaIndex >= mediaUrls.length
-              ? mediaUrls.length - 1
-              : _mediaIndex);
-      final activeUrl = isCarousel ? mediaUrls[safeIndex] : mediaUrls.first;
-      final activeIsVideo = _isVideoUrl(activeUrl);
 
       final hasVideo = mediaUrls.any(_isVideoUrl);
       final imageUrls = hasVideo
           ? const <String>[]
           : mediaUrls.map((u) => u.trim()).where((u) => u.isNotEmpty).toList();
+
+      if (imageUrls.isNotEmpty) {
+        Widget imageTile({
+          required String url,
+          required int index,
+          required BorderRadius radius,
+          required double width,
+          required double height,
+        }) {
+          return SizedBox(
+            width: width,
+            height: height,
+            child: ClipRRect(
+              borderRadius: radius,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onDoubleTap: _handleDoubleTap,
+                onTap: () => openTweetImagePreview(imageUrls, index),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    SafeNetworkImage(
+                      url: UrlHelper.absoluteUrl(url),
+                      fit: BoxFit.cover,
+                    ),
+                    doubleTapOverlay(),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              const gap2 = 6.0;
+              const gapScroll = 8.0;
+              final maxTile = (w * 0.45).clamp(110.0, 160.0);
+              final twoUpLimit = ((w - gap2) / 2).clamp(90.0, 160.0);
+              final tileSize = maxTile < twoUpLimit ? maxTile : twoUpLimit;
+
+              if (imageUrls.length == 1) {
+                return Align(
+                  alignment: Alignment.centerLeft,
+                  child: imageTile(
+                    url: imageUrls.first,
+                    index: 0,
+                    radius: BorderRadius.circular(14),
+                    width: tileSize,
+                    height: tileSize,
+                  ),
+                );
+              }
+
+              if (imageUrls.length == 2) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    imageTile(
+                      url: imageUrls[0],
+                      index: 0,
+                      radius: BorderRadius.circular(12),
+                      width: tileSize,
+                      height: tileSize,
+                    ),
+                    const SizedBox(width: gap2),
+                    imageTile(
+                      url: imageUrls[1],
+                      index: 1,
+                      radius: BorderRadius.circular(12),
+                      width: tileSize,
+                      height: tileSize,
+                    ),
+                  ],
+                );
+              }
+
+              return SizedBox(
+                height: tileSize,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (int i = 0; i < imageUrls.length; i++) ...[
+                        if (i > 0) const SizedBox(width: gapScroll),
+                        imageTile(
+                          url: imageUrls[i],
+                          index: i,
+                          radius: BorderRadius.circular(12),
+                          width: tileSize,
+                          height: tileSize,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      }
+
+      // Video (or mixed media) keeps the existing DynamicMediaWidget carousel logic,
+      // but is constrained to the tweet (right column) width.
+      final isCarousel = mediaUrls.length > 1;
+      final aspect = post.aspectRatio ?? 4 / 5;
+      final safeIndex = _mediaIndex < 0
+          ? 0
+          : (_mediaIndex >= mediaUrls.length ? mediaUrls.length - 1 : _mediaIndex);
+      final activeUrl = isCarousel ? mediaUrls[safeIndex] : mediaUrls.first;
+      final activeIsVideo = _isVideoUrl(activeUrl);
 
       Widget mediaBody;
       if (!isCarousel) {
@@ -606,62 +893,6 @@ class _PostCardState extends State<PostCard> {
             filterName: null,
             adjustments: null,
           ),
-        );
-      } else if (imageUrls.isNotEmpty) {
-        // Tweet image layout (Twitter-style): small 2-up grid with rounded corners.
-        final radius = BorderRadius.circular(18);
-        const gap = 8.0;
-        final showTwoUp = imageUrls.length >= 2;
-
-        Widget tile({
-          required String url,
-          required int index,
-          required double height,
-        }) {
-          return SizedBox(
-            height: height,
-            child: ClipRRect(
-              borderRadius: radius,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onDoubleTap: _handleDoubleTap,
-                onTap: () => openTweetImagePreview(imageUrls, index),
-                child: SafeNetworkImage(
-                  url: UrlHelper.absoluteUrl(url),
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-          );
-        }
-
-        mediaBody = LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            final tileW = showTwoUp ? ((w - gap) / 2) : w;
-            final tileH = tileW.clamp(120.0, 190.0);
-            return Row(
-              children: [
-                Expanded(
-                  child: tile(
-                    url: imageUrls[0],
-                    index: 0,
-                    height: tileH,
-                  ),
-                ),
-                if (showTwoUp) ...[
-                  const SizedBox(width: gap),
-                  Expanded(
-                    child: tile(
-                      url: imageUrls[1],
-                      index: 1,
-                      height: tileH,
-                    ),
-                  ),
-                ],
-              ],
-            );
-          },
         );
       } else {
         mediaBody = AspectRatio(
@@ -691,129 +922,69 @@ class _PostCardState extends State<PostCard> {
         );
       }
 
-      // Image-only tweets use the smaller grid without an outer tap target to avoid
-      // conflicting gesture arenas (each tile handles its own tap).
-      if (imageUrls.isNotEmpty) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-          child: Stack(
-            children: [
-              mediaBody,
-              if (imageUrls.length > 1)
-                Positioned(
-                  left: 10,
-                  bottom: 10,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.42),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.12),
-                      ),
-                    ),
-                    child: Text(
-                      '1/${imageUrls.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        );
-      }
-
       return Padding(
-        padding: const EdgeInsets.only(top: 10),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onDoubleTap: _handleDoubleTap,
-            onTap: () => widget.onComment?.call(),
-            child: Stack(
-              children: [
-                mediaBody,
-                if (isCarousel)
-                  Positioned(
-                    bottom: 10,
-                    left: 0,
-                    right: 0,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(
-                        mediaUrls.length,
-                        (i) {
-                          final active = i == _mediaIndex;
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: active ? 10 : 6,
-                            height: 6,
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            decoration: BoxDecoration(
-                              color: active
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.4),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                if (activeIsVideo)
-                  Positioned(
-                    bottom: 10,
-                    right: 10,
-                    child: GestureDetector(
-                      onTap: _toggleMuted,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Center(
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 180),
-                        opacity: _showDoubleTapLike ? 1 : 0,
-                        child: AnimatedScale(
-                          duration: const Duration(milliseconds: 260),
-                          scale: _showDoubleTapLike ? 1 : 0.6,
-                          curve: Curves.easeOutBack,
-                          child: const Icon(
-                            Icons.favorite,
-                            size: 90,
-                            color: Colors.white,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black54,
-                                blurRadius: 14,
-                                offset: Offset(0, 3),
+        padding: const EdgeInsets.only(top: 8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 260),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onDoubleTap: _handleDoubleTap,
+              onTap: () => widget.onComment?.call(),
+              child: Stack(
+                children: [
+                  mediaBody,
+                  if (isCarousel)
+                    Positioned(
+                      bottom: 10,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(
+                          mediaUrls.length,
+                          (i) {
+                            final active = i == _mediaIndex;
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: active ? 10 : 6,
+                              height: 6,
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              decoration: BoxDecoration(
+                                color: active
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.4),
+                                borderRadius: BorderRadius.circular(999),
                               ),
-                            ],
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  if (activeIsVideo)
+                    Positioned(
+                      bottom: 10,
+                      right: 10,
+                      child: GestureDetector(
+                        onTap: _toggleMuted,
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                            color: Colors.white,
+                            size: 16,
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-              ],
+                  doubleTapOverlay(),
+                ],
+              ),
             ),
           ),
         ),
@@ -831,38 +1002,106 @@ class _PostCardState extends State<PostCard> {
         ),
       ),
       child: Padding(
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeader(post, isDark, theme),
-            if (content.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-                child: Text(
-                  content,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: primaryText,
-                    height: 1.25,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 46,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      avatar(),
+                      const SizedBox(height: 6),
+                    ],
                   ),
                 ),
-              ),
-            media(),
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: _buildTweetActionBar(post, theme),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
-              child: Text(
-                _formatTimestamp(post.createdAt).toUpperCase(),
-                style: const TextStyle(
-                  color: Color(0xFF8A8A8A),
-                  fontSize: 10.5,
-                  letterSpacing: 0.4,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: widget.onUserTap,
+                              child: Text(
+                                post.userName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                  color: primaryText,
+                                  height: 1.05,
+                                ),
+                                textHeightBehavior: const TextHeightBehavior(
+                                  applyHeightToFirstAscent: false,
+                                  applyHeightToLastDescent: false,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '· ${_formatTimestamp(post.createdAt)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colors.onSurface.withValues(alpha: 0.55),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          InkWell(
+                            onTap: widget.onMore,
+                            borderRadius: BorderRadius.circular(999),
+                            child: Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Icon(
+                                Icons.more_horiz,
+                                size: 18,
+                                color: colors.onSurface
+                                    .withValues(alpha: 0.65),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (subtitle.isNotEmpty) ...[
+                        GestureDetector(
+                          onTap: widget.onUserTap,
+                          child: Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: secondaryText,
+                              fontWeight: FontWeight.w500,
+                              height: 1.0,
+                            ),
+                            textHeightBehavior: const TextHeightBehavior(
+                              applyHeightToFirstAscent: false,
+                              applyHeightToLastDescent: false,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                      if (content.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        caption(),
+                      ],
+                      media(),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ),
+            const SizedBox(height: 4),
+            _buildTweetActionBar(post, theme),
           ],
         ),
       ),
@@ -871,30 +1110,33 @@ class _PostCardState extends State<PostCard> {
 
   Widget _buildTweetActionBar(FeedPost post, ThemeData theme) {
     final likeCountVisible = !post.hideLikesCount || widget.isOwnPost;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: Row(
-        children: [
-          _actionWithCount(
-            icon: post.isLiked ? Icons.favorite : LucideIcons.heart,
-            iconColor: post.isLiked ? Colors.red : null,
-            onTap: widget.onLike,
-            count: post.likes,
-            showCount: likeCountVisible,
-          ),
-          if (!post.commentsDisabled)
+    return Transform.translate(
+      offset: const Offset(-12, 0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          children: [
             _actionWithCount(
-              icon: LucideIcons.messageCircle,
-              onTap: widget.onComment,
-              count: post.comments,
+              icon: post.isLiked ? Icons.favorite : LucideIcons.heart,
+              iconColor: post.isLiked ? Colors.red : null,
+              onTap: widget.onLike,
+              count: post.likes,
+              showCount: likeCountVisible,
             ),
-          _actionWithCount(
-            icon: LucideIcons.send,
-            onTap: widget.onShare,
-            count: post.shares,
-          ),
-          const Spacer(),
-        ],
+            if (!post.commentsDisabled)
+              _actionWithCount(
+                icon: LucideIcons.messageCircle,
+                onTap: widget.onComment,
+                count: post.comments,
+              ),
+            _actionWithCount(
+              icon: LucideIcons.send,
+              onTap: widget.onShare,
+              count: post.shares,
+            ),
+            const Spacer(),
+          ],
+        ),
       ),
     );
   }
