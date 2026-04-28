@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/design_tokens.dart';
 import '../services/promote_service.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
+import 'external_link_screen.dart';
 
 class PromoteScreen extends StatefulWidget {
   const PromoteScreen({super.key});
@@ -467,6 +468,17 @@ class _MiniProductCard extends StatelessWidget {
     final off = mrp > 0 ? (((mrp - price) * 100) / mrp).round() : 0;
     final rating =
         (product['rating'] as num?)?.toDouble() ?? (4.0 + (seed % 3) * 0.1);
+    final rawWebsite = (product['websiteUrl'] ??
+            product['website_url'] ??
+            product['url'] ??
+            product['link'])
+        ?.toString()
+        .trim();
+    final websiteUrl = (rawWebsite ?? '').isEmpty
+        ? ''
+        : (rawWebsite!.startsWith('http://') || rawWebsite.startsWith('https://')
+            ? rawWebsite
+            : 'https://$rawWebsite');
 
     return Container(
       width: 260,
@@ -607,7 +619,25 @@ class _MiniProductCard extends StatelessWidget {
                     height: 28,
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {},
+                      onPressed: () {
+                        if (websiteUrl.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Website not available'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ExternalLinkScreen(
+                              url: websiteUrl,
+                              title: title,
+                            ),
+                          ),
+                        );
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
                         foregroundColor: Colors.white,
@@ -618,7 +648,7 @@ class _MiniProductCard extends StatelessWidget {
                         padding: EdgeInsets.zero,
                       ),
                       child: const Text(
-                        'Add to Cart',
+                        'Visit Website',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 13,
