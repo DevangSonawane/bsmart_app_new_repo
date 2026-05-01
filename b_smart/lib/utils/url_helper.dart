@@ -187,9 +187,9 @@ class UrlHelper {
       final baseHost = baseUri.host.toLowerCase();
       if (baseHost.isEmpty) return false;
       if (host == baseHost) return true;
-
-      // Only attach for the exact API host/root-domain (or localhost). CDNs often reject auth.
-      return _rootDomain(host) == _rootDomain(baseHost);
+      // Only attach for the exact API host (or localhost). CDNs/proxies often reject auth
+      // and return HTML/JSON, which then fails image decoding.
+      return false;
     } catch (_) {
       return false;
     }

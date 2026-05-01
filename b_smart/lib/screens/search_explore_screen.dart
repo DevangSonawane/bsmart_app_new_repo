@@ -266,12 +266,48 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
     return _extractMediaUrl(item);
   }
 
+  bool _looksLikeVideoUrl(String url) {
+    final u = url.toLowerCase();
+    return u.endsWith('.mp4') ||
+        u.endsWith('.mov') ||
+        u.endsWith('.mkv') ||
+        u.endsWith('.webm') ||
+        u.contains('.m3u8') ||
+        u.contains('.mpd');
+  }
+
+  String _bestThumbnailFromMediaMap(Map<String, dynamic> m) {
+    final thumbs = m['thumbnails'];
+    if (thumbs is List && thumbs.isNotEmpty) {
+      for (final t in thumbs) {
+        if (t is! Map) continue;
+        final tm = Map<String, dynamic>.from(t);
+        final url = tm['fileUrl'] ?? tm['file_url'] ?? tm['url'] ?? tm['path'];
+        if (url == null) continue;
+        final normalized = UrlHelper.normalizeUrl(url.toString());
+        if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
+          return normalized;
+        }
+      }
+    }
+    final direct = m['thumbnail_url'] ?? m['thumbnailUrl'] ?? m['thumbnail'];
+    if (direct != null) {
+      final normalized = UrlHelper.normalizeUrl(direct.toString());
+      if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
+        return normalized;
+      }
+    }
+    return '';
+  }
+
   String _extractMediaUrl(Map<String, dynamic> item) {
     dynamic media = item['media'] ?? item['mediaUrls'] ?? item['media_urls'];
     if (media is List && media.isNotEmpty) {
       final first = media.first;
       if (first is Map) {
         final m = Map<String, dynamic>.from(first);
+        final bestThumb = _bestThumbnailFromMediaMap(m);
+        if (bestThumb.isNotEmpty) return bestThumb;
         final url = m['thumbnail_url'] ??
             m['thumbnailUrl'] ??
             m['thumbnail'] ??
@@ -280,16 +316,30 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
             m['fileUrl'] ??
             m['file_url'] ??
             m['url'];
-        if (url != null) return UrlHelper.normalizeUrl(url.toString());
+        if (url != null) {
+          final normalized = UrlHelper.normalizeUrl(url.toString());
+          if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
+            return normalized;
+          }
+        }
       } else if (first is String) {
-        return UrlHelper.normalizeUrl(first);
+        final normalized = UrlHelper.normalizeUrl(first);
+        if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
+          return normalized;
+        }
+        return '';
       }
     }
     final direct = item['image_url'] ??
         item['thumbnail_url'] ??
         item['image'] ??
         item['thumb'];
-    if (direct != null) return UrlHelper.normalizeUrl(direct.toString());
+    if (direct != null) {
+      final normalized = UrlHelper.normalizeUrl(direct.toString());
+      if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
+        return normalized;
+      }
+    }
     return '';
   }
 

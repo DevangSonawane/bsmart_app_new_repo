@@ -771,7 +771,22 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
                 children: [
-                  mediaWidget,
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final w = constraints.maxWidth;
+                        // Match the gallery card sizing (see AdPublicGallerySection).
+                        int columns = 3;
+                        if (w >= 520) columns = 4;
+                        if (w >= 740) columns = 5;
+                        const gap = 10.0;
+                        final tileWidth =
+                            (w - (columns - 1) * gap) / columns;
+                        return SizedBox(width: tileWidth, child: mediaWidget);
+                      },
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   Row(
                     children: [

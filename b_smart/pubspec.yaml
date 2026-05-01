@@ -75,6 +75,7 @@ dependencies:
 
   record: ^6.2.0        # real microphone recording
   just_audio: ^0.9.36   # audio preview in picker
+  socket_io_client: ^2.0.3+1
 
   http_parser: any
 dev_dependencies:

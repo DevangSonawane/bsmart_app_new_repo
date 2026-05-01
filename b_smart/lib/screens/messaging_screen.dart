@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/auth_api.dart';
 import '../api/api_client.dart';
 import '../api/chat_api.dart';
+import '../services/chat_socket_service.dart';
 import '../services/supabase_service.dart';
 import '../services/chat_unread_service.dart';
 import '../theme/design_tokens.dart';
@@ -37,6 +40,10 @@ class _MessagingScreenState extends State<MessagingScreen> {
   List<Map<String, dynamic>> _normalConversations = const [];
   List<Map<String, dynamic>> _requestConversations = const [];
   Set<String> _onlineUserIds = const <String>{};
+  final ChatSocketService _chatSocket = ChatSocketService();
+  Timer? _socketRefreshDebounce;
+  SocketHandler? _onSocketNewMessage;
+  SocketHandler? _onSocketOnlineUsers;
 
   @override
   void initState() {
@@ -49,11 +56,25 @@ class _MessagingScreenState extends State<MessagingScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _socketRefreshDebounce?.cancel();
+    if (_onSocketNewMessage != null) {
+      _chatSocket.off('new-message', _onSocketNewMessage!);
+    }
+    if (_onSocketOnlineUsers != null) {
+      _chatSocket.off('online-users-updated', _onSocketOnlineUsers!);
+    }
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _init() async {
     final uid = await CurrentUser.id;
     if (!mounted) return;
     setState(() => _currentUserId = uid);
     await Future.wait([_loadMe(), _loadNormal()]);
+    await _initSocket();
     await _refreshOnlineUsers();
     if (!mounted) return;
     final cid = widget.initialConversationId;
@@ -78,6 +99,43 @@ class _MessagingScreenState extends State<MessagingScreen> {
         _openConversation(conv);
       }
     }
+  }
+
+  Future<void> _initSocket() async {
+    final token = await ApiClient().getToken();
+    final uid = (_currentUserId ?? '').trim();
+    if (token == null || token.trim().isEmpty) return;
+    _chatSocket.connect(token: token, userId: uid.isEmpty ? null : uid);
+
+    _onSocketNewMessage ??= (data) {
+      // Robust approach: debounce and refresh lists from REST.
+      _socketRefreshDebounce?.cancel();
+      _socketRefreshDebounce = Timer(const Duration(milliseconds: 250), () {
+        if (!mounted) return;
+        unawaited(_refreshAll());
+      });
+    };
+    _chatSocket.on('new-message', _onSocketNewMessage!);
+
+    _onSocketOnlineUsers ??= (data) {
+      if (data is Map) {
+        final map = Map<String, dynamic>.from(data);
+        final list = map['onlineUserIds'] ??
+            map['online_user_ids'] ??
+            map['users'] ??
+            map['items'] ??
+            map['data'];
+        if (list is List) {
+          final next = list
+              .map((e) => e?.toString().trim() ?? '')
+              .where((e) => e.isNotEmpty)
+              .toSet();
+          if (mounted) setState(() => _onlineUserIds = next);
+          return;
+        }
+      }
+    };
+    _chatSocket.on('online-users-updated', _onSocketOnlineUsers!);
   }
 
   Future<void> _loadMe() async {
@@ -266,12 +324,6 @@ class _MessagingScreenState extends State<MessagingScreen> {
     } finally {
       if (mounted) setState(() => _onlineLoading = false);
     }
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   @override
@@ -861,7 +913,11 @@ class _MessagingScreenState extends State<MessagingScreen> {
   }
 
   void _openConversation(Map<String, dynamic> conversation) {
-    final id = (conversation['_id'] ?? conversation['id'])?.toString();
+    final id = (conversation['_id'] ??
+            conversation['id'] ??
+            conversation['conversationId'] ??
+            conversation['conversation_id'])
+        ?.toString();
     if (id == null || id.isEmpty) return;
     Navigator.of(context)
         .push(

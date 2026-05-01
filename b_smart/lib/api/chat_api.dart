@@ -1,6 +1,8 @@
 import 'dart:typed_data';
+import 'dart:developer' as developer;
 
 import 'api_client.dart';
+import 'api_exceptions.dart';
 
 /// REST API wrapper for `/chat` endpoints.
 ///
@@ -396,30 +398,41 @@ class ChatApi {
     final id = conversationId.trim();
     if (id.isEmpty) return <String, dynamic>{};
 
-    Object? lastError;
-    final attempts = <Future<dynamic> Function()>[
-      () => _client.post('/chat/conversations/$id/accept'),
-      () => _client.patch('/chat/conversations/$id/accept'),
-      () => _client.put('/chat/conversations/$id/accept'),
-      () => _client.post('/chat/conversations/$id/approve'),
-      () => _client.patch('/chat/conversations/$id/approve'),
-      () => _client.put('/chat/conversations/$id/approve'),
-      () => _client.post('/chat/conversations/$id/request/accept'),
-      () => _client.patch('/chat/conversations/$id/request/accept'),
-      () => _client.put('/chat/conversations/$id/request/accept'),
-    ];
-
-    for (final attempt in attempts) {
-      try {
-        final res = await attempt();
+    // Backend contract (per docs):
+    // PUT /api/chat/conversations/{conversationId}/accept
+    // Since ApiConfig.baseUrl already includes `/api`, we call `/chat/...`.
+    const putLabel = 'PUT /chat/conversations/{id}/accept';
+    developer.log(
+      '[ChatApi] acceptConversationRequest conversationId=$id attempt="$putLabel"',
+      name: 'ChatApi',
+    );
+    try {
+      final res = await _client.put('/chat/conversations/$id/accept');
+      return res is Map<String, dynamic> ? res : <String, dynamic>{};
+    } catch (e) {
+      developer.log(
+        '[ChatApi] acceptConversationRequest failed attempt="$putLabel" error="$e"',
+        name: 'ChatApi',
+      );
+      // If the server says "method not allowed", try POST as a compatibility fallback.
+      if (e is ApiException && e.statusCode == 405) {
+        const postLabel = 'POST /chat/conversations/{id}/accept';
+        developer.log(
+          '[ChatApi] acceptConversationRequest fallback attempt="$postLabel" conversationId=$id',
+          name: 'ChatApi',
+        );
+        final res = await _client.post('/chat/conversations/$id/accept');
         return res is Map<String, dynamic> ? res : <String, dynamic>{};
-      } catch (e) {
-        lastError = e;
       }
+      // Preserve "PUT ..." visibility for 404s so the snackbar doesn't misleadingly show POST.
+      if (e is ApiException && e.statusCode == 404) {
+        throw NotFoundException(
+          message: 'PUT /chat/conversations/$id/accept → ${e.message}',
+          body: e.body,
+        );
+      }
+      rethrow;
     }
-
-    if (lastError != null) throw lastError;
-    return <String, dynamic>{};
   }
 
   /// Deletes a conversation (used for declining/deleting message requests).
@@ -432,20 +445,40 @@ class ChatApi {
     if (id.isEmpty) return <String, dynamic>{};
 
     Object? lastError;
-    final attempts = <Future<dynamic> Function()>[
-      () => _client.delete('/chat/conversations/$id'),
-      () => _client.delete('/chat/conversations/$id/delete'),
-      () => _client.delete('/chat/conversations/$id/request'),
-      () => _client.post('/chat/conversations/$id/delete'),
-      () => _client.post('/chat/conversations/$id/request/delete'),
+    final attempts = <({String label, Future<dynamic> Function() run})>[
+      (label: 'DELETE /chat/conversations/$id', run: () => _client.delete('/chat/conversations/$id')),
+      (label: 'DELETE /chat/conversations/$id/decline', run: () => _client.delete('/chat/conversations/$id/decline')),
+      (label: 'POST /chat/conversations/$id/decline', run: () => _client.post('/chat/conversations/$id/decline')),
+      (label: 'DELETE /chat/conversation/$id', run: () => _client.delete('/chat/conversation/$id')),
+      (label: 'DELETE /chat/conversation/$id/decline', run: () => _client.delete('/chat/conversation/$id/decline')),
+      (label: 'DELETE /chat/conversations/$id/delete', run: () => _client.delete('/chat/conversations/$id/delete')),
+      (label: 'POST /chat/conversations/$id/delete', run: () => _client.post('/chat/conversations/$id/delete')),
+      (label: 'DELETE /chat/conversations/$id/request', run: () => _client.delete('/chat/conversations/$id/request')),
+      (label: 'POST /chat/conversations/$id/request/delete', run: () => _client.post('/chat/conversations/$id/request/delete')),
+      (label: 'POST /chat/conversations/decline', run: () => _client.post('/chat/conversations/decline', body: {'conversationId': id})),
     ];
 
     for (final attempt in attempts) {
       try {
-        final res = await attempt();
+        developer.log(
+          '[ChatApi] deleteConversation conversationId=$id attempt="${attempt.label}"',
+          name: 'ChatApi',
+        );
+        final res = await attempt.run();
         return res is Map<String, dynamic> ? res : <String, dynamic>{};
       } catch (e) {
-        lastError = e;
+        if (e is ApiException && e.statusCode == 404) {
+          lastError = NotFoundException(
+            message: '${attempt.label} → ${e.message}',
+            body: e.body,
+          );
+        } else {
+          lastError = e;
+        }
+        developer.log(
+          '[ChatApi] deleteConversation failed attempt="${attempt.label}" error="$e"',
+          name: 'ChatApi',
+        );
       }
     }
 

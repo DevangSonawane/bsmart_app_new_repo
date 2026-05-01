@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
 import '../api/users_api.dart';
+import '../services/chat_socket_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
@@ -37,6 +39,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     with WidgetsBindingObserver {
   final _chatApi = ChatApi();
   final _usersApi = UsersApi();
+  final ChatSocketService _chatSocket = ChatSocketService();
   final _scrollController = ScrollController();
   final _inputController = TextEditingController();
   final _inputFocusNode = FocusNode();
@@ -67,6 +70,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   bool _refreshingPresence = false;
   Timer? _scrollPinTimer;
   int _scrollPinAttempts = 0;
+  SocketHandler? _onSocketNewMessage;
+  SocketHandler? _onSocketMessageRemoved;
+  SocketHandler? _onSocketReactionUpdate;
 
   final Map<String, double> _sharedPreviewAspectRatios = <String, double>{};
   final Set<String> _resolvingSharedPreviewAspectRatioUrls = <String>{};
@@ -89,6 +95,19 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   @override
   void dispose() {
+    final convId = _effectiveConversationId();
+    if (convId.isNotEmpty) {
+      _chatSocket.leaveRoom(convId);
+    }
+    if (_onSocketNewMessage != null) {
+      _chatSocket.off('new-message', _onSocketNewMessage!);
+    }
+    if (_onSocketMessageRemoved != null) {
+      _chatSocket.off('message-removed', _onSocketMessageRemoved!);
+    }
+    if (_onSocketReactionUpdate != null) {
+      _chatSocket.off('message-reaction-update', _onSocketReactionUpdate!);
+    }
     WidgetsBinding.instance.removeObserver(this);
     _stopPolling();
     _stopPresencePolling();
@@ -183,8 +202,80 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final uid = await CurrentUser.id;
     if (!mounted) return;
     setState(() => _currentUserId = uid);
+    await _initSocket();
     await _load(page: 1, replace: true);
     unawaited(_refreshOtherOnlineStatus());
+  }
+
+  Future<void> _initSocket() async {
+    final token = await ApiClient().getToken();
+    if (token == null || token.trim().isEmpty) return;
+    final uid = (_currentUserId ?? '').trim();
+    _chatSocket.connect(token: token, userId: uid.isEmpty ? null : uid);
+
+    // If socket comes up, stop REST polling (socket is primary; polling is fallback).
+    if (_chatSocket.isConnected) {
+      _stopPolling();
+    } else {
+      Timer(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        if (_chatSocket.isConnected) _stopPolling();
+      });
+    }
+
+    final convId = _effectiveConversationId();
+    if (convId.isNotEmpty) {
+      _chatSocket.joinRoom(convId);
+    }
+
+    _onSocketNewMessage ??= (data) {
+      String? conversationId;
+      if (data is Map) {
+        final map = Map<String, dynamic>.from(data);
+        conversationId = (map['conversationId'] ??
+                map['conversation_id'] ??
+                (map['conversation'] is Map
+                    ? (map['conversation']['_id'] ?? map['conversation']['id'])
+                    : null))
+            ?.toString();
+      }
+      final normalized = conversationId?.trim() ?? '';
+      if (normalized.isEmpty) return;
+      if (normalized != _effectiveConversationId()) return;
+      unawaited(_refreshLatest());
+    };
+    _chatSocket.on('new-message', _onSocketNewMessage!);
+
+    _onSocketMessageRemoved ??= (data) {
+      if (data is! Map) return;
+      final map = Map<String, dynamic>.from(data);
+      final conversationId =
+          (map['conversationId'] ?? map['conversation_id'])?.toString().trim();
+      if (conversationId == null || conversationId.isEmpty) return;
+      if (conversationId != _effectiveConversationId()) return;
+      final messageId =
+          (map['messageId'] ?? map['message_id'] ?? map['_id'] ?? map['id'])
+              ?.toString()
+              .trim();
+      if (messageId == null || messageId.isEmpty) return;
+      if (!mounted) return;
+      setState(() {
+        _messages = _messages.where((m) => _messageId(m) != messageId).toList();
+      });
+    };
+    _chatSocket.on('message-removed', _onSocketMessageRemoved!);
+
+    _onSocketReactionUpdate ??= (data) {
+      if (data is! Map) return;
+      final map = Map<String, dynamic>.from(data);
+      final conversationId =
+          (map['conversationId'] ?? map['conversation_id'])?.toString().trim();
+      if (conversationId == null || conversationId.isEmpty) return;
+      if (conversationId != _effectiveConversationId()) return;
+      // Simplest robust behavior: refresh latest to pick up server truth.
+      unawaited(_refreshLatest());
+    };
+    _chatSocket.on('message-reaction-update', _onSocketReactionUpdate!);
   }
 
   Map<String, dynamic>? _otherParticipant() {
@@ -252,10 +343,25 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     return false;
   }
 
+  String _effectiveConversationId() {
+    final fromState = (_conversation?['_id'] ??
+            _conversation?['id'] ??
+            _conversation?['conversationId'] ??
+            _conversation?['conversation_id'])
+        ?.toString()
+        .trim();
+    if (fromState != null && fromState.isNotEmpty) return fromState;
+    return widget.conversationId.trim();
+  }
+
   Future<void> _acceptRequest() async {
     if (_requestActionLoading) return;
-    final convId = widget.conversationId.trim();
+    final convId = _effectiveConversationId();
     if (convId.isEmpty) return;
+    developer.log(
+      '[acceptRequest] widget.conversationId="${widget.conversationId}" effectiveId="$convId" conversationKeys=${_conversation?.keys.toList()}',
+      name: 'ChatConversationScreen',
+    );
     setState(() => _requestActionLoading = true);
     try {
       final res =
@@ -289,7 +395,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   Future<void> _deleteRequest() async {
     if (_requestActionLoading) return;
-    final convId = widget.conversationId.trim();
+    final convId = _effectiveConversationId();
     if (convId.isEmpty) return;
     setState(() => _requestActionLoading = true);
     try {
@@ -517,7 +623,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   Future<void> _refreshLatest() async {
     if (_refreshingLatest) return;
     if (_loading || _loadingMore) return;
-    final convId = widget.conversationId.trim();
+    final convId = _effectiveConversationId();
     if (convId.isEmpty) return;
     _refreshingLatest = true;
     final wasNearBottom = _isNearBottom();
@@ -1238,6 +1344,25 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final muted = cs.onSurface.withValues(alpha: 0.70);
     final acceptBg = cs.onSurface.withValues(alpha: isDark ? 0.18 : 0.10);
 
+    String? requestedById() {
+      final raw = _conversation?['requestedBy'] ??
+          _conversation?['requested_by'] ??
+          _conversation?['requestedById'] ??
+          _conversation?['requested_by_id'];
+      if (raw is Map) {
+        final map = Map<String, dynamic>.from(raw);
+        return (map['_id'] ?? map['id'] ?? map['userId'] ?? map['user_id'])
+            ?.toString()
+            .trim();
+      }
+      return raw?.toString().trim();
+    }
+
+    final currentUserId = (_currentUserId ?? '').trim();
+    final isRequester = currentUserId.isNotEmpty &&
+        (requestedById() ?? '').trim().isNotEmpty &&
+        requestedById() == currentUserId;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
       decoration: BoxDecoration(
@@ -1246,74 +1371,96 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Accept message request from $requestWho?',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: cs.onSurface,
+          if (isRequester) ...[
+            Text(
+              "$requestWho hasn't approved your message request yet.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: cs.onSurface.withValues(alpha: 0.55),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "If you accept, they will also be able to call you and see info such as your activity status and when you've read messages.",
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              height: 1.25,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: muted,
+            const SizedBox(height: 6),
+            Text(
+              'Please wait.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: cs.onSurface.withValues(alpha: 0.45),
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 46,
-                  child: TextButton(
-                    onPressed: _requestActionLoading ? null : _deleteRequest,
-                    style: TextButton.styleFrom(
-                      shape: const StadiumBorder(),
-                      foregroundColor: Colors.redAccent,
-                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          ] else ...[
+            Text(
+              'Accept message request from $requestWho?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: cs.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "If you accept, they will also be able to call you and see info such as your activity status and when you've read messages.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                height: 1.25,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: muted,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 46,
+                    child: TextButton(
+                      onPressed: _requestActionLoading ? null : _deleteRequest,
+                      style: TextButton.styleFrom(
+                        shape: const StadiumBorder(),
+                        foregroundColor: Colors.redAccent,
+                        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      child: _requestActionLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Delete'),
                     ),
-                    child: _requestActionLoading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Delete'),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SizedBox(
-                  height: 46,
-                  child: ElevatedButton(
-                    onPressed: _requestActionLoading ? null : _acceptRequest,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: acceptBg,
-                      foregroundColor: cs.onSurface,
-                      elevation: 0,
-                      shape: const StadiumBorder(),
-                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SizedBox(
+                    height: 46,
+                    child: ElevatedButton(
+                      onPressed: _requestActionLoading ? null : _acceptRequest,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: acceptBg,
+                        foregroundColor: cs.onSurface,
+                        elevation: 0,
+                        shape: const StadiumBorder(),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      child: _requestActionLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Accept'),
                     ),
-                    child: _requestActionLoading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Accept'),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );

@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/follows_api.dart';
 import '../api/chat_api.dart';
 import '../state/app_state.dart';
+import '../utils/current_user.dart';
 import '../utils/value_parsers.dart';
 import '../widgets/safe_network_image.dart';
 import 'chat_conversation_screen.dart';
@@ -105,6 +106,7 @@ class _FollowListScreenState extends State<FollowListScreen>
   bool _showConnectContacts = true;
 
   FollowSortMode _sortMode = FollowSortMode.defaultSort;
+  String _resolvedCurrentUserId = '';
 
   String _actionUserId = '';
   String _openingConversationForUserId = '';
@@ -145,6 +147,9 @@ class _FollowListScreenState extends State<FollowListScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_resolvedCurrentUserId.isEmpty) {
+      unawaited(_primeCurrentUserId());
+    }
     if (_initialLoadStarted) return;
     _initialLoadStarted = true;
 
@@ -168,6 +173,29 @@ class _FollowListScreenState extends State<FollowListScreen>
       _loadPage(_mode, 1, replace: true);
     };
     animation.addStatusListener(_routeStatusListener!);
+  }
+
+  Future<void> _primeCurrentUserId() async {
+    if (!mounted) return;
+    var id = StoreProvider.of<AppState>(context).state.authState.userId ?? '';
+    id = id.toString().trim();
+    if (id.isNotEmpty) {
+      if (mounted && _resolvedCurrentUserId != id) {
+        setState(() => _resolvedCurrentUserId = id);
+      }
+      return;
+    }
+    try {
+      final fromCurrentUser = await CurrentUser.id;
+      final normalized = (fromCurrentUser ?? '').trim();
+      if (normalized.isNotEmpty &&
+          mounted &&
+          _resolvedCurrentUserId != normalized) {
+        setState(() => _resolvedCurrentUserId = normalized);
+      }
+    } catch (_) {
+      // ignore
+    }
   }
 
   @override
@@ -329,8 +357,9 @@ class _FollowListScreenState extends State<FollowListScreen>
     final tab = _tabs[mode]!;
     if (tab.loading || tab.loadingMore) return;
 
-    final currentUserId =
-        StoreProvider.of<AppState>(context).state.authState.userId ?? '';
+    final currentUserId = _resolvedCurrentUserId.isNotEmpty
+        ? _resolvedCurrentUserId
+        : (StoreProvider.of<AppState>(context).state.authState.userId ?? '');
     setState(() {
       if (replace) {
         tab.loading = true;
@@ -692,8 +721,9 @@ class _FollowListScreenState extends State<FollowListScreen>
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId =
-        StoreProvider.of<AppState>(context).state.authState.userId ?? '';
+    final currentUserId = _resolvedCurrentUserId.isNotEmpty
+        ? _resolvedCurrentUserId
+        : (StoreProvider.of<AppState>(context).state.authState.userId ?? '');
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
@@ -770,12 +800,14 @@ class _FollowListScreenState extends State<FollowListScreen>
   }) {
     final cs = Theme.of(context).colorScheme;
     final muted = cs.onSurface.withValues(alpha: 0.60);
-    final uid = _idOf(user);
+    final uid = _idOf(user).trim();
+    final me = currentUserId.trim();
     final username = _usernameOf(user);
     final fullName = _fullNameOf(user);
     final avatar = _avatarOf(user);
     final isFollowing = _isFollowingOf(user);
-    final canAct = uid.isNotEmpty && uid != currentUserId;
+    final isSelf = uid.isNotEmpty && me.isNotEmpty && uid == me;
+    final canAct = uid.isNotEmpty && !isSelf;
     final verified = (user['verified'] as bool?) ??
         (user['isVerified'] as bool?) ??
         (user['validated'] as bool?) ??
@@ -843,91 +875,93 @@ class _FollowListScreenState extends State<FollowListScreen>
               ),
             ),
             const SizedBox(width: 10),
-            if (mode == FollowListMode.following && canAct)
-              _ActionButton(
-                label: _openingConversationForUserId == uid
-                    ? 'Opening...'
-                    : 'Message',
-                kind: _ActionButtonKind.neutral,
-                disabled: _actionUserId.isNotEmpty ||
-                    _openingConversationForUserId.isNotEmpty,
-                onPressed: () {
-                  unawaited(_openChatForUser(participantId: uid));
-                },
-              )
-            else if (mode == FollowListMode.followers &&
-                widget.isOwnProfile &&
-                canAct)
-              isFollowing
-                  ? _ActionButton(
-                      label: _openingConversationForUserId == uid
-                          ? 'Opening...'
-                          : 'Message',
-                      kind: _ActionButtonKind.neutral,
-                      disabled: _actionUserId.isNotEmpty ||
-                          _openingConversationForUserId.isNotEmpty,
-                      onPressed: () {
-                        unawaited(_openChatForUser(participantId: uid));
-                      },
-                    )
-                  : _ActionButton(
-                      label: _actionUserId == uid ? 'Updating...' : 'Follow back',
-                      kind: _ActionButtonKind.primary,
-                      backgroundOverride: const Color(0xFF3B82F6),
-                      foregroundOverride: Colors.white,
-                      disabled: _actionUserId.isNotEmpty,
-                      onPressed: () => _toggleFollow(uid, false),
-                    )
-            else if ((mode == FollowListMode.followers ||
-                    mode == FollowListMode.vendors) &&
-                canAct)
-              _ActionButton(
-                label: _actionUserId == uid
-                    ? 'Updating...'
-                    : (isFollowing ? 'Following' : 'Follow'),
-                kind: isFollowing
-                    ? _ActionButtonKind.neutral
-                    : _ActionButtonKind.primary,
-                disabled: _actionUserId.isNotEmpty,
-                onPressed: () => _toggleFollow(uid, isFollowing),
-              ),
-            const SizedBox(width: 0),
-            if (mode == FollowListMode.followers)
-              IconButton(
-                onPressed: (widget.isOwnProfile && canAct)
-                    ? () => _openRemoveFollowerConfirmSheet(
-                          followerId: uid,
-                          username: username,
-                          avatarUrl: avatar,
-                        )
-                    : null,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-                splashRadius: 18,
-                icon: Icon(
-                  LucideIcons.x,
-                  color: muted,
-                  size: 18,
+            if (canAct) ...[
+              if (mode == FollowListMode.following)
+                _ActionButton(
+                  label: _openingConversationForUserId == uid
+                      ? 'Opening...'
+                      : 'Message',
+                  kind: _ActionButtonKind.neutral,
+                  disabled: _actionUserId.isNotEmpty ||
+                      _openingConversationForUserId.isNotEmpty,
+                  onPressed: () {
+                    unawaited(_openChatForUser(participantId: uid));
+                  },
+                )
+              else if (mode == FollowListMode.followers &&
+                  widget.isOwnProfile)
+                isFollowing
+                    ? _ActionButton(
+                        label: _openingConversationForUserId == uid
+                            ? 'Opening...'
+                            : 'Message',
+                        kind: _ActionButtonKind.neutral,
+                        disabled: _actionUserId.isNotEmpty ||
+                            _openingConversationForUserId.isNotEmpty,
+                        onPressed: () {
+                          unawaited(_openChatForUser(participantId: uid));
+                        },
+                      )
+                    : _ActionButton(
+                        label: _actionUserId == uid
+                            ? 'Updating...'
+                            : 'Follow back',
+                        kind: _ActionButtonKind.primary,
+                        backgroundOverride: const Color(0xFF3B82F6),
+                        foregroundOverride: Colors.white,
+                        disabled: _actionUserId.isNotEmpty,
+                        onPressed: () => _toggleFollow(uid, false),
+                      )
+              else if (mode == FollowListMode.followers ||
+                  mode == FollowListMode.vendors)
+                _ActionButton(
+                  label: _actionUserId == uid
+                      ? 'Updating...'
+                      : (isFollowing ? 'Following' : 'Follow'),
+                  kind: isFollowing
+                      ? _ActionButtonKind.neutral
+                      : _ActionButtonKind.primary,
+                  disabled: _actionUserId.isNotEmpty,
+                  onPressed: () => _toggleFollow(uid, isFollowing),
                 ),
-              )
-            else
-              IconButton(
-                onPressed: canAct
-                    ? () => _openRowActionsSheet(
-                          targetUserId: uid,
-                          username: username,
-                          isFollowing: isFollowing,
-                        )
-                    : null,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-                splashRadius: 18,
-                icon: Icon(
-                  LucideIcons.ellipsis,
-                  color: muted,
-                  size: 18,
+              const SizedBox(width: 0),
+              if (mode == FollowListMode.followers)
+                IconButton(
+                  onPressed: widget.isOwnProfile
+                      ? () => _openRemoveFollowerConfirmSheet(
+                            followerId: uid,
+                            username: username,
+                            avatarUrl: avatar,
+                          )
+                      : null,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 36, height: 36),
+                  splashRadius: 18,
+                  icon: Icon(
+                    LucideIcons.x,
+                    color: muted,
+                    size: 18,
+                  ),
+                )
+              else
+                IconButton(
+                  onPressed: () => _openRowActionsSheet(
+                        targetUserId: uid,
+                        username: username,
+                        isFollowing: isFollowing,
+                      ),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 36, height: 36),
+                  splashRadius: 18,
+                  icon: Icon(
+                    LucideIcons.ellipsis,
+                    color: muted,
+                    size: 18,
+                  ),
                 ),
-              ),
+            ],
           ],
         ),
       ),

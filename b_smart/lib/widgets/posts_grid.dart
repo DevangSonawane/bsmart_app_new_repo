@@ -34,64 +34,80 @@ class _PostsGridState extends State<PostsGrid> {
   @override
   Widget build(BuildContext context) {
     if (widget.posts.isEmpty) {
-      return const Center(child: Text('No posts yet'));
+      return const SizedBox.shrink();
     }
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: widget.posts.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 1,
-        mainAxisSpacing: 1,
+    final theme = Theme.of(context);
+    final seamColor = theme.brightness == Brightness.dark
+        ? const Color(0xFF0B0B0C)
+        : const Color(0xFFF3F4F6);
+
+    return ColoredBox(
+      // Helps hide 1px outer seams on some devices.
+      color: seamColor,
+      child: GridView.builder(
+        padding: EdgeInsets.zero,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: widget.posts.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 0,
+          mainAxisSpacing: 0,
+        ),
+        itemBuilder: (context, index) {
+          final p = widget.posts[index];
+          final raw =
+              (p.thumbnailUrl != null && p.thumbnailUrl!.trim().isNotEmpty)
+                  ? p.thumbnailUrl
+                  : (p.mediaUrls.isNotEmpty ? p.mediaUrls.first : null);
+          final normalized = (raw != null && raw.trim().isNotEmpty)
+              ? UrlHelper.normalizeUrl(raw)
+              : '';
+          final thumb = normalized.isNotEmpty ? normalized : null;
+          final headers =
+              (thumb != null && UrlHelper.shouldAttachAuthHeader(thumb))
+                  ? _headers
+                  : null;
+          return GestureDetector(
+            onTap: () => widget.onTap(p),
+            child: Transform.scale(
+              // Slight overlap helps remove 1px seams on some screens.
+              scale: 1.01,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ColoredBox(
+                    color: seamColor,
+                    child: thumb != null
+                        ? SafeNetworkImage(
+                            url: thumb,
+                            headers: headers,
+                            cacheKey: '$thumb#${headers?['Authorization'] ?? ''}',
+                            fit: BoxFit.cover,
+                            placeholder: ColoredBox(color: seamColor),
+                            errorWidget: ColoredBox(
+                              color: seamColor,
+                              child: const Icon(Icons.broken_image),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                  if (p.mediaType == PostMediaType.reel)
+                    const Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Icon(
+                        LucideIcons.video,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
-      itemBuilder: (context, index) {
-        final p = widget.posts[index];
-        final raw =
-            (p.thumbnailUrl != null && p.thumbnailUrl!.trim().isNotEmpty)
-                ? p.thumbnailUrl
-                : (p.mediaUrls.isNotEmpty ? p.mediaUrls.first : null);
-        final normalized = (raw != null && raw.trim().isNotEmpty)
-            ? UrlHelper.normalizeUrl(raw)
-            : '';
-        final thumb = normalized.isNotEmpty ? normalized : null;
-        final headers =
-            (thumb != null && UrlHelper.shouldAttachAuthHeader(thumb))
-                ? _headers
-                : null;
-        return GestureDetector(
-          onTap: () => widget.onTap(p),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (thumb != null)
-                SafeNetworkImage(
-                  url: thumb,
-                  headers: headers,
-                  cacheKey: '$thumb#${headers?['Authorization'] ?? ''}',
-                  fit: BoxFit.cover,
-                  placeholder: Container(color: Colors.grey[300]),
-                  errorWidget: Container(
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.broken_image),
-                  ),
-                )
-              else
-                Container(color: Colors.grey[200]),
-              if (p.mediaType == PostMediaType.reel)
-                const Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Icon(
-                    LucideIcons.video,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

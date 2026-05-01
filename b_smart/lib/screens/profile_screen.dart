@@ -87,6 +87,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, String>? _adsMediaHeaders;
   bool _isOwnProfile = false;
   bool _isFavoriteProfile = false;
+  final Set<String> _selectedFavoriteBanners = <String>{};
 
   static const List<String> _favoriteBanners = <String>[
     'assets/banners/1.png',
@@ -376,6 +377,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     const bannerAspect = 625 / 313; // Source banners are 625x313 (~2:1)
     final borderColor = theme.dividerColor.withValues(alpha: 0.55);
     final tileBorderColor = theme.dividerColor.withValues(alpha: 0.45);
+    const selectedBorderColor = Color(0xFF1D9BF0); // blue tick/border
 
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 10),
@@ -401,22 +403,78 @@ class _ProfileScreenState extends State<ProfileScreen> {
             itemBuilder: (context, index) {
               final asset = _favoriteBanners[index];
               final w = 56 * bannerAspect;
+              final selected = _selectedFavoriteBanners.contains(asset);
               return ClipRRect(
                 borderRadius: BorderRadius.circular(14),
                 child: SizedBox(
                   width: w,
                   height: 56,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: tileBorderColor),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(13),
-                      child: Image.asset(
-                        asset,
-                        fit: BoxFit.cover,
-                        filterQuality: FilterQuality.medium,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (selected) {
+                            _selectedFavoriteBanners.remove(asset);
+                          } else {
+                            _selectedFavoriteBanners.add(asset);
+                          }
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selected ? selectedBorderColor : tileBorderColor,
+                            width: selected ? 2 : 1,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(13),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.asset(
+                                asset,
+                                fit: BoxFit.cover,
+                                filterQuality: FilterQuality.medium,
+                              ),
+                              if (selected)
+                                Positioned(
+                                  top: 6,
+                                  right: 6,
+                                  child: Container(
+                                    width: 20,
+                                    height: 20,
+                                    decoration: BoxDecoration(
+                                      color: selectedBorderColor,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color:
+                                            Colors.white.withValues(alpha: 0.85),
+                                        width: 1,
+                                      ),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Colors.black26,
+                                          blurRadius: 8,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.check,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -424,6 +482,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyGridPlaceholder(
+    BuildContext context, {
+    required bool isReels,
+    required bool isOwnProfile,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final iconColor =
+        isDark ? Colors.white.withValues(alpha: 0.35) : Colors.black.withValues(alpha: 0.22);
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.22) : Colors.black.withValues(alpha: 0.18);
+    final titleColor =
+        isDark ? Colors.white.withValues(alpha: 0.92) : Colors.black.withValues(alpha: 0.88);
+
+    return ColoredBox(
+      // React parity: the empty state is a full-width strip inside the grid area.
+      color: theme.scaffoldBackgroundColor,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 56),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: borderColor, width: 2),
+              ),
+              child: Center(
+                child: Icon(
+                  isReels ? LucideIcons.video : LucideIcons.layoutGrid,
+                  size: 30,
+                  color: iconColor,
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              isReels ? 'No Reels Yet' : 'No Posts Yet',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: titleColor,
+              ),
+            ),
+            if (isOwnProfile && !isReels) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => _openCreateUpload(mode: UploadMode.post),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF3B82F6),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                child: const Text('Create now'),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -2003,35 +2124,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ]
             : <Widget>[
                 _posts.isEmpty
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: PostsGrid(
-                            posts: _posts, onTap: (p) => _onPostTap(p)),
-                      ),
+                    ? _emptyGridPlaceholder(
+                        context,
+                        isReels: false,
+                        isOwnProfile: isMe,
+                      )
+                    : PostsGrid(posts: _posts, onTap: (p) => _onPostTap(p)),
                 _userReels.isEmpty
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _userReels.length,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            crossAxisSpacing: 1,
-                            mainAxisSpacing: 1,
-                          ),
-                          itemBuilder: (ctx, i) {
-                            final r = _userReels[i];
-                            final thumbRaw = r.thumbnailUrl?.trim();
-                            final thumb =
-                                (thumbRaw != null && thumbRaw.isNotEmpty)
-                                    ? _absoluteReelUrl(thumbRaw)
-                                    : null;
-                            return GestureDetector(
-                              onTap: () => _showPostDetail(r.id),
+                    ? _emptyGridPlaceholder(
+                        context,
+                        isReels: true,
+                        isOwnProfile: isMe,
+                      )
+                    : GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _userReels.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 0,
+                          mainAxisSpacing: 0,
+                        ),
+                        itemBuilder: (ctx, i) {
+                          final r = _userReels[i];
+                          final thumbRaw = r.thumbnailUrl?.trim();
+                          final thumb = (thumbRaw != null && thumbRaw.isNotEmpty)
+                              ? _absoluteReelUrl(thumbRaw)
+                              : null;
+                          return GestureDetector(
+                            onTap: () => _showPostDetail(r.id),
+                            child: Transform.scale(
+                              scale: 1.01,
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
@@ -2043,10 +2167,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       cacheKey:
                                           '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
                                       fit: BoxFit.cover,
-                                      placeholder:
-                                          Container(color: Colors.grey[900]),
-                                      errorWidget:
-                                          Container(color: Colors.grey[900]),
+                                      placeholder: Container(color: Colors.grey[900]),
+                                      errorWidget: Container(color: Colors.grey[900]),
                                     ),
                                   const Positioned(
                                     top: 6,
@@ -2059,28 +2181,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                 ],
                               ),
-                            );
-                          },
-                        ),
+                            ),
+                          );
+                        },
                       ),
                 if (isMe)
                   (_saved.isEmpty
                       ? const SizedBox.shrink()
-                      : Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: PostsGrid(
-                            posts: _saved,
-                            onTap: (p) => _onPostTap(p),
-                          ),
+                      : PostsGrid(
+                          posts: _saved,
+                          onTap: (p) => _onPostTap(p),
                         )),
                 _tagged.isEmpty
                     ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: PostsGrid(
-                          posts: _tagged,
-                          onTap: (p) => _onPostTap(p),
-                        ),
+                    : PostsGrid(
+                        posts: _tagged,
+                        onTap: (p) => _onPostTap(p),
                       ),
               ];
 
