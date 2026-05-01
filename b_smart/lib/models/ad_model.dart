@@ -12,6 +12,7 @@ class Ad {
   final List<String> hashtags;
   final String? videoUrl;
   final String? imageUrl;
+  final List<String> imageUrls;
   final int coinReward; // Ad-specific reward
   final int watchDurationSeconds; // Required watch duration
   final int maxRewardableViews;
@@ -48,6 +49,7 @@ class Ad {
     this.hashtags = const [],
     this.videoUrl,
     this.imageUrl,
+    this.imageUrls = const [],
     required this.coinReward,
     required this.watchDurationSeconds,
     required this.maxRewardableViews,
@@ -94,6 +96,7 @@ class Ad {
       hashtags: hashtags,
       videoUrl: videoUrl,
       imageUrl: imageUrl,
+      imageUrls: imageUrls,
       coinReward: coinReward,
       watchDurationSeconds: watchDurationSeconds,
       maxRewardableViews: maxRewardableViews,
@@ -138,6 +141,7 @@ class Ad {
         : <String, dynamic>{};
 
     final media = _asList(raw['media']);
+    final imageUrls = <String>[];
     String? videoUrl;
     String? imageUrl;
     for (final item in media) {
@@ -153,6 +157,7 @@ class Ad {
         videoUrl ??= url;
       } else {
         imageUrl ??= url;
+        imageUrls.add(url);
       }
     }
 
@@ -165,6 +170,18 @@ class Ad {
           raw['thumbnail'] ??
           raw['thumbnailUrl'],
     );
+    if (imageUrl != null && imageUrl.trim().isNotEmpty) {
+      imageUrls.add(imageUrl);
+    }
+
+    // Some APIs return dedicated image arrays separate from `media`.
+    imageUrls.addAll(_extractImageUrls(raw['images']));
+    imageUrls.addAll(_extractImageUrls(raw['image_urls']));
+    imageUrls.addAll(_extractImageUrls(raw['imageUrls']));
+    imageUrls.addAll(_extractImageUrls(raw['gallery']));
+    imageUrls.addAll(_extractImageUrls(raw['photos']));
+
+    final normalizedImageUrls = _dedupePreserveOrder(imageUrls);
     videoUrl ??=
         _normalizeUrl(raw['video'] ?? raw['videoUrl'] ?? raw['video_url']);
 
@@ -228,6 +245,7 @@ class Ad {
       hashtags: _asStringList(raw['hashtags']),
       videoUrl: videoUrl,
       imageUrl: imageUrl,
+      imageUrls: normalizedImageUrls,
       coinReward: _toInt(raw['coins_reward'] ??
               raw['coin_reward'] ??
               raw['coinReward'] ??
@@ -346,6 +364,66 @@ class Ad {
       return [value.trim()];
     }
     return const [];
+  }
+
+  static List<String> _dedupePreserveOrder(List<String> values) {
+    final out = <String>[];
+    final seen = <String>{};
+    for (final raw in values) {
+      final value = raw.trim();
+      if (value.isEmpty) continue;
+      if (seen.add(value)) out.add(value);
+    }
+    return out;
+  }
+
+  static List<String> _extractImageUrls(dynamic raw) {
+    final out = <String>[];
+    for (final item in _asList(raw)) {
+      if (item is String) {
+        final url = _normalizeUrl(item);
+        if (url != null && url.isNotEmpty) out.add(url);
+        continue;
+      }
+      if (item is Map) {
+        final map = Map<String, dynamic>.from(item);
+        final file = map['file'];
+        if (file is Map) {
+          final nested = _normalizeUrl(
+            file['fileUrl'] ??
+                file['file_url'] ??
+                file['url'] ??
+                file['path'] ??
+                file['image'] ??
+                file['imageUrl'],
+          );
+          if (nested != null && nested.isNotEmpty) {
+            out.add(nested);
+            continue;
+          }
+        } else if (file is String) {
+          final nested = _normalizeUrl(file);
+          if (nested != null && nested.isNotEmpty) {
+            out.add(nested);
+            continue;
+          }
+        }
+        final url = _normalizeUrl(
+          map['url'] ??
+              map['fileUrl'] ??
+              map['file_url'] ??
+              map['path'] ??
+              map['image'] ??
+              map['imageUrl'] ??
+              map['thumbnail'] ??
+              map['thumbnailUrl'] ??
+              (map['file'] is String ? map['file'] : null),
+        );
+        if (url != null && url.isNotEmpty) out.add(url);
+        continue;
+      }
+    }
+    return out;
   }
 
   static String? _resolveMediaUrl(Map<String, dynamic> media) {

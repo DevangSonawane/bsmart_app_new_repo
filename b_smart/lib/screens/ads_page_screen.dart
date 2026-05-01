@@ -24,6 +24,7 @@ import '../widgets/app_popups/app_toast.dart';
 import '../widgets/app_popups/like_reward_popup_card.dart';
 import '../widgets/app_popups/popup_visibility_controller.dart';
 import '../widgets/app_popups/view_recorded_popup_card.dart';
+import '../widgets/ad_image_gallery.dart';
 import '../widgets/share_content_modal.dart';
 import 'ad_company_detail_screen.dart';
 import 'external_link_screen.dart';
@@ -2440,25 +2441,49 @@ class _AdVideoItemState extends State<AdVideoItem>
                 ),
               ),
             )
-          : widget.ad.imageUrl != null
-              ? CachedNetworkImage(
-                  imageUrl: widget.ad.imageUrl!,
-                  fit: BoxFit.cover,
-                  httpHeaders:
-                      UrlHelper.shouldAttachAuthHeader(widget.ad.imageUrl!)
-                          ? (_mediaHeaders ?? const {})
-                          : null,
-                  placeholder: (context, _) => const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                  errorWidget: (context, _, __) => const Icon(
-                    Icons.broken_image,
-                    color: Colors.white54,
-                  ),
-                )
-              : const Center(
+          : () {
+              final urls = widget.ad.imageUrls;
+              final fallback = widget.ad.imageUrl?.trim();
+              final hasFallback = fallback != null && fallback.isNotEmpty;
+              final hasUrls = urls.isNotEmpty;
+
+              if (!hasUrls && !hasFallback) {
+                return const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                );
+              }
+
+              Map<String, String>? headersFor(String url) {
+                if (!UrlHelper.shouldAttachAuthHeader(url)) return null;
+                return _mediaHeaders ?? const {};
+              }
+
+              if (urls.length > 1) {
+                final needsHeaders = urls.any(UrlHelper.shouldAttachAuthHeader);
+                return AdImageGallery(
+                  imageUrls: urls,
+                  httpHeaders: needsHeaders ? (_mediaHeaders ?? const {}) : null,
+                  indicatorBottomPadding: 18,
+                );
+              }
+
+              final fallbackUrl = fallback;
+              final singleUrl = (fallbackUrl != null && fallbackUrl.isNotEmpty)
+                  ? fallbackUrl
+                  : urls.first;
+              return CachedNetworkImage(
+                imageUrl: singleUrl,
+                fit: BoxFit.cover,
+                httpHeaders: headersFor(singleUrl),
+                placeholder: (context, _) => const Center(
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
+                errorWidget: (context, _, __) => const Icon(
+                  Icons.broken_image,
+                  color: Colors.white54,
+                ),
+              );
+            }(),
     );
 
     return ClipRect(

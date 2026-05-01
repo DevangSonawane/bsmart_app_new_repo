@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import '../api/ads_api.dart';
+import '../api/api_client.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/ad_cta_buttons.dart';
+import '../widgets/ad_public_gallery_section.dart';
 import 'external_link_screen.dart';
 
 class AdPublicDetailScreen extends StatefulWidget {
@@ -35,6 +38,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
   bool _isMuted = true;
   VideoPlayerController? _controller;
   bool _isVideoReady = false;
+  Map<String, String>? _mediaHeaders;
 
   bool _liked = false;
   int _likesCount = 0;
@@ -59,6 +63,58 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
     if (raw is Map<String, dynamic>) return raw;
     if (raw is Map) return Map<String, dynamic>.from(raw);
     return const <String, dynamic>{};
+  }
+
+  List<String> _extractGalleryUrls(Map<String, dynamic> raw, Ad ad) {
+    final candidates = <dynamic>[];
+    final gallery = raw['gallery'];
+    final detail = raw['detail'];
+    if (gallery is List && gallery.isNotEmpty) {
+      candidates.addAll(gallery);
+    } else if (detail is List && detail.isNotEmpty) {
+      candidates.addAll(detail);
+    }
+
+    final out = <String>[];
+    for (final item in candidates) {
+      if (item is String) {
+        final normalized = UrlHelper.normalizeUrl(item);
+        if (normalized.isNotEmpty) out.add(normalized);
+        continue;
+      }
+      if (item is Map) {
+        final map = Map<String, dynamic>.from(item);
+        final normalized = UrlHelper.normalizeUrl(
+          (map['link'] ??
+                  map['fileUrl'] ??
+                  map['file_url'] ??
+                  map['url'] ??
+                  map['fileName'] ??
+                  map['filename'] ??
+                  map['path'])
+              ?.toString(),
+        );
+        if (normalized.isNotEmpty) out.add(normalized);
+        continue;
+      }
+    }
+
+    // Fallback to parsed model fields.
+    if (out.isEmpty) {
+      out.addAll(ad.imageUrls.map(UrlHelper.normalizeUrl));
+      final single = UrlHelper.normalizeUrl(ad.imageUrl);
+      if (single.isNotEmpty) out.add(single);
+    }
+
+    // Dedupe preserve order.
+    final seen = <String>{};
+    final deduped = <String>[];
+    for (final url in out) {
+      final value = url.trim();
+      if (value.isEmpty) continue;
+      if (seen.add(value)) deduped.add(value);
+    }
+    return deduped;
   }
 
   Future<void> _load() async {
@@ -86,6 +142,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
         _likesCount = ad?.likesCount ?? 0;
         _loading = false;
       });
+      unawaited(_loadMediaHeadersIfNeeded());
       await _setupVideoIfNeeded();
       unawaited(_loadVendorAds());
     } catch (_) {
@@ -104,7 +161,12 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
     if (url.isEmpty) return;
 
     _controller?.dispose();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(url));
+    await _loadMediaHeadersIfNeeded();
+    _controller = VideoPlayerController.networkUrl(
+      Uri.parse(url),
+      httpHeaders:
+          UrlHelper.shouldAttachAuthHeader(url) ? (_mediaHeaders ?? const {}) : const {},
+    );
     try {
       await _controller!.initialize();
       await _controller!.setLooping(true);
@@ -119,6 +181,28 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
       setState(() {
         _isVideoReady = false;
       });
+    }
+  }
+
+  Future<void> _loadMediaHeadersIfNeeded() async {
+    if (_mediaHeaders != null) return;
+    final ad = _ad;
+    if (ad == null) return;
+    final urls = <String>[
+      (ad.videoUrl ?? '').trim(),
+      (ad.imageUrl ?? '').trim(),
+      ...ad.imageUrls.map((e) => e.trim()),
+    ].where((e) => e.isNotEmpty).toList();
+    if (!urls.any(UrlHelper.shouldAttachAuthHeader)) return;
+
+    try {
+      final token = await ApiClient().getToken();
+      if (token != null && token.isNotEmpty) {
+        _mediaHeaders = {'Authorization': 'Bearer $token'};
+        if (mounted) setState(() {});
+      }
+    } catch (_) {
+      // Non-blocking.
     }
   }
 
@@ -398,6 +482,8 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
         : caption.split('\n').take(4).join('\n').trimRight();
 
     final hasVideo = (ad.videoUrl ?? '').trim().isNotEmpty;
+    final galleryUrls = _extractGalleryUrls(raw, ad);
+
     final mediaWidget = ClipRRect(
       borderRadius: BorderRadius.circular(22),
       child: AspectRatio(
@@ -425,11 +511,37 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : Image.network(ad.imageUrl!, fit: BoxFit.cover),
+                              : CachedNetworkImage(
+                                  imageUrl: ad.imageUrl!,
+                                  fit: BoxFit.cover,
+                                  httpHeaders: UrlHelper.shouldAttachAuthHeader(ad.imageUrl!)
+                                      ? (_mediaHeaders ?? const {})
+                                      : null,
+                                  placeholder: (context, _) => const Center(
+                                    child: CircularProgressIndicator(color: Colors.white),
+                                  ),
+                                  errorWidget: (context, _, __) => const Icon(
+                                    Icons.broken_image,
+                                    color: Colors.white54,
+                                  ),
+                                ),
                     )
                   : (ad.imageUrl == null
                       ? const ColoredBox(color: Colors.black)
-                      : Image.network(ad.imageUrl!, fit: BoxFit.cover)),
+                      : CachedNetworkImage(
+                          imageUrl: ad.imageUrl!,
+                          fit: BoxFit.cover,
+                          httpHeaders: UrlHelper.shouldAttachAuthHeader(ad.imageUrl!)
+                              ? (_mediaHeaders ?? const {})
+                              : null,
+                          placeholder: (context, _) => const Center(
+                            child: CircularProgressIndicator(color: Colors.white),
+                          ),
+                          errorWidget: (context, _, __) => const Icon(
+                            Icons.broken_image,
+                            color: Colors.white54,
+                          ),
+                        )),
             ),
             if (hasVideo)
               Positioned.fill(
@@ -977,14 +1089,23 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    if (_vendorAdsLoading)
-                      _VendorAdsSkeleton(isDark: isDark)
-                    else
-                      _VendorAdsGrid(
-                        ads: _vendorAds,
-                        onTap: (id) => Navigator.of(context)
-                            .pushReplacementNamed('/ads/$id/details'),
-                      ),
+                    _vendorAdsLoading
+                        ? _VendorAdsSkeleton(isDark: isDark)
+                        : _VendorAdsGrid(
+                            ads: _vendorAds,
+                            onTap: (id) => Navigator.of(context)
+                                .pushReplacementNamed('/ads/$id/details'),
+                          ),
+                    const SizedBox(height: 18),
+                  ],
+                  if (galleryUrls.isNotEmpty) ...[
+                    AdPublicGallerySection(
+                      urls: galleryUrls,
+                      httpHeaders: galleryUrls.any(UrlHelper.shouldAttachAuthHeader)
+                          ? (_mediaHeaders ?? const {})
+                          : null,
+                    ),
+                    const SizedBox(height: 18),
                   ],
                 ],
               ),
