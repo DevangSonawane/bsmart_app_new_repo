@@ -7,6 +7,7 @@ import '../api/ads_api.dart';
 import '../api/api_client.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/ad_cta_buttons.dart';
@@ -28,6 +29,9 @@ class AdPublicDetailScreen extends StatefulWidget {
 class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
   final AdsApi _adsApi = AdsApi();
   final AdsService _adsService = AdsService();
+  final SupabaseService _supabase = SupabaseService();
+  final Map<String, Map<String, dynamic>> _userCache =
+      <String, Map<String, dynamic>>{};
 
   bool _loading = true;
   String? _error;
@@ -46,6 +50,9 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
 
   List<Ad> _vendorAds = const [];
   bool _vendorAdsLoading = false;
+
+  List<Map<String, dynamic>> _topComments = const [];
+  bool _commentsLoading = false;
 
   @override
   void initState() {
@@ -145,6 +152,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
       unawaited(_loadMediaHeadersIfNeeded());
       await _setupVideoIfNeeded();
       unawaited(_loadVendorAds());
+      unawaited(_loadTopComments());
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -164,8 +172,9 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
     await _loadMediaHeadersIfNeeded();
     _controller = VideoPlayerController.networkUrl(
       Uri.parse(url),
-      httpHeaders:
-          UrlHelper.shouldAttachAuthHeader(url) ? (_mediaHeaders ?? const {}) : const {},
+      httpHeaders: UrlHelper.shouldAttachAuthHeader(url)
+          ? (_mediaHeaders ?? const {})
+          : const {},
     );
     try {
       await _controller!.initialize();
@@ -251,6 +260,119 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
     try {
       await _adsService.recordAdClick(adId: widget.adId);
     } catch (_) {}
+  }
+
+  Future<void> _loadTopComments() async {
+    if (_commentsLoading) return;
+    setState(() => _commentsLoading = true);
+    try {
+      final list = await _adsService.fetchAdComments(widget.adId);
+      if (!mounted) return;
+      final normalized = list.map((e) => Map<String, dynamic>.from(e)).toList();
+      final hydrated = await _hydrateUsersInComments(normalized);
+      if (!mounted) return;
+      setState(() {
+        _topComments = hydrated.take(3).toList();
+        _commentsLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _topComments = const [];
+        _commentsLoading = false;
+      });
+    }
+  }
+
+  String _extractUserId(Map<String, dynamic> c) {
+    String? fromMap(dynamic value) {
+      if (value is Map) {
+        final m = Map<String, dynamic>.from(value);
+        final id =
+            (m['_id'] ?? m['id'] ?? m['user_id'] ?? m['userId'])?.toString();
+        if (id != null && id.trim().isNotEmpty) return id.trim();
+      }
+      return null;
+    }
+
+    final direct = (c['user_id'] ??
+        c['userId'] ??
+        c['uid'] ??
+        c['author_id'] ??
+        c['authorId']);
+    if (direct is String && direct.trim().isNotEmpty) return direct.trim();
+    if (direct is num) return direct.toString();
+    if (direct is Map) {
+      final id = fromMap(direct);
+      if (id != null) return id;
+    }
+    final user = c['user'] ?? c['users'] ?? c['author'] ?? c['posted_by'];
+    final id = fromMap(user);
+    return id ?? '';
+  }
+
+  bool _hasName(Map<String, dynamic> u) {
+    final v = (u['username'] ??
+            u['userName'] ??
+            u['user_name'] ??
+            u['full_name'] ??
+            u['fullName'] ??
+            u['name'] ??
+            u['business_name'] ??
+            u['company_name'])
+        ?.toString()
+        .trim();
+    return v != null && v.isNotEmpty;
+  }
+
+  Future<void> _primeUsers(Iterable<String> userIds) async {
+    final missing = userIds
+        .where((id) => id.isNotEmpty && !_userCache.containsKey(id))
+        .toList();
+    if (missing.isEmpty) return;
+
+    final futures = <Future<void>>[];
+    for (final id in missing) {
+      futures.add(() async {
+        try {
+          final u = await _supabase.getUserById(id);
+          if (u == null) return;
+          _userCache[id] = Map<String, dynamic>.from(u);
+        } catch (_) {}
+      }());
+    }
+    await Future.wait(futures);
+  }
+
+  Future<List<Map<String, dynamic>>> _hydrateUsersInComments(
+      List<Map<String, dynamic>> list) async {
+    final ids = <String>{};
+    for (final c in list) {
+      final id = _extractUserId(c);
+      if (id.isNotEmpty) ids.add(id);
+    }
+    await _primeUsers(ids);
+
+    return list.map((c) {
+      final next = Map<String, dynamic>.from(c);
+      final uid = _extractUserId(next);
+      if (uid.isEmpty) return next;
+      final cached = _userCache[uid];
+      if (cached == null) return next;
+      final current = next['user'];
+      if (current is Map) {
+        final merged = Map<String, dynamic>.from(cached);
+        merged.addAll(Map<String, dynamic>.from(current));
+        next['user'] = merged;
+      } else if (!_hasName(next['user'] is Map
+          ? Map<String, dynamic>.from(next['user'] as Map)
+          : <String, dynamic>{})) {
+        next['user'] = cached;
+      } else {
+        next['user'] = cached;
+      }
+      return next;
+    }).toList();
   }
 
   Map<String, dynamic> _cta(Map<String, dynamic> raw) => _map(raw['cta']);
@@ -481,163 +603,201 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
         ? ''
         : caption.split('\n').take(4).join('\n').trimRight();
 
+    String pickString(dynamic value) {
+      final v = value?.toString().trim();
+      return v == null ? '' : v;
+    }
+
+    final rawCategory = pickString(raw['category']);
+    final rawCategories = raw['categories'];
+    final firstRawCategory = rawCategories is List && rawCategories.isNotEmpty
+        ? pickString(rawCategories.first)
+        : '';
+    final categoryLabelRaw =
+        (ad.category ?? '').trim().isNotEmpty ? ad.category!.trim() : '';
+    final categoryLabel = _titleCaseWords(
+      (categoryLabelRaw.isNotEmpty
+              ? categoryLabelRaw
+              : (rawCategory.isNotEmpty ? rawCategory : firstRawCategory))
+          .replaceAll('_', ' ')
+          .trim(),
+    );
+
     final hasVideo = (ad.videoUrl ?? '').trim().isNotEmpty;
     final galleryUrls = _extractGalleryUrls(raw, ad);
 
     final mediaWidget = ClipRRect(
       borderRadius: BorderRadius.circular(22),
-      child: AspectRatio(
-        aspectRatio: 9 / 16,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: hasVideo
-                  ? ColoredBox(
-                      color: Colors.black,
-                      child: _isVideoReady && _controller != null
-                          ? ClipRect(
-                              child: FittedBox(
-                                fit: BoxFit.cover,
-                                child: SizedBox(
-                                  width: _controller!.value.size.width,
-                                  height: _controller!.value.size.height,
-                                  child: VideoPlayer(_controller!),
-                                ),
-                              ),
-                            )
-                          : ad.imageUrl == null
-                              ? const Center(
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const targetAspect = 2.7; // horizontal banner like screenshot
+          final width = constraints.maxWidth;
+          final height = (width / targetAspect).clamp(130.0, 210.0);
+
+          return SizedBox(
+            height: height,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: hasVideo
+                      ? ColoredBox(
+                          color: Colors.black,
+                          child: _isVideoReady && _controller != null
+                              ? ClipRect(
+                                  child: FittedBox(
+                                    fit: BoxFit.cover,
+                                    child: SizedBox(
+                                      width: _controller!.value.size.width,
+                                      height: _controller!.value.size.height,
+                                      child: VideoPlayer(_controller!),
+                                    ),
                                   ),
                                 )
-                              : CachedNetworkImage(
-                                  imageUrl: ad.imageUrl!,
-                                  fit: BoxFit.cover,
-                                  httpHeaders: UrlHelper.shouldAttachAuthHeader(ad.imageUrl!)
+                              : ad.imageUrl == null
+                                  ? const Center(
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : CachedNetworkImage(
+                                      imageUrl: ad.imageUrl!,
+                                      fit: BoxFit.cover,
+                                      httpHeaders:
+                                          UrlHelper.shouldAttachAuthHeader(
+                                                  ad.imageUrl!)
+                                              ? (_mediaHeaders ?? const {})
+                                              : null,
+                                      placeholder: (context, _) => const Center(
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      errorWidget: (context, _, __) =>
+                                          const Icon(
+                                        Icons.broken_image,
+                                        color: Colors.white54,
+                                      ),
+                                    ),
+                        )
+                      : (ad.imageUrl == null
+                          ? const ColoredBox(color: Colors.black)
+                          : CachedNetworkImage(
+                              imageUrl: ad.imageUrl!,
+                              fit: BoxFit.cover,
+                              httpHeaders:
+                                  UrlHelper.shouldAttachAuthHeader(ad.imageUrl!)
                                       ? (_mediaHeaders ?? const {})
                                       : null,
-                                  placeholder: (context, _) => const Center(
-                                    child: CircularProgressIndicator(color: Colors.white),
-                                  ),
-                                  errorWidget: (context, _, __) => const Icon(
-                                    Icons.broken_image,
-                                    color: Colors.white54,
-                                  ),
+                              placeholder: (context, _) => const Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
                                 ),
-                    )
-                  : (ad.imageUrl == null
-                      ? const ColoredBox(color: Colors.black)
-                      : CachedNetworkImage(
-                          imageUrl: ad.imageUrl!,
-                          fit: BoxFit.cover,
-                          httpHeaders: UrlHelper.shouldAttachAuthHeader(ad.imageUrl!)
-                              ? (_mediaHeaders ?? const {})
-                              : null,
-                          placeholder: (context, _) => const Center(
-                            child: CircularProgressIndicator(color: Colors.white),
-                          ),
-                          errorWidget: (context, _, __) => const Icon(
-                            Icons.broken_image,
-                            color: Colors.white54,
-                          ),
-                        )),
-            ),
-            if (hasVideo)
-              Positioned.fill(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _togglePlayPause,
-                    child: const SizedBox.expand(),
-                  ),
+                              ),
+                              errorWidget: (context, _, __) => const Icon(
+                                Icons.broken_image,
+                                color: Colors.white54,
+                              ),
+                            )),
                 ),
-              ),
-            Positioned(
-              top: 12,
-              left: 12,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.14),
+                if (hasVideo)
+                  Positioned.fill(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _togglePlayPause,
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
                   ),
-                ),
-                child: const Text(
-                  'Ad',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                    height: 1,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (hasVideo)
-                    InkWell(
-                      onTap: _toggleMute,
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
                       borderRadius: BorderRadius.circular(999),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.45),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Ad',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (hasVideo)
+                        InkWell(
+                          onTap: _toggleMute,
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.14),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.14),
+                              ),
+                            ),
+                            child: Icon(
+                              _isMuted ? Icons.volume_off : Icons.volume_up,
+                              color: Colors.white,
+                              size: 16,
+                            ),
                           ),
                         ),
-                        child: Icon(
-                          _isMuted ? Icons.volume_off : Icons.volume_up,
-                          color: Colors.white,
-                          size: 16,
+                    ],
+                  ),
+                ),
+                if (hasVideo && _controller != null && _isVideoReady)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 8,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: VideoProgressIndicator(
+                        _controller!,
+                        allowScrubbing: true,
+                        colors: VideoProgressColors(
+                          playedColor: Colors.white.withValues(alpha: 0.92),
+                          bufferedColor: Colors.white.withValues(alpha: 0.25),
+                          backgroundColor: Colors.white.withValues(alpha: 0.10),
                         ),
                       ),
                     ),
-                ],
-              ),
-            ),
-            if (hasVideo && _controller != null && _isVideoReady)
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 8,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: VideoProgressIndicator(
-                    _controller!,
-                    allowScrubbing: true,
-                    colors: VideoProgressColors(
-                      playedColor: Colors.white.withValues(alpha: 0.92),
-                      bufferedColor: Colors.white.withValues(alpha: 0.25),
-                      backgroundColor: Colors.white.withValues(alpha: 0.10),
+                  ),
+                if (hasVideo && _controller != null && _isVideoReady)
+                  AnimatedOpacity(
+                    opacity: _controller!.value.isPlaying ? 0 : 1,
+                    duration: const Duration(milliseconds: 180),
+                    child: const Center(
+                      child: Icon(
+                        Icons.play_circle_fill,
+                        color: Colors.white,
+                        size: 64,
+                      ),
                     ),
                   ),
-                ),
-              ),
-            if (hasVideo && _controller != null && _isVideoReady)
-              AnimatedOpacity(
-                opacity: _controller!.value.isPlaying ? 0 : 1,
-                duration: const Duration(milliseconds: 180),
-                child: const Center(
-                  child: Icon(
-                    Icons.play_circle_fill,
-                    color: Colors.white,
-                    size: 64,
-                  ),
-                ),
-              ),
-          ],
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
 
@@ -769,359 +929,304 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+                padding: EdgeInsets.zero,
                 children: [
-                  Align(
-                    alignment: Alignment.topCenter,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final w = constraints.maxWidth;
-                        // Match the gallery card sizing (see AdPublicGallerySection).
-                        int columns = 3;
-                        if (w >= 520) columns = 4;
-                        if (w >= 740) columns = 5;
-                        const gap = 10.0;
-                        final tileWidth =
-                            (w - (columns - 1) * gap) / columns;
-                        return SizedBox(width: tileWidth, child: mediaWidget);
-                      },
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+                    child: mediaWidget,
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      InkWell(
-                        onTap: _likeLoading ? null : _toggleLike,
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _liked ? Icons.favorite : Icons.favorite_border,
-                                color: _liked ? Colors.red : foregroundColor,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _compactCount(_likesCount),
-                                style: TextStyle(
-                                  color: mutedForegroundColor,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      InkWell(
-                        onTap: () => _showComingSoon('Comments'),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.mode_comment_outlined,
-                                color: foregroundColor,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _compactCount(ad.commentsCount),
-                                style: TextStyle(
-                                  color: mutedForegroundColor,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.remove_red_eye_outlined,
-                            color: foregroundColor,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _compactCount(ad.currentViews),
-                            style: TextStyle(
-                              color: mutedForegroundColor,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _VendorRow(
-                    uid: uid,
-                    vendorName: businessName.isNotEmpty
-                        ? businessName
-                        : (ad.companyName.trim().isNotEmpty
-                            ? ad.companyName.trim()
-                            : displayName),
-                    username: (ad.userName ?? '').trim().isNotEmpty
-                        ? (ad.userName ?? '').trim()
-                        : 'vendor',
-                    avatarUrl: (ad.userAvatarUrl ?? '').trim(),
-                    isVerified: ad.isVerified,
-                    foregroundColor: foregroundColor,
-                    mutedForegroundColor: mutedForegroundColor,
-                    borderColor: isDark
-                        ? Colors.white.withValues(alpha: 0.12)
-                        : Colors.black.withValues(alpha: 0.12),
-                    onViewProfile: uid == null
-                        ? null
-                        : () {
-                            unawaited(_trackClick());
-                            Navigator.of(context)
-                                .pushNamed('/vendor/$uid/public');
-                          },
-                  ),
-                  const SizedBox(height: 14),
-                  if (ad.title.trim().isNotEmpty)
-                    Text(
-                      ad.title.trim(),
-                      style: TextStyle(
-                        color: foregroundColor,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 20,
-                        height: 1.15,
-                      ),
-                    ),
-                  if (ad.description.trim().isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      ad.description.trim(),
-                      style: TextStyle(
-                        color: mutedForegroundColor,
-                        fontSize: 14,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  if (ctaType.isNotEmpty)
-                    SizedBox(
-                      width: double.infinity,
-                      child: AdGradientCtaButton(
-                        onPressed: _handleCtaTap,
-                        icon: ctaType == 'call_now'
-                            ? Icons.phone_in_talk_outlined
-                            : ctaType == 'contact_info'
-                                ? Icons.mail_outline
-                                : Icons.open_in_new,
-                        label: _ctaLabel(ctaType),
-                        boxShadow: const [],
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 14, horizontal: 14),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                    ),
-                  if ((cta['whatsapp_number'] ?? '')
-                          .toString()
-                          .trim()
-                          .isNotEmpty ||
-                      (cta['phone_number'] ?? '')
-                          .toString()
-                          .trim()
-                          .isNotEmpty ||
-                      (cta['email'] ?? '').toString().trim().isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if ((cta['whatsapp_number'] ?? '')
-                            .toString()
-                            .trim()
-                            .isNotEmpty)
-                          _ActionChip(
-                            icon: Icons.chat_bubble_outline,
-                            label: 'WhatsApp',
-                            tint: const Color(0xFF16C784),
-                            onTap: () {
-                              final digits = (cta['whatsapp_number'] ?? '')
-                                  .toString()
-                                  .replaceAll(RegExp(r'\D'), '')
-                                  .trim();
-                              if (digits.isEmpty) return;
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => ExternalLinkScreen(
-                                    url: 'https://wa.me/$digits',
-                                    title: 'WhatsApp',
+                        Row(
+                          children: [
+                            InkWell(
+                              onTap: _likeLoading ? null : _toggleLike,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 6,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _liked
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      color:
+                                          _liked ? Colors.red : foregroundColor,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _compactCount(_likesCount),
+                                      style: TextStyle(
+                                        color: mutedForegroundColor,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            InkWell(
+                              onTap: () => _showComingSoon('Comments'),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 6,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.mode_comment_outlined,
+                                      color: foregroundColor,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _compactCount(ad.commentsCount),
+                                      style: TextStyle(
+                                        color: mutedForegroundColor,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.remove_red_eye_outlined,
+                                  color: foregroundColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _compactCount(ad.currentViews),
+                                  style: TextStyle(
+                                    color: mutedForegroundColor,
+                                    fontWeight: FontWeight.w900,
                                   ),
                                 ),
-                              );
-                            },
-                          ),
-                        if ((cta['phone_number'] ?? '')
-                            .toString()
-                            .trim()
-                            .isNotEmpty)
-                          _ActionChip(
-                            icon: Icons.phone_outlined,
-                            label: 'Call',
-                            tint: const Color(0xFF1D9BF0),
-                            onTap: () async {
-                              final phone =
-                                  (cta['phone_number'] ?? '').toString().trim();
-                              if (phone.isEmpty) return;
-                              await Clipboard.setData(
-                                ClipboardData(text: phone),
-                              );
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Phone copied')),
-                              );
-                            },
-                          ),
-                        if ((cta['email'] ?? '').toString().trim().isNotEmpty)
-                          _ActionChip(
-                            icon: Icons.mail_outline,
-                            label: 'Email',
-                            tint: const Color(0xFF8B5CF6),
-                            onTap: () async {
-                              final email =
-                                  (cta['email'] ?? '').toString().trim();
-                              if (email.isEmpty) return;
-                              await Clipboard.setData(
-                                ClipboardData(text: email),
-                              );
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Email copied')),
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 18),
-                  _HighlightsSection(
-                    isDark: isDark,
-                    mutedForegroundColor: mutedForegroundColor,
-                    raw: raw,
-                    fallbackStatus: statusKey,
-                  ),
-                  const SizedBox(height: 14),
-                  if (captionPreview.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.06)
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.08)
-                              : Colors.black.withValues(alpha: 0.06),
+                              ],
+                            ),
+                          ],
                         ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'CAPTION',
-                            style: TextStyle(
-                              color: mutedForegroundColor,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                              fontSize: 10,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            captionPreview,
-                            style: TextStyle(
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.88)
-                                  : Colors.black.withValues(alpha: 0.80),
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  _TagsSection(
-                    isDark: isDark,
-                    raw: raw,
-                    fallbackTags: ad.hashtags,
-                  ),
-                  const SizedBox(height: 18),
-                  if (_vendorAdsLoading || _vendorAds.isNotEmpty) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'More from ${displayName.trim()}',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: foregroundColor,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: uid == null
+                        const SizedBox(height: 12),
+                        _VendorRow(
+                          uid: uid,
+                          vendorName: businessName.isNotEmpty
+                              ? businessName
+                              : (ad.companyName.trim().isNotEmpty
+                                  ? ad.companyName.trim()
+                                  : displayName),
+                          username: (ad.userName ?? '').trim().isNotEmpty
+                              ? (ad.userName ?? '').trim()
+                              : 'vendor',
+                          avatarUrl: (ad.userAvatarUrl ?? '').trim(),
+                          isVerified: ad.isVerified,
+                          foregroundColor: foregroundColor,
+                          mutedForegroundColor: mutedForegroundColor,
+                          borderColor: isDark
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : Colors.black.withValues(alpha: 0.12),
+                          onViewProfile: uid == null
                               ? null
                               : () {
                                   unawaited(_trackClick());
                                   Navigator.of(context)
                                       .pushNamed('/vendor/$uid/public');
                                 },
-                          style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFFEC4899),
+                        ),
+                        const SizedBox(height: 14),
+                        if (ad.title.trim().isNotEmpty)
+                          Text(
+                            ad.title.trim(),
+                            style: TextStyle(
+                              color: foregroundColor,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 20,
+                              height: 1.15,
+                            ),
                           ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
+                        if (ad.description.trim().isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            ad.description.trim(),
+                            style: TextStyle(
+                              color: mutedForegroundColor,
+                              fontSize: 14,
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
+                        if (ctaType.isNotEmpty || categoryLabel.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Row(
                             children: [
-                              Text(
-                                'See all',
-                                style: TextStyle(fontWeight: FontWeight.w900),
-                              ),
-                              SizedBox(width: 4),
-                              Icon(Icons.chevron_right, size: 16),
+                              if (ctaType.isNotEmpty)
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 48,
+                                    child: AdGradientCtaButton(
+                                      onPressed: _handleCtaTap,
+                                      icon: Icons.open_in_new,
+                                      label: 'Learn More',
+                                      boxShadow: const [],
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                        horizontal: 14,
+                                      ),
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                  ),
+                                ),
+                              if (ctaType.isNotEmpty &&
+                                  categoryLabel.isNotEmpty)
+                                const SizedBox(width: 12),
+                              if (categoryLabel.isNotEmpty)
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 48,
+                                    child: _CategoryPill(
+                                      label: categoryLabel,
+                                      isDark: isDark,
+                                      foregroundColor: foregroundColor,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
+                        ],
+                        const SizedBox(height: 14),
+                        if (captionPreview.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.06)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.08)
+                                    : Colors.black.withValues(alpha: 0.06),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'CAPTION',
+                                  style: TextStyle(
+                                    color: mutedForegroundColor,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.2,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  captionPreview,
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? Colors.white.withValues(alpha: 0.88)
+                                        : Colors.black.withValues(alpha: 0.80),
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        _TagsSection(
+                          isDark: isDark,
+                          raw: raw,
+                          fallbackTags: ad.hashtags,
                         ),
+                        const SizedBox(height: 18),
+                        if (galleryUrls.isNotEmpty) ...[
+                          AdPublicGallerySection(
+                            urls: galleryUrls,
+                            httpHeaders: galleryUrls
+                                    .any(UrlHelper.shouldAttachAuthHeader)
+                                ? (_mediaHeaders ?? const {})
+                                : null,
+                          ),
+                          const SizedBox(height: 18),
+                        ],
+                        if (_vendorAdsLoading || _vendorAds.isNotEmpty) ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'More from ${displayName.trim()}',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: foregroundColor,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: uid == null
+                                    ? null
+                                    : () {
+                                        unawaited(_trackClick());
+                                        Navigator.of(context)
+                                            .pushNamed('/vendor/$uid/public');
+                                      },
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFFEC4899),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'See all',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    SizedBox(width: 4),
+                                    Icon(Icons.chevron_right, size: 16),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          _vendorAdsLoading
+                              ? _VendorAdsSkeleton(isDark: isDark)
+                              : _VendorAdsGrid(
+                                  ads: _vendorAds,
+                                  onTap: (id) => Navigator.of(context)
+                                      .pushReplacementNamed('/ads/$id/details'),
+                                ),
+                          const SizedBox(height: 18),
+                        ],
+                        _TopCommentsSection(
+                          isDark: isDark,
+                          commentsLoading: _commentsLoading,
+                          comments: _topComments,
+                        ),
+                        if (_commentsLoading || _topComments.isNotEmpty)
+                          const SizedBox(height: 18),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    _vendorAdsLoading
-                        ? _VendorAdsSkeleton(isDark: isDark)
-                        : _VendorAdsGrid(
-                            ads: _vendorAds,
-                            onTap: (id) => Navigator.of(context)
-                                .pushReplacementNamed('/ads/$id/details'),
-                          ),
-                    const SizedBox(height: 18),
-                  ],
-                  if (galleryUrls.isNotEmpty) ...[
-                    AdPublicGallerySection(
-                      urls: galleryUrls,
-                      httpHeaders: galleryUrls.any(UrlHelper.shouldAttachAuthHeader)
-                          ? (_mediaHeaders ?? const {})
-                          : null,
-                    ),
-                    const SizedBox(height: 18),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -1132,259 +1237,356 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
   }
 }
 
-class _ActionChip extends StatelessWidget {
-  final IconData icon;
+class _CategoryPill extends StatelessWidget {
   final String label;
-  final Color tint;
-  final VoidCallback onTap;
-
-  const _ActionChip({
-    required this.icon,
-    required this.label,
-    required this.tint,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fill =
-        isDark ? tint.withValues(alpha: 0.16) : tint.withValues(alpha: 0.10);
-    final border =
-        isDark ? tint.withValues(alpha: 0.28) : tint.withValues(alpha: 0.30);
-    final fg =
-        isDark ? tint.withValues(alpha: 0.95) : tint.withValues(alpha: 0.90);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: fill,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: fg),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: fg,
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _HighlightsSection extends StatelessWidget {
   final bool isDark;
-  final Color mutedForegroundColor;
-  final Map<String, dynamic> raw;
-  final String fallbackStatus;
+  final Color foregroundColor;
 
-  const _HighlightsSection({
-    required this.isDark,
-    required this.mutedForegroundColor,
-    required this.raw,
-    required this.fallbackStatus,
-  });
-
-  List<String> _stringList(dynamic value) {
-    if (value is List) {
-      return value
-          .map((e) => e.toString().trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-    }
-    if (value is String && value.trim().isNotEmpty) return [value.trim()];
-    return const [];
-  }
-
-  String _titleCaseWords(String value) {
-    final s = value.trim();
-    if (s.isEmpty) return s;
-    final parts =
-        s.split(RegExp(r'\s+')).where((p) => p.trim().isNotEmpty).toList();
-    return parts
-        .map((p) => p.isEmpty ? p : '${p[0].toUpperCase()}${p.substring(1)}')
-        .join(' ');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final category = (raw['category'] ?? '').toString().trim();
-    final location = (raw['location'] ?? '').toString().trim();
-    final type = (raw['ad_type'] ?? raw['type'] ?? '').toString().trim();
-    final langs = _stringList(raw['target_language']);
-    final statusKey = (raw['status'] ?? '').toString().trim().isEmpty
-        ? fallbackStatus
-        : (raw['status'] ?? '').toString().trim().toLowerCase();
-    final statusLabel = _titleCaseWords(statusKey.replaceAll('_', ' '));
-    final typeLabel = _titleCaseWords(type.replaceAll('_', ' '));
-
-    final items = <_HighlightItem>[
-      if (category.isNotEmpty)
-        _HighlightItem(
-          label: 'Category',
-          value: category,
-          icon: Icons.local_offer_outlined,
-          tint: const Color(0xFF8B5CF6),
-        ),
-      if (location.isNotEmpty)
-        _HighlightItem(
-          label: 'Location',
-          value: location,
-          icon: Icons.place_outlined,
-          tint: const Color(0xFFFB7185),
-        ),
-      if (type.isNotEmpty)
-        _HighlightItem(
-          label: 'Type',
-          value: typeLabel,
-          icon: Icons.play_circle_outline,
-          tint: const Color(0xFFF59E0B),
-        ),
-      if (langs.isNotEmpty)
-        _HighlightItem(
-          label: 'Language',
-          value: langs.take(2).join(', '),
-          icon: Icons.public_outlined,
-          tint: const Color(0xFF3B82F6),
-        ),
-      if (statusLabel.isNotEmpty)
-        _HighlightItem(
-          label: 'Status',
-          value: statusLabel,
-          icon: Icons.verified_outlined,
-          tint: const Color(0xFF10B981),
-        ),
-    ];
-
-    if (items.isEmpty) return const SizedBox.shrink();
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final columns = width >= 520 ? 3 : 2;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'TOP HIGHLIGHTS',
-              style: TextStyle(
-                color: mutedForegroundColor,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.2,
-                fontSize: 10,
-              ),
-            ),
-            const SizedBox(height: 10),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: items.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                // Slightly taller to avoid minor render overflows on small devices.
-                childAspectRatio: 2.05,
-              ),
-              itemBuilder: (_, i) => _HighlightCard(
-                item: items[i],
-                isDark: isDark,
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _HighlightItem {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color tint;
-
-  const _HighlightItem({
+  const _CategoryPill({
     required this.label,
-    required this.value,
-    required this.icon,
-    required this.tint,
-  });
-}
-
-class _HighlightCard extends StatelessWidget {
-  final _HighlightItem item;
-  final bool isDark;
-
-  const _HighlightCard({
-    required this.item,
     required this.isDark,
+    required this.foregroundColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final fill = isDark
-        ? item.tint.withValues(alpha: 0.14)
-        : item.tint.withValues(alpha: 0.08);
-    final border = isDark
-        ? item.tint.withValues(alpha: 0.22)
-        : item.tint.withValues(alpha: 0.20);
-    final labelColor = isDark
-        ? Colors.white.withValues(alpha: 0.55)
-        : Colors.black.withValues(alpha: 0.45);
-    final valueColor = isDark
-        ? Colors.white.withValues(alpha: 0.92)
-        : Colors.black.withValues(alpha: 0.80);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.14)
+        : Colors.black.withValues(alpha: 0.10);
+    final fillColor =
+        isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF1F5F9);
+
     return Container(
-      padding: const EdgeInsets.all(10),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border),
+        color: fillColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: borderColor),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(item.icon, size: 16, color: item.tint.withValues(alpha: 0.9)),
-          const SizedBox(height: 4),
           Text(
-            item.label.toUpperCase(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            'CATEGORY',
             style: TextStyle(
-              color: labelColor,
+              color: foregroundColor.withValues(alpha: 0.65),
+              fontSize: 10,
               fontWeight: FontWeight.w900,
-              letterSpacing: 1.1,
-              fontSize: 9,
-              height: 1,
+              letterSpacing: 0.8,
+              height: 1.0,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
-            item.value,
+            label,
+            textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: valueColor,
-              fontWeight: FontWeight.w900,
+              color: foregroundColor.withValues(alpha: 0.92),
               fontSize: 12,
-              height: 1,
+              fontWeight: FontWeight.w900,
+              height: 1.0,
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _TopCommentsSection extends StatelessWidget {
+  final bool isDark;
+  final bool commentsLoading;
+  final List<Map<String, dynamic>> comments;
+
+  const _TopCommentsSection({
+    required this.isDark,
+    required this.commentsLoading,
+    required this.comments,
+  });
+
+  String _pickText(Map<String, dynamic> raw) {
+    final candidates = [
+      raw['text'],
+      raw['comment'],
+      raw['message'],
+      raw['content'],
+    ];
+    for (final c in candidates) {
+      final v = c?.toString().trim() ?? '';
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  Map<String, dynamic> _pickUser(Map<String, dynamic> raw) {
+    final user = raw['user'] ?? raw['user_id'] ?? raw['author'];
+    if (user is Map<String, dynamic>) return user;
+    if (user is Map) return Map<String, dynamic>.from(user);
+    return const <String, dynamic>{};
+  }
+
+  String _pickAvatarUrl(Map<String, dynamic> raw) {
+    final user = _pickUser(raw);
+    final candidates = [
+      user['avatar_url'],
+      user['avatarUrl'],
+      user['photo'],
+      user['profile_picture'],
+      user['profilePicture'],
+      raw['avatar_url'],
+      raw['avatarUrl'],
+    ];
+    for (final c in candidates) {
+      final v = c?.toString().trim() ?? '';
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  String _pickUsername(Map<String, dynamic> raw) {
+    final user = _pickUser(raw);
+    final candidates = [
+      user['username'],
+      user['handle'],
+      user['user_name'],
+      user['name'],
+      user['full_name'],
+      user['fullName'],
+      raw['username'],
+      raw['user_name'],
+      raw['name'],
+    ];
+    for (final c in candidates) {
+      final v = c?.toString().trim() ?? '';
+      if (v.isNotEmpty) return v;
+    }
+    return 'User';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!commentsLoading && comments.isEmpty) {
+      final fg = isDark
+          ? Colors.white.withValues(alpha: 0.72)
+          : Colors.black.withValues(alpha: 0.62);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Top Most Comments',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'No comments yet!',
+            style: TextStyle(
+              color: fg,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final dividerColor =
+        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black12;
+    final skeletonLine =
+        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black12;
+
+    final items = commentsLoading
+        ? List.generate(3, (i) => const <String, dynamic>{})
+        : comments.take(3).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Top Most Comments',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => Divider(height: 18, color: dividerColor),
+          itemBuilder: (context, index) {
+            final raw = items[index];
+            final avatarUrl =
+                commentsLoading ? '' : _pickAvatarUrl(Map.from(raw));
+            final username =
+                commentsLoading ? '' : _pickUsername(Map.from(raw));
+            final text = commentsLoading ? '' : _pickText(Map.from(raw));
+            return _TopCommentRow(
+              isDark: isDark,
+              avatarUrl: avatarUrl,
+              username: username,
+              text: text,
+              skeletonLine: skeletonLine,
+              loading: commentsLoading,
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _TopCommentRow extends StatelessWidget {
+  final bool isDark;
+  final String avatarUrl;
+  final String username;
+  final String text;
+  final Color skeletonLine;
+  final bool loading;
+
+  const _TopCommentRow({
+    required this.isDark,
+    required this.avatarUrl,
+    required this.username,
+    required this.text,
+    required this.skeletonLine,
+    required this.loading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final avatarBorder =
+        isDark ? Colors.white.withValues(alpha: 0.18) : Colors.black12;
+    final textColor = isDark
+        ? Colors.white.withValues(alpha: 0.86)
+        : Colors.black.withValues(alpha: 0.80);
+
+    final name = (username.trim().isEmpty ? 'User' : username.trim());
+    final initials = name.isEmpty ? 'U' : name.substring(0, 1).toUpperCase();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 38,
+          height: 38,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: avatarBorder),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.black.withValues(alpha: 0.04),
+            ),
+            child: ClipOval(
+              child: !loading && avatarUrl.trim().isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: avatarUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => const SizedBox.expand(),
+                      errorWidget: (_, __, ___) => Center(
+                        child: Text(
+                          initials,
+                          style: TextStyle(
+                            color: textColor.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Center(
+                      child: Text(
+                        initials,
+                        style: TextStyle(
+                          color: textColor.withValues(alpha: 0.9),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: loading
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 10,
+                      width: MediaQuery.of(context).size.width * 0.32,
+                      decoration: BoxDecoration(
+                        color: skeletonLine,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 10,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: skeletonLine,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 10,
+                      width: MediaQuery.of(context).size.width * 0.60,
+                      decoration: BoxDecoration(
+                        color: skeletonLine,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 10,
+                      width: MediaQuery.of(context).size.width * 0.72,
+                      decoration: BoxDecoration(
+                        color: skeletonLine,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ],
+                )
+              : Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: name,
+                        style: TextStyle(
+                          color: textColor.withValues(alpha: 0.95),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const TextSpan(text: '  '),
+                      TextSpan(
+                        text: text.trim().isEmpty ? '-' : text.trim(),
+                        style: TextStyle(
+                          color: textColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.start,
+                ),
+        ),
+      ],
     );
   }
 }
