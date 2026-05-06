@@ -50,6 +50,7 @@ class FeedPost {
   final List<Map<String, dynamic>>? rawLikes;
   final List<Map<String, dynamic>>? peopleTags;
   final bool hideLikesCount;
+  final List<Map<String, dynamic>> promotedProducts;
 
   FeedPost({
     required this.id,
@@ -94,6 +95,7 @@ class FeedPost {
     this.rawLikes,
     this.peopleTags,
     this.hideLikesCount = false,
+    this.promotedProducts = const <Map<String, dynamic>>[],
   });
 
   factory FeedPost.fromJson(Map<String, dynamic> json) {
@@ -333,6 +335,11 @@ class FeedPost {
           json['hideLikesCount'] ??
           json['hide_likes'] ??
           false,
+      promotedProducts: (json['promotedProducts'] as List?)
+              ?.whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList() ??
+          const <Map<String, dynamic>>[],
     );
   }
 
@@ -391,6 +398,7 @@ class FeedPost {
     List<Map<String, dynamic>>? rawLikes,
     List<Map<String, dynamic>>? peopleTags,
     bool? hideLikesCount,
+    List<Map<String, dynamic>>? promotedProducts,
   }) {
     return FeedPost(
       id: id ?? this.id,
@@ -434,6 +442,9 @@ class FeedPost {
       rawLikes: rawLikes ?? this.rawLikes,
       peopleTags: peopleTags ?? this.peopleTags,
       hideLikesCount: hideLikesCount ?? this.hideLikesCount,
+      promotedProducts: promotedProducts ?? this.promotedProducts,
     );
   }
+
+  bool get isPromote => id.startsWith('promote-');
 }

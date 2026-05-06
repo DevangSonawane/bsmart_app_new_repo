@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import api from "../../lib/api";
 import {
   Coins, CreditCard, Receipt, ShieldCheck, CalendarDays,
@@ -8,7 +8,7 @@ import {
   TrendingDown, TrendingUp,
   Wallet, Sparkles, Megaphone,
   ChevronLeft, ChevronRight, Star, Zap, Crown, Package,
-  Tag, BadgeCheck, ChevronDown, ChevronUp
+  Tag, BadgeCheck, ChevronDown, ChevronUp, X, Plus, Minus
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,6 +74,208 @@ const TIER_META = {
 };
 const getTierMeta = (tier = "") =>
   TIER_META[tier.toLowerCase()] || TIER_META.basic;
+
+// ─── Recharge Coin Modal ───────────────────────────────────────────────────────
+const PRESET_AMOUNTS = [100, 250, 500, 1000, 2000, 5000];
+
+const RechargeCoinModal = ({ open, onClose, onSuccess }) => {
+  const [amount, setAmount]         = useState("");
+  const [loading, setLoading]       = useState(false);
+  const [fetchingPkg, setFetchingPkg] = useState(true);
+  const [activePkg, setActivePkg]   = useState(null);
+  const [result, setResult]         = useState(null); // success state
+  const [error, setError]           = useState("");
+
+  // Fetch active package on open to show correct coin preview
+  useEffect(() => {
+    if (!open) { setResult(null); setError(""); setAmount(""); return; }
+    setFetchingPkg(true);
+    api.get("/vendor-packages/my/active")
+      .then(res => setActivePkg(res.data?.active_package || res.data?.package || res.data || null))
+      .catch(() => setActivePkg(null))
+      .finally(() => setFetchingPkg(false));
+  }, [open]);
+
+  if (!open) return null;
+
+  const tier = activePkg?.package?.tier || activePkg?.tier || "";
+  const isPremium = tier === "premium" || tier === "enterprise";
+  const pkgName   = activePkg?.package?.name || activePkg?.name || null;
+
+  const numAmount = Number(amount) || 0;
+  const coinsPreview = numAmount > 0
+    ? isPremium ? numAmount * 4 + numAmount : numAmount * 4
+    : 0;
+
+  const handlePreset = (val) => { setAmount(String(val)); setError(""); };
+
+  const handleRecharge = async () => {
+    const amt = Number(amount);
+    if (!amt || amt <= 0) { setError("Please enter a valid amount."); return; }
+    setLoading(true); setError("");
+    try {
+      const { data } = await api.post("/wallet/recharge", { recharge_amount: amt });
+      setResult(data);
+      onSuccess?.();
+    } catch (e) {
+      setError(e?.response?.data?.message || "Recharge failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative w-full sm:max-w-[400px] bg-white dark:bg-gray-950 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        {/* Drag handle (mobile) */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="w-10 h-1 rounded-full bg-gray-200 dark:bg-gray-700" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-sm">
+              <Coins className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-[15px] font-bold text-gray-900 dark:text-white leading-tight">Recharge Coins</h2>
+              <p className="text-[11px] text-gray-400">Add coins to your wallet</p>
+            </div>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+            <X size={15} />
+          </button>
+        </div>
+
+        {result ? (
+          /* ── Success state ── */
+          <div className="flex flex-col items-center gap-4 px-6 py-8 text-center">
+            <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8 text-green-500" />
+            </div>
+            <div>
+              <p className="text-lg font-bold text-gray-900 dark:text-white">Recharge Successful!</p>
+              <p className="text-sm text-gray-500 mt-1">
+                ₹{fmt(result.recharge?.recharge_amount)} → <span className="font-bold text-amber-500">{fmt(result.recharge?.coins_credited)} coins</span>
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">{result.recharge?.formula}</p>
+            </div>
+            <div className="w-full p-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 flex items-center justify-between">
+              <span className="text-sm text-gray-500 dark:text-gray-400">New Balance</span>
+              <span className="font-extrabold text-gray-900 dark:text-white flex items-center gap-1">
+                <Coins className="w-4 h-4 text-amber-500" /> {fmt(result.wallet?.new_balance)}
+              </span>
+            </div>
+            <button onClick={onClose}
+              className="w-full h-11 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-bold hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors">
+              Done
+            </button>
+          </div>
+        ) : (
+          <div className="px-5 py-5 flex flex-col gap-4">
+            {/* Active package badge */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <Package className="w-4 h-4 text-gray-400" />
+                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">Active Package</span>
+              </div>
+              {fetchingPkg ? (
+                <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+              ) : pkgName ? (
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isPremium ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'}`}>
+                  {pkgName}
+                </span>
+              ) : (
+                <span className="text-xs text-gray-400">None</span>
+              )}
+            </div>
+
+            {/* Coin formula info */}
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30">
+              <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 mb-1.5">Coin Formula</p>
+              <div className="flex flex-col gap-1">
+                <div className={`flex items-center justify-between text-xs ${!isPremium ? 'text-gray-800 dark:text-gray-200 font-bold' : 'text-gray-400 dark:text-gray-500'}`}>
+                  <span>Basic / Standard</span>
+                  <span>Amount × 4</span>
+                </div>
+                <div className={`flex items-center justify-between text-xs ${isPremium ? 'text-gray-800 dark:text-gray-200 font-bold' : 'text-gray-400 dark:text-gray-500'}`}>
+                  <span>Premium / Enterprise</span>
+                  <span>Amount × 4 + Amount</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Preset amounts */}
+            <div>
+              <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-2">Quick Select (₹)</p>
+              <div className="grid grid-cols-3 gap-2">
+                {PRESET_AMOUNTS.map(val => (
+                  <button key={val} type="button" onClick={() => handlePreset(val)}
+                    className={`py-2 rounded-xl text-sm font-bold border transition-all ${Number(amount) === val
+                      ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 border-gray-900 dark:border-white'
+                      : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-400'
+                    }`}>
+                    ₹{fmt(val)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom amount input */}
+            <div>
+              <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1.5">Or enter amount (₹)</p>
+              <div className="relative flex items-center">
+                <span className="absolute left-3.5 text-gray-400 font-bold text-sm">₹</span>
+                <input
+                  type="number" min="1" value={amount}
+                  onChange={e => { setAmount(e.target.value); setError(""); }}
+                  placeholder="e.g. 1000"
+                  className="w-full pl-8 pr-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 placeholder-gray-300"
+                />
+              </div>
+            </div>
+
+            {/* Coin preview */}
+            {coinsPreview > 0 && (
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-gray-900 dark:bg-white/5 text-white">
+                <span className="text-sm font-semibold text-gray-300 dark:text-gray-400">You will receive</span>
+                <span className="flex items-center gap-1.5 text-lg font-extrabold text-amber-400">
+                  <Coins className="w-5 h-5" />
+                  {fmt(coinsPreview)} coins
+                </span>
+              </div>
+            )}
+
+            {/* Error */}
+            {error && (
+              <p className="flex items-center gap-1.5 text-xs text-red-500 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {error}
+              </p>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2.5">
+              <button onClick={onClose}
+                className="flex-1 h-11 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleRecharge} disabled={loading || !amount}
+                className="flex-1 h-11 rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 disabled:opacity-40 text-white text-sm font-bold transition-all hover:opacity-90 flex items-center justify-center gap-2 shadow-md shadow-amber-500/20">
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {loading ? "Processing…" : "Recharge Now"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const ProfileCompletionGateModal = ({ open, onClose, percentage = 0, required = 50 }) => {
   if (!open) return null;
@@ -849,6 +1051,7 @@ export default function CoinsBilling() {
   const { userObject } = useSelector(s => s.auth);
   const userId = userObject?._id || userObject?.id;
   const [profileCompletion, setProfileCompletion] = useState(0);
+  const [showRechargeModal, setShowRechargeModal] = useState(false);
 
   // Wallet
   const [wallet, setWallet]               = useState(null);
@@ -1006,8 +1209,9 @@ export default function CoinsBilling() {
           <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 p-6 flex flex-col gap-4">
             <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Quick Actions</h3>
             <a href="#packages"
-              className="w-full p-4 rounded-2xl bg-gradient-to-r from-orange-500 to-pink-600 text-white font-bold text-sm flex items-center justify-between hover:opacity-90 transition-opacity shadow-md shadow-pink-500/20 cursor-pointer">
-              <span className="flex items-center gap-2"><Coins className="w-4 h-4" /> Buy Package</span>
+              onClick={e => { e.preventDefault(); setShowRechargeModal(true); }}
+              className="w-full p-4 rounded-2xl bg-gradient-to-r from-yellow-400 to-amber-500 text-white font-bold text-sm flex items-center justify-between hover:opacity-90 transition-opacity shadow-md shadow-amber-500/20 cursor-pointer">
+              <span className="flex items-center gap-2"><Coins className="w-4 h-4" /> Recharge Coins</span>
               <span>→</span>
             </a>
             {[
@@ -1187,6 +1391,13 @@ export default function CoinsBilling() {
         </div>
 
       </div>
+
+      {/* Recharge Coins Modal */}
+      <RechargeCoinModal
+        open={showRechargeModal}
+        onClose={() => setShowRechargeModal(false)}
+        onSuccess={fetchWallet}
+      />
     </div>
   );
 }

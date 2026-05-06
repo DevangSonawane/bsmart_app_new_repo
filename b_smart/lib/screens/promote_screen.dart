@@ -63,7 +63,9 @@ class _PromoteScreenState extends State<PromoteScreen> {
     final list = await _promoteService.fetchPromotes();
     if (mounted) {
       setState(() {
-        _promotes = list;
+        _promotes = list
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(growable: false);
         _loading = false;
       });
       if (_promotes.isNotEmpty) _initControllerForIndex(0);
@@ -222,12 +224,12 @@ class _PromoteScreenState extends State<PromoteScreen> {
         (cur + (nextLiked ? 1 : -1)) < 0 ? 0 : (cur + (nextLiked ? 1 : -1));
 
     setState(() {
-      _promotes[index] = {
+      _promotes[index] = Map<String, dynamic>.from({
         ...item,
         'isLikedByMe': nextLiked,
         'likesCount': nextCount,
         'likes': nextCount.toString(),
-      };
+      });
     });
 
     try {
@@ -239,12 +241,12 @@ class _PromoteScreenState extends State<PromoteScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _promotes[index] = {
+        _promotes[index] = Map<String, dynamic>.from({
           ...item,
           'isLikedByMe': wasLiked,
           'likesCount': cur,
           'likes': cur.toString(),
-        };
+        });
       });
     }
   }
@@ -471,10 +473,9 @@ class _PromoteScreenState extends State<PromoteScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     GlassActionButton(
-                      icon: LucideIcons.heart,
+                      icon: isLiked ? Icons.favorite : LucideIcons.heart,
                       label: _fmt(likesCount),
-                      iconColor:
-                          isLiked ? DesignTokens.instaPink : Colors.white,
+                      iconColor: isLiked ? Colors.red : Colors.white,
                       onTap: () => _toggleLike(index),
                     ),
                     const SizedBox(height: 16),

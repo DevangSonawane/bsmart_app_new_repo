@@ -119,4 +119,33 @@ class UsersApi {
       return username.contains(q) || fullName.contains(q);
     }).toList();
   }
+
+  /// Get user's ad interest categories for profile.
+  ///
+  /// Endpoint: GET /users/:id/interests
+  /// Response shape (React parity):
+  ///   { ad_interests: [...], available_categories: [...] }
+  Future<Map<String, dynamic>> getAdInterests(String userId) async {
+    final res = await _client.get('/users/$userId/interests');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  /// Add/update ad interest categories for logged-in user.
+  ///
+  /// Endpoint: POST /users/:id/interests
+  /// Body:
+  ///   { interests?: [...], add?: [...], remove?: [...] }
+  Future<Map<String, dynamic>> updateAdInterests(
+    String userId, {
+    List<String>? interests,
+    List<String>? add,
+    List<String>? remove,
+  }) async {
+    final body = <String, dynamic>{};
+    if (interests != null) body['interests'] = interests;
+    if (add != null) body['add'] = add;
+    if (remove != null) body['remove'] = remove;
+    final res = await _client.post('/users/$userId/interests', body: body);
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
 }

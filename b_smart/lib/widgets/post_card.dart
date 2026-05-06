@@ -9,6 +9,7 @@ import '../services/video_pool.dart';
 import '../utils/url_helper.dart';
 import 'dynamic_media_widget.dart';
 import 'safe_network_image.dart';
+import '../screens/external_link_screen.dart';
 
 /// Instagram-style post card with jank-free media rendering.
 /// Media aspect ratios are resolved once and cached globally via DynamicMediaWidget.
@@ -55,6 +56,7 @@ class _PostCardState extends State<PostCard> {
   bool _showPeopleTags = false;
   final PageController _pageController = PageController();
   int _mediaIndex = 0;
+  bool _promoteProductsOpen = true;
 
   bool get _isCarousel => widget.post.mediaUrls.length > 1;
 
@@ -542,6 +544,7 @@ class _PostCardState extends State<PostCard> {
             ),
           ],
         ),
+        if (post.isPromote) _buildPromoteProductsPanel(post, theme),
         _buildActionBar(post, theme),
         _buildPostDetails(post, theme),
       ],
@@ -702,9 +705,9 @@ class _PostCardState extends State<PostCard> {
       }
 
       final pageStorage = PageStorage.of(context);
-      final expanded =
-          (pageStorage.readState(context, identifier: captionStorageKey) as bool?) ??
-              false;
+      final expanded = (pageStorage.readState(context,
+              identifier: captionStorageKey) as bool?) ??
+          false;
 
       return LayoutBuilder(
         builder: (context, constraints) {
@@ -725,9 +728,8 @@ class _PostCardState extends State<PostCard> {
                 child: RichText(
                   text: TextSpan(style: baseStyle, children: spans()),
                   maxLines: expanded ? null : 5,
-                  overflow: expanded
-                      ? TextOverflow.visible
-                      : TextOverflow.ellipsis,
+                  overflow:
+                      expanded ? TextOverflow.visible : TextOverflow.ellipsis,
                 ),
               ),
               if (!expanded && exceeds) ...[
@@ -876,7 +878,9 @@ class _PostCardState extends State<PostCard> {
       final aspect = post.aspectRatio ?? 4 / 5;
       final safeIndex = _mediaIndex < 0
           ? 0
-          : (_mediaIndex >= mediaUrls.length ? mediaUrls.length - 1 : _mediaIndex);
+          : (_mediaIndex >= mediaUrls.length
+              ? mediaUrls.length - 1
+              : _mediaIndex);
       final activeUrl = isCarousel ? mediaUrls[safeIndex] : mediaUrls.first;
       final activeIsVideo = _isVideoUrl(activeUrl);
 
@@ -975,7 +979,9 @@ class _PostCardState extends State<PostCard> {
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
-                            _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                            _isMuted
+                                ? LucideIcons.volumeX
+                                : LucideIcons.volume2,
                             color: Colors.white,
                             size: 16,
                           ),
@@ -1064,8 +1070,7 @@ class _PostCardState extends State<PostCard> {
                               child: Icon(
                                 Icons.more_horiz,
                                 size: 18,
-                                color: colors.onSurface
-                                    .withValues(alpha: 0.65),
+                                color: colors.onSurface.withValues(alpha: 0.65),
                               ),
                             ),
                           ),
@@ -1157,6 +1162,7 @@ class _PostCardState extends State<PostCard> {
     final secondaryText = theme.brightness == Brightness.dark
         ? const Color(0xFF9CA3AF)
         : const Color(0xFF6B7280);
+    final promoteTime = post.isPromote ? _formatTimestamp(post.createdAt) : '';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
@@ -1215,20 +1221,47 @@ class _PostCardState extends State<PostCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    post.userName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      color: primaryText,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          post.userName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: primaryText,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                   if (subtitleName.isNotEmpty ||
                       location.isNotEmpty ||
-                      post.isAd)
+                      post.isAd ||
+                      promoteTime.isNotEmpty)
                     Row(
                       children: [
+                        if (promoteTime.isNotEmpty)
+                          Text(
+                            promoteTime,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: secondaryText,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        if (promoteTime.isNotEmpty &&
+                            (subtitleName.isNotEmpty ||
+                                location.isNotEmpty ||
+                                post.isAd))
+                          Text(
+                            ' · ',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: secondaryText,
+                            ),
+                          ),
                         if (subtitleName.isNotEmpty)
                           Flexible(
                             child: Text(
@@ -1297,6 +1330,258 @@ class _PostCardState extends State<PostCard> {
                 child: Icon(LucideIcons.ellipsis, size: 18),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPromoteProductsPanel(FeedPost post, ThemeData theme) {
+    final products = post.promotedProducts;
+    if (products.isEmpty) return const SizedBox.shrink();
+
+    int toInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse((v ?? '').toString()) ?? 0;
+    }
+
+    String s(dynamic v) => (v ?? '').toString().trim();
+
+    final colors = theme.colorScheme;
+    final bg = theme.brightness == Brightness.dark
+        ? const Color(0xFF0B0B0C)
+        : Colors.white;
+    final border = theme.brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.10)
+        : const Color(0xFFE5E7EB);
+
+    Widget productCard(Map<String, dynamic> p) {
+      final image = UrlHelper.normalizeUrl(
+        p['promote_img'] ??
+            p['image'] ??
+            p['imageUrl'] ??
+            p['image_url'] ??
+            p['thumbnail'] ??
+            p['thumbnailUrl'],
+      );
+      final title =
+          s(p['product_name'] ?? p['title'] ?? p['name'] ?? 'Product');
+      final desc =
+          s(p['product_description'] ?? p['description'] ?? p['subtitle']);
+      final rawPrice = toInt(p['product_price'] ?? p['mrp'] ?? p['price']);
+      final discount = toInt(p['discount_amount']);
+      final mrp = rawPrice;
+      final price =
+          (discount > 0 && mrp > discount) ? (mrp - discount) : rawPrice;
+      final website = UrlHelper.normalizeUrl(
+        s(p['visit_link'] ?? p['websiteUrl'] ?? p['url']),
+      );
+      final pctOff = (mrp > 0 && price > 0 && mrp > price)
+          ? (((mrp - price) / mrp) * 100).round()
+          : 0;
+
+      return Container(
+        width: 290,
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 92,
+                  height: 92,
+                  child: image.isEmpty
+                      ? const ColoredBox(color: Color(0xFFF3F4F6))
+                      : SafeNetworkImage(
+                          url: image,
+                          fit: BoxFit.cover,
+                          placeholder:
+                              const ColoredBox(color: Color(0xFFF3F4F6)),
+                          errorWidget:
+                              const ColoredBox(color: Color(0xFFF3F4F6)),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: colors.onSurface,
+                      ),
+                    ),
+                    if (desc.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        desc,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface.withValues(alpha: 0.55),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          '₹$price',
+                          style: const TextStyle(
+                            color: Color(0xFFEF4444),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        if (mrp > 0) ...[
+                          Text(
+                            '₹$mrp',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: colors.onSurface.withValues(alpha: 0.35),
+                              decoration: TextDecoration.lineThrough,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(width: 10),
+                        if (pctOff > 0)
+                          Text(
+                            '$pctOff% off',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF16A34A),
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 38,
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: website.isEmpty
+                            ? null
+                            : () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => ExternalLinkScreen(
+                                      url: website,
+                                      title: 'Visit Website',
+                                    ),
+                                  ),
+                                );
+                              },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: const Text(
+                          'Visit Website',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        border: Border(
+          top: BorderSide(color: border),
+          bottom: BorderSide(color: border),
+        ),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () =>
+                setState(() => _promoteProductsOpen = !_promoteProductsOpen),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Row(
+                children: [
+                  Icon(LucideIcons.shoppingBag,
+                      size: 18,
+                      color: colors.onSurface.withValues(alpha: 0.70)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Products (${products.length})',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: colors.onSurface,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _promoteProductsOpen
+                        ? LucideIcons.chevronUp
+                        : LucideIcons.chevronDown,
+                    size: 18,
+                    color: colors.onSurface.withValues(alpha: 0.60),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 180),
+            crossFadeState: _promoteProductsOpen
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            firstChild: LayoutBuilder(
+              builder: (context, constraints) {
+                // Avoid RenderFlex overflow for larger text scales by
+                // giving the horizontal list enough vertical room.
+                final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+                final height = (152 * textScale).clamp(152.0, 220.0);
+                return SizedBox(
+                  height: height,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 0, 14),
+                    scrollDirection: Axis.horizontal,
+                    children: products.map(productCard).toList(),
+                  ),
+                );
+              },
+            ),
+            secondChild: const SizedBox.shrink(),
+          ),
         ],
       ),
     );

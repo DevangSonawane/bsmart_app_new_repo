@@ -802,8 +802,11 @@ class FeedService {
           final itemType =
               (item['item_type'] ?? item['itemType'] ?? '').toString();
           final vendorAny = item['vendor_id'] ?? item['vendorId'];
-          final isAdItem = itemType.toLowerCase() == 'ad' || vendorAny != null;
-          final isTweetItem = itemType.toLowerCase() == 'tweet';
+          final typeLower = itemType.toLowerCase();
+          final isAdItem = typeLower == 'ad' || vendorAny != null;
+          final isTweetItem = typeLower == 'tweet';
+          final isPromoteItem =
+              typeLower == 'promote_reel' || typeLower == 'promote-reel';
           final vendor = vendorAny is Map
               ? Map<String, dynamic>.from(vendorAny)
               : <String, dynamic>{};
@@ -870,8 +873,20 @@ class FeedService {
               ? thumbnailUrl
               : null;
 
+          List<Map<String, dynamic>> promoteProducts =
+              const <Map<String, dynamic>>[];
+          if (isPromoteItem) {
+            final rawProducts = item['products'];
+            if (rawProducts is List) {
+              promoteProducts = rawProducts
+                  .whereType<Map>()
+                  .map((p) => Map<String, dynamic>.from(p))
+                  .toList();
+            }
+          }
+
           final post = FeedPost(
-            id: postId,
+            id: isPromoteItem ? 'promote-$postId' : postId,
             userId: authorId,
             userName: resolvedUserName,
             fullName: resolvedFullName,
@@ -944,6 +959,7 @@ class FeedService {
             isShared: false,
             isAd: isAdItem,
             isTweet: isTweetItem,
+            promotedProducts: promoteProducts,
             commentsDisabled: item['turn_off_commenting'] ??
                 item['comments_disabled'] ??
                 item['commentsDisabled'] ??
@@ -1010,7 +1026,37 @@ class FeedService {
         }
       }
 
-      mapped.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      // React web feed dedupes repeated items (backend can return duplicates).
+      // Deduplicate before sorting/injecting ads/promotes so users don't see the
+      // same promote reel multiple times on a single page.
+      String canonicalId(FeedPost p) {
+        var id = p.id.trim();
+        const promoteSlot = '-slot-promote-';
+        final slotIdx = id.indexOf(promoteSlot);
+        if (slotIdx != -1) id = id.substring(0, slotIdx);
+        if (id.startsWith('promote-')) id = id.substring('promote-'.length);
+        return id;
+      }
+
+      // Preserve backend ordering (React parity). Keep the first occurrence of
+      // each (type,id) key and drop duplicates later in the page.
+      final seenKeys = <String>{};
+      final deduped = <FeedPost>[];
+      for (final p in mapped) {
+        final baseId = canonicalId(p);
+        if (baseId.isEmpty) continue;
+        final typeKey = p.isAd
+            ? 'ad'
+            : p.isTweet
+                ? 'tweet'
+                : p.isPromote
+                    ? 'promote_reel'
+                    : 'post';
+        final key = '$typeKey:$baseId';
+        if (seenKeys.contains(key)) continue;
+        seenKeys.add(key);
+        deduped.add(p);
+      }
 
       List<FeedPost> sponsored = const <FeedPost>[];
       try {
@@ -1024,19 +1070,22 @@ class FeedService {
         sponsored = _getAds();
       }
 
+      final hasPromoteInFeed = deduped.any((p) => p.isPromote);
       List<FeedPost> promotes = const <FeedPost>[];
-      try {
-        final rawPromotes = await _promoteReelsApi.listPromoteReels(
-          page: 1,
-          limit: 20,
-        );
-        promotes = _mapPromoteReelsToFeedPosts(rawPromotes);
-      } catch (_) {
-        promotes = const <FeedPost>[];
+      if (!hasPromoteInFeed) {
+        try {
+          final rawPromotes = await _promoteReelsApi.listPromoteReels(
+            page: 1,
+            limit: 20,
+          );
+          promotes = _mapPromoteReelsToFeedPosts(rawPromotes);
+        } catch (_) {
+          promotes = const <FeedPost>[];
+        }
       }
 
       return _injectAdsAndPromotesEveryN(
-        mapped,
+        deduped,
         sponsored,
         promotes,
         interval: 5,
@@ -1139,6 +1188,13 @@ class FeedService {
       final mediaUrl = UrlHelper.normalizeUrl(pickMediaUrl(item));
       if (mediaUrl.isEmpty) continue;
       final thumb = UrlHelper.normalizeUrl(pickThumbnailUrl(item) ?? '');
+      final productsRaw = item['products'];
+      final products = (productsRaw is List)
+          ? productsRaw
+              .whereType<Map>()
+              .map((p) => Map<String, dynamic>.from(p))
+              .toList()
+          : const <Map<String, dynamic>>[];
 
       out.add(
         FeedPost(
@@ -1162,6 +1218,7 @@ class FeedService {
           isSaved: toBool(item['is_saved_by_me']),
           isFollowed: toBool(item['is_followed_by_me']),
           isAd: false,
+          promotedProducts: products,
         ),
       );
     }
@@ -1179,7 +1236,9 @@ class FeedService {
 
     bool isInjectedPromote(FeedPost p) {
       final id = p.id;
-      return id.startsWith('promote-') || id.contains('-slot-promote-');
+      // Only treat *slot* items as injected; backend may return promote reels
+      // natively as `promote-<id>`, which should remain in the base feed.
+      return id.contains('-slot-promote-');
     }
 
     final basePosts =
@@ -1216,8 +1275,12 @@ class FeedService {
     if (adPool.isEmpty && promotePool.isEmpty) return posts;
 
     final merged = <FeedPost>[];
-    var adIndex = 0;
-    var promoteIndex = 0;
+    // Avoid repeating the same injected ad/promote at the start of every page
+    // by seeding indices from pagination offset.
+    final injectionSeed = interval > 0 ? (offset ~/ interval) : 0;
+    var adIndex = adPool.isNotEmpty ? (injectionSeed % adPool.length) : 0;
+    var promoteIndex =
+        promotePool.isNotEmpty ? (injectionSeed % promotePool.length) : 0;
     for (var i = 0; i < basePosts.length; i++) {
       merged.add(basePosts[i]);
       final globalIndex = offset + i + 1;

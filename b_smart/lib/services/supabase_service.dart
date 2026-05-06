@@ -19,6 +19,7 @@ class SupabaseService {
   final PostsApi _postsApi = PostsApi();
   final CommentsApi _commentsApi = CommentsApi();
   final TweetsApi _tweetsApi = TweetsApi();
+  final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
   final TweetCommentsApi _tweetCommentsApi = TweetCommentsApi();
   final UploadApi _uploadApi = UploadApi();
   final FollowsApi _followsApi = FollowsApi();
@@ -351,6 +352,7 @@ class SupabaseService {
         end > posts.length ? posts.length : end,
       );
     }
+
     try {
       final posts = await _usersApi.getUserPosts(userId);
       return slice(posts);
@@ -830,22 +832,20 @@ class SupabaseService {
         user['_id'] = userId;
         out['user_id'] = userId;
       }
-      user['username'] =
-          (user['username'] ??
-                  user['handle'] ??
-                  user['name'] ??
-                  user['full_name'] ??
-                  out['username'] ??
-                  out['user_name'] ??
-                  'User')
-              .toString();
-      user['avatar_url'] =
-          (user['avatar_url'] ??
-                  user['avatar'] ??
-                  user['profile_picture'] ??
-                  user['profilePicture'] ??
-                  out['avatar_url'])
-              ?.toString();
+      user['username'] = (user['username'] ??
+              user['handle'] ??
+              user['name'] ??
+              user['full_name'] ??
+              out['username'] ??
+              out['user_name'] ??
+              'User')
+          .toString();
+      user['avatar_url'] = (user['avatar_url'] ??
+              user['avatar'] ??
+              user['profile_picture'] ??
+              user['profilePicture'] ??
+              out['avatar_url'])
+          ?.toString();
     } else if (userRaw != null) {
       final userId = userRaw.toString();
       if (userId.isNotEmpty) {
@@ -853,7 +853,8 @@ class SupabaseService {
         user = {
           'id': userId,
           '_id': userId,
-          'username': (out['username'] ?? out['user_name'] ?? 'User').toString(),
+          'username':
+              (out['username'] ?? out['user_name'] ?? 'User').toString(),
           'avatar_url': out['avatar_url']?.toString(),
         };
       }
@@ -873,7 +874,8 @@ class SupabaseService {
       bool? isTweet}) async {
     try {
       final data = (isTweet == true)
-          ? await _tweetCommentsApi.getComments(postId, page: page, limit: limit)
+          ? await _tweetCommentsApi.getComments(postId,
+              page: page, limit: limit)
           : await _commentsApi.getComments(postId, page: page, limit: limit);
       final list = _extractCommentsList(data);
       final comments = list
@@ -898,8 +900,8 @@ class SupabaseService {
       if (isTweet == true) return [];
       // Fallback: if caller didn't know content type, try tweet comments.
       try {
-        final data =
-            await _tweetCommentsApi.getComments(postId, page: page, limit: limit);
+        final data = await _tweetCommentsApi.getComments(postId,
+            page: page, limit: limit);
         final list = _extractCommentsList(data);
         final comments = list
             .whereType<Map>()
@@ -907,10 +909,12 @@ class SupabaseService {
             .toList();
         if (newestFirst) {
           comments.sort((a, b) {
-            final as =
-                (a['created_at'] as String?) ?? (a['createdAt'] as String?) ?? '';
-            final bs =
-                (b['created_at'] as String?) ?? (b['createdAt'] as String?) ?? '';
+            final as = (a['created_at'] as String?) ??
+                (a['createdAt'] as String?) ??
+                '';
+            final bs = (b['created_at'] as String?) ??
+                (b['createdAt'] as String?) ??
+                '';
             final ad =
                 DateTime.tryParse(as) ?? DateTime.fromMillisecondsSinceEpoch(0);
             final bd =
@@ -1017,7 +1021,8 @@ class SupabaseService {
       {int page = 1, int limit = 10, bool? isTweet}) async {
     try {
       final res = (isTweet == true)
-          ? await _tweetCommentsApi.getReplies(commentId, page: page, limit: limit)
+          ? await _tweetCommentsApi.getReplies(commentId,
+              page: page, limit: limit)
           : await _commentsApi.getReplies(commentId, page: page, limit: limit);
       List<dynamic> replies = const [];
       if (res is List) {
@@ -1125,10 +1130,36 @@ class SupabaseService {
       return null;
     }
 
+    String normalizePromoteId(String id) {
+      var out = id.trim();
+      const slotToken = '-slot-promote-';
+      final slotIdx = out.indexOf(slotToken);
+      if (slotIdx != -1) out = out.substring(0, slotIdx);
+      if (out.startsWith('promote-')) out = out.substring('promote-'.length);
+      return out.trim();
+    }
+
+    final promoteId = normalizePromoteId(postId);
+    final isPromote = promoteId.isNotEmpty &&
+        (postId.startsWith('promote-') || postId.contains('-slot-promote-'));
+
     try {
+      if (isPromote) {
+        final res = like
+            ? await _promoteReelsApi.likePromoteReel(promoteId)
+            : await _promoteReelsApi.unlikePromoteReel(promoteId);
+        final liked = parseLiked(res);
+        if (liked != null) return liked;
+        return like;
+      }
+
       final Map<String, dynamic> res = (isTweet == true)
-          ? (like ? await _tweetsApi.likeTweet(postId) : await _tweetsApi.unlikeTweet(postId))
-          : (like ? await _postsApi.likePost(postId) : await _postsApi.unlikePost(postId));
+          ? (like
+              ? await _tweetsApi.likeTweet(postId)
+              : await _tweetsApi.unlikeTweet(postId))
+          : (like
+              ? await _postsApi.likePost(postId)
+              : await _postsApi.unlikePost(postId));
       final liked = parseLiked(res);
       if (liked != null) return liked;
       // As a final fallback, re-fetch the post to derive authoritative state.

@@ -789,7 +789,7 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
         children: [
           IconButton(
             icon: Icon(
-              post.isLiked ? Icons.favorite : Icons.favorite_border,
+              post.isLiked ? Icons.favorite : LucideIcons.heart,
               color: post.isLiked
                   ? InstagramTheme.errorRed
                   : InstagramTheme.textBlack,
@@ -811,7 +811,9 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                   ? 'tweet'
                   : post.isAd
                       ? 'ad'
-                      : (post.mediaType == PostMediaType.reel ? 'reel' : 'post');
+                      : (post.mediaType == PostMediaType.reel
+                          ? 'reel'
+                          : 'post');
               ShareContentModal.show(
                 context,
                 contentType: type,

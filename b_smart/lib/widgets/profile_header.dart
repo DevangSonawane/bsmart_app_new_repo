@@ -333,6 +333,13 @@ class ProfileHeader extends StatelessWidget {
                     onTap: onMessage,
                   ),
                 ),
+                const SizedBox(width: 8),
+                _actionIconButton(
+                  context,
+                  icon: isFavorite ? Icons.star : Icons.star_border,
+                  selected: isFavorite,
+                  onTap: onFavorite ?? () {},
+                ),
                 if (onUser != null) ...[
                   const SizedBox(width: 8),
                   _actionIconButton(

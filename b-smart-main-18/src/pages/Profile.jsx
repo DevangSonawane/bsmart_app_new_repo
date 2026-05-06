@@ -37,8 +37,240 @@ const fmt = (n = 0) => {
 const BASE_URL = 'https://api.bebsmart.in';
 const FAVORITE_BANNERS = [bSmartBanner1, bSmartBanner2, bSmartBanner3, bSmartBanner4];
 
-const InterestedSection = ({ activeIndex, onSelect, isDesktop = false }) => {
-    const visibleCount = isDesktop ? 4 : 3;
+// ── Ad interest categories — seeded from API, fallback list for offline ───────
+const AD_CATEGORIES_FALLBACK = [
+    'Accessories','Action Figures','Art Supplies','Baby Products',
+    'Beauty & Personal Care','Books','Clothing & Apparel','Electronics',
+    'Food & Beverages','Footwear','Gaming','Health & Wellness',
+    'Home & Kitchen','Jewellery','Mobile & Tablets','Pet Supplies',
+    'Sports & Fitness','Toys','Travel',
+];
+
+// Category → emoji mapping for visual flair
+const CATEGORY_EMOJI = {
+    'Accessories': '👜', 'Action Figures': '🤖', 'Art Supplies': '🎨',
+    'Baby Products': '🍼', 'Beauty & Personal Care': '💄', 'Books': '📚',
+    'Clothing & Apparel': '👕', 'Electronics': '💻', 'Food & Beverages': '🍕',
+    'Footwear': '👟', 'Gaming': '🎮', 'Health & Wellness': '💪',
+    'Home & Kitchen': '🏠', 'Jewellery': '💎', 'Mobile & Tablets': '📱',
+    'Pet Supplies': '🐾', 'Sports & Fitness': '⚽', 'Toys': '🧸', 'Travel': '✈️',
+};
+
+// ── Add Image Modal ───────────────────────────────────────────────────────────
+const AddImageModal = ({ isOpen, onClose }) => {
+    const [dragOver, setDragOver] = React.useState(false);
+    const [preview, setPreview] = React.useState(null);
+    const [fileName, setFileName] = React.useState('');
+    const fileInputRef = React.useRef(null);
+
+    React.useEffect(() => {
+        if (!isOpen) { setPreview(null); setFileName(''); setDragOver(false); }
+    }, [isOpen]);
+
+    const handleFile = (file) => {
+        if (!file || !file.type.startsWith('image/')) return;
+        setFileName(file.name);
+        const reader = new FileReader();
+        reader.onload = (e) => setPreview(e.target.result);
+        reader.readAsDataURL(file);
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault(); setDragOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) handleFile(file);
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center">
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+
+            {/* Modal */}
+            <div className="relative w-full sm:max-w-[420px] bg-white dark:bg-gray-900 rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                {/* Drag handle */}
+                <div className="flex justify-center pt-3 pb-1 sm:hidden">
+                    <div className="w-10 h-1 rounded-full bg-gray-200 dark:bg-gray-700" />
+                </div>
+
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+                    <h2 className="text-[15px] font-bold text-gray-900 dark:text-white tracking-tight">Add Photo</h2>
+                    <button onClick={onClose}
+                        className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm font-semibold">
+                        ✕
+                    </button>
+                </div>
+
+                <div className="px-5 py-5 flex flex-col gap-4">
+                    {/* Drop zone / preview */}
+                    {preview ? (
+                        <div className="relative rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                            <img src={preview} alt="preview" className="w-full max-h-56 object-cover" />
+                            <button
+                                onClick={() => { setPreview(null); setFileName(''); }}
+                                className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-black/60 text-white text-xs hover:bg-black/80 transition-colors">
+                                ✕
+                            </button>
+                            <div className="px-3 py-2 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
+                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{fileName}</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div
+                            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                            onDragLeave={() => setDragOver(false)}
+                            onDrop={handleDrop}
+                            onClick={() => fileInputRef.current?.click()}
+                            className={`cursor-pointer rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-3 py-10 transition-colors ${
+                                dragOver
+                                    ? 'border-gray-400 bg-gray-50 dark:bg-gray-800'
+                                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500 bg-gray-50/50 dark:bg-gray-800/40'
+                            }`}>
+                            {/* Photo icon */}
+                            <div className="w-14 h-14 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center shadow-sm">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+                                    <rect x="3" y="3" width="18" height="18" rx="3"/>
+                                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                                    <polyline points="21 15 16 10 5 21"/>
+                                </svg>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                                    {dragOver ? 'Drop it here' : 'Choose a photo'}
+                                </p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">or drag and drop</p>
+                            </div>
+                            <span className="text-xs text-gray-400 dark:text-gray-600">PNG, JPG, WEBP · up to 10 MB</span>
+                        </div>
+                    )}
+
+                    {/* Quick source buttons */}
+                    {!preview && (
+                        <div className="grid grid-cols-3 gap-2">
+                            {[
+                                { icon: '📁', label: 'Library', action: () => fileInputRef.current?.click() },
+                                { icon: '📷', label: 'Camera',  action: () => fileInputRef.current?.click() },
+                                { icon: '🔗', label: 'URL',     action: () => {} },
+                            ].map(({ icon, label, action }) => (
+                                <button key={label} type="button" onClick={action}
+                                    className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                    <span className="text-xl">{icon}</span>
+                                    <span className="text-[11px] font-medium text-gray-600 dark:text-gray-400">{label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Hidden file input */}
+                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }} />
+
+                    {/* Action buttons */}
+                    <div className="flex gap-2.5 pt-1">
+                        <button onClick={onClose}
+                            className="flex-1 h-11 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                            Cancel
+                        </button>
+                        <button disabled={!preview}
+                            className="flex-1 h-11 rounded-xl bg-gray-900 dark:bg-white disabled:opacity-30 text-white dark:text-gray-900 text-sm font-bold transition-all hover:bg-gray-700 dark:hover:bg-gray-100">
+                            Upload
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ── Interests Modal ───────────────────────────────────────────────────────────
+const InterestsModal = ({ isOpen, onClose, currentInterests = [], categories = AD_CATEGORIES_FALLBACK, onSave, saving }) => {
+    const [selected, setSelected] = React.useState([]);
+
+    React.useEffect(() => {
+        if (isOpen) setSelected(currentInterests);
+    }, [isOpen, currentInterests]);
+
+    const toggle = (cat) =>
+        setSelected(prev =>
+            prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+        );
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center">
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+            {/* Sheet */}
+            <div className="relative w-full sm:max-w-md bg-white dark:bg-gray-950 rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+                {/* Handle bar */}
+                <div className="flex justify-center pt-3 pb-1 sm:hidden">
+                    <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-700" />
+                </div>
+
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+                    <div>
+                        <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            Your Interests
+                            {saving && <Loader2 size={13} className="animate-spin text-orange-400" />}
+                        </h2>
+                        <p className="text-xs text-gray-400 mt-0.5">{selected.length} selected · tap to toggle</p>
+                    </div>
+                    <button onClick={onClose}
+                        className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-lg font-light">
+                        ✕
+                    </button>
+                </div>
+
+                {/* Categories grid */}
+                <div className="flex-1 overflow-y-auto px-4 py-4">
+                    <div className="grid grid-cols-2 gap-2.5">
+                        {categories.map(cat => {
+                            const active = selected.includes(cat);
+                            return (
+                                <button key={cat} type="button" onClick={() => toggle(cat)}
+                                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all duration-150 ${
+                                        active
+                                            ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-400 dark:border-orange-500'
+                                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500'
+                                    }`}>
+                                    <span className="text-xl leading-none">{CATEGORY_EMOJI[cat] || '🏷️'}</span>
+                                    <span className={`text-xs font-medium leading-tight ${active ? 'text-orange-600 dark:text-orange-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                        {cat}
+                                    </span>
+                                    {active && (
+                                        <span className="ml-auto text-orange-500 text-xs font-bold">✓</span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="px-4 py-4 border-t border-gray-100 dark:border-gray-800 flex gap-3">
+                    <button onClick={onClose}
+                        className="flex-1 h-11 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        Cancel
+                    </button>
+                    <button onClick={() => onSave(selected)} disabled={saving}
+                        className="flex-1 h-11 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2">
+                        {saving && <Loader2 size={15} className="animate-spin" />}
+                        {saving ? 'Saving…' : 'Save Interests'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const InterestedSection = ({ activeIndex, onSelect, isDesktop = false, interests = [], isOwnProfile = false, onAdd }) => {
+    const visibleCount = 3;
     const orderedBanners = [...FAVORITE_BANNERS.slice(activeIndex), ...FAVORITE_BANNERS.slice(0, activeIndex)];
     const visibleBanners = orderedBanners.slice(0, visibleCount);
     const prevSlide = () => onSelect((activeIndex - 1 + FAVORITE_BANNERS.length) % FAVORITE_BANNERS.length);
@@ -70,8 +302,9 @@ const InterestedSection = ({ activeIndex, onSelect, isDesktop = false }) => {
                 </div>
             </div>
 
+            {/* Banner carousel */}
             <div className="overflow-hidden rounded-xl py-2">
-                <div className="grid grid-cols-3 gap-2 md:grid-cols-4">
+                <div className="grid grid-cols-3 gap-2">
                     {visibleBanners.map((banner, idx) => {
                         const originalIndex = (activeIndex + idx) % FAVORITE_BANNERS.length;
                         return (
@@ -117,6 +350,12 @@ const Profile = () => {
     const [selectedPromoteReel, setSelectedPromoteReel] = useState(null);
     const [selectedAd, setSelectedAd] = useState(null);
     const [showAvatarModal, setShowAvatarModal] = useState(false);
+    const [showInterestsModal, setShowInterestsModal] = useState(false);
+    const [savingInterests, setSavingInterests] = useState(false);
+    const [userInterests, setUserInterests] = useState([]);
+    const [availableCategories, setAvailableCategories] = useState(AD_CATEGORIES_FALLBACK);
+    const [loadingInterests, setLoadingInterests] = useState(false);
+    const [showAddImageModal, setShowAddImageModal] = useState(false);
 
     const [userAds, setUserAds] = useState([]);
     const [loadingAds, setLoadingAds] = useState(false);
@@ -233,6 +472,48 @@ const Profile = () => {
             setActiveTab(profileUser.role === 'vendor' ? 'ads' : 'all');
         }
     }, [profileUser?.role]);
+
+    // Fetch interests from dedicated API endpoint
+    useEffect(() => {
+        const fetchInterests = async () => {
+            const profileUserId = profileUser?._id || profileUser?.id;
+            if (!profileUserId) return;
+            try {
+                setLoadingInterests(true);
+                const { data } = await api.get(`/users/${profileUserId}/interests`);
+                setUserInterests(data.ad_interests || []);
+                if (Array.isArray(data.available_categories) && data.available_categories.length > 0) {
+                    setAvailableCategories(data.available_categories);
+                }
+            } catch (err) {
+                console.error('[Profile] Failed to fetch interests:', err);
+                // Fallback: use ad_interests from profileUser if already loaded
+                setUserInterests(profileUser?.ad_interests || []);
+            } finally {
+                setLoadingInterests(false);
+            }
+        };
+        fetchInterests();
+    }, [profileUser?._id, profileUser?.id]);
+
+    const handleSaveInterests = async (selected) => {
+        setSavingInterests(true);
+        try {
+            const userId = profileUser?._id || profileUser?.id;
+            const { data } = await api.post(`/users/${userId}/interests`, { interests: selected });
+            // API returns updated ad_interests
+            setUserInterests(data.ad_interests || selected);
+            if (Array.isArray(data.available_categories) && data.available_categories.length > 0) {
+                setAvailableCategories(data.available_categories);
+            }
+            setShowInterestsModal(false);
+        } catch (err) {
+            console.error('Failed to save interests:', err);
+            alert(err?.response?.data?.message || 'Failed to save interests. Please try again.');
+        } finally {
+            setSavingInterests(false);
+        }
+    };
 
     useEffect(() => {
         const fetchPosts = async () => {
@@ -1124,6 +1405,11 @@ const Profile = () => {
                                                 aria-label="Favourite profile">
                                                 <Star size={18} fill={favoriteProfile ? 'currentColor' : 'none'} />
                                             </button>
+                                            <button type="button" onClick={() => setShowInterestsModal(true)}
+                                                className="flex-1 h-9 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+                                                aria-label="Add photo">
+                                                <Plus size={18} />
+                                            </button>
                                             <button type="button" onClick={handleOpenMessages} className="flex-1 h-9 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm" aria-label="Chat">
                                                 <MessageCircle size={18} />
                                             </button>
@@ -1187,6 +1473,9 @@ const Profile = () => {
                                 <InterestedSection
                                     activeIndex={favoriteBannerIndex}
                                     onSelect={setFavoriteBannerIndex}
+                                    interests={userInterests}
+                                    isOwnProfile={isOwnProfile}
+                                    onAdd={() => setShowInterestsModal(true)}
                                 />
                             </div>
                         )}
@@ -1284,6 +1573,11 @@ const Profile = () => {
                                 <button type="button" onClick={() => setFavoriteProfile(p => !p)} className={`w-10 h-10 flex items-center justify-center rounded-xl border transition-all ${favoriteProfile ? 'border-orange-300 bg-orange-50 text-orange-500 dark:border-orange-900/20 dark:text-orange-400' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900'}`} aria-label="Favourite">
                                     <Star size={17} fill={favoriteProfile ? 'currentColor' : 'none'} />
                                 </button>
+                                <button type="button" onClick={() => setShowInterestsModal(true)}
+                                    className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+                                    aria-label="Add photo">
+                                    <Plus size={17} />
+                                </button>
                                 <button type="button" onClick={handleOpenMessages} className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors" aria-label="Message">
                                     <MessageCircle size={17} />
                                 </button>
@@ -1377,7 +1671,8 @@ const Profile = () => {
                     {/* Interested section */}
                     {favoriteProfile && (
                         <div className="mt-6">
-                            <InterestedSection activeIndex={favoriteBannerIndex} onSelect={setFavoriteBannerIndex} isDesktop />
+                            <InterestedSection activeIndex={favoriteBannerIndex} onSelect={setFavoriteBannerIndex} isDesktop
+                                interests={userInterests} isOwnProfile={isOwnProfile} onAdd={() => setShowInterestsModal(true)} />
                         </div>
                     )}
 
@@ -1442,6 +1737,18 @@ const Profile = () => {
                     onClose={() => setSelectedPromoteReel(null)}
                 />
             )}
+            <InterestsModal
+                isOpen={showInterestsModal}
+                onClose={() => setShowInterestsModal(false)}
+                currentInterests={userInterests}
+                categories={availableCategories}
+                onSave={handleSaveInterests}
+                saving={savingInterests}
+            />
+            <AddImageModal
+                isOpen={showAddImageModal}
+                onClose={() => setShowAddImageModal(false)}
+            />
             <AvatarCropModal
                 isOpen={showAvatarModal}
                 onClose={() => setShowAvatarModal(false)}
