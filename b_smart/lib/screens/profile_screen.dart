@@ -16,7 +16,6 @@ import '../widgets/posts_grid.dart';
 import '../widgets/post_detail_modal.dart';
 import '../models/feed_post_model.dart';
 import '../models/ad_model.dart';
-import '../models/ad_category_model.dart';
 import 'ad_detail_screen.dart';
 import '../theme/design_tokens.dart';
 import '../state/app_state.dart';
@@ -46,7 +45,10 @@ import '../services/ads_service.dart';
 import 'follow_list_screen.dart';
 import '../api/users_api.dart';
 import '../api/follows_api.dart';
+import '../api/promote_reels_api.dart';
 import '../widgets/suggestion_follow.dart';
+import '../widgets/post_card.dart';
+import 'promote_screen.dart';
 
 /// Heroicons badge-check (same as React web app verified badge)
 const String _verifiedBadgeSvg = r'''
@@ -68,10 +70,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final AdsService _adsService = AdsService();
   final UsersApi _usersApi = UsersApi();
   final FollowsApi _followsApi = FollowsApi();
+  final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
   Map<String, dynamic>? _profile;
   List<FeedPost> _posts = [];
   List<FeedPost> _saved = [];
   List<FeedPost> _tagged = [];
+  List<FeedPost> _tweets = [];
+  List<FeedPost> _promotes = [];
   List<Ad> _vendorAds = [];
   bool _loading = true;
   bool _usedCache = false;
@@ -118,6 +123,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final Set<String> _dismissedFollowSuggestionUserIds = <String>{};
   final Set<String> _followSuggestionOpsInFlight = <String>{};
   Map<String, dynamic>? _vendorInfo;
+  bool _tweetsLoading = false;
+  String _tweetsLoadedForUserId = '';
+  bool _tabListenerAttached = false;
 
   @override
   void initState() {
@@ -426,7 +434,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: selected ? selectedBorderColor : tileBorderColor,
+                            color: selected
+                                ? selectedBorderColor
+                                : tileBorderColor,
                             width: selected ? 2 : 1,
                           ),
                         ),
@@ -451,8 +461,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       color: selectedBorderColor,
                                       borderRadius: BorderRadius.circular(999),
                                       border: Border.all(
-                                        color:
-                                            Colors.white.withValues(alpha: 0.85),
+                                        color: Colors.white
+                                            .withValues(alpha: 0.85),
                                         width: 1,
                                       ),
                                       boxShadow: const [
@@ -494,12 +504,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final iconColor =
-        isDark ? Colors.white.withValues(alpha: 0.35) : Colors.black.withValues(alpha: 0.22);
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: 0.22) : Colors.black.withValues(alpha: 0.18);
-    final titleColor =
-        isDark ? Colors.white.withValues(alpha: 0.92) : Colors.black.withValues(alpha: 0.88);
+    final iconColor = isDark
+        ? Colors.white.withValues(alpha: 0.35)
+        : Colors.black.withValues(alpha: 0.22);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.22)
+        : Colors.black.withValues(alpha: 0.18);
+    final titleColor = isDark
+        ? Colors.white.withValues(alpha: 0.92)
+        : Colors.black.withValues(alpha: 0.88);
 
     return ColoredBox(
       // React parity: the empty state is a full-width strip inside the grid area.
@@ -942,6 +955,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       } catch (_) {}
     }
 
+    List<FeedPost> promotes = const <FeedPost>[];
+    if (targetId.isNotEmpty) {
+      try {
+        final raw = await _promoteReelsApi.listPromoteReels(page: 1, limit: 50);
+        promotes = _mapPromoteReelsToFeedPosts(raw)
+            .where((p) => p.userId.trim() == targetId.trim())
+            .toList();
+      } catch (_) {
+        promotes = const <FeedPost>[];
+      }
+    }
+
     if (profile == null && _profile == null) {
       if (mounted) {
         setState(() {
@@ -1068,6 +1093,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 'post')
             .toLowerCase();
         final isAdType = typeStr == 'ad' || toBool(map['is_ad']);
+        final isTweetType = typeStr == 'tweet' ||
+            ((map['item_type'] ?? map['itemType'] ?? '')
+                    .toString()
+                    .toLowerCase() ==
+                'tweet') ||
+            toBool(map['isTweet']) ||
+            toBool(map['is_tweet']);
         bool hasVideo = false;
         for (final m in media) {
           if (m is Map) {
@@ -1152,6 +1184,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           isFollowed:
               toBool(map['is_followed_by_me']) || toBool(map['followed_by_me']),
           isAd: isAdType,
+          isTweet: isTweetType,
           adCompanyId: map['ad_company_id']?.toString(),
           adCompanyName: map['ad_company_name']?.toString(),
         );
@@ -1161,6 +1194,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final posts = map0(rawPosts);
     final saved = map0(rawSaved);
     final tagged = map0(rawTagged);
+    final tweets =
+        (_tweetsLoadedForUserId == targetId) ? _tweets : const <FeedPost>[];
 
     // Initialize counts from existing data to prevent resetting to 0 on API failure
     int? followersCount;
@@ -1450,6 +1485,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _posts = posts;
         _saved = saved;
         _tagged = tagged;
+        _tweets = tweets;
+        _promotes = promotes;
         _vendorAds = vendorAds;
         _vendorInfo = vendorInfo;
         _userReels = combinedReels.values.toList();
@@ -1812,13 +1849,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _onPostTap(FeedPost p) {
-    _showPostDetail(p.id);
+    _showPostDetail(p.id, isTweet: p.isTweet);
   }
 
-  void _showPostDetail(String postId) {
+  void _showPostDetail(String postId, {bool isTweet = false}) {
     final isMobile = MediaQuery.sizeOf(context).width < 600;
     if (isMobile) {
-      Navigator.of(context).pushNamed('/post/$postId').then((_) {
+      final suffix = isTweet ? '?type=tweet' : '';
+      Navigator.of(context).pushNamed('/post/$postId$suffix').then((_) {
         if (mounted) _load();
       });
     } else {
@@ -1831,6 +1869,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: PostDetailModal(
             postId: postId,
+            isTweet: isTweet,
             onClose: () {
               Navigator.of(ctx).pop();
             },
@@ -1838,6 +1877,262 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ).then((_) {
         if (mounted) _load();
+      });
+    }
+  }
+
+  List<FeedPost> _mapPromoteReelsToFeedPosts(dynamic raw) {
+    List<dynamic> items = const [];
+    if (raw is List) {
+      items = raw;
+    } else if (raw is Map) {
+      final data = raw['data'];
+      if (data is List) items = data;
+    }
+    if (items.isEmpty) return const <FeedPost>[];
+
+    String str(dynamic v) => (v ?? '').toString().trim();
+
+    int toInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(str(v)) ?? 0;
+    }
+
+    bool toBool(dynamic v) {
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      final s = str(v).toLowerCase();
+      return s == 'true' || s == '1' || s == 'yes';
+    }
+
+    DateTime parseDate(dynamic v) {
+      final dt = DateTime.tryParse(str(v));
+      return dt ?? DateTime.now();
+    }
+
+    String? pickMediaUrl(Map<String, dynamic> item) {
+      final media = item['media'];
+      if (media is! List || media.isEmpty) return null;
+      final first = media.first;
+      if (first is String) return first;
+      if (first is Map) {
+        final m = Map<String, dynamic>.from(first);
+        return (m['fileUrl'] ?? m['file_url'] ?? m['url'] ?? m['link'])
+            ?.toString();
+      }
+      return null;
+    }
+
+    String? pickThumbnailUrl(Map<String, dynamic> item) {
+      final media = item['media'];
+      if (media is! List || media.isEmpty) return null;
+      final first = media.first;
+      if (first is! Map) return null;
+      final m = Map<String, dynamic>.from(first);
+      dynamic rawThumb = m['thumbnails'] ??
+          m['thumbnail'] ??
+          m['thumbnailUrl'] ??
+          m['thumbnail_url'] ??
+          m['thumb'];
+      if (rawThumb is List && rawThumb.isNotEmpty) rawThumb = rawThumb.first;
+      if (rawThumb is String) return rawThumb;
+      if (rawThumb is Map) {
+        final t = Map<String, dynamic>.from(rawThumb);
+        return (t['fileUrl'] ?? t['file_url'] ?? t['url'] ?? t['path'])
+            ?.toString();
+      }
+      return null;
+    }
+
+    final out = <FeedPost>[];
+    for (final e in items) {
+      if (e is! Map) continue;
+      final item = Map<String, dynamic>.from(e);
+      final id = str(item['_id'] ?? item['id'] ?? item['promote_reel_id']);
+      if (id.isEmpty) continue;
+      final user = item['user_id'] is Map
+          ? Map<String, dynamic>.from(item['user_id'] as Map)
+          : <String, dynamic>{};
+      final userId = str(user['_id'] ?? user['id'] ?? item['user_id']);
+      final userName = str(user['username'] ?? user['full_name'] ?? 'User');
+      final avatar = UrlHelper.normalizeUrl(
+        user['avatar_url'] ??
+            user['profile_picture'] ??
+            user['profilePicture'] ??
+            user['profile_pic'] ??
+            user['avatarUrl'],
+      );
+
+      final mediaUrl = UrlHelper.normalizeUrl(pickMediaUrl(item));
+      if (mediaUrl.isEmpty) continue;
+      final thumb = UrlHelper.normalizeUrl(pickThumbnailUrl(item) ?? '');
+
+      out.add(
+        FeedPost(
+          id: 'promote-$id',
+          userId: userId,
+          userName: userName.isEmpty ? 'User' : userName,
+          userAvatar: avatar.isEmpty ? null : avatar,
+          mediaType: PostMediaType.reel,
+          mediaUrls: [mediaUrl],
+          thumbnailUrl: thumb.isEmpty ? null : thumb,
+          caption: (item['caption'] ?? '').toString(),
+          hashtags: ((item['tags'] as List?) ?? const [])
+              .map((t) => t.toString())
+              .toList(),
+          createdAt: parseDate(item['created_at'] ?? item['createdAt']),
+          likes: toInt(item['likes_count'] ?? item['likesCount']),
+          comments: toInt(item['comments_count'] ?? item['commentsCount']),
+          shares: 0,
+          views: 0,
+          isLiked: toBool(item['is_liked_by_me']),
+          isSaved: toBool(item['is_saved_by_me']),
+          isFollowed: toBool(item['is_followed_by_me']),
+          isAd: false,
+        ),
+      );
+    }
+    return out;
+  }
+
+  Widget _buildReelsGrid({required bool isMe}) {
+    if (_userReels.isEmpty) {
+      return _emptyGridPlaceholder(
+        context,
+        isReels: true,
+        isOwnProfile: isMe,
+      );
+    }
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _userReels.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 0,
+        mainAxisSpacing: 0,
+      ),
+      itemBuilder: (ctx, i) {
+        final r = _userReels[i];
+        final thumbRaw = r.thumbnailUrl?.trim();
+        final thumb = (thumbRaw != null && thumbRaw.isNotEmpty)
+            ? _absoluteReelUrl(thumbRaw)
+            : null;
+        return GestureDetector(
+          onTap: () => _showPostDetail(r.id),
+          child: Transform.scale(
+            scale: 1.01,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(color: Colors.black),
+                if (thumb != null)
+                  SafeNetworkImage(
+                    url: thumb,
+                    headers: _reelImageHeaders,
+                    cacheKey:
+                        '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
+                    fit: BoxFit.cover,
+                    placeholder: Container(color: Colors.grey[900]),
+                    errorWidget: Container(color: Colors.grey[900]),
+                  ),
+                const Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Icon(
+                    LucideIcons.video,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTweetsList(List<FeedPost> tweets, {required bool isMe}) {
+    if (tweets.isEmpty) {
+      if (_tweetsLoading) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 28),
+          child: Center(
+            child: CircularProgressIndicator(color: DesignTokens.instaPink),
+          ),
+        );
+      }
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: _emptyGridPlaceholder(
+          context,
+          isReels: false,
+          isOwnProfile: isMe,
+        ),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: tweets.length,
+      separatorBuilder: (_, __) => Divider(
+        height: 1,
+        thickness: 1,
+        color: Theme.of(context).dividerColor.withValues(alpha: 0.7),
+      ),
+      itemBuilder: (context, index) {
+        final p = tweets[index];
+        return PostCard(
+          post: p,
+          isOwnPost: isMe,
+          onComment: () => _showPostDetail(p.id, isTweet: true),
+          onUserTap: () {
+            final id = p.userId.trim();
+            if (id.isEmpty) return;
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ProfileScreen(userId: id)),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _ensureTweetsLoadedForUser(String userId) async {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    if (_tweetsLoading) return;
+    if (_tweetsLoadedForUserId == id) return;
+
+    setState(() {
+      _tweetsLoading = true;
+    });
+
+    try {
+      final meId = await CurrentUser.id;
+      final feed = await _feedService.fetchFeedFromBackend(
+        limit: 150,
+        offset: 0,
+        currentUserId: meId,
+        swallowErrors: true,
+      );
+      final tweets =
+          feed.where((p) => p.isTweet && p.userId.trim() == id).toList();
+      if (!mounted) return;
+      setState(() {
+        _tweets = tweets;
+        _tweetsLoadedForUserId = id;
+        _tweetsLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _tweets = const <FeedPost>[];
+        _tweetsLoadedForUserId = id;
+        _tweetsLoading = false;
       });
     }
   }
@@ -2104,238 +2399,302 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final theme = Theme.of(context);
         final fgColor = theme.colorScheme.onSurface;
 
-        final tabs = isVendor
-            ? <Tab>[
-                const Tab(icon: Icon(LucideIcons.megaphone)),
-              ]
-            : <Tab>[
-                const Tab(icon: Icon(LucideIcons.layoutGrid)),
-                const Tab(icon: Icon(LucideIcons.video)),
-                if (isMe) const Tab(icon: Icon(LucideIcons.bookmark)),
-                const Tab(icon: Icon(LucideIcons.tag)),
-              ];
+        bool hasRenderableGridMedia(FeedPost p) {
+          final thumb = UrlHelper.normalizeUrl((p.thumbnailUrl ?? '').trim());
+          if (thumb.isNotEmpty) return true;
+          for (final u in p.mediaUrls) {
+            final normalized = UrlHelper.normalizeUrl(u.trim());
+            if (normalized.isNotEmpty) return true;
+          }
+          return false;
+        }
 
-        final tabViews = isVendor
-            ? <Widget>[
-                Padding(
+        final mediaPosts = _posts.where((p) {
+          final ok = !p.isTweet &&
+              p.mediaType != PostMediaType.reel &&
+              !p.isAd &&
+              hasRenderableGridMedia(p);
+          assert(() {
+            if (!ok) {
+              final thumb = (p.thumbnailUrl ?? '').trim();
+              final first = p.mediaUrls.isNotEmpty ? p.mediaUrls.first : '';
+              debugPrint(
+                '[ProfileScreen] Filtered from Posts grid: id=${p.id} mediaType=${p.mediaType} isAd=${p.isAd} isTweet=${p.isTweet} thumb="$thumb" first="$first"',
+              );
+            }
+            return true;
+          }());
+          return ok;
+        }).toList();
+        final reelPosts = _posts.where((p) {
+          final ok = !p.isTweet &&
+              p.mediaType == PostMediaType.reel &&
+              !p.isAd &&
+              hasRenderableGridMedia(p);
+          return ok;
+        }).toList();
+
+        final reelFromService = _userReels
+            .map((r) {
+              final mediaUrl = r.videoUrl.trim();
+              final thumb = (r.thumbnailUrl ?? '').trim();
+              return FeedPost(
+                id: r.id,
+                userId: r.userId,
+                userName: r.userName,
+                userAvatar: r.userAvatarUrl,
+                mediaType: PostMediaType.reel,
+                mediaUrls: mediaUrl.isNotEmpty ? [mediaUrl] : const [],
+                thumbnailUrl: thumb.isNotEmpty ? thumb : null,
+                caption: r.caption,
+                hashtags: r.hashtags,
+                createdAt: r.createdAt,
+                likes: r.likes,
+                comments: r.comments,
+                shares: r.shares,
+                views: r.views,
+                isLiked: r.isLiked,
+                isSaved: r.isSaved,
+                isFollowed: r.isFollowing,
+                isAd: r.isSponsored,
+              );
+            })
+            .where(hasRenderableGridMedia)
+            .toList();
+        final tweetPosts = _tweets;
+        final promotePosts = _promotes;
+
+        final allById = <String, FeedPost>{};
+        for (final p in [...mediaPosts, ...reelPosts, ...reelFromService]) {
+          if (p.id.trim().isEmpty) continue;
+          allById[p.id] = p;
+        }
+        final allFeedItems = allById.values.toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        final allCount = allFeedItems.length;
+
+        final tabs = <Tab>[
+          const Tab(icon: Icon(LucideIcons.layoutGrid)),
+          const Tab(icon: Icon(LucideIcons.image)),
+          const Tab(icon: Icon(LucideIcons.video)),
+          const Tab(icon: Icon(LucideIcons.messageCircle)),
+          const Tab(icon: Icon(LucideIcons.megaphone)),
+        ];
+
+        final allTab = (allCount == 0)
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 36),
+                child: _emptyGridPlaceholder(
+                  context,
+                  isReels: false,
+                  isOwnProfile: isMe,
+                ),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  PostsGrid(posts: allFeedItems, onTap: (p) => _onPostTap(p)),
+                  const SizedBox(height: 12),
+                ],
+              );
+
+        final tabViews = <Widget>[
+          ListView(
+            padding: EdgeInsets.zero,
+            children: [allTab],
+          ),
+          mediaPosts.isEmpty
+              ? _emptyGridPlaceholder(
+                  context,
+                  isReels: false,
+                  isOwnProfile: isMe,
+                )
+              : PostsGrid(posts: mediaPosts, onTap: (p) => _onPostTap(p)),
+          _buildReelsGrid(isMe: isMe),
+          ListView(
+            padding: EdgeInsets.zero,
+            children: [_buildTweetsList(tweetPosts, isMe: isMe)],
+          ),
+          isVendor
+              ? Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: _buildAdsGrid(),
-                ),
-              ]
-            : <Widget>[
-                _posts.isEmpty
-                    ? _emptyGridPlaceholder(
-                        context,
-                        isReels: false,
-                        isOwnProfile: isMe,
-                      )
-                    : PostsGrid(posts: _posts, onTap: (p) => _onPostTap(p)),
-                _userReels.isEmpty
-                    ? _emptyGridPlaceholder(
-                        context,
-                        isReels: true,
-                        isOwnProfile: isMe,
-                      )
-                    : GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _userReels.length,
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 0,
-                          mainAxisSpacing: 0,
-                        ),
-                        itemBuilder: (ctx, i) {
-                          final r = _userReels[i];
-                          final thumbRaw = r.thumbnailUrl?.trim();
-                          final thumb = (thumbRaw != null && thumbRaw.isNotEmpty)
-                              ? _absoluteReelUrl(thumbRaw)
-                              : null;
-                          return GestureDetector(
-                            onTap: () => _showPostDetail(r.id),
-                            child: Transform.scale(
-                              scale: 1.01,
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  Container(color: Colors.black),
-                                  if (thumb != null)
-                                    SafeNetworkImage(
-                                      url: thumb,
-                                      headers: _reelImageHeaders,
-                                      cacheKey:
-                                          '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
-                                      fit: BoxFit.cover,
-                                      placeholder: Container(color: Colors.grey[900]),
-                                      errorWidget: Container(color: Colors.grey[900]),
-                                    ),
-                                  const Positioned(
-                                    top: 6,
-                                    right: 6,
-                                    child: Icon(
-                                      LucideIcons.video,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                )
+              : (promotePosts.isEmpty
+                  ? _emptyGridPlaceholder(
+                      context,
+                      isReels: true,
+                      isOwnProfile: isMe,
+                    )
+                  : PostsGrid(
+                      posts: promotePosts,
+                      onTap: (_) => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const PromoteScreen()),
                       ),
-                if (isMe)
-                  (_saved.isEmpty
-                      ? const SizedBox.shrink()
-                      : PostsGrid(
-                          posts: _saved,
-                          onTap: (p) => _onPostTap(p),
-                        )),
-                _tagged.isEmpty
-                    ? const SizedBox.shrink()
-                    : PostsGrid(
-                        posts: _tagged,
-                        onTap: (p) => _onPostTap(p),
-                      ),
-              ];
+                    )),
+        ];
 
         return DefaultTabController(
           key: ValueKey('profile-tabs-${tabs.length}'),
           length: tabViews.length,
-          child: Scaffold(
-            backgroundColor: theme.scaffoldBackgroundColor,
-            appBar: AppBar(
-              automaticallyImplyLeading: !isMe,
-              backgroundColor: theme.appBarTheme.backgroundColor,
-              foregroundColor: theme.appBarTheme.foregroundColor,
-              title: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(username, style: TextStyle(color: fgColor)),
-                  const SizedBox(width: 4),
-                  SvgPicture.string(
-                    _verifiedBadgeSvg,
-                    width: 20,
-                    height: 20,
-                    colorFilter: const ColorFilter.mode(
-                        Color(0xFF3B82F6), BlendMode.srcIn),
-                  ),
-                ],
-              ),
-              actions: [
-                if (isMe) ...[
-                  IconButton(
-                    icon: Icon(LucideIcons.squarePlus, color: fgColor),
-                    onPressed: () => _openCreateUpload(
-                      mode: UploadMode.post,
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(LucideIcons.menu, color: fgColor),
-                    onPressed: () =>
-                        Navigator.of(context).pushNamed('/settings'),
-                  ),
-                ],
-              ],
-            ),
-            body: RefreshIndicator(
-              onRefresh: _load,
-              notificationPredicate: (notification) => true,
-              child: NestedScrollView(
-                headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                  SliverToBoxAdapter(
-                    child: ProfileHeader(
-                      username: username,
-                      fullName: fullName,
-                      bio: bio,
-                      avatarUrl: avatar,
-                      avatarHeaders: _reelImageHeaders,
-                      posts: postsCount,
-                      followers: followers,
-                      following: following,
-                      ads: _vendorAds.length,
-                      isMe: isMe,
-                      isVendor: isVendor,
-                      isValidated: isValidated,
-                      isFollowing:
-                          (displayProfile?['is_followed_by_me'] as bool?) ??
-                              false,
-                      isFavorite: _isFavoriteProfile,
-                      isSuggestionsOpen: isMe ? _showFollowSuggestions : false,
-                      hasStory: _hasStory,
-                      onEdit: isMe ? _onEdit : null,
-                      onFollow: isMe ? null : _onFollow,
-                      onShare: () => _shareProfile(displayProfile),
-                      onFavorite: () => _toggleFavoriteProfile(username),
-                      onMore: () => _showProfileMoreActions(displayProfile),
-                      onMessage: _openMessaging,
-                      onUser: isMe ? _toggleFollowSuggestions : null,
-                      onAvatarTap: _openStoriesFromProfile,
-                      onAvatarEdit: isMe && !_avatarUploading
-                          ? _showAvatarOptionsSheet
-                          : null,
-                      onFollowersTap: profileUserId.isNotEmpty
-                          ? () => FollowListScreen.open(
-                                context,
-                                userId: profileUserId,
-                                username: username,
-                                mode: FollowListMode.followers,
-                                isOwnProfile: isMe,
-                                initialFollowersCount: followers,
-                                initialFollowingCount: following,
-                              )
-                          : null,
-                      onFollowingTap: profileUserId.isNotEmpty
-                          ? () => FollowListScreen.open(
-                                context,
-                                userId: profileUserId,
-                                username: username,
-                                mode: FollowListMode.following,
-                                isOwnProfile: isMe,
-                                initialFollowersCount: followers,
-                                initialFollowingCount: following,
-                              )
-                          : null,
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: isMe
-                        ? _buildFavoriteCategoryStrip(context)
-                        : const SizedBox.shrink(),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildFollowSuggestionsBlock(context),
-                  ),
-                  SliverToBoxAdapter(
-                    child: profileUserId.isEmpty || isVendor
-                        ? const SizedBox.shrink()
-                        : ProfileHighlightsRow(
-                            userId: profileUserId,
-                            userName: username,
-                            userAvatar: avatar,
-                          ),
-                  ),
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _SliverTabBarDelegate(
-                      TabBar(
-                        tabs: tabs,
-                        indicator: const UnderlineTabIndicator(
-                            borderSide: BorderSide(
-                                width: 1.5, color: DesignTokens.instaPink)),
-                        labelColor: DesignTokens.instaPink,
-                        unselectedLabelColor:
-                            theme.colorScheme.onSurface.withValues(alpha: 0.6),
+          child: Builder(
+            builder: (tabCtx) {
+              final controller = DefaultTabController.of(tabCtx);
+              if (!_tabListenerAttached) {
+                _tabListenerAttached = true;
+                controller.addListener(() {
+                  if (!mounted) return;
+                  if (controller.indexIsChanging) return;
+                  if (controller.index == 3) {
+                    _ensureTweetsLoadedForUser(profileUserId);
+                  }
+                });
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  if (controller.index == 3) {
+                    _ensureTweetsLoadedForUser(profileUserId);
+                  }
+                });
+              }
+
+              return Scaffold(
+                backgroundColor: theme.scaffoldBackgroundColor,
+                appBar: AppBar(
+                  automaticallyImplyLeading: !isMe,
+                  backgroundColor: theme.appBarTheme.backgroundColor,
+                  foregroundColor: theme.appBarTheme.foregroundColor,
+                  title: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(username, style: TextStyle(color: fgColor)),
+                      const SizedBox(width: 4),
+                      SvgPicture.string(
+                        _verifiedBadgeSvg,
+                        width: 20,
+                        height: 20,
+                        colorFilter: const ColorFilter.mode(
+                            Color(0xFF3B82F6), BlendMode.srcIn),
                       ),
+                    ],
+                  ),
+                  actions: [
+                    if (isMe) ...[
+                      IconButton(
+                        icon: Icon(LucideIcons.squarePlus, color: fgColor),
+                        onPressed: () => _openCreateUpload(
+                          mode: UploadMode.post,
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(LucideIcons.menu, color: fgColor),
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/settings'),
+                      ),
+                    ],
+                  ],
+                ),
+                body: RefreshIndicator(
+                  onRefresh: _load,
+                  notificationPredicate: (notification) => true,
+                  child: NestedScrollView(
+                    headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                      SliverToBoxAdapter(
+                        child: ProfileHeader(
+                          username: username,
+                          fullName: fullName,
+                          bio: bio,
+                          avatarUrl: avatar,
+                          avatarHeaders: _reelImageHeaders,
+                          posts: postsCount,
+                          followers: followers,
+                          following: following,
+                          ads: _vendorAds.length,
+                          isMe: isMe,
+                          isVendor: isVendor,
+                          isValidated: isValidated,
+                          isFollowing:
+                              (displayProfile?['is_followed_by_me'] as bool?) ??
+                                  false,
+                          isFavorite: _isFavoriteProfile,
+                          isSuggestionsOpen:
+                              isMe ? _showFollowSuggestions : false,
+                          hasStory: _hasStory,
+                          onEdit: isMe ? _onEdit : null,
+                          onFollow: isMe ? null : _onFollow,
+                          onShare: () => _shareProfile(displayProfile),
+                          onFavorite: () => _toggleFavoriteProfile(username),
+                          onMore: () => _showProfileMoreActions(displayProfile),
+                          onMessage: _openMessaging,
+                          onUser: isMe ? _toggleFollowSuggestions : null,
+                          onAvatarTap: _openStoriesFromProfile,
+                          onAvatarEdit: isMe && !_avatarUploading
+                              ? _showAvatarOptionsSheet
+                              : null,
+                          onFollowersTap: profileUserId.isNotEmpty
+                              ? () => FollowListScreen.open(
+                                    context,
+                                    userId: profileUserId,
+                                    username: username,
+                                    mode: FollowListMode.followers,
+                                    isOwnProfile: isMe,
+                                    initialFollowersCount: followers,
+                                    initialFollowingCount: following,
+                                  )
+                              : null,
+                          onFollowingTap: profileUserId.isNotEmpty
+                              ? () => FollowListScreen.open(
+                                    context,
+                                    userId: profileUserId,
+                                    username: username,
+                                    mode: FollowListMode.following,
+                                    isOwnProfile: isMe,
+                                    initialFollowersCount: followers,
+                                    initialFollowingCount: following,
+                                  )
+                              : null,
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: isMe
+                            ? _buildFavoriteCategoryStrip(context)
+                            : const SizedBox.shrink(),
+                      ),
+                      SliverToBoxAdapter(
+                        child: _buildFollowSuggestionsBlock(context),
+                      ),
+                      SliverToBoxAdapter(
+                        child: profileUserId.isEmpty || isVendor
+                            ? const SizedBox.shrink()
+                            : ProfileHighlightsRow(
+                                userId: profileUserId,
+                                userName: username,
+                                userAvatar: avatar,
+                              ),
+                      ),
+                      SliverPersistentHeader(
+                        pinned: true,
+                        delegate: _SliverTabBarDelegate(
+                          TabBar(
+                            tabs: tabs,
+                            isScrollable: false,
+                            indicator: const UnderlineTabIndicator(
+                                borderSide: BorderSide(
+                                    width: 1.5, color: DesignTokens.instaPink)),
+                            labelColor: DesignTokens.instaPink,
+                            unselectedLabelColor: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ),
+                    ],
+                    body: TabBarView(
+                      children: tabViews,
                     ),
                   ),
-                ],
-                body: TabBarView(
-                  children: tabViews,
                 ),
-              ),
-            ),
+              );
+            },
           ),
         );
       },

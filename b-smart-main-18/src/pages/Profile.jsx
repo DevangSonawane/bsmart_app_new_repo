@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Settings, Video, Menu, Grid, Plus, Heart, MessageCircle, Wallet, ArrowLeft, MoreHorizontal, Megaphone, Loader2, Eye, Building2, FileText, Hash, Calendar, Briefcase, Share2, Star, Lock } from 'lucide-react';
+import { Settings, Video, Menu, Grid, Plus, Heart, MessageCircle, Wallet, ArrowLeft, MoreHorizontal, Megaphone, Loader2, Eye, Building2, FileText, Hash, Calendar, Briefcase, Share2, Star, Lock, Twitter, Play, Image } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { supabase } from '../lib/supabase';
@@ -9,6 +9,9 @@ import AvatarCropModal from '../components/AvatarCropModal';
 import FollowersModal from '../components/FollowersModal';
 import FollowingModal from '../components/FollowingModal';
 import HighlightsRail from '../components/HighlightsRail';
+import TweetDetailModal from '../components/TweetDetailModal';
+import PromoteDetailModal from '../components/PromoteDetailModal';
+import TweetImageGallery from '../components/TweetImageGallery';
 import { setUser } from '../store/authSlice';
 import { createOrGetConversation } from '../services/chatService';
 import bSmartBanner1 from '../assets/B-smart-banners/1.png';
@@ -106,8 +109,12 @@ const Profile = () => {
 
     const [activeTab, setActiveTab] = useState(null);
     const [userPosts, setUserPosts] = useState([]);
+    const [userTweets, setUserTweets] = useState([]);
+    const [userPromoteReels, setUserPromoteReels] = useState([]);
     const [loadingPosts, setLoadingPosts] = useState(true);
     const [selectedPost, setSelectedPost] = useState(null);
+    const [selectedTweet, setSelectedTweet] = useState(null);
+    const [selectedPromoteReel, setSelectedPromoteReel] = useState(null);
     const [selectedAd, setSelectedAd] = useState(null);
     const [showAvatarModal, setShowAvatarModal] = useState(false);
 
@@ -151,6 +158,8 @@ const Profile = () => {
     const displayedPosts =
         activeTab === 'reels' ? onlyReels :
         activeTab === 'posts' ? onlyPosts :
+        activeTab === 'tweets' ? [] :
+        activeTab === 'promote_reels' ? [] :
         userPosts;
     const profileTargetUserId = profileUser?._id || profileUser?.id || userId || '';
 
@@ -233,7 +242,16 @@ const Profile = () => {
             try {
                 setLoadingPosts(true);
                 const response = await api.get(`/users/${profileUserId}/posts`);
-                setUserPosts(response.data || []);
+                const data = response.data || {};
+                // New API returns { posts, promote_reels, tweets }
+                if (data.posts !== undefined) {
+                    setUserPosts(data.posts || []);
+                    setUserTweets(data.tweets || []);
+                    setUserPromoteReels(data.promote_reels || []);
+                } else {
+                    // Fallback: old flat array format
+                    setUserPosts(Array.isArray(data) ? data : []);
+                }
             } catch (error) {
                 console.error('Error fetching posts:', error);
                 try {
@@ -651,10 +669,11 @@ const Profile = () => {
     const tabConfig = isVendor
         ? [{ key: 'ads', label: 'Ads', icon: <Megaphone size={22} /> }]
         : [
-            { key: 'all',    label: 'All',    icon: <Grid size={22} /> },
-            { key: 'posts',  label: 'Posts',  icon: <Grid size={22} /> },
-            { key: 'reels',  label: 'Reels',  icon: <Video size={22} /> },
-            { key: 'tweets', label: 'Tweets', icon: <MessageCircle size={22} /> },
+            { key: 'all',            label: 'All',       icon: <Grid size={22} /> },
+            { key: 'posts',          label: 'Posts',     icon: <Image size={22} /> },
+            { key: 'reels',          label: 'Reels',     icon: <Video size={22} /> },
+            { key: 'tweets',         label: 'Tweets',    icon: <MessageCircle size={22} /> },
+            { key: 'promote_reels',  label: 'Promoted',  icon: <Megaphone size={22} /> },
           ];
 
     // ── Private Profile Wall ──────────────────────────────────────────────────
@@ -708,12 +727,16 @@ const Profile = () => {
         if (activeTab === null) return null;
         if (contentLocked) return <PrivateProfileWall />;
         if (activeTab === 'ads') return <AdsGrid />;
+        if (activeTab === 'tweets') return <TweetsGrid />;
+        if (activeTab === 'promote_reels') return <PromoteReelsGrid />;
         return <PostGrid />;
     };
     const renderContentMobile = () => {
         if (activeTab === null) return null;
         if (contentLocked) return <PrivateProfileWall />;
         if (activeTab === 'ads') return <AdsGrid containerClass="" />;
+        if (activeTab === 'tweets') return <TweetsGrid containerClass="" />;
+        if (activeTab === 'promote_reels') return <PromoteReelsGrid containerClass="" />;
         return <PostGrid containerClass="" />;
     };
 
@@ -811,6 +834,139 @@ const Profile = () => {
                         </div>
                     </div>
                 ))
+            )}
+        </div>
+    );
+
+
+    // ── Tweets Grid ────────────────────────────────────────────────────────────────────────────────
+    const TweetsGrid = ({ containerClass = '' }) => (
+        <div className={`${containerClass}`}>
+            {loadingPosts ? (
+                <div className="flex flex-col items-center py-16 gap-3 bg-white dark:bg-black">
+                    <Loader2 className="w-7 h-7 animate-spin text-orange-500" />
+                    <span className="text-sm text-gray-400">Loading tweets…</span>
+                </div>
+            ) : userTweets.length === 0 ? (
+                <div className="bg-white dark:bg-black py-14 text-center">
+                    <div className="w-16 h-16 border-2 border-gray-300 dark:border-gray-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <MessageCircle size={30} className="text-gray-300 dark:text-gray-600" />
+                    </div>
+                    <h3 className="font-semibold text-base text-gray-900 dark:text-white mb-1">No Tweets Yet</h3>
+                    {isOwnProfile && (
+                        <Link to="/tweets" className="text-blue-500 text-sm font-semibold mt-1 inline-block">Create a tweet</Link>
+                    )}
+                </div>
+            ) : (
+                <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {userTweets.map((tweet) => {
+                        const tweetId = tweet._id || tweet.id;
+                        const mediaItems = Array.isArray(tweet.media) ? tweet.media : [];
+                        return (
+                            <div key={tweetId}
+                                className="flex gap-3 px-4 py-3 bg-white dark:bg-black cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
+                                onClick={() => setSelectedTweet(tweet)}>
+                                {/* Avatar */}
+                                <div className="flex-shrink-0 w-10 h-10 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+                                    {tweet.author?.avatar_url ? (
+                                        <img src={tweet.author.avatar_url.startsWith('http') ? tweet.author.avatar_url : `${BASE_URL}/uploads/${tweet.author.avatar_url}`}
+                                            alt="avatar" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm font-bold">
+                                            {(tweet.author?.username || '?')[0].toUpperCase()}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Content */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                        <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                                            {tweet.author?.full_name || tweet.author?.username || 'User'}
+                                        </span>
+                                        <span className="text-xs text-gray-400 truncate">@{tweet.author?.username}</span>
+                                    </div>
+                                    {tweet.content && (
+                                        <p className="text-sm text-gray-800 dark:text-gray-200 line-clamp-3 leading-relaxed mb-2">{tweet.content}</p>
+                                    )}
+                                    {/* Multi-image grid — 2 photos side by side, 3+ stacked */}
+                                    {mediaItems.length > 0 && (
+                                        <div onClick={e => e.stopPropagation()}>
+                                            <TweetImageGallery
+                                                mediaItems={mediaItems}
+                                                onImageClick={() => setSelectedTweet(tweet)}
+                                            />
+                                        </div>
+                                    )}
+                                    <div className="flex items-center gap-4 text-xs text-gray-400 mt-2">
+                                        <span className="flex items-center gap-1"><Heart size={13} /> {tweet.likesCount || 0}</span>
+                                        <span className="flex items-center gap-1"><MessageCircle size={13} /> {tweet.repliesCount || tweet.commentsCount || 0}</span>
+                                        <span className="flex items-center gap-1"><Eye size={13} /> {tweet.viewsCount || 0}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+
+    // ── Promote Reels Grid ─────────────────────────────────────────────────────────────────────────────
+    const PromoteReelsGrid = ({ containerClass = '' }) => (
+        <div className={`${containerClass}`}>
+            {loadingPosts ? (
+                <div className="flex flex-col items-center py-16 gap-3 bg-white dark:bg-black">
+                    <Loader2 className="w-7 h-7 animate-spin text-orange-500" />
+                    <span className="text-sm text-gray-400">Loading promoted reels…</span>
+                </div>
+            ) : userPromoteReels.length === 0 ? (
+                <div className="bg-white dark:bg-black py-14 text-center">
+                    <div className="w-16 h-16 border-2 border-gray-300 dark:border-gray-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Megaphone size={30} className="text-gray-300 dark:text-gray-600" />
+                    </div>
+                    <h3 className="font-semibold text-base text-gray-900 dark:text-white mb-1">No Promoted Reels Yet</h3>
+                    {isOwnProfile && (
+                        <Link to="/promote" className="text-blue-500 text-sm font-semibold mt-1 inline-block">Promote now</Link>
+                    )}
+                </div>
+            ) : (
+                <div className="grid grid-cols-3 gap-[1px] bg-gray-200 dark:bg-gray-800">
+                    {userPromoteReels.map((reel) => {
+                        const reelId = reel._id || reel.id;
+                        const firstMedia = reel.media?.[0];
+                        const thumbFile = firstMedia?.thumbnail?.fileName || firstMedia?.thumbnails?.[0]?.fileName || firstMedia?.fileName;
+                        const thumbUrl = thumbFile
+                            ? (thumbFile.startsWith('http') ? thumbFile : `${BASE_URL}/uploads/${thumbFile}`)
+                            : null;
+                        const isVideo = firstMedia?.type === 'video';
+                        return (
+                            <div key={reelId}
+                                className="aspect-square bg-gray-100 dark:bg-gray-900 relative group cursor-pointer overflow-hidden"
+                                onClick={() => setSelectedPromoteReel(reel)}>
+                                <div className="absolute top-1.5 left-1.5 z-10">
+                                    <span className="text-[9px] font-bold bg-purple-500 text-white px-1.5 py-0.5 rounded-full">PROMO</span>
+                                </div>
+                                {isVideo && (
+                                    <div className="absolute top-1.5 right-1.5 z-10">
+                                        <Play size={15} className="text-white drop-shadow" fill="white" />
+                                    </div>
+                                )}
+                                {thumbUrl ? (
+                                    <img src={thumbUrl} alt={reel.caption || 'Promoted Reel'}
+                                        className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-200" />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100 dark:from-gray-800 dark:to-gray-700">
+                                        <Megaphone size={28} className="text-purple-400 dark:text-gray-500" />
+                                    </div>
+                                )}
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center justify-center gap-4 text-white font-bold">
+                                    <div className="flex items-center gap-1.5"><Heart fill="white" size={16}/> {fmt(reel.likes_count || 0)}</div>
+                                    <div className="flex items-center gap-1.5"><Eye size={16}/> {fmt(reel.views_count || 0)}</div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
             )}
         </div>
     );
@@ -1272,6 +1428,20 @@ const Profile = () => {
             {/* Modals */}
             <PostDetailModal isOpen={!!selectedPost} post={selectedPost} onClose={() => setSelectedPost(null)} />
             <PostDetailModal isOpen={!!selectedAd} post={selectedAd} onClose={() => setSelectedAd(null)} />
+            {selectedTweet && (
+                <TweetDetailModal
+                    isOpen={!!selectedTweet}
+                    tweet={selectedTweet}
+                    onClose={() => setSelectedTweet(null)}
+                />
+            )}
+            {selectedPromoteReel && (
+                <PromoteDetailModal
+                    isOpen={!!selectedPromoteReel}
+                    promoteReel={selectedPromoteReel}
+                    onClose={() => setSelectedPromoteReel(null)}
+                />
+            )}
             <AvatarCropModal
                 isOpen={showAvatarModal}
                 onClose={() => setShowAvatarModal(false)}

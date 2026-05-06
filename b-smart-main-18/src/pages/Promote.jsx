@@ -444,9 +444,10 @@ const ProductCards = ({ products }) => {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={e => e.stopPropagation()}
-                      className="mt-1.5 flex items-center justify-center w-full py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-bold hover:bg-blue-600 active:scale-95 transition-all"
+                      className="mt-1.5 flex items-center justify-center gap-1 w-full py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-bold hover:bg-blue-600 active:scale-95 transition-all"
                     >
-                      Add to Cart
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                      Visit Website
                     </a>
                   ) : (
                     <div className="mt-1.5 w-full py-1.5 rounded-lg bg-gray-100 text-gray-400 text-[10px] text-center">

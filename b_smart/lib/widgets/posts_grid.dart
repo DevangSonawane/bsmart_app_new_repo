@@ -17,6 +17,7 @@ class PostsGrid extends StatefulWidget {
 
 class _PostsGridState extends State<PostsGrid> {
   Map<String, String>? _headers;
+  final Set<String> _loggedMissingThumbIds = <String>{};
 
   @override
   void initState() {
@@ -64,6 +65,18 @@ class _PostsGridState extends State<PostsGrid> {
               ? UrlHelper.normalizeUrl(raw)
               : '';
           final thumb = normalized.isNotEmpty ? normalized : null;
+          assert(() {
+            if (thumb == null && !_loggedMissingThumbIds.contains(p.id)) {
+              _loggedMissingThumbIds.add(p.id);
+              final thumbRaw = (p.thumbnailUrl ?? '').trim();
+              final first =
+                  p.mediaUrls.isNotEmpty ? p.mediaUrls.first.trim() : '';
+              debugPrint(
+                '[PostsGrid] Missing thumb for id=${p.id} mediaType=${p.mediaType} thumbRaw="$thumbRaw" first="$first" normalized="$normalized"',
+              );
+            }
+            return true;
+          }());
           final headers =
               (thumb != null && UrlHelper.shouldAttachAuthHeader(thumb))
                   ? _headers
@@ -82,7 +95,8 @@ class _PostsGridState extends State<PostsGrid> {
                         ? SafeNetworkImage(
                             url: thumb,
                             headers: headers,
-                            cacheKey: '$thumb#${headers?['Authorization'] ?? ''}',
+                            cacheKey:
+                                '$thumb#${headers?['Authorization'] ?? ''}',
                             fit: BoxFit.cover,
                             placeholder: ColoredBox(color: seamColor),
                             errorWidget: ColoredBox(

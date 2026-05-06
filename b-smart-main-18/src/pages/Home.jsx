@@ -6,6 +6,8 @@ import StoryRail from '../components/StoryRail';
 import PostCard from '../components/PostCard';
 import PostDetailModal from '../components/PostDetailModal';
 import TweetDetailModal from '../components/TweetDetailModal';
+import PromoteCard from '../components/PromoteCard';
+import PromoteDetailModal from '../components/PromoteDetailModal';
 import api from '../lib/api';
 import {
   checkFollowStatus,
@@ -485,6 +487,7 @@ const Home = () => {
   const [loading,        setLoading]        = useState(true);
   const [selectedItem,   setSelectedItem]   = useState(null);
   const [selectedTweet,  setSelectedTweet]  = useState(null);
+  const [selectedPromoteReel, setSelectedPromoteReel] = useState(null);
 
   const fetchPosts = useCallback(async () => {
     try {
@@ -603,6 +606,15 @@ const Home = () => {
                 if (item.item_type === 'mobile_reels_suggestion') {
                   return <MobileSuggestedReelsCard key={`reels-${idx}`} reels={item.reels} />;
                 }
+                if (item.item_type === 'promote_reel') {
+                  return (
+                    <PromoteCard
+                      key={item._id || item.promote_reel_id || `pr-${idx}`}
+                      item={item}
+                      onOpenDetail={(pr) => setSelectedPromoteReel(pr)}
+                    />
+                  );
+                }
                 return (
                   <PostCard
                     key={item._id || item.id || `item-${idx}`}
@@ -628,6 +640,11 @@ const Home = () => {
         isOpen={!!selectedTweet}
         tweet={selectedTweet}
         onClose={() => setSelectedTweet(null)}
+      />
+      <PromoteDetailModal
+        isOpen={!!selectedPromoteReel}
+        promoteReel={selectedPromoteReel}
+        onClose={() => setSelectedPromoteReel(null)}
       />
     </div>
   );
