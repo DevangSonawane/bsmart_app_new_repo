@@ -32,8 +32,12 @@ class ShareLinks {
     if (type == 'reel') return '$o/reels/$id';
     if (type == 'tweet') return '$o/post/$id?type=tweet';
     if (type == 'ad') return '$o/ads/$id/details';
+    if (type == 'promote' || type == 'promote_reel' || type == 'promote-reel') {
+      // Web app currently routes to `/promote` (full-screen page). Use a query
+      // param so the receiver can deep-link if supported.
+      return '$o/promote?reelId=$id';
+    }
     // React uses `/posts/:id` for post share/report URLs.
     return '$o/posts/$id';
   }
 }
-

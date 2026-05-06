@@ -7,6 +7,12 @@ import '../theme/design_tokens.dart';
 import '../services/promote_service.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
 import 'external_link_screen.dart';
+import '../api/promote_reels_api.dart';
+import '../widgets/promote_comments_sheet.dart';
+import '../widgets/share_content_modal.dart';
+import '../api/follows_api.dart';
+import '../utils/current_user.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class PromoteScreen extends StatefulWidget {
   const PromoteScreen({super.key});
@@ -18,16 +24,28 @@ class PromoteScreen extends StatefulWidget {
 class _PromoteScreenState extends State<PromoteScreen> {
   final PageController _pageController = PageController();
   final PromoteService _promoteService = PromoteService();
+  final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
+  final FollowsApi _followsApi = FollowsApi();
   int _currentIndex = 0;
   bool _isMuted = true;
   bool _loading = true;
   List<Map<String, dynamic>> _promotes = [];
   final Map<int, VideoPlayerController> _controllers = {};
+  final Map<int, double> _progressByIndex = {};
+  final Map<int, VoidCallback> _progressListeners = {};
+  final Map<String, bool> _followByUserId = {};
+  final Set<String> _followLoadingUserIds = <String>{};
+  final Map<int, bool> _productsOpenByIndex = <int, bool>{};
+  String? _myUserId;
   double _cachedBottomInset = 0;
 
   @override
   void initState() {
     super.initState();
+    unawaited(() async {
+      _myUserId = await CurrentUser.id;
+      if (mounted) setState(() {});
+    }());
     _loadPromotes();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -49,6 +67,38 @@ class _PromoteScreenState extends State<PromoteScreen> {
         _loading = false;
       });
       if (_promotes.isNotEmpty) _initControllerForIndex(0);
+      unawaited(_loadFollowStatuses());
+    }
+  }
+
+  Future<void> _loadFollowStatuses() async {
+    try {
+      final ids = <String>{};
+      for (final p in _promotes) {
+        final uid = _toId(p['userId'] ?? p['user_id'] ?? p['user_id']);
+        if (uid.isEmpty) continue;
+        if (_myUserId != null && _myUserId!.isNotEmpty && uid == _myUserId) {
+          continue;
+        }
+        ids.add(uid);
+      }
+      if (ids.isEmpty) return;
+      final statuses = await _followsApi.bulkCheckFollowStatus(ids.toList());
+      final next = <String, bool>{..._followByUserId};
+      for (final s in statuses) {
+        final sid = _toId(s['userId'] ?? s['_id'] ?? s['id']);
+        if (sid.isEmpty) continue;
+        final v = s['isFollowing'];
+        if (v is bool) next[sid] = v;
+      }
+      if (!mounted) return;
+      setState(() {
+        _followByUserId
+          ..clear()
+          ..addAll(next);
+      });
+    } catch (_) {
+      // ignore
     }
   }
 
@@ -62,7 +112,32 @@ class _PromoteScreenState extends State<PromoteScreen> {
     await controller.initialize();
     controller.setLooping(true);
     if (mounted && _currentIndex == index) controller.play();
+    _attachProgressListener(index, controller);
     setState(() {});
+  }
+
+  void _attachProgressListener(int index, VideoPlayerController controller) {
+    if (_progressListeners.containsKey(index)) return;
+    int lastMs = 0;
+    void listener() {
+      if (!mounted) return;
+      if (!controller.value.isInitialized) return;
+      final dur = controller.value.duration;
+      final pos = controller.value.position;
+      final totalMs = dur.inMilliseconds;
+      if (totalMs <= 0) return;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if (nowMs - lastMs < 120) return;
+      lastMs = nowMs;
+      final pct = pos.inMilliseconds / totalMs;
+      final clamped = pct.isNaN ? 0.0 : pct.clamp(0.0, 1.0);
+      final prev = _progressByIndex[index];
+      if (prev != null && (prev - clamped).abs() < 0.004) return;
+      setState(() => _progressByIndex[index] = clamped);
+    }
+
+    _progressListeners[index] = listener;
+    controller.addListener(listener);
   }
 
   void _disposeFarControllers(int keepIndex) {
@@ -70,10 +145,15 @@ class _PromoteScreenState extends State<PromoteScreen> {
     for (final k in keys) {
       if ((k - keepIndex).abs() > 1) {
         try {
+          final l = _progressListeners.remove(k);
+          if (l != null) {
+            _controllers[k]?.removeListener(l);
+          }
           _controllers[k]?.pause();
           _controllers[k]?.dispose();
         } catch (_) {}
         _controllers.remove(k);
+        _progressByIndex.remove(k);
       }
     }
   }
@@ -81,13 +161,19 @@ class _PromoteScreenState extends State<PromoteScreen> {
   @override
   void dispose() {
     _pageController.dispose();
-    for (final c in _controllers.values) {
+    for (final entry in _controllers.entries) {
+      final idx = entry.key;
+      final c = entry.value;
       try {
+        final l = _progressListeners.remove(idx);
+        if (l != null) c.removeListener(l);
         c.pause();
         c.dispose();
       } catch (_) {}
     }
     _controllers.clear();
+    _progressListeners.clear();
+    _progressByIndex.clear();
     super.dispose();
   }
 
@@ -103,6 +189,131 @@ class _PromoteScreenState extends State<PromoteScreen> {
         if (!_isMuted) c.setVolume(1.0);
         c.play();
       }
+    }
+  }
+
+  String _toId(dynamic v) => (v ?? '').toString().trim();
+
+  int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? 0;
+    return 0;
+  }
+
+  String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
+    return n.toString();
+  }
+
+  Future<void> _toggleLike(int index) async {
+    if (index < 0 || index >= _promotes.length) return;
+    final item = Map<String, dynamic>.from(_promotes[index]);
+    final id = _toId(item['id'] ?? item['_id'] ?? item['promote_reel_id']);
+    if (id.isEmpty) return;
+
+    final wasLiked = item['isLikedByMe'] == true || item['is_liked_by_me'] == true;
+    final cur = _toInt(item['likesCount'] ?? item['likes_count'] ?? item['likes']);
+    final nextLiked = !wasLiked;
+    final nextCount = (cur + (nextLiked ? 1 : -1)) < 0 ? 0 : (cur + (nextLiked ? 1 : -1));
+
+    setState(() {
+      _promotes[index] = {
+        ...item,
+        'isLikedByMe': nextLiked,
+        'likesCount': nextCount,
+        'likes': nextCount.toString(),
+      };
+    });
+
+    try {
+      if (wasLiked) {
+        await _promoteReelsApi.unlikePromoteReel(id);
+      } else {
+        await _promoteReelsApi.likePromoteReel(id);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _promotes[index] = {
+          ...item,
+          'isLikedByMe': wasLiked,
+          'likesCount': cur,
+          'likes': cur.toString(),
+        };
+      });
+    }
+  }
+
+  Future<void> _openComments(int index) async {
+    if (index < 0 || index >= _promotes.length) return;
+    final item = Map<String, dynamic>.from(_promotes[index]);
+    final id = _toId(item['id'] ?? item['_id'] ?? item['promote_reel_id']);
+    if (id.isEmpty) return;
+    final cur = _toInt(item['commentsCount'] ?? item['comments_count'] ?? item['comments']);
+    await PromoteCommentsSheet.show(
+      context,
+      promoteReelId: id,
+      initialCount: cur,
+      onCountChanged: (next) {
+        if (!mounted) return;
+        setState(() {
+          final it = Map<String, dynamic>.from(_promotes[index]);
+          _promotes[index] = {
+            ...it,
+            'commentsCount': next,
+            'comments': next.toString(),
+          };
+        });
+      },
+    );
+  }
+
+  Future<void> _openShare(int index) async {
+    if (index < 0 || index >= _promotes.length) return;
+    final item = Map<String, dynamic>.from(_promotes[index]);
+    final id = _toId(item['id'] ?? item['_id'] ?? item['promote_reel_id']);
+    if (id.isEmpty) return;
+    await ShareContentModal.show(
+      context,
+      contentType: 'promote',
+      contentId: id,
+    );
+  }
+
+  Future<void> _toggleFollow(int index) async {
+    if (index < 0 || index >= _promotes.length) return;
+    final item = Map<String, dynamic>.from(_promotes[index]);
+    final userId = _toId(item['userId'] ?? item['user_id']);
+    if (userId.isEmpty) return;
+    if (_myUserId != null && _myUserId!.isNotEmpty && userId == _myUserId) {
+      return;
+    }
+    if (_followLoadingUserIds.contains(userId)) return;
+    final was = _followByUserId[userId] == true;
+    setState(() => _followLoadingUserIds.add(userId));
+    setState(() {
+      _followByUserId[userId] = !was;
+    });
+    try {
+      if (was) {
+        await _followsApi.unfollow(userId);
+      } else {
+        try {
+          await _followsApi.follow(userId);
+        } catch (_) {
+          await _followsApi.followById(userId);
+        }
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _followByUserId[userId] = was;
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() => _followLoadingUserIds.remove(userId));
     }
   }
 
@@ -141,19 +352,40 @@ class _PromoteScreenState extends State<PromoteScreen> {
     return Scaffold(
       extendBody: true,
       backgroundColor: Colors.black,
-      body: ClipRect(
-        child: PageView.builder(
-          controller: _pageController,
-          scrollDirection: Axis.vertical,
-          onPageChanged: _onPageChanged,
-          itemCount: _promotes.length,
-          itemBuilder: (context, index) {
+      body: PageView.builder(
+        controller: _pageController,
+        scrollDirection: Axis.vertical,
+        onPageChanged: _onPageChanged,
+        itemCount: _promotes.length,
+        itemBuilder: (context, index) {
             final item = _promotes[index];
             final products = (item['products'] as List<dynamic>?) ?? [];
             final controller = _controllers[index];
             final actionsBottom = 96.0 + bottomSystemInset;
+            final likesCount = _toInt(item['likesCount'] ?? item['likes_count'] ?? item['likes']);
+            final commentsCount = _toInt(item['commentsCount'] ?? item['comments_count'] ?? item['comments']);
+            final isLiked = item['isLikedByMe'] == true || item['is_liked_by_me'] == true;
+            final uid = _toId(item['userId'] ?? item['user_id']);
+            final caption = (item['caption'] ?? item['description'] ?? '').toString().trim();
+            final tagsRaw = item['tags'];
+            final tags = <String>[];
+            if (tagsRaw is List) {
+              for (final t in tagsRaw) {
+                final s = (t ?? '').toString().trim();
+                if (s.isEmpty) continue;
+                tags.add(s.startsWith('#') ? s : '#$s');
+              }
+            }
+            final productsOpen = _productsOpenByIndex[index] ?? true;
+            final productsToggleHeight = products.isNotEmpty ? 28.0 : 0.0;
+            final productsListHeight =
+                (products.isNotEmpty && productsOpen) ? (10.0 + 82.0) : 0.0;
+            final productsPanelHeight = productsToggleHeight + productsListHeight;
+            final infoBottomPadding =
+                bottomSystemInset + 12.0 + productsPanelHeight + 12.0;
             return Stack(
               fit: StackFit.expand,
+              clipBehavior: Clip.none,
               children: [
                 // 0. Solid black for nav bar zone
                 if (bottomSystemInset > 0)
@@ -212,21 +444,22 @@ class _PromoteScreenState extends State<PromoteScreen> {
                     children: [
                       GlassActionButton(
                         icon: LucideIcons.heart,
-                        label: (item['likes'] as String?) ?? '0',
-                        onTap: () {},
+                        label: _fmt(likesCount),
+                        iconColor: isLiked ? DesignTokens.instaPink : Colors.white,
+                        onTap: () => _toggleLike(index),
                       ),
                       const SizedBox(height: 16),
                       GlassActionButton(
                         icon: LucideIcons.messageCircle,
-                        label: (item['comments'] as String?) ?? '0',
-                        onTap: () {},
+                        label: _fmt(commentsCount),
+                        onTap: () => _openComments(index),
                       ),
                       const SizedBox(height: 16),
                       GlassActionButton(
                         icon: LucideIcons.send,
                         label: '',
                         rotate: -0.2,
-                        onTap: () {},
+                        onTap: () => _openShare(index),
                       ),
                       const SizedBox(height: 16),
                       GlassActionButton(
@@ -250,45 +483,197 @@ class _PromoteScreenState extends State<PromoteScreen> {
                     ],
                   ),
                 ),
-                // Bottom: brand + username (aligned with mute icon)
-                Positioned(
-                  left: 16,
-                  right: 92,
-                  bottom: actionsBottom,
-                  child: _PromoteUsernamePill(item: item),
-                ),
-                if (products.isNotEmpty)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: bottomSystemInset + 6,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onVerticalDragStart: (_) {},
-                      onVerticalDragUpdate: (_) {},
-                      child: SizedBox(
-                        height: 82,
-                        child: ListView.separated(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
-                          itemCount: products.length.clamp(0, 8),
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 10),
-                          itemBuilder: (context, i) {
-                            final p = products[i] is Map
-                                ? Map<String, dynamic>.from(products[i] as Map)
-                                : <String, dynamic>{};
-                            return _MiniProductCard(product: p);
-                          },
+                // Bottom: user + caption + tags (bounded within the page height)
+                Positioned.fill(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: 16,
+                      right: 92,
+                      bottom: infoBottomPadding,
+                    ),
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 240),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _PromoteUsernamePill(
+                              item: item,
+                              isFollowing: _followByUserId[uid] == true,
+                              isFollowLoading: _followLoadingUserIds.contains(uid),
+                              showFollow: uid.isNotEmpty &&
+                                  (_myUserId == null ||
+                                      _myUserId!.isEmpty ||
+                                      uid != _myUserId),
+                              onFollowTap: () => _toggleFollow(index),
+                            ),
+                            if (caption.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                caption,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  height: 1.25,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black45,
+                                      offset: Offset(0, 1),
+                                      blurRadius: 2,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            if (tags.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: tags.take(3).map((t) {
+                                  return Text(
+                                    t,
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.70),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      shadows: const [
+                                        Shadow(
+                                          color: Colors.black45,
+                                          offset: Offset(0, 1),
+                                          blurRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ),
                   ),
+                ),
+
+                // Progress bar (like Ads/Reels)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: bottomSystemInset,
+                  child: IgnorePointer(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: Container(
+                        height: 4,
+                        color: Colors.white.withValues(alpha: 0.22),
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor:
+                              (_progressByIndex[index] ?? 0.0).clamp(0.0, 1.0),
+                          child: Container(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Products cards (anchored at bottom like before).
+                if (products.isNotEmpty)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: bottomSystemInset + 12,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _productsOpenByIndex[index] = !productsOpen;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.30),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.20),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    LucideIcons.shoppingBag,
+                                    size: 14,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    productsOpen
+                                        ? 'Hide Products'
+                                        : '${products.length} Product${products.length > 1 ? 's' : ''}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        AnimatedOpacity(
+                          duration: const Duration(milliseconds: 220),
+                          opacity: productsOpen ? 1 : 0,
+                          child: AnimatedSize(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                            child: productsOpen
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: 10),
+                                    child: SizedBox(
+                                      height: 82,
+                                      child: ListView.separated(
+                                        clipBehavior: Clip.none,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12),
+                                        scrollDirection: Axis.horizontal,
+                                        physics: const BouncingScrollPhysics(),
+                                        itemCount: products.length.clamp(0, 8),
+                                        separatorBuilder: (_, __) =>
+                                            const SizedBox(width: 10),
+                                        itemBuilder: (context, i) {
+                                          final p = products[i] is Map
+                                              ? Map<String, dynamic>.from(
+                                                  products[i] as Map)
+                                              : <String, dynamic>{};
+                                          return _MiniProductCard(product: p);
+                                        },
+                                      ),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             );
-          },
-        ),
+        },
       ),
     );
   }
@@ -385,60 +770,124 @@ class _PromoteScreenState extends State<PromoteScreen> {
 
 class _PromoteUsernamePill extends StatelessWidget {
   final Map<String, dynamic> item;
-  const _PromoteUsernamePill({required this.item});
+  final bool showFollow;
+  final bool isFollowing;
+  final bool isFollowLoading;
+  final VoidCallback? onFollowTap;
+
+  const _PromoteUsernamePill({
+    required this.item,
+    this.showFollow = false,
+    this.isFollowing = false,
+    this.isFollowLoading = false,
+    this.onFollowTap,
+  });
+
+  String _safeLabel(dynamic v) {
+    final s = (v ?? '').toString().trim();
+    return s.isEmpty ? 'User' : s;
+  }
+
+  String _initial(String label) {
+    final t = label.trim();
+    if (t.isEmpty) return 'U';
+    final first = String.fromCharCode(t.runes.first);
+    return first.toUpperCase();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final avatarUrl = (item['avatarUrl'] ?? item['avatar_url'] ?? '')
+        .toString()
+        .trim();
+    final displayName = _safeLabel(item['username'] ?? item['brandName']);
+    final initial = _initial(displayName);
+    return SizedBox(
       height: 36,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.black.withValues(alpha: 0.00),
-            Colors.black.withValues(alpha: 0.35),
-            Colors.black.withValues(alpha: 0.65),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: DesignTokens.instaPurple,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              ((item['brandName'] as String?) ?? 'G')[0].toUpperCase(),
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 14,
-              ),
+          SizedBox(
+            width: 34,
+            height: 34,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: avatarUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: avatarUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        color: DesignTokens.instaPurple.withValues(alpha: 0.25),
+                        alignment: Alignment.center,
+                        child: const Icon(LucideIcons.user,
+                            size: 18, color: Colors.white70),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        color: DesignTokens.instaPurple.withValues(alpha: 0.25),
+                        alignment: Alignment.center,
+                        child: Text(
+                          initial,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Container(
+                      color: DesignTokens.instaPurple.withValues(alpha: 0.25),
+                      alignment: Alignment.center,
+                      child: Text(
+                        initial,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              (item['username'] as String?) ??
-                  (item['brandName'] as String?) ??
-                  '',
+              displayName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
               ),
             ),
           ),
+          if (showFollow) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+              decoration: BoxDecoration(
+                color: isFollowing
+                    ? Colors.green.withValues(alpha: 0.15)
+                    : Colors.white.withValues(alpha: 0.1),
+                border: Border.all(
+                  color: isFollowing
+                      ? Colors.green.withValues(alpha: 0.45)
+                      : Colors.white.withValues(alpha: 0.4),
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: GestureDetector(
+                onTap: isFollowLoading ? null : onFollowTap,
+                child: Text(
+                  isFollowLoading ? '...' : (isFollowing ? 'Following' : 'Follow'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            )
+          ],
         ],
       ),
     );
@@ -619,7 +1068,7 @@ class _MiniProductCard extends StatelessWidget {
                     height: 28,
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
                         if (websiteUrl.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -629,6 +1078,14 @@ class _MiniProductCard extends StatelessWidget {
                           );
                           return;
                         }
+                        final uri = Uri.tryParse(websiteUrl);
+                        if (uri == null) return;
+                        final ok = await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                        if (ok) return;
+                        if (!context.mounted) return;
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
                             builder: (_) => ExternalLinkScreen(

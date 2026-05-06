@@ -1,0 +1,3832 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
+import api from '../lib/api';
+import EmojiPicker from 'emoji-picker-react';
+import promoteReelService from '../services/promoteReelService';
+import { Image, Images, Video, X, ArrowLeft, Maximize2, Search, Copy, ZoomIn, Plus, ChevronLeft, ChevronRight, UserPlus, ChevronDown, ChevronUp, Smile, Megaphone,
+  MousePointerClick, Target, Smartphone, Monitor, Calendar, Link2, Phone, Mail, MessageSquare,
+  TestTube2, CalendarClock, Zap, ShieldCheck, Tag, Globe, MapPin, Coins, FileText, Ellipsis, Pencil,
+  ShoppingBag, Trash2
+} from 'lucide-react';
+import Cropper from 'react-easy-crop';
+
+// Filter Definitions
+const FILTERS = [
+  { name: 'Original', style: '' },
+  { name: 'Clarendon', style: 'contrast(1.2) saturate(1.25)' },
+  { name: 'Gingham', style: 'brightness(1.05) hue-rotate(-10deg)' },
+  { name: 'Moon', style: 'grayscale(1) contrast(1.1) brightness(1.1)' },
+  { name: 'Lark', style: 'contrast(0.9)' },
+  { name: 'Reyes', style: 'sepia(0.22) brightness(1.1) contrast(0.85) saturate(0.75)' },
+  { name: 'Juno', style: 'contrast(1.2) brightness(1.1) saturate(1.4) sepia(0.2)' },
+  { name: 'Slumber', style: 'brightness(1.05) saturate(0.66) sepia(0.20)' },
+  { name: 'Crema', style: 'contrast(0.9) saturate(0.9) sepia(0.2)' },
+  { name: 'Ludwig', style: 'contrast(0.9) saturate(0.9) brightness(1.1)' },
+  { name: 'Aden', style: 'contrast(0.9) saturate(0.85) brightness(1.2) hue-rotate(-20deg)' },
+  { name: 'Perpetua', style: 'contrast(1.1) brightness(1.1) saturate(1.1)' }
+];
+
+const ADJUSTMENTS = [
+  { name: 'Brightness', property: 'brightness', min: -100, max: 100 },
+  { name: 'Contrast', property: 'contrast', min: -100, max: 100 },
+  { name: 'Saturation', property: 'saturate', min: -100, max: 100 },
+  { name: 'Temperature', property: 'sepia', min: -100, max: 100 },
+  { name: 'Fade', property: 'opacity', min: 0, max: 100 },
+  { name: 'Vignette', property: 'vignette', min: 0, max: 100 }
+];
+
+// Utility to create image
+const createImage = (url) =>
+  new Promise((resolve, reject) => {
+    const image = new window.Image()
+    image.addEventListener('load', () => resolve(image))
+    image.addEventListener('error', (error) => reject(error))
+    image.setAttribute('crossOrigin', 'anonymous')
+    image.src = url
+  })
+
+// Utility to crop image
+async function getCroppedImg(imageSrc, pixelCrop) {
+  const image = await createImage(imageSrc)
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+
+  if (!pixelCrop) {
+    const size = Math.min(image.width, image.height);
+    pixelCrop = {
+      x: (image.width - size) / 2,
+      y: (image.height - size) / 2,
+      width: size,
+      height: size
+    }
+  }
+
+  canvas.width = pixelCrop.width
+  canvas.height = pixelCrop.height
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  )
+
+  return new Promise((resolve) => {
+    canvas.toBlob((file) => {
+      resolve(URL.createObjectURL(file))
+    }, 'image/jpeg')
+  })
+}
+
+// ─── Video Processing Utility ──────────────────────────────────────────────
+async function processVideoForUpload(originalFile, trimStart, trimEnd, cropParams, onProgress) {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    const objectUrl = URL.createObjectURL(originalFile);
+    video.src = objectUrl;
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
+    document.body.appendChild(video);
+
+    const cleanup = () => {
+      try { document.body.removeChild(video); } catch (err) {
+        console.warn('Video element cleanup failed', err);
+      }
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    video.onloadedmetadata = async () => {
+      const totalDuration = trimEnd - trimStart;
+      if (totalDuration <= 0.05) {
+        cleanup();
+        resolve(originalFile);
+        return;
+      }
+
+      const natW = video.videoWidth  || 1280;
+      const natH = video.videoHeight || 720;
+
+      const srcX = cropParams?.x      ?? 0;
+      const srcY = cropParams?.y      ?? 0;
+      const srcW = cropParams?.width  ?? natW;
+      const srcH = cropParams?.height ?? natH;
+
+      const outW = cropParams?.outputWidth  ?? natW;
+      const outH = cropParams?.outputHeight ?? natH;
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = outW;
+      canvas.height = outH;
+      const ctx = canvas.getContext('2d');
+
+      const mimeType =
+        MediaRecorder.isTypeSupported('video/mp4;codecs=avc1') ? 'video/mp4;codecs=avc1' :
+        MediaRecorder.isTypeSupported('video/mp4')             ? 'video/mp4'              :
+        MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' :
+        MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' :
+        'video/webm';
+
+      let stream, recorder;
+      try {
+        stream   = canvas.captureStream(30);
+        recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+      } catch {
+        try {
+          const vStream = video.captureStream
+            ? video.captureStream(30)
+            : video.mozCaptureStream
+            ? video.mozCaptureStream(30)
+            : null;
+          if (!vStream) throw new Error('no stream');
+          recorder = new MediaRecorder(vStream, { mimeType });
+        } catch {
+          cleanup();
+          resolve(originalFile);
+          return;
+        }
+      }
+
+      const chunks = [];
+      recorder.ondataavailable = (e) => { if (e.data?.size > 0) chunks.push(e.data); };
+
+      recorder.onstop = () => {
+        cleanup();
+        const blob = new Blob(chunks, { type: 'video/mp4' });
+        resolve(new File([blob], 'video.mp4', { type: 'video/mp4' }));
+      };
+
+      recorder.onerror = () => { cleanup(); resolve(originalFile); };
+
+      video.currentTime = trimStart;
+      await new Promise(res => {
+        const onSeeked = () => { video.removeEventListener('seeked', onSeeked); res(); };
+        video.addEventListener('seeked', onSeeked);
+      });
+
+      recorder.start(100);
+      video.play().catch(() => {});
+
+      const drawFrame = () => {
+        const elapsed  = Math.max(0, video.currentTime - trimStart);
+        const progress = Math.min(100, Math.round((elapsed / totalDuration) * 100));
+        if (onProgress) onProgress(progress);
+
+        if (video.currentTime >= trimEnd - 0.05 || video.ended || video.paused) {
+          video.pause();
+          if (recorder.state === 'recording') {
+            ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
+            recorder.stop();
+          }
+          return;
+        }
+
+        ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
+
+        if (recorder.state === 'recording') requestAnimationFrame(drawFrame);
+      };
+
+      requestAnimationFrame(drawFrame);
+    };
+
+    video.onerror = () => { cleanup(); resolve(originalFile); };
+  });
+}
+
+// SuccessCountdown — thin line depletes over 5s then auto-navigates
+function SuccessCountdown({ onDone }) {
+  const [elapsed, setElapsed] = React.useState(0);
+  const TOTAL = 5000;
+  const STEP  = 50;
+  const onDoneRef = React.useRef(onDone);
+  React.useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
+  React.useEffect(() => {
+    if (elapsed >= TOTAL) { onDoneRef.current(); return; }
+    const t = setTimeout(() => setElapsed(e => e + STEP), STEP);
+    return () => clearTimeout(t);
+  }, [elapsed]);
+  const progress = Math.min(1, elapsed / TOTAL);
+  return (
+    <div className="flex flex-col items-center gap-2 w-full">
+      <div className="w-full h-0.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${(1 - progress) * 100}%`,
+            background: 'linear-gradient(90deg,#feda75,#fa7e1e,#d62976,#962fbf)',
+            transition: `width ${STEP}ms linear`
+          }}
+        />
+      </div>
+      <p className="text-xs text-white/40">Redirecting to home…</p>
+    </div>
+  );
+}
+
+const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal }) => {
+  const navigate = useNavigate();
+  const [isDragging, setIsDragging] = useState(false);
+  const [step, setStep] = useState('select');
+  const { userObject } = useSelector((state) => state.auth);
+  const mode = useSelector((state) => state.theme?.mode || 'light');
+  const userId = userObject?._id || userObject?.id;
+  const [postType, setPostType] = useState(initialType);
+  
+  useEffect(() => {
+    if (isOpen) {
+      setPostType(initialType);
+      setStep(initialType === 'tweet' ? 'share' : 'select');
+    }
+  }, [isOpen, initialType]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadVendorProfileData = async () => {
+      if (!isOpen || userObject?.role !== 'vendor' || !userId) return;
+      try {
+        const [profileRes, packageRes, adsRes] = await Promise.all([
+          api.get(`/vendors/profile/${userId}`),
+          api.get('/vendor-packages/my/active').catch(() => ({ data: null })),
+          api.get(`/ads/user/${userId}`).catch(() => ({ data: [] })),
+        ]);
+        if (!active) return;
+        setVendorProfileCompletion(Number(profileRes.data?.profile_completion_percentage || 0));
+
+        const activePackage = packageRes?.data?.active_package || packageRes?.data?.package || packageRes?.data || null;
+        const packageData = activePackage?.package || activePackage || {};
+        setActivePackageAdsLimit(Number(packageData?.ads_allowed_max || 0));
+
+        const ads = Array.isArray(adsRes?.data)
+          ? adsRes.data
+          : Array.isArray(adsRes?.data?.ads)
+          ? adsRes.data.ads
+          : Array.isArray(adsRes?.data?.data)
+          ? adsRes.data.data
+          : [];
+        setUploadedAdsCount(ads.length);
+      } catch (err) {
+        if (!active) return;
+        console.error('Failed to load vendor profile/ad package data', err);
+        setVendorProfileCompletion(0);
+        setActivePackageAdsLimit(0);
+        setUploadedAdsCount(0);
+      }
+    };
+
+    loadVendorProfileData();
+    return () => { active = false; };
+  }, [isOpen, userId, userObject?.role]);
+
+  const [media, setMedia] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Separate media state for Step 3 Ad Details — independent from steps 1-2
+  const [adMedia, setAdMedia] = useState([]);
+  const adMediaInputRef = React.useRef(null);
+  const [adMediaPreview, setAdMediaPreview] = useState(null);
+
+  const [caption, setCaption] = useState('');
+  const [location, setLocation] = useState('');
+  const [hideLikes, setHideLikes] = useState(false);
+  const [turnOffCommenting, setTurnOffCommenting] = useState(false);
+  const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
+
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiPickerRef = useRef(null);
+  const emojiPickerRefMobile = useRef(null);
+  const [tags, setTags] = useState([]);
+  const [showTagSearch, setShowTagSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showVendorNotValidated, setShowVendorNotValidated] = useState(false);
+  const [vendorProfileCompletion, setVendorProfileCompletion] = useState(0);
+  const [showAdProfileGate, setShowAdProfileGate] = useState(false);
+  const [activePackageAdsLimit, setActivePackageAdsLimit] = useState(0);
+  const [uploadedAdsCount, setUploadedAdsCount] = useState(0);
+  const [showAdLimitPopup, setShowAdLimitPopup] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const [isLoadingAllUsers, setIsLoadingAllUsers] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [adSubmitMode, setAdSubmitMode] = useState('publish');
+
+  // ── Promote products state ─────────────────────────────────────────────
+  const [promoteProducts, setPromoteProducts] = useState([]);          // submitted list
+  const emptyDraft = () => ({ product_name: '', product_description: '', product_price: '', visit_link: '', discount_amount: '', promote_img: '', _imgUploading: false });
+  const [productDraft, setProductDraft] = useState(null);              // null = no form open
+  const updateDraft = (field, value) => setProductDraft(prev => prev ? { ...prev, [field]: value } : prev);
+  const openDraftForm = () => setProductDraft(emptyDraft());
+  const cancelDraft = () => setProductDraft(null);
+  const submitDraft = () => {
+    if (!productDraft || !productDraft.product_name.trim() || !productDraft.product_price) return;
+    const { _imgUploading, ...clean } = productDraft;
+    setPromoteProducts(prev => [...prev, clean]);
+    setProductDraft(null);
+  };
+  const removeProduct = (i) => setPromoteProducts(prev => prev.filter((_, idx) => idx !== i));
+  // kept for backwards-compat (submit strips _imgUploading anyway)
+  const updateProduct = (i, field, value) => setPromoteProducts(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: value } : p));
+  
+  const CATEGORIES = [
+    'Fashion', 'Electronics', 'Food & Dining', 'Beauty & Personal Care', 'Travel', 'Education',
+    'Real Estate', 'Automotive', 'Health & Fitness', 'Entertainment', 'Sports', 'Technology',
+    'Home & Garden', 'Pets', 'Business & Finance', 'Art & Design', 'Books & Literature',
+    'Gaming', 'Music', 'Photography', 'Science', 'Social Media', 'Other'
+  ];
+
+  const LANGUAGES = [
+    'English', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Arabic', 'Hindi', 'Portuguese', 'Russian', 'Italian', 'Korean', 'Turkish'
+  ].sort();
+
+  const COUNTRIES = [
+    'USA', 'Canada', 'UK', 'Australia', 'India', 'Germany', 'France', 'Italy', 'Spain', 'Brazil',
+    'Mexico', 'Japan', 'South Korea', 'China', 'Russia', 'South Africa', 'Nigeria', 'Egypt',
+    'Saudi Arabia', 'UAE', 'Turkey', 'Argentina', 'Chile', 'Colombia', 'Peru', 'Indonesia',
+    'Thailand', 'Vietnam', 'Malaysia', 'Philippines', 'Singapore', 'New Zealand', 'Netherlands',
+    'Belgium', 'Sweden', 'Norway', 'Denmark', 'Finland', 'Poland', 'Ukraine', 'Greece', 'Portugal',
+    'Ireland', 'Switzerland', 'Austria', 'Hungary', 'Czech Republic', 'Romania', 'Pakistan', 'Bangladesh'
+  ].sort();
+
+  const [categories, setCategories] = useState(CATEGORIES);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+  
+  // Ad multi-select states
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedLanguages, setSelectedLanguages] = useState([]);
+  const [selectedCountries, setSelectedCountries] = useState([]);
+  const [selectedStates, setSelectedStates] = useState([]);
+  const [totalBudgetCoins, setTotalBudgetCoins] = useState('');
+
+  // ── NEW ad fields ──────────────────────────────────────────────────────────
+  const [adTitle, setAdTitle] = useState('');
+  const [adDescription, setAdDescription] = useState('');
+  const [adType, setAdType] = useState('promote');
+  const [subCategory, setSubCategory] = useState('');
+  const [keywords, setKeywords] = useState([]);
+  const [keywordInput, setKeywordInput] = useState('');
+
+  // CTA
+  const [ctaType, setCtaType] = useState('view_site');
+  const [ctaUrl, setCtaUrl] = useState('');
+  const [ctaDeepLink, setCtaDeepLink] = useState('');
+  const [ctaPhone, setCtaPhone] = useState('');
+  const [ctaEmail, setCtaEmail] = useState('');
+  const [ctaWhatsapp, setCtaWhatsapp] = useState('');
+
+  // Budget extended
+  const [dailyBudgetCoins, setDailyBudgetCoins] = useState('');
+  const [budgetStartDate, setBudgetStartDate] = useState('');
+  const [budgetEndDate, setBudgetEndDate] = useState('');
+
+  // Targeting new fields
+  const [selectedCities, setSelectedCities] = useState([]);
+  const [cityInput, setCityInput] = useState('');
+  const [ageMin, setAgeMin] = useState('');
+  const [ageMax, setAgeMax] = useState('');
+  const [genderTarget, setGenderTarget] = useState('all');
+  const [selectedInterests, setSelectedInterests] = useState([]);
+  const [interestInput, setInterestInput] = useState('');
+  const [selectedDeviceTypes, setSelectedDeviceTypes] = useState([]);
+
+  // Tracking / UTM
+  const [utmSource, setUtmSource] = useState('');
+  const [utmMedium, setUtmMedium] = useState('');
+  const [utmCampaign, setUtmCampaign] = useState('');
+  const [utmTerm, setUtmTerm] = useState('');
+  const [utmContent, setUtmContent] = useState('');
+  const [conversionPixelId, setConversionPixelId] = useState('');
+
+  // Engagement controls (new)
+  const [disableShare, setDisableShare] = useState(false);
+  const [disableSave, setDisableSave] = useState(false);
+  const [disableReport, setDisableReport] = useState(false);
+  const [moderationEnabled, setModerationEnabled] = useState(false);
+
+  // Compliance
+  const [policyAgreed, setPolicyAgreed] = useState(false);
+
+  // A/B testing
+  const [abTestingEnabled, setAbTestingEnabled] = useState(false);
+
+  // Search states for accordions
+  const [countrySearch, setCountrySearch] = useState('');
+  const [stateSearch, setStateSearch] = useState('');
+  const [languageSearch, setLanguageSearch] = useState('');
+
+  // Scheduling
+  const [scheduleSlots, setScheduleSlots] = useState([]);
+
+  // Accordion state — extended
+  // 'category' | 'country' | 'state' | 'language' | 'budget' | 'cta' | 'adtype' | 'targeting_advanced' | 'tracking' | 'engagement' | 'compliance' | null
+
+  // API-driven country/state/language data
+  const [allCountries, setAllCountries] = useState([]);
+  const [isLoadingCountries, setIsLoadingCountries] = useState(false);
+  const [statesByCountry, setStatesByCountry] = useState({}); // { countryName: [states] }
+  const [isLoadingStates, setIsLoadingStates] = useState(false);
+  const [languagesByState, setLanguagesByState] = useState({}); // { 'country|state': [languages] }
+  const [isLoadingLanguages, setIsLoadingLanguages] = useState(false);
+  
+  // Accordion state: 'category' | 'country' | 'state' | 'language' | 'budget' | null
+  const [openAccordion, setOpenAccordion] = useState(null);
+  const isVendorValidated = Boolean(
+    userObject?.vendor_validated ??
+    userObject?.validated ??
+    userObject?.vendor?.validated
+  );
+
+  const ensureAdProfileCompletion = useCallback(() => {
+    if (Number(vendorProfileCompletion || 0) <= 80) {
+      setShowAdProfileGate(true);
+      return false;
+    }
+    return true;
+  }, [vendorProfileCompletion]);
+
+  const ensureAdPackageLimit = useCallback(() => {
+    if (Number(activePackageAdsLimit || 0) <= 0 || Number(uploadedAdsCount || 0) >= Number(activePackageAdsLimit || 0)) {
+      setShowAdLimitPopup(true);
+      return false;
+    }
+    return true;
+  }, [activePackageAdsLimit, uploadedAdsCount]);
+
+  useEffect(() => {
+    let active = true;
+    setIsLoadingCategories(true);
+    api.get('/ads/categories')
+      .then((res) => {
+        const cats = res?.data?.categories || [];
+        if (!active) return;
+        if (cats.length) {
+          setCategories(cats);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (active) setIsLoadingCategories(false); });
+    return () => { active = false; };
+  }, []);
+
+  // Fetch all countries (flat list) on mount
+  useEffect(() => {
+    let active = true;
+    setIsLoadingCountries(true);
+    fetch('https://api.bebsmart.in/api/countries')
+      .then(r => r.json())
+      .then(data => {
+        if (!active) return;
+        const list = Array.isArray(data) ? data : (data?.countries || data?.data || []);
+        setAllCountries(list);
+      })
+      .catch(() => {})
+      .finally(() => { if (active) setIsLoadingCountries(false); });
+    return () => { active = false; };
+  }, []);
+
+  // When selectedCountries changes: fetch full data (states + languages) in one call
+  // API response shape: { success, country, count, data: [{ state, languages, cities }] }
+  useEffect(() => {
+    if (selectedCountries.length === 0) {
+      setStatesByCountry({});
+      setSelectedStates([]);
+      setLanguagesByState({});
+      setSelectedLanguages([]);
+      return;
+    }
+    setIsLoadingStates(true);
+    Promise.all(
+      selectedCountries.map(country =>
+        fetch(`https://api.bebsmart.in/api/countries/${encodeURIComponent(country)}/states`)
+          .then(r => r.json())
+          .then(res => {
+            // response: { success, country, count, data: [{ state, languages, cities }] }
+            const stateData = Array.isArray(res) ? res : (res?.data || []);
+            return { country, stateData };
+          })
+          .catch(() => ({ country, stateData: [] }))
+      )
+    ).then(results => {
+      const newStatesByCountry = {};
+      results.forEach(({ country, stateData }) => {
+        newStatesByCountry[country] = stateData; // each item: { state, languages, cities }
+      });
+      setStatesByCountry(newStatesByCountry);
+      // Prune selected states no longer in any selected country
+      const allValidStateNames = new Set(
+        results.flatMap(({ stateData }) => stateData.map(s => s.state))
+      );
+      setSelectedStates(prev => prev.filter(s => allValidStateNames.has(s)));
+      setIsLoadingStates(false);
+    });
+  }, [selectedCountries]);
+
+  // When selectedStates changes: derive languages directly from statesByCountry data (no extra API call)
+  useEffect(() => {
+    if (selectedStates.length === 0) {
+      setLanguagesByState({});
+      setSelectedLanguages([]);
+      return;
+    }
+    const newLangMap = {};
+    selectedCountries.forEach(country => {
+      const stateDataArr = statesByCountry[country] || [];
+      const langs = stateDataArr
+        .filter(s => selectedStates.includes(s.state))
+        .flatMap(s => s.languages || []);
+      newLangMap[country] = [...new Set(langs)];
+    });
+    setLanguagesByState(newLangMap);
+    const allValidLangs = new Set(Object.values(newLangMap).flat());
+    setSelectedLanguages(prev => prev.filter(l => allValidLangs.has(l)));
+  }, [selectedStates, statesByCountry]);
+
+
+  const [uploadStage, setUploadStage] = useState('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState('');
+  
+  const [draggingTagId, setDraggingTagId] = useState(null);
+
+  const POPULAR_EMOJIS = ['😂', '😮', '😍', '😢', '👏', '🔥', '🎉', '💯', '❤️', '🤣', '🥰', '😘', '😭', '😊'];
+
+  const [showRatioMenu, setShowRatioMenu] = useState(false);
+  const [showZoomSlider, setShowZoomSlider] = useState(false);
+  const [showMultiSelect, setShowMultiSelect] = useState(false);
+  const [activeTab, setActiveTab] = useState('filters');
+  const [showTweetPreview, setShowTweetPreview] = useState(false);
+  const [tweetPreviewIndex, setTweetPreviewIndex] = useState(0);
+  const [mediaCountBeforeCrop, setMediaCountBeforeCrop] = useState(0);
+
+  const fileInputRef = useRef(null);
+  const cropContainerRef = useRef(null);
+  const [overlaySize, setOverlaySize] = useState({ w: 0, h: 0 });
+  const editContainerRef = useRef(null);
+  const [editBoxSize, setEditBoxSize] = useState({ w: 0, h: 0 });
+  const coverInputRef = useRef(null);
+  const trimTrackRef = useRef(null);
+  const [dragHandle, setDragHandle] = useState(null);
+  const editVideoRef = useRef(null);
+  const shareContainerRef = useRef(null);
+  const [trimPlayTime, setTrimPlayTime] = useState(0);
+  const [shareBoxSize, setShareBoxSize] = useState({ w: 0, h: 0 });
+
+  const currentMedia = media[currentIndex];
+
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files && files.length > 0) handleFiles(files);
+  };
+
+  useEffect(() => {
+    if (step !== 'crop') return;
+    const el = cropContainerRef.current;
+    if (!el || !currentMedia) return;
+    const videoAspect = currentMedia.originalAspect || 1;
+    const aspect = currentMedia.aspect || 1;
+    const compute = () => {
+      const cw = el.clientWidth;
+      const ch = el.clientHeight;
+      let vw, vh;
+      if (cw / ch > videoAspect) { vh = ch; vw = vh * videoAspect; }
+      else { vw = cw; vh = vw / videoAspect; }
+      let w = vw;
+      let h = w / aspect;
+      if (h > vh) { h = vh; w = h * aspect; }
+      setOverlaySize(prev => (prev.w === w && prev.h === h) ? prev : { w, h });
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, currentMedia?.id, currentMedia?.originalAspect, currentMedia?.aspect]);
+
+  useEffect(() => {
+    if (step !== 'share') return;
+    const el = shareContainerRef.current;
+    if (!el || !currentMedia) return;
+    const aspect = currentMedia.aspect || 1;
+    const compute = () => {
+      const cw = el.clientWidth;
+      const ch = el.clientHeight;
+      let w = cw;
+      let h = w / aspect;
+      if (h > ch) { h = ch; w = h * aspect; }
+      setShareBoxSize(prev => (prev.w === w && prev.h === h) ? prev : { w, h });
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, currentMedia?.id, currentMedia?.aspect]);
+
+  useEffect(() => {
+    if (step !== 'edit') return;
+    const el = editContainerRef.current;
+    if (!el || !currentMedia) return;
+    const aspect = currentMedia.aspect || 1;
+    const compute = () => {
+      const cw = el.clientWidth;
+      const ch = el.clientHeight;
+      let w = cw;
+      let h = w / aspect;
+      if (h > ch) { h = ch; w = h * aspect; }
+      setEditBoxSize(prev => (prev.w === w && prev.h === h) ? prev : { w, h });
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, currentMedia?.id, currentMedia?.aspect]);
+
+  useEffect(() => {
+    if (step !== 'edit') return;
+    if (!currentMedia || currentMedia.type !== 'video') return;
+    const v = editVideoRef.current;
+    if (!v) return;
+    const s = currentMedia.trimStart || 0;
+    const d = currentMedia.duration || 0;
+    const end = currentMedia.trimEnd && currentMedia.trimEnd > 0 ? currentMedia.trimEnd : d;
+    try {
+      if (v.currentTime < s || (end > 0 && v.currentTime > end)) {
+        v.currentTime = s;
+      }
+    } catch { void 0; }
+  }, [step, currentMedia?.trimStart, currentMedia?.trimEnd, currentMedia?.type]);
+
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files);
+    if (files && files.length > 0) handleFiles(files);
+    e.target.value = '';
+  };
+
+  const handleFiles = async (files) => {
+    const validFiles = files.filter(file => {
+      if (postType === 'post' || postType === 'tweet') return file.type.startsWith('image/');
+      if (postType === 'reel') return file.type.startsWith('video/');
+      if (postType === 'promote') return file.type.startsWith('video/');
+      if (postType === 'ad') return file.type.startsWith('image/') || file.type.startsWith('video/');
+      return file.type.startsWith('image/') || file.type.startsWith('video/');
+    });
+
+    if (validFiles.length === 0) return;
+
+    const newMedia = await Promise.all(validFiles.map(async (file) => {
+      const url = URL.createObjectURL(file);
+      if (file.type.startsWith('image/')) {
+        let aspect = 1;
+        let originalAspect = null;
+        try {
+          const img = await createImage(url);
+          originalAspect = img.width / img.height;
+          aspect = originalAspect;
+        } catch {
+          aspect = 1;
+          originalAspect = null;
+        }
+        return {
+          id: Math.random().toString(36).substr(2, 9),
+          url,
+          type: 'image',
+          crop: { x: 0, y: 0 },
+          zoom: 1,
+          aspect,
+          originalAspect,
+          croppedAreaPixels: null,
+          filter: 'Original',
+          adjustments: { brightness: 0, contrast: 0, saturate: 0, sepia: 0, opacity: 0, vignette: 0 }
+        };
+      } else {
+        const video = document.createElement('video');
+        video.src = url;
+        await new Promise((resolve) => { video.onloadedmetadata = resolve; });
+        const originalAspect = (video.videoWidth && video.videoHeight) ? (video.videoWidth / video.videoHeight) : 1;
+        const duration = isFinite(video.duration) ? video.duration : 0;
+        return {
+          id: Math.random().toString(36).substr(2, 9),
+          url,
+          originalFile: file,
+          videoNaturalWidth:  video.videoWidth  || 0,
+          videoNaturalHeight: video.videoHeight || 0,
+          type: 'video',
+          crop: { x: 0, y: 0 },
+          zoom: 1,
+          aspect: originalAspect || 1,
+          originalAspect: originalAspect || 1,
+          duration,
+          coverUrl: null,
+          thumbnails: null,
+          trimStart: 0,
+          trimEnd: duration || 0,
+          soundOn: true,
+          croppedAreaPixels: null,
+          filter: 'Original',
+          adjustments: { brightness: 0, contrast: 0, saturate: 0, sepia: 0, opacity: 0, vignette: 0 }
+        };
+      }
+    }));
+
+    if (postType === 'tweet') {
+      // Save count of existing images before appending new ones
+      setMediaCountBeforeCrop(prev => { void prev; return media.length; });
+      setMedia(prev => [...prev, ...newMedia]);
+      setCurrentIndex(media.length > 0 ? media.length : 0);
+      setStep('crop');
+    } else if (step === 'select') {
+      setMedia(newMedia);
+      setCurrentIndex(0);
+      setTimeout(() => setStep('crop'), 0);
+    } else {
+      setMedia(prev => [...prev, ...newMedia]);
+      setCurrentIndex(prev => prev + newMedia.length - 1);
+    }
+  };
+
+  const updateCurrentMedia = useCallback((updates) => {
+    setMedia(prev => prev.map((item, index) =>
+      index === currentIndex ? { ...item, ...updates } : item
+    ));
+  }, [currentIndex]);
+
+  const onCropChange = (crop) => updateCurrentMedia({ crop });
+  const onZoomChange = (zoom) => updateCurrentMedia({ zoom });
+  const onCropComplete = (croppedArea, croppedAreaPixels) => updateCurrentMedia({ croppedAreaPixels });
+
+  useEffect(() => {
+    if (step === 'edit' && currentMedia?.type === 'video') setActiveTab('video');
+  }, [step, currentMedia]);
+
+  const handleRemoveMedia = (index, e) => {
+    e.stopPropagation();
+    if (media.length === 1) { handleClose(); return; }
+    const newMedia = media.filter((_, i) => i !== index);
+    setMedia(newMedia);
+    if (currentIndex >= index && currentIndex > 0) setCurrentIndex(prev => prev - 1);
+  };
+
+  // For tweet: remove single image without closing the modal
+  const handleTweetRemoveMedia = (index) => {
+    const newMedia = media.filter((_, i) => i !== index);
+    setMedia(newMedia);
+    setCurrentIndex(0);
+  };
+
+  const handleButtonClick = () => fileInputRef.current?.click();
+
+  const handleBack = () => {
+    if (postType === 'tweet' && step === 'share') {
+      handleClose();
+      return;
+    }
+    // For tweet: going back from crop restores only the pre-existing images
+    if (postType === 'tweet' && step === 'crop') {
+      setMedia(prev => prev.slice(0, mediaCountBeforeCrop));
+      setCurrentIndex(0);
+      setStep('share');
+      return;
+    }
+    // For tweet: going back from edit returns to crop (keep media as-is for re-editing)
+    if (postType === 'tweet' && step === 'edit') {
+      setStep('crop');
+      return;
+    }
+    if (step === 'share') {
+      setStep(postType === 'ad' ? 'adDetails' : postType === 'promote' ? 'promoteProducts' : 'edit');
+    } else if (step === 'promoteProducts') {
+      setStep('edit');
+    } else if (step === 'adDetails') {
+      setStep('edit');
+    } else if (step === 'edit') {
+      setStep('crop');
+    } else if (step === 'crop') {
+      setStep('select');
+      setMedia([]);
+      setCurrentIndex(0);
+    } else {
+      handleClose();
+    }
+  };
+
+  // ── Helper: stringify aspect ratio label ──
+  const getAspectRatioLabel = (a) => {
+    if (!a) return 'original';
+    if (Math.abs(a - 1) < 0.001) return '1:1';
+    if (Math.abs(a - (4 / 5)) < 0.001) return '4:5';
+    if (Math.abs(a - (16 / 9)) < 0.001) return '16:9';
+    if (Math.abs(a - (9 / 16)) < 0.001) return '9:16';
+    return 'custom';
+  };
+
+  const handleNextStep = async (submitMode = 'publish') => {
+    if (step === 'crop') {
+      const containerEl = cropContainerRef.current;
+
+      const computeVideoCropPixels = (item) => {
+        if (item.type !== 'video') return item.croppedAreaPixels || null;
+        if (!containerEl) return null;
+
+        const cw = containerEl.clientWidth;
+        const ch = containerEl.clientHeight;
+        const vw = item.videoNaturalWidth  || item.originalAspect ? (ch * item.originalAspect) : cw;
+        const vh = item.videoNaturalHeight || ch;
+
+        const videoAspect = item.originalAspect || (vw / vh) || 1;
+        let rendW, rendH;
+        if (cw / ch > videoAspect) { rendH = ch; rendW = rendH * videoAspect; }
+        else                        { rendW = cw; rendH = rendW / videoAspect; }
+
+        const boxW = overlaySize.w || rendW;
+        const boxH = overlaySize.h || rendH;
+
+        const vidLeft = (cw - rendW) / 2;
+        const vidTop  = (ch - rendH) / 2;
+        const boxLeft = (cw - boxW) / 2;
+        const boxTop  = (ch - boxH) / 2;
+
+        const offsetX = boxLeft - vidLeft;
+        const offsetY = boxTop  - vidTop;
+
+        const scaleX = (item.videoNaturalWidth  || rendW) / rendW;
+        const scaleY = (item.videoNaturalHeight || rendH) / rendH;
+
+        return {
+          x:      Math.max(0, Math.round(offsetX * scaleX)),
+          y:      Math.max(0, Math.round(offsetY * scaleY)),
+          width:  Math.round(boxW * scaleX),
+          height: Math.round(boxH * scaleY),
+        };
+      };
+
+      const newMedia = await Promise.all(media.map(async (item) => {
+        if (item.type === 'video') {
+          const cropPx = computeVideoCropPixels(item);
+          return { ...item, croppedAreaPixels: cropPx, croppedUrl: item.url };
+        }
+        try {
+          if (!item.croppedAreaPixels) {
+            return { ...item, croppedUrl: item.url };
+          }
+          const croppedUrl = await getCroppedImg(item.url, item.croppedAreaPixels);
+          return { ...item, croppedUrl };
+        } catch {
+          return { ...item, croppedUrl: item.url };
+        }
+      }));
+      setMedia(newMedia);
+      // For tweets, go to edit step (filters/adjustments), then share
+      setStep('edit');
+    } else if (step === 'edit') {
+      if (postType === 'tweet') {
+        // Bake filters/adjustments into a preview URL so tweet composer shows edited image
+        const editedMedia = await Promise.all(media.map(async (item) => {
+          try {
+            const blob = await applyFiltersToImage(item);
+            const editedUrl = URL.createObjectURL(blob);
+            return { ...item, croppedUrl: editedUrl };
+          } catch {
+            return item;
+          }
+        }));
+        setMedia(editedMedia);
+        setStep('share');
+      } else if (postType === 'ad') {
+        setStep('adDetails');
+      } else if (postType === 'promote') {
+        setStep('promoteProducts');
+      } else {
+        setStep('share');
+      }
+    } else if (step === 'promoteProducts') {
+      setStep('share');
+    } else if (step === 'adDetails') {
+      setStep('share');
+    } else if (step === 'share') {
+      if (isSubmitting) return;
+      setAdSubmitMode(submitMode);
+      setIsSubmitting(true);
+      setUploadStage('converting');
+      setUploadProgress(0);
+      setUploadError('');
+
+      try {
+        if (!userObject) {
+          setUploadStage('error');
+          setUploadError('Please log in to share a post.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        // ── STAGE 1: Trim + Crop + Convert each video ──────────────
+        const totalItems = media.length;
+        const convertedMedia = await Promise.all(media.map(async (item, idx) => {
+          if (item.type !== 'video' || !item.originalFile) return item;
+
+          const start = item.trimStart || 0;
+          const dur   = item.duration  || 0;
+          const end   = (item.trimEnd && item.trimEnd > 0) ? item.trimEnd : dur;
+
+          let cropParams = null;
+          if (item.croppedAreaPixels) {
+            const { x, y, width, height } = item.croppedAreaPixels;
+            if (width > 0 && height > 0) {
+              const aspect = item.aspect || (width / height) || 1;
+              const maxLong = 1920;
+              let outputWidth, outputHeight;
+              if (aspect >= 1) {
+                outputWidth  = Math.min(width,  maxLong);
+                outputHeight = Math.round(outputWidth / aspect);
+              } else {
+                outputHeight = Math.min(height, maxLong);
+                outputWidth  = Math.round(outputHeight * aspect);
+              }
+              outputWidth  = outputWidth  % 2 === 0 ? outputWidth  : outputWidth  - 1;
+              outputHeight = outputHeight % 2 === 0 ? outputHeight : outputHeight - 1;
+              cropParams = { x, y, width, height, outputWidth, outputHeight };
+            }
+          }
+
+          const convertedFile = await processVideoForUpload(
+            item.originalFile, start, end, cropParams,
+            (pct) => {
+              const base  = (idx / totalItems) * 50;
+              const slice = (1 / totalItems) * 50;
+              setUploadProgress(Math.round(base + (pct / 100) * slice));
+            }
+          );
+          return { ...item, convertedFile };
+        }));
+
+        // ── STAGE 2: Upload files ──────────────────────────────────
+        setUploadStage('uploading');
+        setUploadProgress(50);
+
+        const processedMedia = await Promise.all(convertedMedia.map(async (item, idx) => {
+          let blob;
+          let uploadMimeType;
+
+          try {
+            if (item.type === 'video') {
+              const fileToUpload = item.convertedFile || item.originalFile;
+              if (fileToUpload) {
+                blob = fileToUpload;
+                uploadMimeType = 'video/mp4';
+              } else {
+                const response = await fetch(item.url);
+                blob = await response.blob();
+                uploadMimeType = blob.type;
+              }
+            } else {
+              blob = await applyFiltersToImage(item);
+              uploadMimeType = blob.type;
+            }
+          } catch (e) {
+            console.error('Error processing media, falling back to original', e);
+            const response = await fetch(item.croppedUrl || item.url);
+            blob = await response.blob();
+            uploadMimeType = blob.type;
+          }
+
+          const fileExt = item.type === 'video' ? 'mp4' : (uploadMimeType.split('/')[1] || 'jpg');
+          const fileName = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+          const file = new File([blob], fileName, { type: uploadMimeType });
+
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const uploadResponse = await api.post(postType === 'tweet' ? '/tweets/upload' : 'https://api.bebsmart.in/api/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            onUploadProgress: (evt) => {
+              if (evt.total) {
+                const filePct = Math.round((evt.loaded / evt.total) * 100);
+                const base = 50 + (idx / totalItems) * 45;
+                const slice = (1 / totalItems) * 45;
+                setUploadProgress(Math.round(base + (filePct / 100) * slice));
+              }
+            }
+          });
+
+          const { fileName: serverFileName, url: serverUrl, fileUrl: serverFileUrl, media: uploadedTweetMedia } = uploadResponse.data;
+          const finalUrl = uploadedTweetMedia?.url || serverUrl || serverFileUrl;
+
+          // Generate Filter CSS
+          const filterDef = FILTERS.find(f => f.name === item.filter);
+          const baseFilter = filterDef ? filterDef.style : '';
+          const adj = item.adjustments;
+          const brightness = `brightness(${100 + adj.brightness}%)`;
+          const contrast = `contrast(${100 + adj.contrast}%)`;
+          const saturate = `saturate(${100 + adj.saturate}%)`;
+          const sepia = adj.sepia !== 0 ? `sepia(${Math.abs(adj.sepia)}%)` : '';
+          const hue = adj.sepia < 0 ? `hue-rotate(-${Math.abs(adj.sepia)}deg)` : (adj.sepia > 0 ? `hue-rotate(${adj.sepia}deg)` : '');
+          const filterCss = `${baseFilter} ${brightness} ${contrast} ${saturate} ${sepia} ${hue}`.trim();
+
+          // Upload thumbnail for video
+          let uploadedThumbs = null;
+          let thumbnailTime = 0;
+          if (item.type === 'video') {
+            const thumbs = item.thumbnails || [];
+            const cover = item.coverUrl;
+            if (cover) {
+              const thumbForm = new FormData();
+              const imgBlob = await (await fetch(cover)).blob();
+              const tFile = new File([imgBlob], `thumb_${Date.now()}.jpg`, { type: 'image/jpeg' });
+              thumbForm.append('file', tFile);
+              try {
+                const thumbRes = await api.post('https://api.bebsmart.in/api/upload/thumbnail', thumbForm, {
+                  headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                uploadedThumbs = thumbRes.data?.thumbnails || null;
+              } catch {
+                uploadedThumbs = null;
+              }
+              const count = thumbs.length;
+              const idxThumb = Math.max(0, thumbs.findIndex(t => t === cover));
+              const dur = item.duration || 0;
+              thumbnailTime = (count > 1 && dur > 0) ? (idxThumb * dur) / (count - 1) : 0;
+            }
+          }
+
+          const dur = item.duration || 0;
+          const trimStart = item.trimStart || 0;
+          const trimEnd = (item.trimEnd && item.trimEnd > 0) ? item.trimEnd : dur;
+
+          // Build the media object per the API schema
+          const mediaObj = postType === 'tweet'
+            ? {
+                url: finalUrl,
+                type: 'image',
+                aspectRatio: item.aspect || item.originalAspect || null,
+                originalAspect: item.originalAspect || null,
+                cropSettings: {
+                  mode: 'original',
+                  aspect_ratio: getAspectRatioLabel(item.aspect || item.originalAspect || 1),
+                  zoom: item.zoom || 1,
+                  x: item.crop?.x || 0,
+                  y: item.crop?.y || 0,
+                },
+              }
+            : {
+                fileName: serverFileName || fileName,
+                fileUrl: finalUrl,
+                url: finalUrl,
+                media_type: item.type === 'video' ? 'video' : 'image',
+              };
+
+          if (postType !== 'tweet' && item.type === 'video') {
+            mediaObj.video_meta = {
+              original_length_seconds: dur,
+              selected_start: trimStart,
+              selected_end: trimEnd,
+              final_duration: Math.max(0, trimEnd - trimStart),
+              thumbnail_time: thumbnailTime
+            };
+            mediaObj.timing_window = {
+              start: trimStart,
+              end: trimEnd
+            };
+            if (uploadedThumbs) {
+              mediaObj.thumbnails = uploadedThumbs;
+            }
+          } else if (postType !== 'tweet') {
+            // Image editing data
+            mediaObj.image_editing = {
+              filter: { name: item.filter || 'Original', css: filterCss },
+              adjustments: {
+                brightness: item.adjustments.brightness,
+                contrast: item.adjustments.contrast,
+                saturation: item.adjustments.saturate,
+                temperature: item.adjustments.sepia,
+                fade: item.adjustments.opacity,
+                vignette: item.adjustments.vignette
+              }
+            };
+          }
+
+          // Crop settings (for both image and video)
+          if (postType !== 'tweet') {
+            mediaObj.crop_settings = {
+              mode: 'original',
+              aspect_ratio: getAspectRatioLabel(item.aspect || item.originalAspect || 1),
+              zoom: item.zoom || 1,
+              x: item.crop?.x || 0,
+              y: item.crop?.y || 0
+            };
+          }
+
+          
+
+          return mediaObj;
+        }));
+
+        // ── STAGE 3: Post to API ──────────────────────────────────
+        setUploadStage('posting');
+        setUploadProgress(97);
+
+        const hashtags = caption.match(/#[a-zA-Z0-9_]+/g) || [];
+
+        if (postType === 'tweet') {
+          if (!caption.trim() && processedMedia.length === 0) {
+            throw new Error('Add text or an image to post your tweet.');
+          }
+          const payload = {
+            content: caption.trim(),
+            media: processedMedia.filter((m) => m.url).map((m) => ({
+              url: m.url,
+              type: 'image',
+              aspectRatio: m.aspectRatio || null,
+              originalAspect: m.originalAspect || null,
+              cropSettings: m.cropSettings,
+            })),
+            audience: 'everyone',
+          };
+          await api.post('/tweets', payload);
+        } else if (postType === 'reel') {
+          // Reel — existing endpoint unchanged
+          const payload = {
+            caption,
+            location,
+            media: processedMedia
+              .filter(m => m.media_type === 'video')
+              .map(m => { const copy = { ...m }; delete copy._fileUrl; return copy; }),
+            tags: hashtags,
+            people_tags: tags.map(t => ({
+              user_id: t.user.id,
+              username: t.user.username,
+              x: t.x,
+              y: t.y
+            })),
+            hide_likes_count: hideLikes,
+            turn_off_commenting: turnOffCommenting
+          };
+          await api.post('https://api.bebsmart.in/api/posts/reels', payload);
+
+        } else if (postType === 'promote') {
+          // Promote reel — POST /api/promote-reels
+          const validProducts = promoteProducts
+            .filter(p => p.product_name.trim() && p.product_price)
+            .map(p => ({
+              product_name: p.product_name.trim(),
+              product_description: p.product_description.trim(),
+              product_price: parseFloat(p.product_price) || 0,
+              visit_link: p.visit_link.trim(),
+              discount_amount: parseFloat(p.discount_amount) || 0,
+              promote_img: p.promote_img || '',
+            }));
+
+          const payload = {
+            caption,
+            location,
+            media: processedMedia
+              .filter(m => m.media_type === 'video')
+              .map(m => { const copy = { ...m }; delete copy._fileUrl; return copy; }),
+            tags: hashtags,
+            people_tags: tags.map(t => ({
+              user_id: t.user.id,
+              username: t.user.username,
+              x: t.x,
+              y: t.y
+            })),
+            hide_likes_count: hideLikes,
+            turn_off_commenting: turnOffCommenting,
+            products: validProducts,
+          };
+          await promoteReelService.createPromoteReel(payload);
+
+        } else if (postType === 'ad') {
+          if (!ensureAdProfileCompletion()) {
+            setIsSubmitting(false);
+            setUploadStage('idle');
+            setUploadProgress(0);
+            return;
+          }
+          // ── AD — new /api/ads endpoint with full schema ──
+          if (!ensureAdPackageLimit()) {
+            setIsSubmitting(false);
+            setUploadStage('idle');
+            setUploadProgress(0);
+            return;
+          }
+          const mediaForApi = processedMedia.map(m => { const copy = { ...m }; delete copy._fileUrl; return copy; });
+
+          // Upload adMedia files (Step 3 uploads) separately
+          const uploadedAdGallery = [];
+          for (const adFile of adMedia) {
+            try {
+              const formData = new FormData();
+              const blob = await (await fetch(adFile.url)).blob();
+              const ext = adFile.type === 'video' ? 'mp4' : 'jpg';
+              const file = new File([blob], `ad_media_${Date.now()}.${ext}`, { type: blob.type });
+              formData.append('file', file);
+              const uploadRes = await api.post('https://api.bebsmart.in/api/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+              });
+              const { fileName: fn, url: fu, fileUrl: ffu } = uploadRes.data;
+              uploadedAdGallery.push({ link: fu || ffu || '', filename: fn || '' });
+            } catch (e) {
+              console.error('adMedia upload failed', e);
+            }
+          }
+
+          const adPayload = {
+            type: 'ads',
+            // Core
+            ad_title: adTitle,
+            ad_description: adDescription,
+            caption,
+            location,
+            ad_type: adType,
+            content_type: media.some(m => m.type === 'video') ? 'reel' : 'post',
+            status: submitMode === 'draft' ? 'draft' : 'pending',
+            // Media (from steps 1-2)
+            media: mediaForApi,
+            // Gallery — from Step 3 ad media uploads
+            gallery: uploadedAdGallery.length > 0
+              ? uploadedAdGallery
+              : mediaForApi.map(m => ({ link: m.fileUrl || m.url || '', filename: m.fileName || '' })),
+            hashtags,
+            tagged_users: tags.map(t => ({
+              user_id: t.user.id,
+              username: t.user.username,
+              position_x: t.x,
+              position_y: t.y
+            })),
+            // CTA
+            cta: {
+              type: ctaType,
+              url: ctaUrl,
+              deep_link: ctaDeepLink,
+              phone_number: ctaPhone,
+              email: ctaEmail,
+              whatsapp_number: ctaWhatsapp,
+            },
+            // Budget
+            total_budget_coins: parseFloat(totalBudgetCoins) || 0,
+            budget: {
+              daily_budget_coins: parseFloat(dailyBudgetCoins) || 0,
+              start_date: budgetStartDate || undefined,
+              end_date: budgetEndDate || undefined,
+              auto_stop_on_budget_exhausted: false,
+            },
+            // Categorization
+            category: selectedCategory || '',
+            sub_category: subCategory,
+            tags: hashtags,
+            keywords,
+            // Legacy targeting
+            target_language: selectedLanguages,
+            target_location: selectedCountries,
+            target_states: selectedStates,
+            // New structured targeting
+            targeting: {
+              countries: selectedCountries,
+              states: selectedStates,
+              cities: selectedCities,
+              age_min: parseInt(ageMin) || 13,
+              age_max: parseInt(ageMax) || 65,
+              gender: genderTarget,
+              interests: selectedInterests,
+              device_types: selectedDeviceTypes,
+            },
+            // Engagement
+            engagement_controls: {
+              hide_likes_count: hideLikes,
+              disable_comments: turnOffCommenting,
+              disable_share: disableShare,
+              disable_save: disableSave,
+              disable_report: disableReport,
+              moderation_enabled: moderationEnabled,
+            },
+            // Tracking
+            tracking: {
+              utm_source: utmSource,
+              utm_medium: utmMedium,
+              utm_campaign: utmCampaign,
+              utm_term: utmTerm,
+              utm_content: utmContent,
+              conversion_pixel_id: conversionPixelId,
+            },
+            // Compliance
+            compliance: {
+              policy_agreed: policyAgreed,
+            },
+          };
+
+          await api.post('https://api.bebsmart.in/api/ads', adPayload);
+
+        } else {
+          // Post — existing endpoint unchanged
+          const payload = {
+            caption,
+            location,
+            media: processedMedia.map(m => { const copy = { ...m }; delete copy.fileUrl; return copy; }),
+            tags: hashtags,
+            people_tags: tags.map(t => ({
+              user_id: t.user.id,
+              username: t.user.username,
+              x: t.x,
+              y: t.y
+            })),
+            hide_likes_count: hideLikes,
+            turn_off_commenting: turnOffCommenting,
+            type: postType
+          };
+          await api.post('/posts', payload);
+        }
+
+        setUploadProgress(100);
+        setUploadStage('done');
+        setShowSuccess(true);
+
+      } catch (error) {
+        console.error('Error creating post:', error);
+        setUploadStage('error');
+        setUploadError(error?.response?.data?.message || error?.message || 'Failed to upload. Please try again.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+  };
+
+  const handleEmojiClick = (emojiData) => {
+    const emoji = typeof emojiData === 'string' ? emojiData : emojiData?.emoji || '';
+    if (!emoji) return;
+    setCaption(prev => prev + emoji);
+    // Don't close picker here — let user keep picking emojis
+  };
+
+  const handleImageClick = (e) => {
+    if (step !== 'share') return;
+    if (e.target.closest('.tag-item')) return;
+    if (draggingTagId) return;
+    setShowTagSearch(true);
+    setSearchQuery('');
+    fetchUsers('');
+  };
+
+  const fetchUsers = async (query) => {
+    setIsSearchingUsers(true);
+    try {
+      const { data } = await api.get('https://api.bebsmart.in/api/users');
+      let usersRaw = Array.isArray(data) ? data : (data.users || []);
+      const users = usersRaw.map(item => item.user || item);
+      let filtered = users;
+      if (query && query.trim()) {
+        const q = query.trim().toLowerCase();
+        filtered = users.filter(u => (u.username || '').toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q));
+      }
+      const mapped = filtered.map(u => ({
+        id: u.id, username: u.username, avatar_url: u.avatar_url || '', full_name: u.full_name || ''
+      }));
+      setSearchResults(mapped);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setIsSearchingUsers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (step !== 'share') return;
+    const loadAll = async () => {
+      setIsLoadingAllUsers(true);
+      try {
+        const { data } = await api.get('https://api.bebsmart.in/api/users');
+        const usersRaw = Array.isArray(data) ? data : (data.users || []);
+        const users = usersRaw.map(item => item.user || item);
+        const mapped = users.map(u => ({
+          id: u.id, username: u.username, avatar_url: u.avatar_url || '', full_name: u.full_name || ''
+        }));
+        setAllUsers(mapped);
+      } catch {
+        setAllUsers([]);
+      } finally {
+        setIsLoadingAllUsers(false);
+      }
+    };
+    loadAll();
+  }, [step]);
+
+  const handleTagUser = (user) => {
+    const newTag = { id: Math.random().toString(36).substr(2, 9), x: 50, y: 50, user };
+    setTags([...tags, newTag]);
+    setShowTagSearch(false);
+  };
+
+  const handleRemoveTag = (e, tagId) => {
+    e.stopPropagation();
+    setTags(tags.filter(t => t.id !== tagId));
+  };
+
+  useEffect(() => {
+    if (showTagSearch) {
+      const timer = setTimeout(() => fetchUsers(searchQuery), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [searchQuery, showTagSearch]);
+
+  useEffect(() => {
+    if (!showEmojiPicker) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (emojiPickerRef.current?.contains(event.target)) return;
+      if (emojiPickerRefMobile.current?.contains(event.target)) return;
+      setShowEmojiPicker(false);
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setShowEmojiPicker(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showEmojiPicker]);
+
+  const handleClose = () => {
+    setStep('select');
+    setMedia([]);
+    setCurrentIndex(0);
+    setCaption('');
+    setAdMedia([]);
+    setPromoteProducts([]);
+    setProductDraft(null);
+    
+    setSelectedCategory("");
+    setSelectedLanguages([]);
+    setSelectedCountries([]);
+    setSelectedStates([]);
+    setTotalBudgetCoins('');
+    
+    setTags([]);
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleModalEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      // If tweet preview is open, only close the preview
+      if (showTweetPreview) {
+        setShowTweetPreview(false);
+        return;
+      }
+      handleClose();
+    };
+
+    window.addEventListener('keydown', handleModalEscape);
+    return () => window.removeEventListener('keydown', handleModalEscape);
+  }, [isOpen, showTweetPreview, handleClose]);
+
+  const setAspect = (aspect) => {
+    updateCurrentMedia({ aspect, zoom: 1, crop: { x: 0, y: 0 } });
+    setShowRatioMenu(false);
+  };
+
+  const applyFilter = (filterName) => updateCurrentMedia({ filter: filterName });
+
+  const updateAdjustment = (property, value) => {
+    const currentAdjustments = currentMedia.adjustments || {};
+    updateCurrentMedia({ adjustments: { ...currentAdjustments, [property]: value } });
+  };
+
+  const getFilterStyle = (item) => {
+    if (!item) return {};
+    const filterDef = FILTERS.find(f => f.name === item.filter);
+    const baseFilter = filterDef ? filterDef.style : '';
+    const adj = item.adjustments;
+    const brightness = `brightness(${100 + adj.brightness}%)`;
+    const contrast = `contrast(${100 + adj.contrast}%)`;
+    const saturate = `saturate(${100 + adj.saturate}%)`;
+    const sepia = adj.sepia !== 0 ? `sepia(${Math.abs(adj.sepia)}%)` : '';
+    const hue = adj.sepia < 0 ? `hue-rotate(-${Math.abs(adj.sepia)}deg)` : (adj.sepia > 0 ? `hue-rotate(${adj.sepia}deg)` : '');
+    return {
+      filter: `${baseFilter} ${brightness} ${contrast} ${saturate} ${sepia} ${hue}`.trim(),
+      opacity: (100 - adj.opacity) / 100
+    };
+  };
+
+  const applyFiltersToImage = async (item) => {
+    const imageUrl = item.croppedUrl || item.url;
+    if (item.type === 'video') return await (await fetch(imageUrl)).blob();
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        const filterStyle = getFilterStyle(item);
+        if (filterStyle.filter) ctx.filter = filterStyle.filter;
+        if (filterStyle.opacity !== undefined && filterStyle.opacity !== 1) ctx.globalAlpha = filterStyle.opacity;
+        ctx.drawImage(img, 0, 0, img.width, img.height);
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('Canvas to Blob conversion failed'));
+        }, 'image/jpeg', 0.95);
+      };
+      img.onerror = (e) => reject(e);
+      img.src = imageUrl;
+    });
+  };
+
+  const formatDuration = (d) => {
+    if (!d || !isFinite(d)) return '00:00';
+    const m = Math.floor(d / 60);
+    const s = Math.floor(d % 60);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    if (step !== 'cover' && step !== 'edit') return;
+    const item = currentMedia;
+    if (!item || item.type !== 'video') return;
+    if (item.thumbnails && Array.isArray(item.thumbnails)) return;
+    const v = document.createElement('video');
+    v.crossOrigin = 'anonymous';
+    v.src = item.croppedUrl || item.url;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const run = async () => {
+      await new Promise(res => { v.onloadedmetadata = res; });
+      const duration = isFinite(v.duration) ? v.duration : 0;
+      const count = duration > 0 ? Math.min(30, Math.max(2, Math.ceil(duration))) : 7;
+      const natW = v.videoWidth  || 640;
+      const natH = v.videoHeight || 360;
+      const aspect = natW / natH;
+      // Strip canvas — doubled height for crisp filmstrip on retina/HD screens
+      const stripH = 240;
+      const stripW = Math.round(stripH * aspect);
+      const stripCanvas = document.createElement('canvas');
+      stripCanvas.width = stripW; stripCanvas.height = stripH;
+      const stripCtx = stripCanvas.getContext('2d');
+      stripCtx.imageSmoothingEnabled = true;
+      stripCtx.imageSmoothingQuality = 'high';
+
+      // Cover canvas — full native resolution (max 1080p) for crisp cover photo
+      const coverH = Math.min(natH, 1080);
+      const coverW = Math.round(coverH * aspect);
+      const coverCanvas = document.createElement('canvas');
+      coverCanvas.width = coverW; coverCanvas.height = coverH;
+      const coverCtx = coverCanvas.getContext('2d');
+      coverCtx.imageSmoothingEnabled = true;
+      coverCtx.imageSmoothingQuality = 'high';
+
+      const stripFrames = [];
+      const coverFrames = [];
+      for (let i = 0; i < count; i++) {
+        const t = duration > 0 ? Math.min(duration - 0.01, i) : 0;
+        await new Promise(res => { v.currentTime = t; v.onseeked = res; });
+        stripCtx.drawImage(v, 0, 0, stripW, stripH);
+        stripFrames.push(stripCanvas.toDataURL('image/jpeg', 0.90));
+        coverCtx.drawImage(v, 0, 0, coverW, coverH);
+        coverFrames.push(coverCanvas.toDataURL('image/jpeg', 0.97));
+      }
+      // Use stripFrames for timeline strip, coverFrames[0] for crisp cover
+      updateCurrentMedia({ thumbnails: stripFrames, coverUrl: coverFrames[0], coverFrames });
+    };
+    run();
+  }, [step, currentMedia, updateCurrentMedia]);
+
+  useEffect(() => {
+    if (step !== 'crop') return;
+    const item = currentMedia;
+    if (!item || item.type !== 'video') return;
+    if (item.coverUrl) return;
+    const v = document.createElement('video');
+    v.crossOrigin = 'anonymous';
+    v.src = item.url;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const run = async () => {
+      await new Promise((resolve) => { v.onloadedmetadata = resolve; });
+      const w = v.videoWidth || 640;
+      const h = v.videoHeight || 360;
+      canvas.width = w;
+      canvas.height = h;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      await new Promise((res) => { v.currentTime = 0; v.onseeked = res; });
+      ctx.drawImage(v, 0, 0, w, h);
+      updateCurrentMedia({ coverUrl: canvas.toDataURL('image/jpeg', 0.97) });
+    };
+    run();
+  }, [step, currentMedia, updateCurrentMedia]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-0 md:p-8">
+      <button onClick={handleClose} className="absolute top-4 right-4 text-white z-50 md:block hidden">
+        <X size={32} />
+      </button>
+
+      <div className={`bg-white dark:bg-[#262626] md:max-h-[85vh] md:rounded-xl flex flex-col transition-all duration-300 shadow-2xl ${postType === 'tweet' && step === 'share'
+        ? 'w-full h-full md:w-[720px] md:h-[750px] overflow-y-auto'
+        : step === 'select'
+        ? 'w-full h-full md:w-[500px] md:h-[550px] overflow-hidden'
+        : step === 'crop'
+          ? 'w-full h-full md:w-[750px] md:h-[800px] overflow-hidden'
+          : 'w-full h-full md:w-[1100px] md:h-[800px] overflow-hidden'
+        }`}>
+
+        {/* Header */}
+        <div className={`h-[45px] border-b border-gray-200 dark:border-gray-800 items-center justify-between px-4 bg-white dark:bg-[#262626] sticky top-0 z-40 ${
+          postType === 'tweet' && step === 'share' ? 'hidden md:flex' : 'flex'
+        }`}>
+          {step === 'select' ? (
+            <>
+              <div className="w-10"></div>
+              <h2 className="font-semibold text-base text-center dark:text-white flex-1">Create new {postType === 'tweet' ? 'tweet' : postType === 'reel' ? 'reel' : postType === 'ad' ? 'ad' : postType === 'promote' ? 'promote' : 'post'}</h2>
+              <button onClick={handleClose} className="text-black dark:text-white md:hidden"><X size={24} /></button>
+              <div className="w-10 md:block hidden"></div>
+            </>
+          ) : postType === 'tweet' && step === 'share' ? (
+            <>
+              <button onClick={handleClose} className="text-sm font-medium text-gray-700 dark:text-gray-200">Cancel</button>
+              <h2 className="font-semibold text-base text-center dark:text-white flex-1">New tweet</h2>
+              <button
+                onClick={() => handleNextStep('publish')}
+                disabled={isSubmitting || (!caption.trim() && media.length === 0)}
+                className="px-4 py-1.5 my-2 rounded-full bg-white text-black dark:bg-white dark:text-black text-sm font-semibold disabled:opacity-40"
+              >
+                Post
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="w-20 flex justify-start">
+                <button onClick={handleBack} className="text-black dark:text-white p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors">
+                  <ArrowLeft size={24} />
+                </button>
+              </div>
+              <h2 className="font-semibold text-base text-center dark:text-white flex-1">
+                {step === 'crop' ? 'Step 1 · Crop' : step === 'cover' ? 'Cover' : step === 'edit' ? 'Step 2 · Edit' : step === 'promoteProducts' ? 'Step 3 · Products' : step === 'adDetails' ? 'Step 3 · Ad Details' : step === 'share' && postType === 'ad' ? 'Ad Setup' : step === 'share' && postType === 'promote' ? 'Step 4 · Promote Details' : 'Share'}
+              </h2>
+              <div className="w-auto min-w-[140px] flex justify-end items-center gap-2">
+                  {step === 'share' && postType === 'ad' && (
+                  <button
+                    onClick={() => handleNextStep('draft')}
+                    className="px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 font-semibold text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40"
+                    disabled={!totalBudgetCoins || !policyAgreed || isSubmitting}
+                  >
+                    Save Draft
+                  </button>
+                )}
+                <button
+                  onClick={() => handleNextStep('publish')}
+                  className="text-[#0095f6] hover:text-[#00376b] dark:hover:text-blue-400 font-semibold text-sm transition-colors disabled:opacity-40"
+                  disabled={step === 'share' && postType === 'ad' && (!totalBudgetCoins || !policyAgreed)}
+                >
+                  {step === 'share' ? 'Share' : 'Next'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Content */}
+        {step === 'select' ? (
+          <div
+            className={`flex-1 relative flex flex-col items-center justify-center p-8 transition-colors ${isDragging ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-white dark:bg-[#262626]'}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="relative mb-6">
+              <div className="absolute inset-0 blur-xl rounded-full bg-gradient-to-tr from-purple-500/20 to-blue-500/20"></div>
+              <div className="relative flex items-center justify-center w-24 h-24 rounded-xl bg-gray-100 dark:bg-gray-800">
+                <Images size={56} className="text-gray-800 dark:text-white" />
+              </div>
+            </div>
+            <h3 className="text-xl font-normal mb-6 text-gray-800 dark:text-gray-200">Drag photos and videos here</h3>
+            <button
+              onClick={handleButtonClick}
+              className="bg-[#0095f6] hover:bg-[#1877f2] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+            >
+              Select From Computer
+            </button>
+            <div className="md:hidden absolute left-0 right-0 bottom-6 flex justify-center">
+              <div className="backdrop-blur-md bg-black/40 dark:bg-black/40 border border-white/10 rounded-2xl shadow-xl px-2 py-2 w-[92%] max-w-sm text-white flex items-center justify-around">
+                {userObject?.role !== 'vendor' && (
+                  <>
+                    <button
+                      onClick={() => setPostType('post')}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl ${postType === 'post' ? 'bg-white/20' : 'hover:bg-white/10'}`}
+                    >
+                      <Image size={18} className="text-purple-400" />
+                      <span className="text-xs font-semibold">Post</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPostType('tweet');
+                        setStep('share');
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl ${postType === 'tweet' ? 'bg-white/20' : 'hover:bg-white/10'}`}
+                    >
+                      <Image size={18} /> Tweet
+                    </button>
+                    <button
+                      onClick={() => setPostType('reel')}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl ${postType === 'reel' ? 'bg-white/20' : 'hover:bg-white/10'}`}
+                    >
+                      <Video size={18} className="text-pink-400" />
+                      <span className="text-xs font-semibold">Reel</span>
+                    </button>
+                    <button
+                      onClick={() => setPostType('promote')}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl ${postType === 'promote' ? 'bg-white/20' : 'hover:bg-white/10'}`}
+                    >
+                      <ShoppingBag size={18} className="text-green-400" />
+                      <span className="text-xs font-semibold">Promote</span>
+                    </button>
+                  </>
+                )}
+                {userObject?.role === 'vendor' && (
+                  <button
+                    onClick={() => {
+                      if (!isVendorValidated) {
+                        setShowVendorNotValidated(true);
+                      } else if (!ensureAdProfileCompletion()) {
+                        return;
+                      } else if (!ensureAdPackageLimit()) {
+                        return;
+                      } else {
+                        if (onOpenAdModal) onOpenAdModal();
+                        else onClose();
+                        setPostType('ad');
+                      }
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl ${postType === 'ad' ? 'bg-white/20' : 'hover:bg-white/10'}`}
+                  >
+                    <Megaphone size={18} className="text-blue-400" />
+                    <span className="text-xs font-semibold">Ad</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : step === 'crop' ? (
+          <div className="flex-1 bg-[#f0f0f0] dark:bg-[#121212] relative flex items-center justify-center overflow-hidden">
+            {currentMedia && (
+              <div className="relative w-full h-full" ref={cropContainerRef}>
+                {currentMedia.type === 'video' ? (
+                  <>
+                    <video
+                      src={currentMedia.url}
+                      className="absolute inset-0 w-full h-full object-contain"
+                      autoPlay muted playsInline controls
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div
+                        className="rounded"
+                        style={{
+                          width: overlaySize.w,
+                          height: overlaySize.h,
+                          border: '2px solid rgba(255,255,255,0.85)',
+                          boxShadow: '0 0 0 9999px rgba(0,0,0,0.4)'
+                        }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <Cropper
+                    image={currentMedia.url}
+                    crop={currentMedia.crop}
+                    zoom={currentMedia.zoom}
+                    aspect={currentMedia.aspect || 1}
+                    onCropChange={onCropChange}
+                    onCropComplete={onCropComplete}
+                    onZoomChange={onZoomChange}
+                    onMediaLoaded={(mediaSize) => {
+                      const { naturalWidth, naturalHeight } = mediaSize;
+                      if (naturalWidth && naturalHeight) {
+                        const originalAspect = naturalWidth / naturalHeight;
+                        if (!currentMedia.originalAspect || Math.abs(currentMedia.originalAspect - originalAspect) > 0.01) {
+                          updateCurrentMedia({
+                            originalAspect,
+                            aspect: (!currentMedia.originalAspect && currentMedia.aspect === 1) ? originalAspect : currentMedia.aspect
+                          });
+                        }
+                      }
+                    }}
+                    objectFit="contain"
+                    showGrid={false}
+                    style={{
+                      containerStyle: { background: 'transparent' },
+                      cropAreaStyle: { border: '1px solid rgba(255, 255, 255, 0.5)' }
+                    }}
+                  />
+                )}
+              </div>
+            )}
+            {media.length > 1 && (
+              <>
+                {currentIndex > 0 && (
+                  <button onClick={() => setCurrentIndex(prev => prev - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 dark:bg-black/80 hover:bg-white dark:hover:bg-black text-gray-800 dark:text-white shadow-md flex items-center justify-center"><ChevronLeft size={20} /></button>
+                )}
+                {currentIndex < media.length - 1 && (
+                  <button onClick={() => setCurrentIndex(prev => prev + 1)} className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 dark:bg-black/80 hover:bg-white dark:hover:bg-black text-gray-800 dark:text-white shadow-md flex items-center justify-center"><ChevronRight size={20} /></button>
+                )}
+              </>
+            )}
+            <div className="absolute bottom-4 left-4 flex gap-3 z-30">
+              <div className="relative">
+                {showRatioMenu && (
+                  <div className="absolute bottom-full left-0 mb-2 bg-black/80 backdrop-blur-sm rounded-lg overflow-hidden flex flex-col w-32 shadow-xl">
+                    <button onClick={() => setAspect(currentMedia.originalAspect || 1)} className={`flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-white/10 ${currentMedia.aspect === currentMedia.originalAspect ? 'text-white' : 'text-gray-400'}`}><Image size={18} /> Original</button>
+                    <button onClick={() => setAspect(1)} className={`flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-white/10 ${currentMedia.aspect === 1 ? 'text-white' : 'text-gray-400'}`}><span className="w-5 h-5 border-2 border-current rounded-sm"></span> 1:1</button>
+                    <button onClick={() => setAspect(4 / 5)} className={`flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-white/10 ${currentMedia.aspect === 0.8 ? 'text-white' : 'text-gray-400'}`}><span className="w-4 h-5 border-2 border-current rounded-sm"></span> 4:5</button>
+                    <button onClick={() => setAspect(16 / 9)} className={`flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-white/10 ${currentMedia.aspect === 16 / 9 ? 'text-white' : 'text-gray-400'}`}><span className="w-5 h-3 border-2 border-current rounded-sm"></span> 16:9</button>
+                    <button onClick={() => setAspect(9 / 16)} className={`flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-white/10 ${currentMedia.aspect === 9 / 16 ? 'text-white' : 'text-gray-400'}`}><span className="w-3 h-5 border-2 border-current rounded-sm"></span> 9:16</button>
+                  </div>
+                )}
+                <button onClick={() => { setShowRatioMenu(!showRatioMenu); setShowZoomSlider(false); setShowMultiSelect(false); }} className={`w-8 h-8 rounded-full ${showRatioMenu ? 'bg-white text-black' : 'bg-black/70 text-white'} hover:bg-white hover:text-black flex items-center justify-center transition-colors`}><Maximize2 size={16} /></button>
+              </div>
+            </div>
+            <div className="absolute bottom-4 right-4 flex gap-3 z-30">
+              <div className="relative">
+                {showZoomSlider && (
+                  <div className="absolute bottom-full right-0 mb-2 p-3 bg-black/80 backdrop-blur-sm rounded-lg shadow-xl w-32">
+                    <input type="range" min={1} max={3} step={0.1} value={currentMedia.zoom} onChange={(e) => onZoomChange(Number(e.target.value))} className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-white" />
+                  </div>
+                )}
+                <button onClick={() => { setShowZoomSlider(!showZoomSlider); setShowRatioMenu(false); setShowMultiSelect(false); }} className={`w-8 h-8 rounded-full ${showZoomSlider ? 'bg-white text-black' : 'bg-black/70 text-white'} hover:bg-white hover:text-black flex items-center justify-center transition-colors`}><ZoomIn size={16} /></button>
+              </div>
+              <div className="relative">
+                {showMultiSelect && (
+                  <div className="absolute bottom-full right-0 mb-2 p-3 bg-black/80 backdrop-blur-sm rounded-lg shadow-xl w-auto min-w-[200px] max-w-[300px]">
+                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                      {media.map((item, idx) => (
+                        <div key={item.id} className={`relative flex-shrink-0 w-16 h-16 rounded overflow-hidden cursor-pointer border-2 ${idx === currentIndex ? 'border-white' : 'border-transparent'}`} onClick={() => setCurrentIndex(idx)}>
+                          <img src={item.type === 'video' ? (item.coverUrl || item.url) : item.url} className="w-full h-full object-cover" alt="" />
+                          <button onClick={(e) => handleRemoveMedia(idx, e)} className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/80"><X size={10} /></button>
+                        </div>
+                      ))}
+                      <button onClick={handleButtonClick} className="flex-shrink-0 w-12 h-12 rounded-full border border-gray-500 flex items-center justify-center text-gray-400 hover:text-white hover:border-white transition-colors self-center ml-2"><Plus size={24} /></button>
+                    </div>
+                  </div>
+                )}
+                <button onClick={() => { setShowMultiSelect(!showMultiSelect); setShowRatioMenu(false); setShowZoomSlider(false); }} className={`w-8 h-8 rounded-full ${showMultiSelect ? 'bg-white text-black' : 'bg-black/70 text-white'} hover:bg-white hover:text-black flex items-center justify-center transition-colors`}><Copy size={16} /></button>
+              </div>
+            </div>
+          </div>
+        ) : step === 'edit' ? (
+          /* EDIT STEP */
+          <div className="flex-1 flex lg:flex-row flex-col lg:overflow-hidden overflow-y-auto overflow-x-hidden">
+            {/* Left: Image/Video Preview */}
+            <div ref={editContainerRef} className="relative bg-[#f0f0f0] dark:bg-[#121212] flex items-center justify-center w-full flex-1 h-auto">
+              {currentMedia && (
+                currentMedia.type === 'video' ? (
+                  <div style={{ width: editBoxSize.w || '100%', height: editBoxSize.h || 'auto' }} className="relative overflow-hidden bg-black rounded flex items-center justify-center">
+                    <video
+                      src={currentMedia.croppedUrl || currentMedia.url}
+                      className="hidden"
+                      ref={editVideoRef}
+                      muted
+                      preload="metadata"
+                      onLoadedMetadata={(e) => { e.currentTarget.currentTime = currentMedia.trimStart || 0; }}
+                      onTimeUpdate={(e) => {
+                        setTrimPlayTime(e.currentTarget.currentTime);
+                        const d = currentMedia.duration || 0;
+                        const end = currentMedia.trimEnd && currentMedia.trimEnd > 0 ? currentMedia.trimEnd : d;
+                        if (end > 0 && e.currentTarget.currentTime >= end) {
+                          e.currentTarget.currentTime = currentMedia.trimStart || 0;
+                        }
+                      }}
+                    />
+                    <img
+                      src={currentMedia.coverUrl || (currentMedia.thumbnails && currentMedia.coverFrames && currentMedia.coverFrames[0]) || (currentMedia.thumbnails && currentMedia.thumbnails[0]) || currentMedia.croppedUrl || currentMedia.url}
+                      className="w-full h-full object-contain"
+                      alt="Cover"
+                      style={{ imageRendering: 'auto' }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-14 h-14 rounded-full bg-black/40 flex items-center justify-center">
+                        <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                      </div>
+                    </div>
+                    {currentMedia.duration > 0 && (
+                      <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs font-mono px-2 py-0.5 rounded">
+                        {formatDuration((currentMedia.trimEnd && currentMedia.trimEnd > 0 ? currentMedia.trimEnd : currentMedia.duration) - (currentMedia.trimStart || 0))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <img
+                    src={currentMedia.croppedUrl || currentMedia.url}
+                    className="lg:max-w-full lg:max-h-full object-contain w-[400px] h-[500px] transition-all duration-200"
+                    style={getFilterStyle(currentMedia)}
+                    alt="Edit"
+                  />
+                )
+              )}
+              {media.length > 1 && (
+                <>
+                  {currentIndex > 0 && (
+                    <button onClick={() => setCurrentIndex(prev => prev - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-gray-800 shadow-md flex items-center justify-center"><ChevronLeft size={20} /></button>
+                  )}
+                  {currentIndex < media.length - 1 && (
+                    <button onClick={() => setCurrentIndex(prev => prev + 1)} className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-gray-800 shadow-md flex items-center justify-center"><ChevronRight size={20} /></button>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Right: Tools */}
+            <div className="bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 flex flex-col lg:w-[340px] w-full min-w-[340px] flex-none">
+              <div className="flex border-b border-gray-200 dark:border-gray-800">
+                {currentMedia?.type !== 'video' ? (
+                  <>
+                    <button className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'filters' ? 'text-black dark:text-white border-b border-black dark:border-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`} onClick={() => setActiveTab('filters')}>Filter</button>
+                    <button className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'adjustments' ? 'text-black dark:text-white border-b border-black dark:border-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`} onClick={() => setActiveTab('adjustments')}>Adjustment</button>
+                  </>
+                ) : (
+                  <button className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'video' ? 'text-black dark:text-white border-b border-black dark:border-white' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`} onClick={() => setActiveTab('video')}>Video</button>
+                )}
+              </div>
+
+              <div className="flex flex-col h-full overflow-y-scroll scrollbar-hide px-5 py-5">
+                {activeTab === 'filters' ? (
+                  <div className="grid grid-cols-3 gap-4">
+                    {FILTERS.map((filter) => (
+                      <div key={filter.name} className="flex flex-col items-center gap-2 cursor-pointer group" onClick={() => applyFilter(filter.name)}>
+                        <div className={`w-full aspect-square rounded-md overflow-hidden border-2 transition-all ${currentMedia.filter === filter.name ? 'border-[#0095f6]' : 'border-transparent'}`}>
+                          <img src={currentMedia.croppedUrl || currentMedia.url} className="w-full h-full object-cover" style={{ filter: filter.style }} alt={filter.name} />
+                        </div>
+                        <span className={`text-xs font-semibold ${currentMedia.filter === filter.name ? 'text-[#0095f6]' : 'text-gray-500 dark:text-gray-400'}`}>{filter.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : activeTab === 'adjustments' ? (
+                  <div className="flex flex-col gap-6 pb-4">
+                    {ADJUSTMENTS.map((adj) => (
+                      <div key={adj.name} className="flex flex-col gap-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-semibold dark:text-white">{adj.name}</span>
+                          {currentMedia.adjustments[adj.property] !== 0 && (
+                            <button onClick={() => updateAdjustment(adj.property, 0)} className="text-xs text-blue-500 font-semibold hover:text-blue-600">Reset</button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range" min={adj.min} max={adj.max}
+                            value={currentMedia.adjustments[adj.property] || 0}
+                            onChange={(e) => updateAdjustment(adj.property, parseInt(e.target.value))}
+                            className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-black dark:accent-white"
+                            disabled={currentMedia?.type === 'video'}
+                          />
+                          <span className="text-xs font-mono w-8 text-right text-gray-500 dark:text-gray-400">{currentMedia.adjustments[adj.property] || 0}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  (currentMedia?.thumbnails && currentMedia.duration !== undefined) ? (
+                  <div className="flex flex-col gap-5 pb-4">
+                    {/* Cover Photo */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold dark:text-white">Cover photo</span>
+                        <button className="text-sm font-bold text-[#0095f6] hover:text-blue-400 transition-colors" onClick={() => coverInputRef.current?.click()}>Select From Computer</button>
+                        <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          const url = URL.createObjectURL(f);
+                          updateCurrentMedia({ coverUrl: url, uploadedCoverUrl: url });
+                          e.target.value = '';
+                        }} />
+                      </div>
+                      {(() => {
+                        const thumbs = currentMedia?.thumbnails || [];
+                        const selIdx = Math.max(0, thumbs.findIndex(t => t === currentMedia.coverUrl));
+                        const frameW = thumbs.length > 0 ? 100 / thumbs.length : 100;
+                        return (
+                          <div
+                            className="relative w-full rounded-xl overflow-hidden bg-black select-none cursor-grab active:cursor-grabbing"
+                            style={{ height: 72 }}
+                            onMouseDown={(startE) => {
+                              startE.preventDefault();
+                              const strip = startE.currentTarget;
+                              const rect  = strip.getBoundingClientRect();
+                              const pick  = (clientX) => {
+                                const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+                                const idx   = Math.min(thumbs.length - 1, Math.floor(ratio * thumbs.length));
+                                if (thumbs[idx]) updateCurrentMedia({ coverUrl: thumbs[idx] });
+                              };
+                              pick(startE.clientX);
+                              const onMove = (e) => pick(e.clientX);
+                              const onUp   = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+                              window.addEventListener('mousemove', onMove);
+                              window.addEventListener('mouseup', onUp);
+                            }}
+                          >
+                            <div className="flex h-full pointer-events-none">
+                              {thumbs.map((thumb, idx) => (
+                                <div key={idx} className="relative flex-1 h-full overflow-hidden" style={{ minWidth: 0 }}>
+                                  <img src={thumb} className="w-full h-full object-cover" alt="" draggable={false} />
+                                </div>
+                              ))}
+                            </div>
+                            <div
+                              className="absolute top-0 bottom-0 pointer-events-none z-10 transition-all duration-100"
+                              style={{ left: `${selIdx * frameW}%`, width: `${frameW}%`, border: '3px solid white', borderRadius: 4, boxShadow: '0 0 0 1.5px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.3)' }}
+                            />
+                            <div className="absolute top-0 bottom-0 left-0 bg-black/40 pointer-events-none transition-all duration-100" style={{ width: `${selIdx * frameW}%` }} />
+                            <div className="absolute top-0 bottom-0 right-0 bg-black/40 pointer-events-none transition-all duration-100" style={{ width: `${(thumbs.length - selIdx - 1) * frameW}%` }} />
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Trim */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold dark:text-white">Trim</span>
+                        {(() => {
+                          const dur = currentMedia.duration || 0;
+                          const s   = currentMedia.trimStart || 0;
+                          const e2  = (currentMedia.trimEnd && currentMedia.trimEnd > 0) ? currentMedia.trimEnd : dur;
+                          return <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{formatDuration(Math.max(0, e2 - s))} selected</span>;
+                        })()}
+                      </div>
+                      {currentMedia?.thumbnails && (
+                        <div
+                          className="relative select-none"
+                          style={{ paddingBottom: 20 }}
+                          onMouseMove={(e) => {
+                            if (!dragHandle) return;
+                            const rect = trimTrackRef.current.getBoundingClientRect();
+                            const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+                            const t = ratio * (currentMedia.duration || 0);
+                            if (dragHandle === 'start') updateCurrentMedia({ trimStart: Math.max(0, Math.min(t, (currentMedia.trimEnd || 0) - 0.5)) });
+                            else updateCurrentMedia({ trimEnd: Math.min(currentMedia.duration || 0, Math.max(t, (currentMedia.trimStart || 0) + 0.5)) });
+                          }}
+                          onMouseLeave={() => setDragHandle(null)}
+                          onMouseUp={() => setDragHandle(null)}
+                        >
+                          <div ref={trimTrackRef} className="relative w-full rounded-xl overflow-hidden" style={{ height: 64 }}>
+                            <div className="flex h-full">
+                              {(currentMedia.thumbnails || []).map((thumb, idx) => (
+                                <div key={idx} className="flex-1 h-full overflow-hidden" style={{ minWidth: 0 }}>
+                                  <img src={thumb} className="w-full h-full object-cover" alt="" draggable={false} />
+                                </div>
+                              ))}
+                            </div>
+                            {(() => {
+                              const dur = currentMedia.duration || 0;
+                              const s   = (currentMedia.trimStart || 0) / (dur || 1);
+                              const e2  = ((currentMedia.trimEnd && currentMedia.trimEnd > 0) ? currentMedia.trimEnd : dur) / (dur || 1);
+                              return (
+                                <>
+                                  <div className="absolute top-0 bottom-0 left-0 bg-black/55 pointer-events-none" style={{ width: `${s * 100}%` }} />
+                                  <div className="absolute top-0 bottom-0 right-0 bg-black/55 pointer-events-none" style={{ width: `${(1 - e2) * 100}%` }} />
+                                  <div className="absolute top-0 bottom-0 border-t-[3px] border-b-[3px] border-white pointer-events-none z-10" style={{ left: `${s * 100}%`, width: `${Math.max(0, e2 - s) * 100}%` }} />
+                                  <div className="absolute top-0 bottom-0 w-[2px] bg-white z-20" style={{ left: `${Math.min(1, Math.max(0, (trimPlayTime || 0) / (dur || 1))) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.8)' }} />
+                                  <div className="absolute top-0 bottom-0 z-30 flex items-center justify-center cursor-ew-resize" style={{ left: `${s * 100}%`, width: 20, transform: 'translateX(-4px)' }} onMouseDown={(e) => { e.preventDefault(); setDragHandle('start'); }}>
+                                    <div className="w-[14px] h-full rounded-l-lg flex items-center justify-center" style={{ background: 'white' }}>
+                                      <div className="flex flex-col gap-[3px]"><div className="w-[2px] h-3 bg-gray-400 rounded-full" /><div className="w-[2px] h-3 bg-gray-400 rounded-full" /></div>
+                                    </div>
+                                  </div>
+                                  <div className="absolute top-0 bottom-0 z-30 flex items-center justify-center cursor-ew-resize" style={{ left: `${e2 * 100}%`, width: 20, transform: 'translateX(-16px)' }} onMouseDown={(e2e) => { e2e.preventDefault(); setDragHandle('end'); }}>
+                                    <div className="w-[14px] h-full rounded-r-lg flex items-center justify-center" style={{ background: 'white' }}>
+                                      <div className="flex flex-col gap-[3px]"><div className="w-[2px] h-3 bg-gray-400 rounded-full" /><div className="w-[2px] h-3 bg-gray-400 rounded-full" /></div>
+                                    </div>
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sound toggle */}
+                    <div className="flex items-center justify-between pt-1 border-t border-gray-100 dark:border-gray-800">
+                      <span className="text-sm font-semibold dark:text-white">Sound</span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" checked={currentMedia.soundOn} onChange={(e) => updateCurrentMedia({ soundOn: e.target.checked })} />
+                        <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+                  </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-16 gap-3">
+                      <div className="w-8 h-8 border-2 border-[#0095f6] border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">Generating frames…</span>
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        ) : step === 'promoteProducts' ? (
+          /* ── PROMOTE PRODUCTS STEP ──────────────────────────────────────── */
+          <div className="flex-1 flex flex-col lg:flex-row lg:overflow-hidden overflow-y-auto overflow-x-hidden min-h-0">
+
+            {/* ── LEFT PANEL : Draft form ───────────────────────────────── */}
+            <div className="w-full lg:w-[420px] flex-shrink-0 flex flex-col border-r border-gray-100 dark:border-white/10 bg-white dark:bg-[#0d0d0d] overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+
+              {/* Header */}
+              <div className="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10">
+                <div className="flex items-center gap-2">
+                  <ShoppingBag size={16} className="text-gray-500 dark:text-gray-400" />
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">
+                    {productDraft ? 'New Product' : 'Add Product'}
+                  </span>
+                </div>
+                {!productDraft && (
+                  <button
+                    onClick={openDraftForm}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-bold hover:opacity-80 transition-opacity"
+                  >
+                    <Plus size={13} /> New
+                  </button>
+                )}
+              </div>
+
+              {/* No form open yet */}
+              {!productDraft ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 py-16 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-white/5 flex items-center justify-center">
+                    <ShoppingBag size={28} className="text-gray-300 dark:text-white/20" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+                      {promoteProducts.length === 0 ? 'No products yet' : 'Add another product'}
+                    </p>
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      {promoteProducts.length === 0
+                        ? 'Click "New" or the button below to add your first product.'
+                        : 'Click "New" to add another product to this promote reel.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={openDraftForm}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 dark:border-white/10 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <Plus size={15} /> {promoteProducts.length === 0 ? 'Add First Product' : 'Add Another'}
+                  </button>
+                </div>
+              ) : (
+                /* Draft form */
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ scrollbarWidth: 'none' }}>
+
+                  {/* Product Image */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">Product Image</label>
+                    <div className="flex items-start gap-3">
+                      <label className="relative flex-shrink-0 w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 dark:border-white/15 bg-gray-100 dark:bg-white/5 flex flex-col items-center justify-center cursor-pointer hover:border-gray-400 dark:hover:border-white/30 transition-colors overflow-hidden group">
+                        {productDraft._imgUploading ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <svg className="animate-spin w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none">
+                              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-20"/>
+                              <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+                            </svg>
+                            <span className="text-[9px] text-gray-400">Uploading…</span>
+                          </div>
+                        ) : productDraft.promote_img ? (
+                          <>
+                            <img src={productDraft.promote_img} alt="Product" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-white text-[9px] font-bold">Change</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center gap-1">
+                            <Image size={18} className="text-gray-300 dark:text-white/20" />
+                            <span className="text-[9px] text-gray-400 text-center leading-tight">Upload<br/>Image</span>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            updateDraft('_imgUploading', true);
+                            try {
+                              const token = localStorage.getItem('token');
+                              const fd = new FormData();
+                              fd.append('file', file);
+                              const res = await fetch('https://api.bebsmart.in/api/upload/promote-product', {
+                                method: 'POST',
+                                headers: { Authorization: `Bearer ${token}` },
+                                body: fd,
+                              });
+                              if (!res.ok) throw new Error('Upload failed');
+                              const data = await res.json();
+                              updateDraft('promote_img', data.promote_img || data.fileUrl || '');
+                            } catch {
+                              updateDraft('promote_img', '');
+                            } finally {
+                              updateDraft('_imgUploading', false);
+                              e.target.value = '';
+                            }
+                          }}
+                        />
+                      </label>
+                      <div className="flex-1 flex flex-col justify-center gap-1 pt-1">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                          {productDraft.promote_img ? 'Image uploaded ✓' : 'Optional — JPG, PNG, WEBP up to 10 MB'}
+                        </p>
+                        {productDraft.promote_img && (
+                          <button onClick={() => updateDraft('promote_img', '')} className="text-[11px] text-red-400 hover:text-red-500 text-left transition-colors">
+                            Remove image
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Product Name */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">
+                      Product Name <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Wireless Earbuds Pro"
+                      value={productDraft.product_name}
+                      onChange={e => updateDraft('product_name', e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-white/30 transition-all placeholder-gray-300 dark:placeholder-white/20"
+                    />
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Description</label>
+                    <textarea
+                      placeholder="Short product description..."
+                      value={productDraft.product_description}
+                      onChange={e => updateDraft('product_description', e.target.value)}
+                      rows={2}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-white/30 transition-all resize-none placeholder-gray-300 dark:placeholder-white/20"
+                    />
+                  </div>
+
+                  {/* Price + Discount */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">
+                        Price (₹) <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        placeholder="1299"
+                        value={productDraft.product_price}
+                        onChange={e => updateDraft('product_price', e.target.value)}
+                        min={0}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-white/30 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Discount (₹)</label>
+                      <input
+                        type="number"
+                        placeholder="200"
+                        value={productDraft.discount_amount}
+                        onChange={e => updateDraft('discount_amount', e.target.value)}
+                        min={0}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-white/30 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Final price pill */}
+                  {productDraft.product_price && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10">
+                      <span className="text-xs text-gray-400">Final:</span>
+                      <span className="text-sm font-black text-gray-900 dark:text-white">
+                        ₹{Math.max(0, (parseFloat(productDraft.product_price) || 0) - (parseFloat(productDraft.discount_amount) || 0))}
+                      </span>
+                      {productDraft.discount_amount && parseFloat(productDraft.discount_amount) > 0 && (
+                        <span className="ml-auto text-[10px] font-bold text-emerald-500 dark:text-emerald-400">
+                          {Math.round(((parseFloat(productDraft.discount_amount) || 0) / (parseFloat(productDraft.product_price) || 1)) * 100)}% off
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Visit Link */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Visit Link</label>
+                    <input
+                      type="url"
+                      placeholder="https://shop.example.com/product"
+                      value={productDraft.visit_link}
+                      onChange={e => updateDraft('visit_link', e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-white/30 transition-all placeholder-gray-300 dark:placeholder-white/20"
+                    />
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={cancelDraft}
+                      className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={submitDraft}
+                      disabled={!productDraft.product_name.trim() || !productDraft.product_price || productDraft._imgUploading}
+                      className="flex-1 py-2.5 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-bold disabled:opacity-40 hover:opacity-80 transition-opacity"
+                    >
+                      {productDraft._imgUploading ? 'Uploading…' : 'Add Product'}
+                    </button>
+                  </div>
+
+                  <div className="pb-2" />
+                </div>
+              )}
+            </div>
+
+            {/* ── RIGHT PANEL : Submitted product list ─────────────────── */}
+            <div className="flex-1 flex flex-col bg-gray-50 dark:bg-[#111] overflow-hidden min-w-0">
+
+              {/* Panel header */}
+              <div className="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10 bg-white dark:bg-[#0d0d0d]">
+                <span className="text-sm font-bold text-gray-900 dark:text-white">
+                  Products <span className="text-gray-400 font-normal ml-1">({promoteProducts.length})</span>
+                </span>
+                {promoteProducts.length > 0 && !productDraft && (
+                  <button
+                    onClick={openDraftForm}
+                    className="text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white flex items-center gap-1 transition-colors"
+                  >
+                    <Plus size={12} /> Add more
+                  </button>
+                )}
+              </div>
+
+              {promoteProducts.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 px-8 text-center">
+                  <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-white/5 flex items-center justify-center">
+                    <ShoppingBag size={20} className="text-gray-200 dark:text-white/10" />
+                  </div>
+                  <p className="text-xs text-gray-400 leading-relaxed max-w-[180px]">
+                    Fill in the form and click <strong className="text-gray-600 dark:text-gray-300">"Add Product"</strong> — it will appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ scrollbarWidth: 'none' }}>
+                  {promoteProducts.map((product, i) => {
+                    const finalPrice = Math.max(0,
+                      (parseFloat(product.product_price) || 0) - (parseFloat(product.discount_amount) || 0)
+                    );
+                    const discountPct = product.product_price && product.discount_amount
+                      ? Math.round((parseFloat(product.discount_amount) / parseFloat(product.product_price)) * 100) : 0;
+
+                    return (
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-2xl bg-white dark:bg-white/[0.04] border border-gray-100 dark:border-white/10">
+                        {/* Image */}
+                        <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 dark:bg-white/5 flex-shrink-0 flex items-center justify-center">
+                          {product.promote_img
+                            ? <img src={product.promote_img} alt={product.product_name} className="w-full h-full object-cover" />
+                            : <ShoppingBag size={18} className="text-gray-200 dark:text-white/15" />
+                          }
+                        </div>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-0.5">
+                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate leading-tight">{product.product_name}</p>
+                            <button
+                              onClick={() => removeProduct(i)}
+                              className="flex-shrink-0 text-gray-300 dark:text-white/20 hover:text-red-400 dark:hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                          {product.product_description && (
+                            <p className="text-xs text-gray-400 line-clamp-1 mb-1.5">{product.product_description}</p>
+                          )}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-black text-gray-900 dark:text-white">₹{finalPrice}</span>
+                            {discountPct > 0 && (
+                              <>
+                                <span className="text-xs text-gray-300 dark:text-white/20 line-through">₹{product.product_price}</span>
+                                <span className="text-[10px] font-bold text-emerald-500 dark:text-emerald-400">{discountPct}% off</span>
+                              </>
+                            )}
+                          </div>
+                          {product.visit_link && (
+                            <p className="text-[10px] text-blue-400 truncate mt-0.5">{product.visit_link}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="pb-2" />
+                </div>
+              )}
+            </div>
+          </div>
+
+        ) : step === 'adDetails' ? (
+          /* AD DETAILS STEP — beautiful blue-themed UI */
+          <div className="flex-1 flex flex-col lg:flex-row lg:overflow-hidden overflow-y-auto overflow-x-hidden">
+            {/* Left: Media Preview */}
+            <div className="relative bg-black flex items-center justify-center select-none lg:w-[400px] w-full h-56 lg:h-auto flex-shrink-0">
+              {currentMedia && (
+                currentMedia.type === 'video' ? (
+                  <video src={currentMedia.croppedUrl || currentMedia.url} className="w-full h-full object-contain" muted autoPlay loop playsInline onLoadedMetadata={(e) => { e.currentTarget.currentTime = currentMedia.trimStart || 0; }} />
+                ) : (
+                  <img src={currentMedia.croppedUrl || currentMedia.url} className="max-w-full max-h-full object-contain" style={getFilterStyle(currentMedia)} alt="Ad Preview" />
+                )
+              )}
+              {/* Step badge */}
+              <div className="absolute top-3 left-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg">
+                STEP 3 · AD DETAILS
+              </div>
+            </div>
+
+            {/* Right: Ad Details Form */}
+            <div className="flex-1 bg-gray-50 dark:bg-[#0a0a0a] border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-800 overflow-y-auto scrollbar-hide">
+              <div className="p-4 space-y-3">
+
+                {/* ── Section 1: Ad Content ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <Megaphone size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Ad Content</span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Title <span className="text-blue-500">*</span></label>
+                      <input type="text" placeholder="e.g. Summer Sale — Up to 50% Off" value={adTitle} onChange={(e) => setAdTitle(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Description</label>
+                      <textarea placeholder="Describe what you're promoting..." value={adDescription} onChange={(e) => setAdDescription(e.target.value)} rows={3}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all resize-none placeholder-gray-400" />
+                    </div>
+                    {/* ── Ad Media Upload (separate from steps 1-2) ── */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">
+                        Ad Media
+                        <span className="text-gray-400 font-normal ml-1">(optional extra images/videos for this ad)</span>
+                      </label>
+
+                      {/* Hidden file input for ad media only */}
+                      <input
+                        type="file"
+                        ref={adMediaInputRef}
+                        className="hidden"
+                        multiple
+                        accept="image/*,video/*"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          const newItems = files.map(f => ({
+                            id: Math.random().toString(36).substr(2, 9),
+                            url: URL.createObjectURL(f),
+                            type: f.type.startsWith('video/') ? 'video' : 'image',
+                            file: f,
+                          }));
+                          setAdMedia(prev => [...prev, ...newItems]);
+                          e.target.value = '';
+                        }}
+                      />
+
+                      {/* Uploaded ad media — horizontal scroll row */}
+                      {adMedia.length > 0 && (
+                        <div
+                          className="flex gap-2 mb-2 overflow-x-auto pb-1"
+                          style={{ scrollbarWidth: 'none' }}
+                        >
+                          {adMedia.map((m) => (
+                            <div
+                              key={m.id}
+                              className="relative flex-shrink-0 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 group shadow-sm bg-black cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
+                              style={{ width: 120, height: 120 }}
+                              onClick={() => setAdMediaPreview(m)}
+                            >
+                              {m.type === 'video' ? (
+                                <>
+                                  <video src={m.url} className="w-full h-full object-contain" muted playsInline onClick={(e) => { e.stopPropagation(); setAdMediaPreview(m); }} />
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <div className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
+                                    </div>
+                                  </div>
+                                  <div className="absolute bottom-1 left-1 bg-black/70 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">VIDEO</div>
+                                </>
+                              ) : (
+                                <>
+                                  <img src={m.url} className="w-full h-full object-contain" alt="" onClick={(e) => { e.stopPropagation(); setAdMediaPreview(m); }} />
+                                  <div className="absolute bottom-1 left-1 bg-black/70 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">IMG</div>
+                                </>
+                              )}
+                              {/* Delete button */}
+                              <button
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 z-10"
+                                onClick={(e) => { e.stopPropagation(); setAdMedia(prev => prev.filter(x => x.id !== m.id)); }}
+                              >
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+
+                          {/* Add more tile inline in the scroll row */}
+                          <div
+                            className="flex-shrink-0 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] flex flex-col items-center justify-center gap-1 cursor-pointer hover:border-blue-400 hover:bg-blue-50/20 dark:hover:bg-blue-950/10 transition-all"
+                            style={{ width: 120, height: 120 }}
+                            onClick={() => adMediaInputRef.current?.click()}
+                          >
+                            <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.5">
+                                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                              </svg>
+                            </div>
+                            <span className="text-[10px] font-bold text-blue-500">Add more</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Upload zone — shown when empty */}
+                      {adMedia.length === 0 && (
+                        <div
+                          className="relative w-full rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] cursor-pointer group transition-all hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/20 dark:hover:bg-blue-950/10"
+                          style={{ minHeight: 130 }}
+                          onClick={() => adMediaInputRef.current?.click()}
+                        >
+                          <div className="flex flex-col items-center justify-center h-full py-6 px-4 gap-2">
+                            <div className="w-12 h-12 rounded-xl bg-blue-600 dark:bg-blue-700 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                <polyline points="17,8 12,3 7,8" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                <line x1="12" y1="3" x2="12" y2="15" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                              </svg>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-sm font-bold text-gray-800 dark:text-gray-100">Upload photo or video</p>
+                              <p className="text-[11px] text-gray-400 mt-0.5">JPG, PNG, MP4 supported</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="h-px w-10 bg-gray-300 dark:bg-gray-700" />
+                              <span className="text-[10px] text-gray-400">or drag & drop</span>
+                              <div className="h-px w-10 bg-gray-300 dark:bg-gray-700" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Section 2: Ad Type & Category ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <Tag size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Type & Category</span>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {/* Category Dropdown */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Category <span className="text-blue-500">*</span></label>
+                      <div className="relative">
+                        <select
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all appearance-none"
+                        >
+                          <option value="">Select a Category</option>
+                          {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* Ad Type: Promote or General */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Type <span className="text-blue-500">*</span></label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { value: 'promote', label: 'Promote', icon: '🚀', desc: 'Boost your brand reach' },
+                          { value: 'general', label: 'General', icon: '📋', desc: 'Standard advertisement' },
+                        ].map(t => (
+                          <button key={t.value} onClick={() => setAdType(t.value)}
+                            className={`flex flex-col items-start gap-1 py-3 px-4 rounded-xl text-xs font-bold border-2 transition-all ${
+                              adType === t.value
+                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-500 shadow-md shadow-blue-200 dark:shadow-blue-900/30'
+                                : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300 hover:text-blue-500'
+                            }`}>
+                            <span className="text-lg">{t.icon}</span>
+                            <span className="font-bold">{t.label}</span>
+                            <span className={`text-[10px] font-normal ${adType === t.value ? 'text-white/80' : 'text-gray-400'}`}>{t.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Section 3: Call To Action ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <MousePointerClick size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Call To Action</span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { value: 'view_site',    label: 'View Site' },
+                        { value: 'contact_info', label: 'Contact' },
+                        { value: 'install_app',  label: 'Install App' },
+                        { value: 'book_now',     label: 'Book Now' },
+                        { value: 'learn_more',   label: 'Learn More' },
+                        { value: 'call_now',     label: 'Call Now' },
+                      ].map(c => (
+                        <button key={c.value} onClick={() => setCtaType(c.value)}
+                          className={`py-2 px-2 rounded-lg text-[11px] font-bold border-2 transition-all ${
+                            ctaType === c.value
+                              ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-500 shadow-md shadow-blue-200 dark:shadow-blue-900/30'
+                              : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300 hover:text-blue-500'
+                          }`}>
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="space-y-2">
+                      {[
+                        { placeholder: 'Destination URL (https://...)', value: ctaUrl, setter: setCtaUrl, type: 'url' },
+                        { placeholder: 'Deep Link (e.g. myapp://product/123)', value: ctaDeepLink, setter: setCtaDeepLink, type: 'text' },
+                        { placeholder: 'Phone number (for Call Now)', value: ctaPhone, setter: setCtaPhone, type: 'tel' },
+                        { placeholder: 'WhatsApp number (e.g. 919876543210)', value: ctaWhatsapp, setter: setCtaWhatsapp, type: 'text' },
+                        { placeholder: 'Contact email', value: ctaEmail, setter: setCtaEmail, type: 'email' },
+                      ].map(f => (
+                        <input key={f.placeholder} type={f.type} placeholder={f.placeholder} value={f.value} onChange={e => f.setter(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Section 4: Keywords ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <Zap size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Keywords</span>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex gap-2 mb-2">
+                      <input type="text" placeholder="Type a keyword & press Enter" value={keywordInput} onChange={e => setKeywordInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && keywordInput.trim()) { setKeywords(prev => [...prev, keywordInput.trim()]); setKeywordInput(''); e.preventDefault(); }}}
+                        className="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                      <button onClick={() => { if (keywordInput.trim()) { setKeywords(prev => [...prev, keywordInput.trim()]); setKeywordInput(''); }}}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-bold shadow-sm hover:opacity-90 transition-opacity">+</button>
+                    </div>
+                    {keywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {keywords.map((k, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-semibold">
+                            {k} <button onClick={() => setKeywords(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500 transition-colors ml-0.5">×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Section 5: Audience ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <Target size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Audience</span>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {/* Age Range */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">Age Range</label>
+                      <div className="flex gap-2">
+                        <input type="number" placeholder="Min (13)" value={ageMin} onChange={e => setAgeMin(e.target.value)} min={13} max={99}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all" />
+                        <input type="number" placeholder="Max (65)" value={ageMax} onChange={e => setAgeMax(e.target.value)} min={13} max={100}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all" />
+                      </div>
+                    </div>
+                    {/* Gender */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">Gender</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['all', 'male', 'female', 'other'].map(g => (
+                          <button key={g} onClick={() => setGenderTarget(g)}
+                            className={`py-2 rounded-xl text-xs font-bold border-2 capitalize transition-all ${
+                              genderTarget === g
+                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-500'
+                                : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+                            }`}>
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Interests */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">Interests</label>
+                      <div className="flex gap-2 mb-2">
+                        <input type="text" placeholder="Add interest & press Enter" value={interestInput} onChange={e => setInterestInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && interestInput.trim()) { setSelectedInterests(prev => [...prev, interestInput.trim()]); setInterestInput(''); e.preventDefault(); }}}
+                          className="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                        <button onClick={() => { if (interestInput.trim()) { setSelectedInterests(prev => [...prev, interestInput.trim()]); setInterestInput(''); }}}
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-bold hover:opacity-90 transition-opacity">+</button>
+                      </div>
+                      {selectedInterests.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedInterests.map((item, i) => (
+                            <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-semibold">
+                              {item} <button onClick={() => setSelectedInterests(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500">×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Device Types */}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 block">Device Types</label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { d: 'mobile', icon: <Smartphone size={11}/> },
+                          { d: 'ios',    icon: <Smartphone size={11}/> },
+                          { d: 'android',icon: <Smartphone size={11}/> },
+                          { d: 'desktop',icon: <Monitor size={11}/> },
+                        ].map(({ d, icon }) => (
+                          <button key={d} onClick={() => setSelectedDeviceTypes(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border-2 capitalize transition-all ${
+                              selectedDeviceTypes.includes(d)
+                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-500'
+                                : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+                            }`}>
+                            {icon} {d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Section 6: Review & Submit ── */}
+                <div className="bg-white dark:bg-[#111] rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-50 to-blue-50/0 dark:from-blue-950/30 dark:to-transparent">
+                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+                      <ShieldCheck size={12} className="text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Review & Submit</span>
+                  </div>
+                  <div className="p-4">
+                    <div className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      policyAgreed
+                        ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-400 dark:border-blue-700'
+                        : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+                    }`} onClick={() => setPolicyAgreed(!policyAgreed)}>
+                      <div className={`w-5 h-5 rounded-lg flex-shrink-0 border-2 flex items-center justify-center transition-all mt-0.5 ${
+                        policyAgreed
+                          ? 'bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500'
+                          : 'border-gray-300 dark:border-gray-600'
+                      }`}>
+                        {policyAgreed && <span className="text-white text-xs font-bold">✓</span>}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                          I agree to the Ad Content Policy <span className="text-blue-500">*</span>
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
+                          By submitting this ad I confirm the content complies with platform guidelines and applicable laws. <strong className="text-blue-600 dark:text-blue-400">Required to publish.</strong>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pb-2" />
+              </div>
+            </div>
+          </div>
+        ) : postType === 'tweet' ? (
+          <div className="flex-1 bg-white dark:bg-[#111111] text-gray-900 dark:text-white flex flex-col">
+            <div className="md:hidden flex items-center justify-between px-5 pt-4 pb-5 border-b border-gray-200 dark:border-white/10">
+              <button onClick={handleClose} className="text-gray-900 dark:text-white">
+                <X size={34} strokeWidth={2.2} />
+              </button>
+              <h2 className="text-[20px] font-bold tracking-[-0.02em]">New thread</h2>
+              <div className="flex items-center gap-4">
+                <button type="button" className="text-gray-700 dark:text-white/95">
+                  <FileText size={32} strokeWidth={2.1} />
+                </button>
+                <button type="button" className="text-gray-700 dark:text-white/95">
+                  <Ellipsis size={32} strokeWidth={2.1} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 px-5 py-5 pb-5 flex flex-col">
+              <div className="hidden md:flex gap-4 flex-1">
+                <div className="flex flex-col items-center shrink-0">
+                  <div className="w-11 h-11 rounded-full bg-gray-200 dark:bg-[#222] overflow-hidden flex items-center justify-center">
+                    {userObject?.avatar_url ? (
+                      <img src={userObject.avatar_url} className="w-full h-full object-cover" alt={userObject.username} />
+                    ) : (
+                      <span className="text-sm font-semibold text-gray-800 dark:text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
+                    )}
+                  </div>
+                  <div className="w-px flex-1 bg-gray-200 dark:bg-white/10 my-3" />
+                </div>
+
+                <div className="flex-1 min-w-0 flex flex-col">
+                  <div className="flex items-center gap-2 text-sm mb-2">
+                    <span className="font-semibold text-gray-900 dark:text-white">{userObject?.username || 'User'}</span>
+                    <span className="text-gray-400 dark:text-white/35">›</span>
+                    <span className="text-gray-400 dark:text-white/35">Add a topic</span>
+                  </div>
+
+                  <textarea
+                    className="w-full flex-1 min-h-[160px] resize-none bg-transparent outline-none text-[14px] leading-6 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/35"
+                    placeholder="What's new?"
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                  />
+
+                  {/* Tweet images grid — pushed to bottom, never overlapping text */}
+                  {media.length > 0 && (
+                    <div className="mt-auto pt-3 border-t border-gray-100 dark:border-white/10">
+                      <div className={`flex flex-wrap gap-2 ${media.length > 4 ? 'max-h-[200px] overflow-y-auto' : ''}`}>
+                        {media.map((m, idx) => (
+                          <div
+                            key={m.id}
+                            className="relative group rounded-lg overflow-hidden bg-black"
+                            style={{
+                              width: media.length === 1 ? '180px' : '130px',
+                              aspectRatio: '16/9',
+                              flexShrink: 0
+                            }}
+                          >
+                            <img
+                              src={m.croppedUrl || m.url}
+                              alt="Tweet media"
+                              className="w-full h-full object-cover cursor-pointer"
+                              onClick={() => { setTweetPreviewIndex(idx); setShowTweetPreview(true); }}
+                            />
+                            {/* X remove button */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleTweetRemoveMedia(idx); }}
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center text-white"
+                            >
+                              <X size={10} />
+                            </button>
+                            {/* Pencil edit button */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setCurrentIndex(idx); setStep('crop'); }}
+                              className="absolute top-1 right-7 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center text-white"
+                            >
+                              <Pencil size={9} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className={`${media.length > 0 ? 'mt-3' : 'mt-auto'} flex items-center gap-4 text-gray-500 dark:text-white/55`}>
+                    <button onClick={handleButtonClick} className="hover:text-gray-700 dark:hover:text-white transition-colors">
+                      <Image size={20} />
+                    </button>
+                    <div ref={emojiPickerRef} className="relative">
+                      {showEmojiPicker && (
+                        <div className="absolute bottom-full left-0 mb-3 z-[80]">
+                          <EmojiPicker
+                            theme={mode === 'dark' ? 'dark' : 'light'}
+                            onEmojiClick={handleEmojiClick}
+                            lazyLoadEmojis
+                            skinTonesDisabled
+                            searchDisabled={false}
+                            previewConfig={{ showPreview: false }}
+                          />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker((prev) => !prev)}
+                        className="hover:text-gray-700 dark:hover:text-white transition-colors"
+                        aria-label="Toggle emoji picker"
+                      >
+                        <Smile size={20} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="md:hidden flex gap-4 min-h-full">
+                <div className="flex flex-col items-center shrink-0 pt-2">
+                  <div className="w-[42px] h-[42px] rounded-full bg-gray-200 dark:bg-[#262626] overflow-hidden flex items-center justify-center">
+                    {userObject?.avatar_url ? (
+                      <img src={userObject.avatar_url} className="w-full h-full object-cover" alt={userObject.username} />
+                    ) : (
+                      <span className="text-lg font-semibold text-gray-800 dark:text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
+                    )}
+                  </div>
+                  
+                </div>
+
+                <div className="flex-1 min-w-0 pt-1 flex flex-col">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-bold text-[14px] truncate">{userObject?.username || 'User'}</span>
+                      <ChevronRight size={16} className="text-gray-400 dark:text-white/35 shrink-0" />
+                      <span className="text-gray-400 dark:text-white/35 text-[14px] truncate">Community or topic</span>
+                    </div>
+                    {(caption.trim() || media.length > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCaption('');
+                          setMedia([]);
+                          setCurrentIndex(0);
+                        }}
+                        className="text-gray-500 dark:text-white/35 shrink-0"
+                      >
+                        <X size={24} />
+                      </button>
+                    )}
+                  </div>
+
+                  <textarea
+                    className="mt-2 w-full flex-1 min-h-[140px] resize-none bg-transparent outline-none text-[14px] leading-[1.6] tracking-[-0.01em] text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/35"
+                    placeholder="What's new?"
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                  />
+
+                  {/* Tweet images grid - mobile */}
+                  {media.length > 0 && (
+                    <div className="mt-auto pt-3 border-t border-gray-100 dark:border-white/10">
+                      <div className={`flex flex-wrap gap-2 ${media.length > 4 ? 'max-h-[180px] overflow-y-auto' : ''}`}>
+                        {media.map((m, idx) => (
+                          <div
+                            key={m.id}
+                            className="relative group rounded-lg overflow-hidden bg-black"
+                            style={{
+                              width: media.length === 1 ? '160px' : '110px',
+                              aspectRatio: '16/9',
+                              flexShrink: 0
+                            }}
+                          >
+                            <img
+                              src={m.croppedUrl || m.url}
+                              alt="Tweet media"
+                              className="w-full h-full object-cover cursor-pointer"
+                              onClick={() => { setTweetPreviewIndex(idx); setShowTweetPreview(true); }}
+                            />
+                            {/* X remove button */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleTweetRemoveMedia(idx); }}
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center text-white"
+                            >
+                              <X size={10} />
+                            </button>
+                            {/* Pencil edit button */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setCurrentIndex(idx); setStep('crop'); }}
+                              className="absolute top-1 right-7 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center text-white"
+                            >
+                              <Pencil size={9} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className={`${media.length > 0 ? 'mt-3' : 'mt-auto'} flex items-center gap-5 text-gray-500 dark:text-white/50`}>
+                    <button onClick={handleButtonClick} className="hover:text-gray-700 dark:hover:text-white transition-colors">
+                      <Image size={28} strokeWidth={1.8} />
+                    </button>
+                    <div ref={emojiPickerRefMobile} className="relative">
+                      {showEmojiPicker && (
+                        <div className="absolute bottom-full left-0 mb-3 z-[80]">
+                          <EmojiPicker
+                            theme={mode === 'dark' ? 'dark' : 'light'}
+                            onEmojiClick={handleEmojiClick}
+                            lazyLoadEmojis
+                            skinTonesDisabled
+                            searchDisabled={false}
+                            previewConfig={{ showPreview: false }}
+                          />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker((prev) => !prev)}
+                        className="hover:text-gray-700 dark:hover:text-white transition-colors"
+                        aria-label="Toggle emoji picker"
+                      >
+                        <Smile size={28} strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col md:flex-row lg:overflow-hidden overflow-y-auto overflow-x-hidden">
+            {/* Left: Final Image Preview */}
+            <div className="relative bg-[#f0f0f0] dark:bg-[#121212] flex items-center justify-center select-none w-full h-auto md:flex-[2]">
+              {currentMedia && (
+                <div ref={shareContainerRef} data-media-container className="relative w-full h-full flex items-center justify-center" onClick={handleImageClick}>
+                  {currentMedia.type === 'video' ? (
+                    <div style={{ width: shareBoxSize.w, height: shareBoxSize.h }} className="overflow-hidden bg-black rounded">
+                      <video
+                        src={currentMedia.croppedUrl || currentMedia.url}
+                        className="w-full h-full object-cover"
+                        controls={false} autoPlay loop
+                        muted={!currentMedia.soundOn}
+                        onLoadedMetadata={(e) => { e.currentTarget.currentTime = currentMedia.trimStart || 0; }}
+                        onTimeUpdate={(e) => {
+                          const v = e.currentTarget;
+                          const trimEnd = (currentMedia.trimEnd && currentMedia.trimEnd > 0) ? currentMedia.trimEnd : (currentMedia.duration || 0);
+                          if (trimEnd > 0 && v.currentTime >= trimEnd) {
+                            v.currentTime = currentMedia.trimStart || 0;
+                            v.play().catch(() => {});
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <img
+                      src={currentMedia.croppedUrl || currentMedia.url}
+                      className="max-w-full max-h-full object-contain cursor-crosshair"
+                      style={getFilterStyle(currentMedia)}
+                      alt="Share Preview"
+                    />
+                  )}
+                  {tags.length === 0 && (
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1.5 rounded-full pointer-events-none select-none">
+                      Tap to tag · Drag tags to reposition
+                    </div>
+                  )}
+                  {tags.map((tag) => (
+                    <div
+                      key={tag.id}
+                      className="tag-item absolute z-20 select-none"
+                      style={{ left: `${tag.x}%`, top: `${tag.y}%`, transform: 'translate(-50%, -50%)', cursor: draggingTagId === tag.id ? 'grabbing' : 'grab' }}
+                      onMouseDown={(e) => {
+                        if (e.target.closest('button')) return;
+                        e.preventDefault(); e.stopPropagation();
+                        const container = e.currentTarget.closest('[data-media-container]');
+                        if (!container) return;
+                        setDraggingTagId(tag.id);
+                        const rect = container.getBoundingClientRect();
+                        const onMove = (me) => {
+                          const nx = Math.min(100, Math.max(0, ((me.clientX - rect.left) / rect.width) * 100));
+                          const ny = Math.min(100, Math.max(0, ((me.clientY - rect.top) / rect.height) * 100));
+                          setTags(prev => prev.map(t => t.id === tag.id ? { ...t, x: nx, y: ny } : t));
+                        };
+                        const onUp = () => { setDraggingTagId(null); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+                        window.addEventListener('mousemove', onMove);
+                        window.addEventListener('mouseup', onUp);
+                      }}
+                    >
+                      <div className="relative flex items-center gap-1.5 bg-black/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-full shadow-lg border border-white/20">
+                        {tag.user.avatar_url ? (
+                          <img src={tag.user.avatar_url} className="w-4 h-4 rounded-full object-cover flex-shrink-0" alt="" />
+                        ) : (
+                          <div className="w-4 h-4 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center flex-shrink-0">
+                            <span className="text-[8px] font-bold text-white">{(tag.user.username || '').slice(0,1).toUpperCase()}</span>
+                          </div>
+                        )}
+                        <span className="text-xs font-semibold whitespace-nowrap">@{tag.user.username}</span>
+                        <button onClick={(e) => handleRemoveTag(e, tag.id)} className="ml-0.5 w-4 h-4 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors"><X size={9} /></button>
+                      </div>
+                      <div className="absolute left-1/2 -translate-x-1/2 -bottom-[5px] w-2 h-2 bg-black/80 rounded-full border border-white/30" />
+                    </div>
+                  ))}
+                  {showTagSearch && (
+                    <div className="absolute z-50 bg-white dark:bg-gray-800 rounded-lg shadow-xl w-64 overflow-hidden" style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
+                      <div className="p-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                        <span className="font-semibold text-sm dark:text-white">Tag People</span>
+                        <button onClick={(e) => { e.stopPropagation(); setShowTagSearch(false); }} className="dark:text-white"><X size={18} /></button>
+                      </div>
+                      <div className="p-2">
+                        <div className="relative">
+                          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text" placeholder="Search user"
+                            className="w-full bg-gray-100 dark:bg-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm outline-none focus:ring-1 focus:ring-gray-300 dark:text-white dark:placeholder-gray-400"
+                            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                            onClick={(e) => e.stopPropagation()} autoFocus
+                          />
+                        </div>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto scrollbar-hide">
+                        {isSearchingUsers ? (
+                          <div className="p-4 text-center text-gray-400 text-xs">Searching...</div>
+                        ) : searchResults.length > 0 ? (
+                          searchResults.map(user => (
+                            <div key={user.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleTagUser(user); }}>
+                              <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
+                                {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" alt={user.username} /> : <span className="text-xs font-semibold text-gray-800 dark:text-white">{(user.username || '').slice(0, 1).toUpperCase()}</span>}
+                              </div>
+                              <div className="flex flex-col overflow-hidden">
+                                <span className="text-sm font-semibold truncate dark:text-white">{user.username}</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.full_name}</span>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-4 text-center text-gray-400 text-xs">No users found</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {media.length > 1 && (
+                <>
+                  {currentIndex > 0 && <button onClick={() => setCurrentIndex(prev => prev - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-gray-800 shadow-md flex items-center justify-center"><ChevronLeft size={20} /></button>}
+                  {currentIndex < media.length - 1 && <button onClick={() => setCurrentIndex(prev => prev + 1)} className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-gray-800 shadow-md flex items-center justify-center"><ChevronRight size={20} /></button>}
+                </>
+              )}
+            </div>
+
+            {/* Right: Share Details */}
+            <div className="flex-1 bg-white dark:bg-black border-t md:border-t-0 md:border-l border-gray-200 dark:border-gray-800 flex flex-col w-full md:w-auto md:min-w-[340px] overflow-y-auto scrollbar-hide">
+              {/* User Info */}
+              <div className="flex items-center gap-3 p-4">
+                <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex items-center justify-center">
+                  {userObject?.avatar_url ? (
+                    <img src={userObject.avatar_url} className="w-full h-full object-cover" alt={userObject.username} />
+                  ) : (
+                    <span className="text-xs font-semibold text-gray-800 dark:text-white">{(userObject?.username || 'U').slice(0, 1).toUpperCase()}</span>
+                  )}
+                </div>
+                <span className="font-semibold text-sm dark:text-white">{userObject?.username || 'User'}</span>
+              </div>
+
+              {/* Caption */}
+              <div className="px-4 pb-4 border-b border-gray-100 dark:border-gray-800 relative">
+                <textarea
+                  className="w-full min-h-[150px] resize-none outline-none text-sm placeholder-gray-400 bg-transparent dark:text-white"
+                  placeholder="Write a caption..."
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  maxLength={2200}
+                />
+                <div className="flex items-center justify-between mt-2">
+                  <div className="relative">
+                    <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><Smile size={20} /></button>
+                    {showEmojiPicker && (
+                      <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-100 dark:border-gray-700 p-2 w-64 z-50">
+                        <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1">Most popular</div>
+                        <div className="grid grid-cols-7 gap-1">
+                          {POPULAR_EMOJIS.map(emoji => (
+                            <button key={emoji} onClick={() => handleEmojiClick(emoji)} className="w-8 h-8 flex items-center justify-center text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded">{emoji}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-400">{caption.length}/2,200</span>
+                </div>
+              </div>
+
+              {/* Location */}
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+                <input
+                  type="text"
+                  placeholder="Add location"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full text-sm bg-transparent outline-none dark:text-white placeholder-gray-400"
+                />
+              </div>
+
+              {/* Ad-specific fields — Share/Ad Setup step: ONLY targeting + budget */}
+              {postType === 'ad' && (
+                <div className="px-4 pb-4 border-b border-gray-100 dark:border-gray-800 space-y-3 pt-4">
+
+                  {/* ── Audience Targeting: Country → State → Language ── */}
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Audience Targeting</div>
+
+                  {/* Country accordion */}
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                    <button onClick={() => setOpenAccordion(openAccordion === 'country' ? null : 'country')}
+                      className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
+                      <span className="flex items-center gap-2"><Globe size={14} className="text-blue-500" />Country {selectedCountries.length > 0 && `(${selectedCountries.length} selected)`}</span>
+                      <ChevronDown size={16} className={`transition-transform ${openAccordion === 'country' ? 'rotate-180' : ''}`} />
+                    </button>
+                    {openAccordion === 'country' && (
+                      <div className="flex flex-col bg-white dark:bg-black">
+                        <div className="p-2 border-b border-gray-100 dark:border-gray-800">
+                          <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              placeholder="Search country..."
+                              value={countrySearch}
+                              onChange={(e) => setCountrySearch(e.target.value)}
+                              className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs dark:text-white outline-none"
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-52 overflow-y-auto">
+                          {isLoadingCountries ? (
+                            <div className="p-3 text-xs text-gray-500">Loading countries...</div>
+                          ) : allCountries.filter(c => (typeof c === 'string' ? c : (c.name || c.country)).toLowerCase().includes(countrySearch.toLowerCase())).length === 0 ? (
+                            <div className="p-3 text-xs text-gray-400">No countries found</div>
+                          ) : allCountries.filter(c => (typeof c === 'string' ? c : (c.name || c.country)).toLowerCase().includes(countrySearch.toLowerCase())).map(c => {
+                            const name = typeof c === 'string' ? c : (c.name || c.country);
+                            return (
+                              <label key={name} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                <input type="checkbox" checked={selectedCountries.includes(name)}
+                                  onChange={() => setSelectedCountries(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name])}
+                                  className="accent-blue-600" />
+                                <span className="text-sm dark:text-gray-200">{name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* State accordion — only shown after country selected */}
+                  {selectedCountries.length > 0 && (
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                      <button onClick={() => setOpenAccordion(openAccordion === 'state' ? null : 'state')}
+                        className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
+                        <span className="flex items-center gap-2"><MapPin size={14} className="text-blue-400" />State {selectedStates.length > 0 && `(${selectedStates.length} selected)`}</span>
+                        <ChevronDown size={16} className={`transition-transform ${openAccordion === 'state' ? 'rotate-180' : ''}`} />
+                      </button>
+                      {openAccordion === 'state' && (
+                        <div className="flex flex-col bg-white dark:bg-black">
+                          <div className="p-2 border-b border-gray-100 dark:border-gray-800">
+                            <div className="relative">
+                              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                placeholder="Search state..."
+                                value={stateSearch}
+                                onChange={(e) => setStateSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs dark:text-white outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-52 overflow-y-auto">
+                            {isLoadingStates ? <div className="p-3 text-xs text-gray-500">Loading states...</div> : (
+                              selectedCountries.map(country => {
+                                const states = (statesByCountry[country] || []).filter(st => (st.state || (typeof st === 'string' ? st : st.name)).toLowerCase().includes(stateSearch.toLowerCase()));
+                                if (!states.length && !stateSearch) return null;
+                                if (!states.length && stateSearch) return null;
+                                return (
+                                  <div key={country}>
+                                    <div className="px-3 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 dark:bg-gray-900">{country}</div>
+                                    {states.map(st => {
+                                      const stateName = st.state || (typeof st === 'string' ? st : st.name);
+                                      return (
+                                        <label key={stateName} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                          <input type="checkbox" checked={selectedStates.includes(stateName)}
+                                            onChange={() => setSelectedStates(prev => prev.includes(stateName) ? prev.filter(x => x !== stateName) : [...prev, stateName])}
+                                            className="accent-blue-600" />
+                                          <span className="text-sm dark:text-gray-200">{stateName}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Language accordion — only shown after state selected */}
+                  {selectedStates.length > 0 && (
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                      <button onClick={() => setOpenAccordion(openAccordion === 'language' ? null : 'language')}
+                        className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
+                        <span className="flex items-center gap-2"><Globe size={14} className="text-purple-500" />Language {selectedLanguages.length > 0 && `(${selectedLanguages.length} selected)`}</span>
+                        <ChevronDown size={16} className={`transition-transform ${openAccordion === 'language' ? 'rotate-180' : ''}`} />
+                      </button>
+                      {openAccordion === 'language' && (
+                        <div className="flex flex-col bg-white dark:bg-black">
+                          <div className="p-2 border-b border-gray-100 dark:border-gray-800">
+                            <div className="relative">
+                              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                placeholder="Search language..."
+                                value={languageSearch}
+                                onChange={(e) => setLanguageSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs dark:text-white outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-52 overflow-y-auto">
+                            {isLoadingLanguages ? <div className="p-3 text-xs text-gray-500">Loading languages...</div>
+                            : Object.keys(languagesByState).length === 0 ? <div className="p-3 text-xs text-gray-400">No languages found for selected states</div>
+                            : selectedCountries.map(country => {
+                                const langs = (languagesByState[country] || []).filter(l => l.toLowerCase().includes(languageSearch.toLowerCase()));
+                                if (!langs.length && !languageSearch) return null;
+                                if (!langs.length && languageSearch) return null;
+                                return (
+                                  <div key={country}>
+                                    <div className="px-3 pt-2 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 dark:bg-gray-900">{country}</div>
+                                    {langs.map(langName => (
+                                      <label key={langName} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                        <input type="checkbox" checked={selectedLanguages.includes(langName)}
+                                          onChange={() => setSelectedLanguages(prev => prev.includes(langName) ? prev.filter(x => x !== langName) : [...prev, langName])}
+                                          className="accent-purple-600" />
+                                        <span className="text-sm dark:text-gray-200">{langName}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                );
+                              })
+                            }
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Budget & Duration ── */}
+                  <div className="pt-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Budget & Duration</div>
+
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                    <button onClick={() => setOpenAccordion(openAccordion === 'budget' ? null : 'budget')}
+                      className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
+                      <span className="flex items-center gap-2"><Coins size={14} className="text-amber-500" />Budget {totalBudgetCoins && `· ${totalBudgetCoins} 🪙`}</span>
+                      <ChevronDown size={16} className={`transition-transform ${openAccordion === 'budget' ? 'rotate-180' : ''}`} />
+                    </button>
+                    {openAccordion === 'budget' && (
+                      <div className="p-3 bg-white dark:bg-black space-y-3">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">Total Budget (Coins) *</label>
+                          <input type="number" value={totalBudgetCoins} onChange={e => setTotalBudgetCoins(e.target.value)} placeholder="e.g. 5000 (min 100)"
+                            className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">Daily Budget Limit (Coins)</label>
+                          <input type="number" value={dailyBudgetCoins} onChange={e => setDailyBudgetCoins(e.target.value)} placeholder="e.g. 500 (0 = no limit)"
+                            className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">Start Date</label>
+                            <input type="date" value={budgetStartDate} onChange={e => setBudgetStartDate(e.target.value)}
+                              className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">End Date</label>
+                            <input type="date" value={budgetEndDate} onChange={e => setBudgetEndDate(e.target.value)}
+                              className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500" />
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-400">Minimum 100 coins required. Budget is deducted from your wallet on creation.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Tracking / UTM ── */}
+                  {/* <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                    <button onClick={() => setOpenAccordion(openAccordion === 'tracking' ? null : 'tracking')}
+                      className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
+                      <span className="flex items-center gap-2"><Target size={14} className="text-teal-500" />Tracking & UTM (optional)</span>
+                      <ChevronDown size={16} className={`transition-transform ${openAccordion === 'tracking' ? 'rotate-180' : ''}`} />
+                    </button>
+                    {openAccordion === 'tracking' && (
+                      <div className="p-3 bg-white dark:bg-black space-y-2.5">
+                        {[
+                          { label: 'UTM Source', value: utmSource, setter: setUtmSource, placeholder: 'e.g. myapp' },
+                          { label: 'UTM Medium', value: utmMedium, setter: setUtmMedium, placeholder: 'e.g. paid_ad' },
+                          { label: 'UTM Campaign', value: utmCampaign, setter: setUtmCampaign, placeholder: 'e.g. summer_sale_2025' },
+                          { label: 'UTM Term', value: utmTerm, setter: setUtmTerm, placeholder: 'e.g. fashion' },
+                          { label: 'UTM Content', value: utmContent, setter: setUtmContent, placeholder: 'e.g. banner_v1' },
+                          { label: 'Conversion Pixel ID', value: conversionPixelId, setter: setConversionPixelId, placeholder: 'e.g. px_abc123' },
+                        ].map(field => (
+                          <div key={field.label}>
+                            <label className="text-xs font-semibold text-gray-400 mb-1 block">{field.label}</label>
+                            <input type="text" value={field.value} onChange={e => field.setter(e.target.value)} placeholder={field.placeholder}
+                              className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div> */}
+
+                </div>
+              )}
+
+              {/* Tag Section */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900" onClick={() => { setShowTagSearch(true); setSearchQuery(''); fetchUsers(''); }}>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Add Tag</span>
+                  <UserPlus size={20} className="text-gray-800 dark:text-gray-200" />
+                </div>
+                {allUsers.length > 0 && (
+                  <div className="px-4 py-2 max-h-40 overflow-y-auto flex flex-col gap-2 pr-2" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                    {isLoadingAllUsers ? (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Loading users...</div>
+                    ) : allUsers.map(u => (
+                      <div key={u.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 rounded-md px-2 py-1" onClick={() => handleTagUser(u)}>
+                        <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
+                          {u.avatar_url ? <img src={u.avatar_url} className="w-full h-full object-cover" alt={u.username} /> : <span className="text-xs font-semibold text-gray-800 dark:text-white">{(u.username || '').slice(0, 1).toUpperCase()}</span>}
+                        </div>
+                        <div className="flex flex-col overflow-hidden">
+                          <span className="text-sm font-semibold truncate dark:text-white">{u.username}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{u.full_name}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Advanced Settings */}
+                <div className="border-b border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900" onClick={() => setIsAdvancedSettingsOpen(!isAdvancedSettingsOpen)}>
+                    <span className="text-sm text-gray-800 dark:text-gray-200 font-medium">Advanced Settings</span>
+                    {isAdvancedSettingsOpen ? <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" /> : <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />}
+                  </div>
+                  {isAdvancedSettingsOpen && (
+                    <div className="px-4 pb-4 flex flex-col gap-0">
+                      {[
+                        { label: 'Hide like and view counts on this post', sub: 'Only you will see the total number of likes and views on this post.', value: hideLikes, setter: setHideLikes },
+                        { label: 'Turn off commenting', sub: 'You can change this later by going to the ... menu at the top of your post.', value: turnOffCommenting, setter: setTurnOffCommenting },
+                        { label: 'Disable share', sub: null, value: disableShare, setter: setDisableShare },
+                        { label: 'Disable save', sub: null, value: disableSave, setter: setDisableSave },
+                        { label: 'Disable report', sub: null, value: disableReport, setter: setDisableReport },
+                        { label: 'Moderation mode', sub: null, value: moderationEnabled, setter: setModerationEnabled },
+                      ].map((ctrl, idx) => (
+                        <div key={ctrl.label} className={`flex flex-col gap-1 py-3 ${idx > 0 ? 'border-t border-gray-100 dark:border-gray-800' : ''}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-800 dark:text-gray-200">{ctrl.label}</span>
+                            <div className="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-3" onClick={() => ctrl.setter(!ctrl.value)}>
+                              <input type="checkbox" className="sr-only peer" checked={ctrl.value} readOnly />
+                              <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </div>
+                          </div>
+                          {ctrl.sub && <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{ctrl.sub}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <input
+        type="file" ref={fileInputRef} className="hidden" multiple
+        accept={postType === 'post' || postType === 'tweet' ? 'image/*' : postType === 'reel' || postType === 'promote' ? 'video/*' : 'image/*,video/*'}
+        onChange={handleFileSelect}
+      />
+
+      {showVendorNotValidated && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 md:hidden">
+          <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 dark:border-gray-800">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">Vendor verification pending</h3>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center">Your vendor account is not yet validated. Please wait for approval before uploading ads.</p>
+            <div className="flex justify-center">
+              <button onClick={() => setShowVendorNotValidated(false)} className="px-4 py-2.5 rounded-lg bg-insta-pink text-white font-medium hover:bg-insta-purple transition-colors">OK</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAdProfileGate && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 dark:border-gray-800">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 mx-auto flex items-center justify-center mb-4">
+              <Megaphone size={26} className="text-blue-500" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">Complete your profile first</h3>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center leading-relaxed">
+              Your profile completion is currently <span className="font-bold text-blue-500">{Math.round(Number(vendorProfileCompletion || 0))}%</span>.
+              You need to complete it above <span className="font-bold text-pink-600">80%</span> before uploading ads.
+            </p>
+            <div className="flex justify-center">
+              <button
+                onClick={() => setShowAdProfileGate(false)}
+                className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium hover:opacity-90 transition-opacity"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAdLimitPopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 dark:border-gray-800">
+            <div className="w-14 h-14 rounded-2xl bg-pink-50 dark:bg-pink-900/20 mx-auto flex items-center justify-center mb-4">
+              <Megaphone size={26} className="text-pink-500" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 text-center">Upgrade your package</h3>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center leading-relaxed">
+              Your current package allows <span className="font-bold text-pink-600">{activePackageAdsLimit}</span> ads, and you have already uploaded <span className="font-bold text-blue-500">{uploadedAdsCount}</span>.
+              Upgrade your package to create more ads.
+            </p>
+            <div className="flex justify-center">
+              <button
+                onClick={() => setShowAdLimitPopup(false)}
+                className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium hover:opacity-90 transition-opacity"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Progress Overlay */}
+      {isSubmitting && uploadStage !== 'idle' && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(12px)' }}>
+          <div className="rounded-3xl p-8 w-full max-w-xs flex flex-col items-center gap-5" style={{ background: 'linear-gradient(145deg,#1a1a1a,#0d0d0d)', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 32px 80px rgba(0,0,0,0.6)' }}>
+            <div className="relative flex items-center justify-center w-24 h-24">
+              <svg className="absolute inset-0 w-24 h-24" style={{ transform: 'rotate(-90deg)' }} viewBox="0 0 96 96">
+                <circle cx="48" cy="48" r="42" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
+                <circle cx="48" cy="48" r="42" fill="none" stroke="url(#iGrad)" strokeWidth="5" strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 42}`}
+                  strokeDashoffset={`${2 * Math.PI * 42 * (1 - uploadProgress / 100)}`}
+                  style={{ transition: 'stroke-dashoffset 0.5s cubic-bezier(0.4,0,0.2,1)' }}
+                />
+                <defs>
+                  <linearGradient id="iGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%"   stopColor="#feda75" />
+                    <stop offset="25%"  stopColor="#fa7e1e" />
+                    <stop offset="50%"  stopColor="#d62976" />
+                    <stop offset="75%"  stopColor="#962fbf" />
+                    <stop offset="100%" stopColor="#4f5bd5" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <span className="relative z-10 text-2xl font-bold text-white tabular-nums">{uploadProgress}%</span>
+            </div>
+            <div className="flex flex-col items-center gap-1 text-center">
+              <p className="text-base font-semibold text-white">
+                {uploadStage === 'converting' && '✂️ Trimming video…'}
+                {uploadStage === 'uploading'  && '⬆️ Uploading…'}
+                {uploadStage === 'posting'    && (postType === 'ad' && adSubmitMode === 'draft' ? '💾 Saving draft…' : '🚀 Publishing…')}
+              </p>
+              <p className="text-xs text-white/40">
+                {uploadStage === 'converting' && 'Applying your trim & crop'}
+                {uploadStage === 'uploading'  && 'Sending to server'}
+                {uploadStage === 'posting'    && (postType === 'ad' && adSubmitMode === 'draft' ? 'Saving your draft' : 'Almost done!')}
+              </p>
+            </div>
+            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${uploadProgress}%`, background: 'linear-gradient(90deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)' }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Popup */}
+      {showSuccess && (() => {
+        const doClose = () => {
+          setShowSuccess(false);
+          setUploadStage('idle');
+          setUploadProgress(0);
+          handleClose();
+          setMedia([]);
+          setCaption('');
+          setLocation('');
+          setTags([]);
+          navigate(postType === 'ad' ? '/vendor/ads-management' : '/');
+        };
+        return (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(16px)' }}>
+            <style>{`
+              @keyframes igPopIn { from { opacity:0; transform:scale(0.8) translateY(16px); } to { opacity:1; transform:scale(1) translateY(0); } }
+              @keyframes igCheckDraw { from { stroke-dashoffset: 48; } to { stroke-dashoffset: 0; } }
+              @keyframes igRingRotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+            `}</style>
+            <div
+              className="w-full max-w-xs flex flex-col items-center gap-6 rounded-3xl p-8"
+              style={{ animation: 'igPopIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both', background: 'linear-gradient(145deg,#1c1c1c,#111)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 40px 100px rgba(0,0,0,0.7)' }}
+            >
+              <div className="relative flex items-center justify-center w-24 h-24">
+                <svg className="absolute inset-0 w-24 h-24" style={{ animation: 'igRingRotate 3s linear infinite' }} viewBox="0 0 96 96">
+                  <defs>
+                    <linearGradient id="igSuccessGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%"   stopColor="#feda75" />
+                      <stop offset="25%"  stopColor="#fa7e1e" />
+                      <stop offset="50%"  stopColor="#d62976" />
+                      <stop offset="75%"  stopColor="#962fbf" />
+                      <stop offset="100%" stopColor="#4f5bd5" />
+                    </linearGradient>
+                  </defs>
+                  <circle cx="48" cy="48" r="44" fill="none" stroke="url(#igSuccessGrad)" strokeWidth="4" strokeDasharray="138 138" strokeLinecap="round" />
+                </svg>
+                <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)' }}>
+                  <svg className="w-8 h-8" viewBox="0 0 32 32" fill="none">
+                    <path d="M7 17l6 6 12-12" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                      strokeDasharray="48" strokeDashoffset="0" style={{ animation: 'igCheckDraw 0.5s 0.15s ease both' }} />
+                  </svg>
+                </div>
+              </div>
+              <div className="flex flex-col items-center gap-1.5 text-center">
+                <h3 className="text-xl font-bold text-white">
+                  {postType === 'tweet'
+                    ? 'Tweet Shared! 🎉'
+                    : postType === 'reel'
+                    ? 'Reel Published! 🎉'
+                    : postType === 'promote'
+                    ? 'Promote Reel Published! 🎉'
+                    : postType === 'ad'
+                    ? adSubmitMode === 'draft'
+                      ? 'Ad Saved as Draft'
+                      : 'Ad Published! 🎉'
+                    : 'Post Shared! 🎉'}
+                </h3>
+                <p className="text-sm text-white/50">
+                  {postType === 'tweet'
+                    ? 'Your tweet is now live'
+                    : postType === 'reel'
+                    ? 'Your reel is now live'
+                    : postType === 'ad'
+                    ? adSubmitMode === 'draft'
+                      ? 'Your ad has been saved and can be published later'
+                      : 'Your ad is now submitted for review'
+                    : 'Your post has been shared'}
+                </p>
+              </div>
+              <div className="w-full h-px" style={{ background: 'linear-gradient(90deg,transparent,#d62976,transparent)' }} />
+              <SuccessCountdown onDone={doClose} />
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Error Popup */}
+      {uploadStage === 'error' && !isSubmitting && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl p-8 w-full max-w-sm shadow-2xl border border-red-100 dark:border-red-900/40 flex flex-col items-center gap-5">
+            <div className="w-20 h-20 rounded-full flex items-center justify-center bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800">
+              <svg className="w-9 h-9 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+            </div>
+            <div className="flex flex-col items-center gap-1 text-center">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Upload Failed</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{uploadError || 'Something went wrong. Please try again.'}</p>
+            </div>
+            <div className="flex gap-3 w-full">
+              <button onClick={() => { setUploadStage('idle'); setUploadProgress(0); setUploadError(''); }} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+              <button onClick={() => { setUploadStage('idle'); setUploadProgress(0); setUploadError(''); handleNextStep(adSubmitMode); }} className="flex-1 py-3 rounded-xl text-white font-semibold text-sm transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #f472b6, #a855f7)' }}>Try Again</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adMediaPreview && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setAdMediaPreview(null)}
+        >
+          <div className="absolute inset-0 flex items-center justify-center" onClick={() => setAdMediaPreview(null)}>
+            {adMediaPreview.type === 'video' ? (
+              <div className="relative w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                <video
+                  src={adMediaPreview.url}
+                  controls
+                  autoPlay
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                />
+              </div>
+            ) : (
+              <div
+                className="relative w-full h-full flex items-center justify-center overflow-auto cursor-zoom-out"
+                onClick={() => setAdMediaPreview(null)}
+                style={{ cursor: 'zoom-out' }}
+              >
+                <img
+                  src={adMediaPreview.url}
+                  alt=""
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl transition-transform duration-200"
+                  style={{ transform: 'scale(1)', minWidth: '60%', minHeight: '60%' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const current = e.currentTarget.style.transform;
+                    if (current === 'scale(1)' || current === '') {
+                      e.currentTarget.style.transform = 'scale(2)';
+                      e.currentTarget.style.cursor = 'zoom-in';
+                    } else {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.cursor = 'zoom-out';
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          <button
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95 z-10"
+            onClick={() => setAdMediaPreview(null)}
+          >
+            <X size={20} />
+          </button>
+
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-white/10 backdrop-blur-md rounded-full px-5 py-2.5 z-10">
+            <span className="text-white text-xs font-bold uppercase tracking-widest">
+              {adMediaPreview.type === 'video' ? 'Video Preview' : 'Image Preview'}
+            </span>
+            {adMediaPreview.type === 'image' && (
+              <span className="text-white/60 text-[10px]">Tap image to zoom</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tweet Image Preview Modal */}
+      {showTweetPreview && media.length > 0 && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => setShowTweetPreview(false)}
+        >
+          <button
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white z-10"
+            onClick={(e) => { e.stopPropagation(); setShowTweetPreview(false); }}
+          >
+            <X size={20} />
+          </button>
+          {media.length > 1 && (
+            <button
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white z-10"
+              onClick={(e) => { e.stopPropagation(); setTweetPreviewIndex(i => (i - 1 + media.length) % media.length); }}
+            >
+              <ChevronLeft size={22} />
+            </button>
+          )}
+          <img
+            src={media[tweetPreviewIndex]?.croppedUrl || media[tweetPreviewIndex]?.url}
+            alt="Preview"
+            className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {media.length > 1 && (
+            <button
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white z-10"
+              onClick={(e) => { e.stopPropagation(); setTweetPreviewIndex(i => (i + 1) % media.length); }}
+            >
+              <ChevronRight size={22} />
+            </button>
+          )}
+          {media.length > 1 && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2">
+              {media.map((_, i) => (
+                <div key={i} className={`w-2 h-2 rounded-full transition-all ${i === tweetPreviewIndex ? 'bg-white' : 'bg-white/40'}`} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default CreatePostModal;

@@ -21,6 +21,7 @@ class FeedService {
 
   final PostsApi _postsApi = PostsApi();
   final AdsApi _adsApi = AdsApi();
+  final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
   final AuthApi _authApi = AuthApi();
   final StoriesApi _storiesApi = StoriesApi();
 
@@ -1023,9 +1024,21 @@ class FeedService {
         sponsored = _getAds();
       }
 
-      return _injectAdsEveryN(
+      List<FeedPost> promotes = const <FeedPost>[];
+      try {
+        final rawPromotes = await _promoteReelsApi.listPromoteReels(
+          page: 1,
+          limit: 20,
+        );
+        promotes = _mapPromoteReelsToFeedPosts(rawPromotes);
+      } catch (_) {
+        promotes = const <FeedPost>[];
+      }
+
+      return _injectAdsAndPromotesEveryN(
         mapped,
         sponsored,
+        promotes,
         interval: 5,
         offset: offset,
       );
@@ -1034,6 +1047,194 @@ class FeedService {
       // On any top-level error, fall back to empty list so UI can recover.
       return [];
     }
+  }
+
+  List<FeedPost> _mapPromoteReelsToFeedPosts(dynamic raw) {
+    List<dynamic> items = const [];
+    if (raw is List) {
+      items = raw;
+    } else if (raw is Map) {
+      final data = raw['data'];
+      if (data is List) items = data;
+    }
+    if (items.isEmpty) return const <FeedPost>[];
+
+    int toInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v?.toString() ?? '') ?? 0;
+    }
+
+    bool toBool(dynamic v) {
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      if (v is String) {
+        final s = v.trim().toLowerCase();
+        return s == 'true' || s == '1' || s == 'yes';
+      }
+      return false;
+    }
+
+    String str(dynamic v) => (v ?? '').toString().trim();
+
+    DateTime parseDate(dynamic v) {
+      final s = str(v);
+      final dt = DateTime.tryParse(s);
+      return dt ?? DateTime.now();
+    }
+
+    String? pickMediaUrl(Map<String, dynamic> item) {
+      final media = item['media'];
+      if (media is! List || media.isEmpty) return null;
+      final first = media.first;
+      if (first is String) return first;
+      if (first is Map) {
+        final m = Map<String, dynamic>.from(first);
+        return (m['fileUrl'] ?? m['file_url'] ?? m['url'] ?? m['link'])
+            ?.toString();
+      }
+      return null;
+    }
+
+    String? pickThumbnailUrl(Map<String, dynamic> item) {
+      final media = item['media'];
+      if (media is! List || media.isEmpty) return null;
+      final first = media.first;
+      if (first is! Map) return null;
+      final m = Map<String, dynamic>.from(first);
+      dynamic rawThumb = m['thumbnails'] ??
+          m['thumbnail'] ??
+          m['thumbnailUrl'] ??
+          m['thumbnail_url'] ??
+          m['thumb'];
+      if (rawThumb is List && rawThumb.isNotEmpty) rawThumb = rawThumb.first;
+      if (rawThumb is String) return rawThumb;
+      if (rawThumb is Map) {
+        final t = Map<String, dynamic>.from(rawThumb);
+        return (t['fileUrl'] ?? t['file_url'] ?? t['url'] ?? t['path'])
+            ?.toString();
+      }
+      return null;
+    }
+
+    final out = <FeedPost>[];
+    for (final e in items) {
+      if (e is! Map) continue;
+      final item = Map<String, dynamic>.from(e);
+      final id = str(item['_id'] ?? item['id'] ?? item['promote_reel_id']);
+      if (id.isEmpty) continue;
+      final user = item['user_id'] is Map
+          ? Map<String, dynamic>.from(item['user_id'] as Map)
+          : <String, dynamic>{};
+      final userId = str(user['_id'] ?? user['id'] ?? item['user_id']);
+      final userName = str(user['username'] ?? user['full_name'] ?? 'User');
+      final avatar = UrlHelper.normalizeUrl(
+        user['avatar_url'] ??
+            user['profile_picture'] ??
+            user['profilePicture'] ??
+            user['profile_pic'] ??
+            user['avatarUrl'],
+      );
+
+      final mediaUrl = UrlHelper.normalizeUrl(pickMediaUrl(item));
+      if (mediaUrl.isEmpty) continue;
+      final thumb = UrlHelper.normalizeUrl(pickThumbnailUrl(item) ?? '');
+
+      out.add(
+        FeedPost(
+          id: 'promote-$id',
+          userId: userId,
+          userName: userName.isEmpty ? 'User' : userName,
+          userAvatar: avatar.isEmpty ? null : avatar,
+          mediaType: PostMediaType.reel,
+          mediaUrls: [mediaUrl],
+          thumbnailUrl: thumb.isEmpty ? null : thumb,
+          caption: (item['caption'] ?? '').toString(),
+          hashtags: ((item['tags'] as List?) ?? const [])
+              .map((t) => t.toString())
+              .toList(),
+          createdAt: parseDate(item['created_at'] ?? item['createdAt']),
+          likes: toInt(item['likes_count'] ?? item['likesCount']),
+          comments: toInt(item['comments_count'] ?? item['commentsCount']),
+          shares: 0,
+          views: 0,
+          isLiked: toBool(item['is_liked_by_me']),
+          isSaved: toBool(item['is_saved_by_me']),
+          isFollowed: toBool(item['is_followed_by_me']),
+          isAd: false,
+        ),
+      );
+    }
+    return out;
+  }
+
+  List<FeedPost> _injectAdsAndPromotesEveryN(
+    List<FeedPost> posts,
+    List<FeedPost> ads,
+    List<FeedPost> promotes, {
+    required int interval,
+    required int offset,
+  }) {
+    if (interval <= 0) return posts;
+
+    bool isInjectedPromote(FeedPost p) {
+      final id = p.id;
+      return id.startsWith('promote-') || id.contains('-slot-promote-');
+    }
+
+    final basePosts =
+        posts.where((p) => !p.isAd && !isInjectedPromote(p)).toList();
+
+    final adPool = <FeedPost>[];
+    final seenAdIds = <String>{};
+    for (final a in ads) {
+      if (a.id.isEmpty || seenAdIds.contains(a.id)) continue;
+      adPool.add(a);
+      seenAdIds.add(a.id);
+    }
+    for (final p in posts.where((p) => p.isAd)) {
+      if (p.id.isEmpty || seenAdIds.contains(p.id)) continue;
+      adPool.add(p);
+      seenAdIds.add(p.id);
+    }
+
+    final promotePool = <FeedPost>[];
+    final seenPromoteIds = <String>{};
+    for (final pr in promotes) {
+      if (pr.id.isEmpty) continue;
+      if (seenPromoteIds.contains(pr.id)) continue;
+      promotePool.add(pr);
+      seenPromoteIds.add(pr.id);
+    }
+    for (final pr in posts.where(isInjectedPromote)) {
+      if (pr.id.isEmpty) continue;
+      if (seenPromoteIds.contains(pr.id)) continue;
+      promotePool.add(pr);
+      seenPromoteIds.add(pr.id);
+    }
+
+    if (adPool.isEmpty && promotePool.isEmpty) return posts;
+
+    final merged = <FeedPost>[];
+    var adIndex = 0;
+    var promoteIndex = 0;
+    for (var i = 0; i < basePosts.length; i++) {
+      merged.add(basePosts[i]);
+      final globalIndex = offset + i + 1;
+      if (globalIndex % interval == 0 && i < basePosts.length - 1) {
+        if (adPool.isNotEmpty) {
+          final ad = adPool[adIndex % adPool.length];
+          merged.add(ad.copyWith(id: '${ad.id}-slot-$globalIndex'));
+          adIndex += 1;
+        }
+        if (promotePool.isNotEmpty) {
+          final pr = promotePool[promoteIndex % promotePool.length];
+          merged.add(pr.copyWith(id: '${pr.id}-slot-promote-$globalIndex'));
+          promoteIndex += 1;
+        }
+      }
+    }
+    return merged;
   }
 
   Future<T> _rateLimited<T>(Future<T> Function() task) async {

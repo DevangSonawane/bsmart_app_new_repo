@@ -11,6 +11,7 @@ export 'posts_api.dart';
 export 'tweets_api.dart';
 export 'comments_api.dart';
 export 'tweet_comments_api.dart';
+export 'promote_reels_api.dart';
 export 'upload_api.dart';
 export 'stories_api.dart';
 export 'follows_api.dart';
