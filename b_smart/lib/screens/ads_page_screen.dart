@@ -2431,16 +2431,33 @@ class _AdVideoItemState extends State<AdVideoItem>
     final media = Container(
       color: Colors.black,
       child: _isInitialized && _controller != null && _isVideoAd
-          ? ClipRect(
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: _controller!.value.size.width,
-                  height: _controller!.value.size.height,
-                  child: VideoPlayer(_controller!),
+          ? () {
+              final ar = _controller!.value.aspectRatio;
+              final target = 9 / 16;
+              final isNineSixteen =
+                  ar.isFinite && ar > 0 && (ar - target).abs() < 0.06;
+              if (isNineSixteen) {
+                return ClipRect(
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: _controller!.value.size.width,
+                      height: _controller!.value.size.height,
+                      child: VideoPlayer(_controller!),
+                    ),
+                  ),
+                );
+              }
+              return ColoredBox(
+                color: Colors.black,
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: ar,
+                    child: VideoPlayer(_controller!),
+                  ),
                 ),
-              ),
-            )
+              );
+            }()
           : () {
               final urls = widget.ad.imageUrls;
               final fallback = widget.ad.imageUrl?.trim();
@@ -2462,7 +2479,8 @@ class _AdVideoItemState extends State<AdVideoItem>
                 final needsHeaders = urls.any(UrlHelper.shouldAttachAuthHeader);
                 return AdImageGallery(
                   imageUrls: urls,
-                  httpHeaders: needsHeaders ? (_mediaHeaders ?? const {}) : null,
+                  httpHeaders:
+                      needsHeaders ? (_mediaHeaders ?? const {}) : null,
                   indicatorBottomPadding: 18,
                 );
               }

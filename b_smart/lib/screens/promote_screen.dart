@@ -213,10 +213,13 @@ class _PromoteScreenState extends State<PromoteScreen> {
     final id = _toId(item['id'] ?? item['_id'] ?? item['promote_reel_id']);
     if (id.isEmpty) return;
 
-    final wasLiked = item['isLikedByMe'] == true || item['is_liked_by_me'] == true;
-    final cur = _toInt(item['likesCount'] ?? item['likes_count'] ?? item['likes']);
+    final wasLiked =
+        item['isLikedByMe'] == true || item['is_liked_by_me'] == true;
+    final cur =
+        _toInt(item['likesCount'] ?? item['likes_count'] ?? item['likes']);
     final nextLiked = !wasLiked;
-    final nextCount = (cur + (nextLiked ? 1 : -1)) < 0 ? 0 : (cur + (nextLiked ? 1 : -1));
+    final nextCount =
+        (cur + (nextLiked ? 1 : -1)) < 0 ? 0 : (cur + (nextLiked ? 1 : -1));
 
     setState(() {
       _promotes[index] = {
@@ -251,7 +254,8 @@ class _PromoteScreenState extends State<PromoteScreen> {
     final item = Map<String, dynamic>.from(_promotes[index]);
     final id = _toId(item['id'] ?? item['_id'] ?? item['promote_reel_id']);
     if (id.isEmpty) return;
-    final cur = _toInt(item['commentsCount'] ?? item['comments_count'] ?? item['comments']);
+    final cur = _toInt(
+        item['commentsCount'] ?? item['comments_count'] ?? item['comments']);
     await PromoteCommentsSheet.show(
       context,
       promoteReelId: id,
@@ -358,321 +362,346 @@ class _PromoteScreenState extends State<PromoteScreen> {
         onPageChanged: _onPageChanged,
         itemCount: _promotes.length,
         itemBuilder: (context, index) {
-            final item = _promotes[index];
-            final products = (item['products'] as List<dynamic>?) ?? [];
-            final controller = _controllers[index];
-            final actionsBottom = 96.0 + bottomSystemInset;
-            final likesCount = _toInt(item['likesCount'] ?? item['likes_count'] ?? item['likes']);
-            final commentsCount = _toInt(item['commentsCount'] ?? item['comments_count'] ?? item['comments']);
-            final isLiked = item['isLikedByMe'] == true || item['is_liked_by_me'] == true;
-            final uid = _toId(item['userId'] ?? item['user_id']);
-            final caption = (item['caption'] ?? item['description'] ?? '').toString().trim();
-            final tagsRaw = item['tags'];
-            final tags = <String>[];
-            if (tagsRaw is List) {
-              for (final t in tagsRaw) {
-                final s = (t ?? '').toString().trim();
-                if (s.isEmpty) continue;
-                tags.add(s.startsWith('#') ? s : '#$s');
-              }
+          final item = _promotes[index];
+          final products = (item['products'] as List<dynamic>?) ?? [];
+          final controller = _controllers[index];
+          final actionsBottom = 96.0 + bottomSystemInset;
+          final likesCount = _toInt(
+              item['likesCount'] ?? item['likes_count'] ?? item['likes']);
+          final commentsCount = _toInt(item['commentsCount'] ??
+              item['comments_count'] ??
+              item['comments']);
+          final isLiked =
+              item['isLikedByMe'] == true || item['is_liked_by_me'] == true;
+          final uid = _toId(item['userId'] ?? item['user_id']);
+          final caption =
+              (item['caption'] ?? item['description'] ?? '').toString().trim();
+          final tagsRaw = item['tags'];
+          final tags = <String>[];
+          if (tagsRaw is List) {
+            for (final t in tagsRaw) {
+              final s = (t ?? '').toString().trim();
+              if (s.isEmpty) continue;
+              tags.add(s.startsWith('#') ? s : '#$s');
             }
-            final productsOpen = _productsOpenByIndex[index] ?? true;
-            final productsToggleHeight = products.isNotEmpty ? 28.0 : 0.0;
-            final productsListHeight =
-                (products.isNotEmpty && productsOpen) ? (10.0 + 82.0) : 0.0;
-            final productsPanelHeight = productsToggleHeight + productsListHeight;
-            final infoBottomPadding =
-                bottomSystemInset + 12.0 + productsPanelHeight + 12.0;
-            return Stack(
-              fit: StackFit.expand,
-              clipBehavior: Clip.none,
-              children: [
-                // 0. Solid black for nav bar zone
-                if (bottomSystemInset > 0)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: bottomSystemInset,
-                    child: const ColoredBox(color: Colors.black),
-                  ),
-                // Video
+          }
+          final productsOpen = _productsOpenByIndex[index] ?? true;
+          final productsToggleHeight = products.isNotEmpty ? 28.0 : 0.0;
+          final productsListHeight =
+              (products.isNotEmpty && productsOpen) ? (10.0 + 82.0) : 0.0;
+          final productsPanelHeight = productsToggleHeight + productsListHeight;
+          final infoBottomPadding =
+              bottomSystemInset + 12.0 + productsPanelHeight + 12.0;
+          return Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              // 0. Solid black for nav bar zone
+              if (bottomSystemInset > 0)
                 Positioned(
-                  top: 0,
                   left: 0,
                   right: 0,
-                  bottom: bottomSystemInset,
-                  child: controller != null && controller.value.isInitialized
-                      ? FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: controller.value.size.width,
-                            height: controller.value.size.height,
-                            child: VideoPlayer(controller),
-                          ),
-                        )
-                      : Container(
-                          color: Colors.black,
-                          child: const Center(
-                              child: CircularProgressIndicator(
-                                  color: Colors.white54))),
+                  bottom: 0,
+                  height: bottomSystemInset,
+                  child: const ColoredBox(color: Colors.black),
                 ),
-                // Gradient overlay
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: bottomSystemInset,
-                  child: IgnorePointer(
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Colors.black54],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                // Right side actions (aligned with Ads layout)
-                Positioned(
-                  right: 4,
-                  bottom: actionsBottom,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      GlassActionButton(
-                        icon: LucideIcons.heart,
-                        label: _fmt(likesCount),
-                        iconColor: isLiked ? DesignTokens.instaPink : Colors.white,
-                        onTap: () => _toggleLike(index),
-                      ),
-                      const SizedBox(height: 16),
-                      GlassActionButton(
-                        icon: LucideIcons.messageCircle,
-                        label: _fmt(commentsCount),
-                        onTap: () => _openComments(index),
-                      ),
-                      const SizedBox(height: 16),
-                      GlassActionButton(
-                        icon: LucideIcons.send,
-                        label: '',
-                        rotate: -0.2,
-                        onTap: () => _openShare(index),
-                      ),
-                      const SizedBox(height: 16),
-                      GlassActionButton(
-                        icon: LucideIcons.ellipsis,
-                        label: '',
-                        onTap: () {},
-                      ),
-                      const SizedBox(height: 16),
-                      GlassActionButton(
-                        icon:
-                            _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                        label: '',
-                        onTap: () {
-                          setState(() {
-                            _isMuted = !_isMuted;
-                            final c = _controllers[_currentIndex];
-                            if (c != null) c.setVolume(_isMuted ? 0.0 : 1.0);
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                // Bottom: user + caption + tags (bounded within the page height)
-                Positioned.fill(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: 16,
-                      right: 92,
-                      bottom: infoBottomPadding,
-                    ),
-                    child: Align(
-                      alignment: Alignment.bottomLeft,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 240),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _PromoteUsernamePill(
-                              item: item,
-                              isFollowing: _followByUserId[uid] == true,
-                              isFollowLoading: _followLoadingUserIds.contains(uid),
-                              showFollow: uid.isNotEmpty &&
-                                  (_myUserId == null ||
-                                      _myUserId!.isEmpty ||
-                                      uid != _myUserId),
-                              onFollowTap: () => _toggleFollow(index),
+              // Video
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: bottomSystemInset,
+                child: controller != null && controller.value.isInitialized
+                    ? () {
+                        final ar = controller.value.aspectRatio;
+                        final target = 9 / 16;
+                        final isNineSixteen =
+                            ar.isFinite && ar > 0 && (ar - target).abs() < 0.06;
+                        if (isNineSixteen) {
+                          return ClipRect(
+                            child: FittedBox(
+                              fit: BoxFit.cover,
+                              child: SizedBox(
+                                width: controller.value.size.width,
+                                height: controller.value.size.height,
+                                child: VideoPlayer(controller),
+                              ),
                             ),
-                            if (caption.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                caption,
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  height: 1.25,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black45,
-                                      offset: Offset(0, 1),
-                                      blurRadius: 2,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            if (tags.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 4,
-                                children: tags.take(3).map((t) {
-                                  return Text(
-                                    t,
-                                    style: TextStyle(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.70),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      shadows: const [
-                                        Shadow(
-                                          color: Colors.black45,
-                                          offset: Offset(0, 1),
-                                          blurRadius: 2,
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
-                            ],
-                          ],
-                        ),
+                          );
+                        }
+                        return ColoredBox(
+                          color: Colors.black,
+                          child: Center(
+                            child: AspectRatio(
+                              aspectRatio: ar,
+                              child: VideoPlayer(controller),
+                            ),
+                          ),
+                        );
+                      }()
+                    : Container(
+                        color: Colors.black,
+                        child: const Center(
+                            child: CircularProgressIndicator(
+                                color: Colors.white54))),
+              ),
+              // Gradient overlay
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: bottomSystemInset,
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black54],
                       ),
                     ),
                   ),
                 ),
-
-                // Progress bar (like Ads/Reels)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: bottomSystemInset,
-                  child: IgnorePointer(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: Container(
-                        height: 4,
-                        color: Colors.white.withValues(alpha: 0.22),
-                        child: FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor:
-                              (_progressByIndex[index] ?? 0.0).clamp(0.0, 1.0),
-                          child: Container(color: Colors.white),
-                        ),
-                      ),
+              ),
+              // Right side actions (aligned with Ads layout)
+              Positioned(
+                right: 4,
+                bottom: actionsBottom,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GlassActionButton(
+                      icon: LucideIcons.heart,
+                      label: _fmt(likesCount),
+                      iconColor:
+                          isLiked ? DesignTokens.instaPink : Colors.white,
+                      onTap: () => _toggleLike(index),
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    GlassActionButton(
+                      icon: LucideIcons.messageCircle,
+                      label: _fmt(commentsCount),
+                      onTap: () => _openComments(index),
+                    ),
+                    const SizedBox(height: 16),
+                    GlassActionButton(
+                      icon: LucideIcons.send,
+                      label: '',
+                      rotate: -0.2,
+                      onTap: () => _openShare(index),
+                    ),
+                    const SizedBox(height: 16),
+                    GlassActionButton(
+                      icon: LucideIcons.ellipsis,
+                      label: '',
+                      onTap: () {},
+                    ),
+                    const SizedBox(height: 16),
+                    GlassActionButton(
+                      icon:
+                          _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                      label: '',
+                      onTap: () {
+                        setState(() {
+                          _isMuted = !_isMuted;
+                          final c = _controllers[_currentIndex];
+                          if (c != null) c.setVolume(_isMuted ? 0.0 : 1.0);
+                        });
+                      },
+                    ),
+                  ],
                 ),
-
-                // Products cards (anchored at bottom like before).
-                if (products.isNotEmpty)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: bottomSystemInset + 12,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _productsOpenByIndex[index] = !productsOpen;
-                              });
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.30),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.20),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    LucideIcons.shoppingBag,
-                                    size: 14,
-                                    color: Colors.white,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    productsOpen
-                                        ? 'Hide Products'
-                                        : '${products.length} Product${products.length > 1 ? 's' : ''}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+              ),
+              // Bottom: user + caption + tags (bounded within the page height)
+              Positioned.fill(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 92,
+                    bottom: infoBottomPadding,
+                  ),
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _PromoteUsernamePill(
+                            item: item,
+                            isFollowing: _followByUserId[uid] == true,
+                            isFollowLoading:
+                                _followLoadingUserIds.contains(uid),
+                            showFollow: uid.isNotEmpty &&
+                                (_myUserId == null ||
+                                    _myUserId!.isEmpty ||
+                                    uid != _myUserId),
+                            onFollowTap: () => _toggleFollow(index),
+                          ),
+                          if (caption.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              caption,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                height: 1.25,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black45,
+                                    offset: Offset(0, 1),
+                                    blurRadius: 2,
                                   ),
                                 ],
                               ),
                             ),
-                          ),
-                        ),
-                        AnimatedOpacity(
-                          duration: const Duration(milliseconds: 220),
-                          opacity: productsOpen ? 1 : 0,
-                          child: AnimatedSize(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
-                            child: productsOpen
-                                ? Padding(
-                                    padding: const EdgeInsets.only(top: 10),
-                                    child: SizedBox(
-                                      height: 82,
-                                      child: ListView.separated(
-                                        clipBehavior: Clip.none,
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        scrollDirection: Axis.horizontal,
-                                        physics: const BouncingScrollPhysics(),
-                                        itemCount: products.length.clamp(0, 8),
-                                        separatorBuilder: (_, __) =>
-                                            const SizedBox(width: 10),
-                                        itemBuilder: (context, i) {
-                                          final p = products[i] is Map
-                                              ? Map<String, dynamic>.from(
-                                                  products[i] as Map)
-                                              : <String, dynamic>{};
-                                          return _MiniProductCard(product: p);
-                                        },
+                          ],
+                          if (tags.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: tags.take(3).map((t) {
+                                return Text(
+                                  t,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.70),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    shadows: const [
+                                      Shadow(
+                                        color: Colors.black45,
+                                        offset: Offset(0, 1),
+                                        blurRadius: 2,
                                       ),
-                                    ),
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                        ),
-                      ],
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
-              ],
-            );
+                ),
+              ),
+
+              // Progress bar (like Ads/Reels)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: bottomSystemInset,
+                child: IgnorePointer(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      height: 4,
+                      color: Colors.white.withValues(alpha: 0.22),
+                      child: FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor:
+                            (_progressByIndex[index] ?? 0.0).clamp(0.0, 1.0),
+                        child: Container(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Products cards (anchored at bottom like before).
+              if (products.isNotEmpty)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: bottomSystemInset + 12,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _productsOpenByIndex[index] = !productsOpen;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.30),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.20),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  LucideIcons.shoppingBag,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  productsOpen
+                                      ? 'Hide Products'
+                                      : '${products.length} Product${products.length > 1 ? 's' : ''}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 220),
+                        opacity: productsOpen ? 1 : 0,
+                        child: AnimatedSize(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutCubic,
+                          child: productsOpen
+                              ? Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: SizedBox(
+                                    height: 82,
+                                    child: ListView.separated(
+                                      clipBehavior: Clip.none,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12),
+                                      scrollDirection: Axis.horizontal,
+                                      physics: const BouncingScrollPhysics(),
+                                      itemCount: products.length.clamp(0, 8),
+                                      separatorBuilder: (_, __) =>
+                                          const SizedBox(width: 10),
+                                      itemBuilder: (context, i) {
+                                        final p = products[i] is Map
+                                            ? Map<String, dynamic>.from(
+                                                products[i] as Map)
+                                            : <String, dynamic>{};
+                                        return _MiniProductCard(product: p);
+                                      },
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          );
         },
       ),
     );
@@ -797,9 +826,8 @@ class _PromoteUsernamePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final avatarUrl = (item['avatarUrl'] ?? item['avatar_url'] ?? '')
-        .toString()
-        .trim();
+    final avatarUrl =
+        (item['avatarUrl'] ?? item['avatar_url'] ?? '').toString().trim();
     final displayName = _safeLabel(item['username'] ?? item['brandName']);
     final initial = _initial(displayName);
     return SizedBox(
@@ -878,7 +906,9 @@ class _PromoteUsernamePill extends StatelessWidget {
               child: GestureDetector(
                 onTap: isFollowLoading ? null : onFollowTap,
                 child: Text(
-                  isFollowLoading ? '...' : (isFollowing ? 'Following' : 'Follow'),
+                  isFollowLoading
+                      ? '...'
+                      : (isFollowing ? 'Following' : 'Follow'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
@@ -925,7 +955,8 @@ class _MiniProductCard extends StatelessWidget {
         .trim();
     final websiteUrl = (rawWebsite ?? '').isEmpty
         ? ''
-        : (rawWebsite!.startsWith('http://') || rawWebsite.startsWith('https://')
+        : (rawWebsite!.startsWith('http://') ||
+                rawWebsite.startsWith('https://')
             ? rawWebsite
             : 'https://$rawWebsite');
 
@@ -969,7 +1000,8 @@ class _MiniProductCard extends StatelessWidget {
                     ),
                     errorWidget: (_, __, ___) => const ColoredBox(
                       color: Color(0xFFF1F5F9),
-                      child: Center(child: Icon(LucideIcons.imageOff, size: 18)),
+                      child:
+                          Center(child: Icon(LucideIcons.imageOff, size: 18)),
                     ),
                   )
                 else

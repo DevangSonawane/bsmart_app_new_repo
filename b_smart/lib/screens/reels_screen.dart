@@ -1089,10 +1089,10 @@ class _ReelsScreenState extends State<ReelsScreen>
     final hasBottomText = caption.isNotEmpty || current.hashtags.isNotEmpty;
     final infoBottomMobile = minimalBottomPadding;
     final infoBottomDesktop = minimalBottomPadding;
-    final maxInfoHeightMobile = (muteCenterLineMobile - minimalBottomPadding)
-        .clamp(48.0, 240.0);
-    final maxInfoHeightDesktop = (muteCenterLineDesktop - minimalBottomPadding)
-        .clamp(48.0, 240.0);
+    final maxInfoHeightMobile =
+        (muteCenterLineMobile - minimalBottomPadding).clamp(48.0, 240.0);
+    final maxInfoHeightDesktop =
+        (muteCenterLineDesktop - minimalBottomPadding).clamp(48.0, 240.0);
 
     return ClipRRect(
       borderRadius: isDesktop ? BorderRadius.circular(20) : BorderRadius.zero,
@@ -1181,8 +1181,9 @@ class _ReelsScreenState extends State<ReelsScreen>
               child: hasBottomText
                   ? ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxHeight:
-                            isDesktop ? maxInfoHeightDesktop : maxInfoHeightMobile,
+                        maxHeight: isDesktop
+                            ? maxInfoHeightDesktop
+                            : maxInfoHeightMobile,
                       ),
                       child: _buildBottomInfo(current),
                     )
@@ -1275,8 +1276,9 @@ class _ReelsScreenState extends State<ReelsScreen>
       VideoPlayerController controller, double fraction) async {
     final duration = _durationFor(controller);
     if (duration <= Duration.zero) return;
-    final targetMs =
-        (duration.inMilliseconds * _clamp01(fraction)).round().clamp(0, duration.inMilliseconds);
+    final targetMs = (duration.inMilliseconds * _clamp01(fraction))
+        .round()
+        .clamp(0, duration.inMilliseconds);
     try {
       await controller.seekTo(Duration(milliseconds: targetMs));
     } catch (_) {}
@@ -1428,12 +1430,29 @@ class _ReelsScreenState extends State<ReelsScreen>
                               videoSize!.isEmpty) {
                             return const SizedBox.shrink();
                           }
-                          return ClipRect(
-                            child: FittedBox(
-                              fit: BoxFit.cover,
-                              child: SizedBox(
-                                width: videoSize!.width,
-                                height: videoSize!.height,
+                          final ar = videoSize!.width / videoSize!.height;
+                          final target = 9 / 16;
+                          final isNineSixteen = ar.isFinite &&
+                              ar > 0 &&
+                              (ar - target).abs() < 0.06;
+                          if (isNineSixteen) {
+                            return ClipRect(
+                              child: FittedBox(
+                                fit: BoxFit.cover,
+                                child: SizedBox(
+                                  width: videoSize!.width,
+                                  height: videoSize!.height,
+                                  child: VideoPlayer(controller),
+                                ),
+                              ),
+                            );
+                          }
+                          return ColoredBox(
+                            color: Colors.black,
+                            child: Center(
+                              child: AspectRatio(
+                                aspectRatio:
+                                    ar.isFinite && ar > 0 ? ar : target,
                                 child: VideoPlayer(controller),
                               ),
                             ),
@@ -1728,9 +1747,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget _buildBottomInfo(Reel reel) {
     final isOwn =
         _currentUserId != null && reel.userId.trim() == _currentUserId;
-    final canShowFollow = reel.userId.trim().isNotEmpty &&
-        !isOwn &&
-        reel.isFollowing == false;
+    final canShowFollow =
+        reel.userId.trim().isNotEmpty && !isOwn && reel.isFollowing == false;
     final isExpanded = _captionExpanded[reel.id] ?? false;
     final caption = (reel.caption ?? '').trim();
     final hasCaption = caption.isNotEmpty;
@@ -2322,14 +2340,34 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem> {
                       duration: const Duration(milliseconds: 180),
                       curve: Curves.easeOut,
                       opacity: 1,
-                      child: FittedBox(
-                        fit: BoxFit.cover,
-                        child: SizedBox(
-                          width: videoSize.width,
-                          height: videoSize.height,
-                          child: VideoPlayer(controller),
-                        ),
-                      ),
+                      child: () {
+                        final vs = videoSize!;
+                        final ar = controller.value.aspectRatio;
+                        final target = 9 / 16;
+                        final isNineSixteen =
+                            ar.isFinite && ar > 0 && (ar - target).abs() < 0.06;
+                        if (isNineSixteen) {
+                          return ClipRect(
+                            child: FittedBox(
+                              fit: BoxFit.cover,
+                              child: SizedBox(
+                                width: vs.width,
+                                height: vs.height,
+                                child: VideoPlayer(controller),
+                              ),
+                            ),
+                          );
+                        }
+                        return ColoredBox(
+                          color: Colors.black,
+                          child: Center(
+                            child: AspectRatio(
+                              aspectRatio: ar,
+                              child: VideoPlayer(controller),
+                            ),
+                          ),
+                        );
+                      }(),
                     ),
                 ],
               ),
