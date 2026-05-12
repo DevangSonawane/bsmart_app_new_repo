@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { ChevronDown, MapPin, UserPlus, Play, X, MoreHorizontal } from 'lucide-react';
+import { ChevronDown, MapPin, UserPlus, Play, X, MoreHorizontal, Search } from 'lucide-react';
 import StoryRail from '../components/StoryRail';
 import PostCard from '../components/PostCard';
 import PostDetailModal from '../components/PostDetailModal';
@@ -171,13 +171,33 @@ const DesktopFollowButton = ({ targetUserId }) => {
 };
 
 // ── Location Bar ──────────────────────────────────────────────────────────────
-const LocationBar = () => (
-  <div className="hidden md:block sticky top-0 z-30 bg-white dark:bg-black mb-4">
-    <div className="max-w-[1280px] mx-auto xl:px-6">
-      <div className="flex items-center justify-between px-4 py-3 gap-4">
-        <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange" style={{ fontFamily: 'cursive' }}>
-          B-Smart
-        </h1>
+const LocationBar = ({ searchQuery, onSearchChange, searchLoading }) => (
+  <div className="hidden md:block sticky top-0 z-30 bg-white dark:bg-black mb-4 border-b border-gray-100 dark:border-gray-800 w-full">
+    <div className="max-w-[1200px] mx-auto xl:px-6">
+      <div className="flex items-center justify-between px-4 py-3 gap-8">
+        <div className="flex items-center gap-12 flex-1">
+          <h1 className="text-3xl font-normal text-[#bc1888] italic" style={{ fontFamily: "'Dancing Script', cursive" }}>
+            b_smart
+          </h1>
+          
+          {/* Search bar */}
+          <div className="relative w-full max-w-[400px]">
+            <div className="flex items-center gap-3 bg-gray-100 dark:bg-gray-900 px-4 py-2 rounded-xl border border-transparent focus-within:border-gray-200 dark:focus-within:border-gray-700 transition-all">
+              <Search size={18} className="text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Search"
+                className="bg-transparent border-none outline-none text-sm w-full dark:text-white"
+              />
+              {searchLoading && (
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-insta-pink" />
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="flex items-center justify-between gap-2 bg-gray-100 dark:bg-gray-900 px-3 py-2 rounded-lg cursor-pointer group hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors w-auto min-w-[300px]">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="p-1.5 bg-white dark:bg-black rounded-full shadow-sm shrink-0">
@@ -424,16 +444,31 @@ const DesktopSuggestionsRail = ({ currentUser, suggestedUsers }) => {
             );
           })}
         </div>
-
-        <div className="mt-9 pr-6 text-[11px] leading-[1.45] text-gray-500 dark:text-gray-500">
-          <p>About · Help · Press · API · Jobs · Privacy · Terms</p>
-          <p>Locations · Language · Meta Verified</p>
-          <p className="mt-4 uppercase">© 2026 B-Smart from Meta</p>
-        </div>
       </div>
     </aside>
   );
 };
+
+// ── Footer ──────────────────────────────────────────────────────────────────
+const Footer = () => (
+  <footer className="hidden md:block w-full border-t border-gray-100 dark:border-gray-800 py-12 mt-12 bg-white dark:bg-black">
+    <div className="max-w-[1200px] mx-auto px-6 text-center text-[12px] text-gray-500 dark:text-gray-400">
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mb-4 font-medium">
+        <span className="hover:underline cursor-pointer">About</span>
+        <span className="hover:underline cursor-pointer">Help</span>
+        <span className="hover:underline cursor-pointer">Press</span>
+        <span className="hover:underline cursor-pointer">API</span>
+        <span className="hover:underline cursor-pointer">Jobs</span>
+        <span className="hover:underline cursor-pointer">Privacy</span>
+        <span className="hover:underline cursor-pointer">Terms</span>
+        <span className="hover:underline cursor-pointer">Locations</span>
+        <span className="hover:underline cursor-pointer">Language</span>
+        <span className="hover:underline cursor-pointer">Meta Verified</span>
+      </div>
+      <p className="uppercase tracking-widest font-semibold opacity-80">© 2026 B-Smart from Meta</p>
+    </div>
+  </footer>
+);
 
 // ── Build feed with ads + mobile suggestions ──────────────────────────────────
 const AD_INTERVAL = 4;
@@ -488,6 +523,36 @@ const Home = () => {
   const [selectedItem,   setSelectedItem]   = useState(null);
   const [selectedTweet,  setSelectedTweet]  = useState(null);
   const [selectedPromoteReel, setSelectedPromoteReel] = useState(null);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState({ users: [], posts: [], reels: [] });
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchDebounce = useRef(null);
+
+  const runSearch = async (q) => {
+    const query = q.trim();
+    if (!query) { setSearchResults({ users: [], posts: [], reels: [] }); return; }
+    setSearchLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${BASE_URL}/api/search?q=${encodeURIComponent(query)}&limit=10`, {
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResults(data.results || { users: [], posts: [], reels: [] });
+      }
+    } catch (e) { console.error('Search error:', e); }
+    finally { setSearchLoading(false); }
+  };
+
+  const handleSearchChange = (q) => {
+    setSearchQuery(q);
+    clearTimeout(searchDebounce.current);
+    if (!q.trim()) { setSearchResults({ users: [], posts: [], reels: [] }); return; }
+    searchDebounce.current = setTimeout(() => runSearch(q), 350);
+  };
 
   const fetchPosts = useCallback(async () => {
     try {
@@ -564,11 +629,61 @@ const Home = () => {
   };
 
   return (
-    <div>
-      <LocationBar />
-      <div className="max-w-[1280px] mx-auto xl:px-6">
-        <div className="xl:flex xl:items-start xl:justify-between xl:gap-16">
-          <div className="w-full max-w-[630px]">
+    <div className="relative">
+      <LocationBar 
+        searchQuery={searchQuery} 
+        onSearchChange={handleSearchChange} 
+        searchLoading={searchLoading} 
+      />
+
+      {/* Search Results Dropdown */}
+      {searchQuery.trim() && (
+        <div className="hidden md:block absolute top-16 left-1/2 -translate-x-1/2 w-full max-w-[400px] bg-white dark:bg-[#1c1c1c] rounded-b-2xl border border-gray-100 dark:border-white/10 shadow-2xl z-[100] max-h-[400px] overflow-y-auto">
+          {searchLoading && searchResults.users.length === 0 && searchResults.posts.length === 0 && (
+            <div className="p-8 text-center text-gray-400">Searching...</div>
+          )}
+          
+          {!searchLoading && searchResults.users.length === 0 && searchResults.posts.length === 0 && searchResults.reels.length === 0 && (
+            <div className="p-8 text-center text-gray-400">No results found for "{searchQuery}"</div>
+          )}
+
+          {searchResults.users.length > 0 && (
+            <div className="p-2 border-b border-gray-50 dark:border-white/5">
+              <p className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">People</p>
+              {searchResults.users.map(u => (
+                <button
+                  key={u._id || u.id}
+                  onClick={() => {
+                    const profilePath = u.role === 'vendor' ? `/vendor/${u._id || u.id}/public` : `/profile/${u._id || u.id}`;
+                    navigate(profilePath);
+                    setSearchQuery('');
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-xl transition-colors text-left"
+                >
+                  <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0">
+                    {u.avatar_url || u.profile_picture ? (
+                      <img src={u.avatar_url || u.profile_picture} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400">
+                        {(u.username || u.full_name || '?')[0].toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.full_name || u.username}</p>
+                    {u.username && <p className="text-xs text-gray-500 truncate">@{u.username}</p>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Add more sections for posts/reels if desired, but user asked for "similar", so users is primary */}
+        </div>
+      )}
+
+      <div className="w-full xl:px-6">
+        <div className="max-w-[1200px] mx-auto xl:flex xl:items-start xl:justify-between xl:gap-20">
+          <div className="w-full max-w-[700px]">
             <StoryRail />
             <div className="mx-auto mb-4 flex w-full max-w-[470px] items-center gap-2 px-2 xl:mx-0">
               {[
@@ -631,6 +746,9 @@ const Home = () => {
           <DesktopSuggestionsRail currentUser={userObject} suggestedUsers={suggestedUsers} />
         </div>
       </div>
+      
+      <Footer />
+
       <PostDetailModal
         isOpen={!!selectedItem}
         post={selectedItem}

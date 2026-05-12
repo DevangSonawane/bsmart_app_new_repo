@@ -696,14 +696,14 @@ class _MessagingScreenState extends State<MessagingScreen> {
           final id = _userId(user);
           final online = id != null && _onlineUserIds.contains(id);
           return InkWell(
-              onTap: () {
-                final userId = _userId(user);
-                if (userId == null || userId.isEmpty) return;
-                final existing = _normalConversations.firstWhere(
-                  (c) {
-                    final other = _otherParticipant(c);
-                    final oid = _userId(other);
-                    return oid == userId;
+            onTap: () {
+              final userId = _userId(user);
+              if (userId == null || userId.isEmpty) return;
+              final existing = _normalConversations.firstWhere(
+                (c) {
+                  final other = _otherParticipant(c);
+                  final oid = _userId(other);
+                  return oid == userId;
                 },
                 orElse: () => const <String, dynamic>{},
               );
@@ -995,13 +995,17 @@ class _MessagingScreenState extends State<MessagingScreen> {
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    if (avatarUrl != null && avatarUrl.trim().isNotEmpty)
+                    if (isGroup &&
+                        (avatarUrl == null || avatarUrl.trim().isEmpty))
+                      _mergedGroupAvatar(conversation, 44)
+                    else if (avatarUrl != null && avatarUrl.trim().isNotEmpty)
                       ClipOval(
                         child: SafeNetworkImage(
-                            url: avatarUrl,
-                            width: 44,
-                            height: 44,
-                            fit: BoxFit.cover),
+                          url: avatarUrl,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                        ),
                       )
                     else
                       CircleAvatar(
@@ -1015,7 +1019,9 @@ class _MessagingScreenState extends State<MessagingScreen> {
                               .first
                               .toUpperCase(),
                           style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.w700),
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     if (showOnlineDot)
@@ -1100,6 +1106,100 @@ class _MessagingScreenState extends State<MessagingScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _mergedGroupAvatar(Map<String, dynamic> conversation, double size) {
+    final borderColor = Theme.of(context).cardColor;
+    final uid = (_currentUserId ?? '').trim();
+    final raw = conversation['participants'];
+    final participants = raw is List
+        ? raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        : const <Map<String, dynamic>>[];
+
+    final others = participants
+        .where((p) => (p['_id'] ?? p['id'] ?? p['user_id'])?.toString() != uid)
+        .take(2)
+        .toList();
+
+    // Ensure we have 2 (fill from all if needed).
+    while (others.length < 2 && participants.length > others.length) {
+      final extra = participants.firstWhere(
+        (p) => !others.contains(p),
+        orElse: () => const <String, dynamic>{},
+      );
+      if (extra.isEmpty) break;
+      others.add(extra);
+    }
+
+    Widget avatarCircle(Map<String, dynamic> user,
+        {required double circleSize}) {
+      final url = (user['avatar_url'] ?? user['avatarUrl'])?.toString().trim();
+      final label = _userName(user).trim();
+      return Container(
+        width: circleSize,
+        height: circleSize,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: borderColor, width: 1.5),
+        ),
+        child: ClipOval(
+          child: (url != null && url.isNotEmpty)
+              ? SafeNetworkImage(
+                  url: url,
+                  width: circleSize,
+                  height: circleSize,
+                  fit: BoxFit.cover,
+                )
+              : CircleAvatar(
+                  radius: circleSize / 2,
+                  backgroundColor: DesignTokens.instaPink,
+                  child: Text(
+                    label.isNotEmpty
+                        ? label.characters.first.toUpperCase()
+                        : 'G',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: circleSize * 0.4,
+                    ),
+                  ),
+                ),
+        ),
+      );
+    }
+
+    if (others.length <= 1) {
+      final single =
+          others.isNotEmpty ? others.first : const <String, dynamic>{};
+      return SizedBox(
+        width: size,
+        height: size,
+        child: Center(
+          child: avatarCircle(single, circleSize: size),
+        ),
+      );
+    }
+
+    final circleSize = size * 0.72;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            child: avatarCircle(others[0], circleSize: circleSize),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: avatarCircle(others[1], circleSize: circleSize),
+          ),
+        ],
       ),
     );
   }

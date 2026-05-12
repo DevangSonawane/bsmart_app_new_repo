@@ -12,17 +12,8 @@ const BSmartLogo = () => (
       <span className="text-white font-black text-sm leading-none">b</span>
     </div>
     {/* Wordmark */}
-    <span className="text-base font-black tracking-tight">
-      <span className="text-[#f09433]">B</span>
-      <span className="text-[#dc2743]">-</span>
-      <span
-        className="bg-clip-text text-transparent"
-        style={{
-          backgroundImage: 'linear-gradient(90deg, #f09433 0%, #e6683c 30%, #dc2743 60%, #bc1888 100%)',
-        }}
-      >
-        Smart
-      </span>
+    <span className="text-xl font-normal text-[#bc1888] italic tracking-tight" style={{ fontFamily: 'cursive' }}>
+      b_smart
     </span>
   </div>
 );

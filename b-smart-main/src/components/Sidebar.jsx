@@ -524,7 +524,7 @@ const Sidebar = ({ onOpenCreateModal }) => {
   return (
     <>
       <div
-        className={`hidden md:flex flex-col fixed left-0 top-0 h-full bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800 z-50 transition-all duration-300 ease-in-out ${isHovered ? 'w-64' : 'w-20'}`}
+        className={`hidden md:flex flex-col sticky left-0 top-0 h-screen bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800 z-50 transition-all duration-300 ease-in-out ${isHovered ? 'w-64' : 'w-20'}`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
@@ -534,8 +534,8 @@ const Sidebar = ({ onOpenCreateModal }) => {
               <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-insta-yellow via-insta-orange to-insta-pink flex items-center justify-center text-white font-bold text-lg shadow-md">
                 b
               </div>
-              <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange transition-opacity duration-300" style={{ fontFamily: 'cursive' }}>
-                B-Smart
+              <h1 className="text-3xl font-normal text-[#bc1888] italic transition-opacity duration-300" style={{ fontFamily: 'cursive' }}>
+                b_smart
               </h1>
             </div>
           ) : (
@@ -689,7 +689,7 @@ const Sidebar = ({ onOpenCreateModal }) => {
               </span>
             </button>
             {showNotifications && (
-              <div className={`absolute left-full top-1/2 -translate-y-1/2 ml-3 w-80 z-[60] animate-fade-in ${isHovered ? 'translate-x-0' : 'translate-x-2'}`}>
+              <div className={`absolute left-full bottom-[-20px] ml-3 w-80 z-[60] animate-fade-in ${isHovered ? 'translate-x-0' : 'translate-x-2'}`}>
                 <div className="bg-white dark:bg-[#262626] rounded-xl shadow-xl border border-gray-100 dark:border-gray-800 py-2 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-800 flex justify-between items-center">
                     <div className="flex items-center gap-2">

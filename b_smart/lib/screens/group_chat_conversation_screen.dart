@@ -1554,6 +1554,28 @@ class _GroupChatConversationScreenState
                           }
                         }
 
+                        if (isGroup && _isGroupSystemNoticeMessage(message)) {
+                          final display =
+                              _groupSystemNoticeDisplayText(message);
+                          if (display.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Center(
+                              child: Text(
+                                display,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: cs.onSurface.withValues(alpha: 0.45),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
                         return _bubble(
                           message,
                           mine,
@@ -1852,6 +1874,37 @@ class _GroupChatConversationScreenState
 
   String _messageId(Map<String, dynamic>? message) {
     return (message?['_id'] ?? message?['id'])?.toString() ?? '';
+  }
+
+  bool _isGroupSystemNoticeMessage(Map<String, dynamic> message) {
+    final raw = (message['text'] ?? '').toString().trim();
+    if (raw.isEmpty) return false;
+    final text = raw.toLowerCase();
+    return text.contains('created the group') ||
+        text.contains('created this group') ||
+        RegExp(r'\badded\b').hasMatch(text);
+  }
+
+  String _groupSystemNoticeDisplayText(Map<String, dynamic> message) {
+    final rawText = (message['text'] ?? '').toString().trim();
+    if (rawText.isEmpty) return '';
+    final lower = rawText.toLowerCase();
+    var displayText = rawText;
+
+    if (lower.contains('created the group') ||
+        lower.contains('created this group')) {
+      final senderLabel = _senderLabelForMessage(message).trim();
+      if (senderLabel.isNotEmpty) {
+        final createdStart = lower.indexOf('created');
+        final suffix = createdStart >= 0
+            ? rawText.substring(createdStart)
+            : 'created the group chat.';
+        displayText =
+            '$senderLabel $suffix'.replaceAll(RegExp(r'\s+'), ' ').trim();
+      }
+    }
+
+    return displayText;
   }
 
   String _senderLabelForMessage(Map<String, dynamic>? message) {
@@ -2377,7 +2430,8 @@ class _GroupChatConversationScreenState
     final path = uri?.path.isNotEmpty == true ? uri!.path : url;
 
     String? matchGroup(Pattern pattern) {
-      final m = RegExp(pattern.toString(), caseSensitive: false).firstMatch(path);
+      final m =
+          RegExp(pattern.toString(), caseSensitive: false).firstMatch(path);
       final v = m?.groupCount == 1 ? m?.group(1) : null;
       return v?.trim();
     }
@@ -2400,7 +2454,8 @@ class _GroupChatConversationScreenState
     }
   }
 
-  ({String type, String id}) _resolveSharedContent(Map<String, dynamic> shared) {
+  ({String type, String id}) _resolveSharedContent(
+      Map<String, dynamic> shared) {
     var type = _sharedContentType(shared);
     var id = _sharedContentId(shared);
     final shareUrl = _sharedShareUrl(shared);
@@ -2481,7 +2536,8 @@ class _GroupChatConversationScreenState
           for (final tRaw in thumbs) {
             if (tRaw is! Map) continue;
             final t = Map<String, dynamic>.from(tRaw);
-            final u = norm(t['fileUrl'] ?? t['file_url'] ?? t['url'] ?? t['path']);
+            final u =
+                norm(t['fileUrl'] ?? t['file_url'] ?? t['url'] ?? t['path']);
             if (u.isNotEmpty && !isVideoLike(u)) return u;
           }
         }
@@ -2490,7 +2546,8 @@ class _GroupChatConversationScreenState
             .toString()
             .toLowerCase()
             .trim();
-        final fileUrl = norm(m['fileUrl'] ?? m['file_url'] ?? m['url'] ?? m['path']);
+        final fileUrl =
+            norm(m['fileUrl'] ?? m['file_url'] ?? m['url'] ?? m['path']);
         if (fileUrl.isNotEmpty &&
             (mediaType.contains('image') || !isVideoLike(fileUrl)) &&
             !isVideoLike(fileUrl)) {
@@ -2633,19 +2690,25 @@ class _GroupChatConversationScreenState
     final isPostOrTweetShare = type == 'post' || type == 'tweet';
 
     final cardBg = isDark ? theme.cardColor : Colors.white;
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.10);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.10);
     final textColor = isDark ? Colors.white : cs.onSurface;
-    final mutedText =
-        isDark ? Colors.white.withValues(alpha: 0.75) : cs.onSurface.withValues(alpha: 0.70);
-    final pillBg =
-        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.06);
-    final pillBorder =
-        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.08);
-    final headerBg =
-        isDark ? Colors.black.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.03);
-    final captionBg =
-        isDark ? Colors.black.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.04);
+    final mutedText = isDark
+        ? Colors.white.withValues(alpha: 0.75)
+        : cs.onSurface.withValues(alpha: 0.70);
+    final pillBg = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.06);
+    final pillBorder = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.08);
+    final headerBg = isDark
+        ? Colors.black.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.03);
+    final captionBg = isDark
+        ? Colors.black.withValues(alpha: 0.12)
+        : Colors.black.withValues(alpha: 0.04);
 
     Widget typePill() {
       IconData icon = LucideIcons.share2;
@@ -2776,8 +2839,9 @@ class _GroupChatConversationScreenState
     Widget previewPlaceholder(String label, {double height = 260}) {
       return Container(
         height: height,
-        color:
-            isDark ? Colors.black.withValues(alpha: 0.20) : Colors.black.withValues(alpha: 0.06),
+        color: isDark
+            ? Colors.black.withValues(alpha: 0.20)
+            : Colors.black.withValues(alpha: 0.06),
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Text(
@@ -2800,9 +2864,8 @@ class _GroupChatConversationScreenState
     if (preview.isNotEmpty && resolvedRaw == null && type != 'ad') {
       _ensureSharedPreviewAspectRatio(preview);
     }
-    final resolvedRatio = (resolvedRaw != null && resolvedRaw > 0)
-        ? resolvedRaw
-        : null;
+    final resolvedRatio =
+        (resolvedRaw != null && resolvedRaw > 0) ? resolvedRaw : null;
     final frameAspect = _quantizeSharedAspectRatio(
       resolvedRatio ?? _defaultSharedAspectRatioForType(type),
     );
@@ -2826,12 +2889,15 @@ class _GroupChatConversationScreenState
 
       return LayoutBuilder(
         builder: (context, constraints) {
-          final availableWidth =
-              constraints.maxWidth.isFinite ? constraints.maxWidth : maxCardWidth;
+          final availableWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : maxCardWidth;
           final width = min(availableWidth, maxCardWidth);
           final height = width / frameAspect;
           final bg = contain
-              ? (isDark ? Colors.black.withValues(alpha: 0.18) : Colors.black.withValues(alpha: 0.04))
+              ? (isDark
+                  ? Colors.black.withValues(alpha: 0.18)
+                  : Colors.black.withValues(alpha: 0.04))
               : Colors.transparent;
           return SizedBox(
             width: width,
@@ -3150,7 +3216,8 @@ class _GroupChatConversationScreenState
     final sharedCard = shared == null ? null : _sharedContentCard(shared, mine);
     final hasMedia = mediaUrl.trim().isNotEmpty;
     final cleanedText = shared != null
-        ? text.replaceAll(RegExp(r'https?:\\/\\/\\S+', caseSensitive: false), '')
+        ? text.replaceAll(
+            RegExp(r'https?:\\/\\/\\S+', caseSensitive: false), '')
         : text;
     final hasText = cleanedText.trim().isNotEmpty;
     final sharedOnly = !isDeleted &&
@@ -3167,8 +3234,8 @@ class _GroupChatConversationScreenState
         padding: sharedOnly
             ? EdgeInsets.zero
             : hasMedia
-            ? EdgeInsets.zero
-            : const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                ? EdgeInsets.zero
+                : const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         constraints: BoxConstraints(maxWidth: maxBubbleWidth),
         decoration: BoxDecoration(
           color: (hasMedia || sharedOnly) ? Colors.transparent : bg,
@@ -3373,8 +3440,7 @@ class _GroupChatConversationScreenState
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
                               height: 1.0,
-                              leadingDistribution:
-                                  TextLeadingDistribution.even,
+                              leadingDistribution: TextLeadingDistribution.even,
                             ),
                           ),
                         ),

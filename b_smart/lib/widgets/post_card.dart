@@ -1392,13 +1392,13 @@ class _PostCardState extends State<PostCard> {
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: SizedBox(
-                  width: 92,
-                  height: 92,
+                  width: 84,
+                  height: 84,
                   child: image.isEmpty
                       ? const ColoredBox(color: Color(0xFFF3F4F6))
                       : SafeNetworkImage(
@@ -1441,7 +1441,10 @@ class _PostCardState extends State<PostCard> {
                       ),
                     ],
                     const SizedBox(height: 8),
-                    Row(
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           '₹$price',
@@ -1451,8 +1454,7 @@ class _PostCardState extends State<PostCard> {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        if (mrp > 0) ...[
+                        if (mrp > 0)
                           Text(
                             '₹$mrp',
                             style: TextStyle(
@@ -1462,8 +1464,6 @@ class _PostCardState extends State<PostCard> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ],
-                        const SizedBox(width: 10),
                         if (pctOff > 0)
                           Text(
                             '$pctOff% off',
@@ -1569,7 +1569,9 @@ class _PostCardState extends State<PostCard> {
                 // Avoid RenderFlex overflow for larger text scales by
                 // giving the horizontal list enough vertical room.
                 final textScale = MediaQuery.textScalerOf(context).scale(1.0);
-                final height = (152 * textScale).clamp(152.0, 220.0);
+                // 152px was slightly tight for the product tile (button + price)
+                // and could overflow on some devices by a few pixels.
+                final height = (170 * textScale).clamp(170.0, 260.0);
                 return SizedBox(
                   height: height,
                   child: ListView(

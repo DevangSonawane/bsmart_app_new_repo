@@ -216,22 +216,19 @@ const Layout = () => {
   );
 
   return (
-    <div className={`min-h-screen bg-gray-50 dark:bg-black md:pb-0 ${isFullScreenPage ? 'pb-0' : 'pb-16'}`}>
+    <div className={`flex min-h-screen bg-gray-50 dark:bg-black md:pb-0 ${isFullScreenPage ? 'pb-0' : 'pb-16'}`}>
       <Sidebar onOpenCreateModal={handleOpenCreateModal} />
 
-      <div className="md:pl-20 min-h-screen transition-all duration-300">
+      <div className="flex-1 min-h-screen transition-all duration-300">
         {showTopBar && <TopBar />}
 
         <div className={`
           ${showTopBar ? 'pt-16 md:pt-0' : 'pt-0 md:pt-0'}
-          w-full flex justify-center
-          ${isMessagesPage ? 'md:max-w-none lg:max-w-none' : 'lg:max-w-[1280px] mx-auto'}
-          ${isMessagesPage ? 'px-0 md:px-0' : 'px-0 md:px-0'}
+          w-full
         `}>
           {/* Main content */}
           <div className={`
-            flex-1 min-w-0
-            ${!isExcludedPage && !isFullScreenPage ? 'max-w-[1000px]' : ''}
+            w-full min-w-0
             ${isMessagesPage ? 'w-full' : ''}
           `}>
             <Outlet />
