@@ -12,6 +12,7 @@ import '../widgets/promote_comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
 import '../api/follows_api.dart';
 import '../utils/current_user.dart';
+import '../services/supabase_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class PromoteScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
   final PromoteService _promoteService = PromoteService();
   final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
   final FollowsApi _followsApi = FollowsApi();
+  final SupabaseService _supabaseService = SupabaseService();
   int _currentIndex = 0;
   bool _isMuted = true;
   bool _loading = true;
@@ -251,6 +253,41 @@ class _PromoteScreenState extends State<PromoteScreen> {
     }
   }
 
+  Future<void> _toggleSave(int index) async {
+    if (index < 0 || index >= _promotes.length) return;
+    final item = Map<String, dynamic>.from(_promotes[index]);
+    final postId = _toId(item['postId'] ?? item['post_id']);
+    final id = postId.isNotEmpty
+        ? postId
+        : _toId(item['id'] ?? item['_id'] ?? item['promote_reel_id']);
+    if (id.isEmpty) return;
+
+    final wasSaved =
+        item['isSavedByMe'] == true || item['is_saved_by_me'] == true;
+    final nextSaved = !wasSaved;
+
+    setState(() {
+      _promotes[index] = {
+        ...item,
+        'isSavedByMe': nextSaved,
+      };
+    });
+
+    try {
+      final persisted = await _supabaseService.setPostSaved(id, save: nextSaved);
+      if (!mounted) return;
+      setState(() {
+        final it = Map<String, dynamic>.from(_promotes[index]);
+        _promotes[index] = {
+          ...it,
+          'isSavedByMe': persisted,
+        };
+      });
+    } catch (_) {
+      // best-effort only
+    }
+  }
+
   Future<void> _openComments(int index) async {
     if (index < 0 || index >= _promotes.length) return;
     final item = Map<String, dynamic>.from(_promotes[index]);
@@ -473,6 +510,12 @@ class _PromoteScreenState extends State<PromoteScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     GlassActionButton(
+                      icon: LucideIcons.eye,
+                      label: _fmt(_toInt(item['viewsCount'] ?? item['views_count'] ?? item['views'] ?? item['currentViews'] ?? item['current_views'])),
+                      onTap: () {},
+                    ),
+                    const SizedBox(height: 16),
+                    GlassActionButton(
                       icon: isLiked ? Icons.favorite : LucideIcons.heart,
                       label: _fmt(likesCount),
                       iconColor: isLiked ? Colors.red : Colors.white,
@@ -493,9 +536,11 @@ class _PromoteScreenState extends State<PromoteScreen> {
                     ),
                     const SizedBox(height: 16),
                     GlassActionButton(
-                      icon: LucideIcons.ellipsis,
+                      icon: (item['isSavedByMe'] == true || item['is_saved_by_me'] == true)
+                          ? Icons.bookmark
+                          : Icons.bookmark_border,
                       label: '',
-                      onTap: () {},
+                      onTap: () => _toggleSave(index),
                     ),
                     const SizedBox(height: 16),
                     GlassActionButton(

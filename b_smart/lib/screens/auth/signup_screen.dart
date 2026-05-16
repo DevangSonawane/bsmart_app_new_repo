@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/auth_api.dart';
-import '../../services/auth/auth_service.dart';
-import '../../config/api_config.dart';
 import '../../theme/instagram_theme.dart';
 import '../../screens/home_dashboard.dart';
 import '../../widgets/clay_container.dart';
@@ -26,7 +23,6 @@ class _SignupScreenState extends State<SignupScreen> {
   final _confirmController = TextEditingController();
   bool _loading = false;
   String? _error;
-  final _authService = AuthService();
 
   Future<void> _signup() async {
     final name = _nameController.text.trim();
@@ -50,7 +46,7 @@ class _SignupScreenState extends State<SignupScreen> {
       _error = null;
     });
     try {
-      final data = await AuthApi().register(
+      await AuthApi().register(
         email: email,
         password: pass,
         username: username,
@@ -113,16 +109,6 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
-                      controller: _usernameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Username',
-                        hintText: 'johndoe',
-                        prefixIcon: Icon(LucideIcons.user),
-                      ),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
@@ -145,12 +131,22 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
+                      controller: _usernameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Username',
+                        hintText: 'johndoe',
+                        prefixIcon: Icon(LucideIcons.atSign),
+                      ),
+                      validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
                       controller: _passwordController,
                       obscureText: true,
                       decoration: const InputDecoration(
                         labelText: 'Password',
                         hintText: '••••••••',
-                        prefixIcon: Icon(LucideIcons.lock),
+                        prefixIcon: Icon(LucideIcons.keyRound),
                       ),
                       validator: (v) => (v == null || v.length < 6) ? 'At least 6 chars' : null,
                     ),
@@ -161,7 +157,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Confirm Password',
                         hintText: '••••••••',
-                        prefixIcon: Icon(LucideIcons.lock),
+                        prefixIcon: Icon(LucideIcons.keyRound),
                       ),
                       validator: (v) => (v != _passwordController.text) ? 'Does not match' : null,
                     ),

@@ -10,7 +10,6 @@ import '../services/ads_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
-import '../widgets/ad_cta_buttons.dart';
 import '../widgets/ad_public_gallery_section.dart';
 import 'external_link_screen.dart';
 
@@ -603,36 +602,16 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
         ? ''
         : caption.split('\n').take(4).join('\n').trimRight();
 
-    String pickString(dynamic value) {
-      final v = value?.toString().trim();
-      return v == null ? '' : v;
-    }
-
-    final rawCategory = pickString(raw['category']);
-    final rawCategories = raw['categories'];
-    final firstRawCategory = rawCategories is List && rawCategories.isNotEmpty
-        ? pickString(rawCategories.first)
-        : '';
-    final categoryLabelRaw =
-        (ad.category ?? '').trim().isNotEmpty ? ad.category!.trim() : '';
-    final categoryLabel = _titleCaseWords(
-      (categoryLabelRaw.isNotEmpty
-              ? categoryLabelRaw
-              : (rawCategory.isNotEmpty ? rawCategory : firstRawCategory))
-          .replaceAll('_', ' ')
-          .trim(),
-    );
-
     final hasVideo = (ad.videoUrl ?? '').trim().isNotEmpty;
     final galleryUrls = _extractGalleryUrls(raw, ad);
 
     final mediaWidget = ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(18),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          const targetAspect = 2.7; // horizontal banner like screenshot
+          const targetAspect = 2.2; // slightly more squared preview
           final width = constraints.maxWidth;
-          final height = (width / targetAspect).clamp(130.0, 210.0);
+          final height = (width / targetAspect).clamp(160.0, 260.0);
 
           return SizedBox(
             height: height,
@@ -924,6 +903,33 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                       ),
                     ),
                   ),
+                  if (ctaType.isNotEmpty) ...[
+                    const SizedBox(width: 10),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _handleCtaTap,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.10)
+                                : Colors.black.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: glassBorder),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.open_in_new,
+                            size: 18,
+                            color: foregroundColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -932,7 +938,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                 padding: EdgeInsets.zero,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+                    padding: const EdgeInsets.fromLTRB(0, 24, 0, 0),
                     child: mediaWidget,
                   ),
                   Padding(
@@ -1071,44 +1077,6 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                             ),
                           ),
                         ],
-                        if (ctaType.isNotEmpty || categoryLabel.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              if (ctaType.isNotEmpty)
-                                Expanded(
-                                  child: SizedBox(
-                                    height: 48,
-                                    child: AdGradientCtaButton(
-                                      onPressed: _handleCtaTap,
-                                      icon: Icons.open_in_new,
-                                      label: 'Learn More',
-                                      boxShadow: const [],
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 12,
-                                        horizontal: 14,
-                                      ),
-                                      borderRadius: BorderRadius.circular(18),
-                                    ),
-                                  ),
-                                ),
-                              if (ctaType.isNotEmpty &&
-                                  categoryLabel.isNotEmpty)
-                                const SizedBox(width: 12),
-                              if (categoryLabel.isNotEmpty)
-                                Expanded(
-                                  child: SizedBox(
-                                    height: 48,
-                                    child: _CategoryPill(
-                                      label: categoryLabel,
-                                      isDark: isDark,
-                                      foregroundColor: foregroundColor,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
                         const SizedBox(height: 14),
                         if (captionPreview.isNotEmpty)
                           Container(
@@ -1232,66 +1200,6 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _CategoryPill extends StatelessWidget {
-  final String label;
-  final bool isDark;
-  final Color foregroundColor;
-
-  const _CategoryPill({
-    required this.label,
-    required this.isDark,
-    required this.foregroundColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.14)
-        : Colors.black.withValues(alpha: 0.10);
-    final fillColor =
-        isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF1F5F9);
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: fillColor,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: borderColor),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'CATEGORY',
-            style: TextStyle(
-              color: foregroundColor.withValues(alpha: 0.65),
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.8,
-              height: 1.0,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: foregroundColor.withValues(alpha: 0.92),
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              height: 1.0,
-            ),
-          ),
-        ],
       ),
     );
   }

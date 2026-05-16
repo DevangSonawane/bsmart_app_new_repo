@@ -204,6 +204,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     setState(() => _currentUserId = uid);
     await _initSocket();
     await _load(page: 1, replace: true);
+    unawaited(_loadOtherProfileIfNeeded());
     unawaited(_refreshOtherOnlineStatus());
   }
 
@@ -212,16 +213,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     if (token == null || token.trim().isEmpty) return;
     final uid = (_currentUserId ?? '').trim();
     _chatSocket.connect(token: token, userId: uid.isEmpty ? null : uid);
-
-    // If socket comes up, stop REST polling (socket is primary; polling is fallback).
-    if (_chatSocket.isConnected) {
-      _stopPolling();
-    } else {
-      Timer(const Duration(seconds: 2), () {
-        if (!mounted) return;
-        if (_chatSocket.isConnected) _stopPolling();
-      });
-    }
 
     final convId = _effectiveConversationId();
     if (convId.isNotEmpty) {
@@ -1071,6 +1062,26 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final otherAvatar = _avatarFor(_otherProfile ?? other);
     final otherId = _idFor(_otherProfile ?? other) ?? '';
     final isRequestPending = _isRequestConversation(_conversation);
+    bool toBool(dynamic v) {
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      final s = v?.toString().trim().toLowerCase() ?? '';
+      return s == 'true' || s == '1' || s == 'yes' || s == 'y';
+    }
+
+    final convPrivateHint = _conversation?['other_is_private'] ??
+        _conversation?['is_other_private'] ??
+        _conversation?['otherIsPrivate'] ??
+        _conversation?['isOtherPrivate'];
+    final isOtherPrivate = toBool(convPrivateHint) ||
+        toBool(
+          (_otherProfile ?? other)?['is_private'] ??
+              (_otherProfile ?? other)?['isPrivate'] ??
+              (_otherProfile ?? other)?['private'] ??
+              (_otherProfile ?? other)?['private_account'] ??
+              (_otherProfile ?? other)?['author_is_private'],
+        );
+    final shouldGateMessaging = isRequestPending && isOtherPrivate;
     final requestWho = (otherHandle != null &&
             otherHandle.isNotEmpty &&
             otherHandle != otherDisplayName)
@@ -1326,7 +1337,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             top: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: isRequestPending
+              child: shouldGateMessaging
                   ? _messageRequestFooter(requestWho: requestWho)
                   : _bottomComposer(),
             ),

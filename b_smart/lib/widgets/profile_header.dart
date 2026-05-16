@@ -20,6 +20,7 @@ class ProfileHeader extends StatelessWidget {
   final bool isVendor;
   final bool isValidated;
   final bool isFollowing;
+  final bool canMessage;
   final bool isFavorite;
   final bool isSuggestionsOpen;
   final bool hasStory;
@@ -50,6 +51,7 @@ class ProfileHeader extends StatelessWidget {
     this.isVendor = false,
     this.isValidated = false,
     this.isFollowing = false,
+    this.canMessage = true,
     this.isFavorite = false,
     this.isSuggestionsOpen = false,
     this.hasStory = false,
@@ -309,14 +311,16 @@ class ProfileHeader extends StatelessWidget {
                 Expanded(
                   child: _followButton(onTap: onFollow),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _secondaryButton(
-                    context: context,
-                    label: 'Message',
-                    onTap: onMessage,
+                if (canMessage) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _secondaryButton(
+                      context: context,
+                      label: 'Message',
+                      onTap: onMessage,
+                    ),
                   ),
-                ),
+                ],
               ],
             )
           else
@@ -325,14 +329,16 @@ class ProfileHeader extends StatelessWidget {
                 Expanded(
                   child: _followButton(onTap: onFollow),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _secondaryButton(
-                    context: context,
-                    label: 'Message',
-                    onTap: onMessage,
+                if (canMessage) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _secondaryButton(
+                      context: context,
+                      label: 'Message',
+                      onTap: onMessage,
+                    ),
                   ),
-                ),
+                ],
                 const SizedBox(width: 8),
                 _actionIconButton(
                   context,

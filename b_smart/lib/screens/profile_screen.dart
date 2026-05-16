@@ -501,6 +501,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     BuildContext context, {
     required bool isReels,
     required bool isOwnProfile,
+    IconData? emptyIcon,
+    String? emptyTitle,
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -531,7 +533,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               child: Center(
                 child: Icon(
-                  isReels ? LucideIcons.video : LucideIcons.layoutGrid,
+                  emptyIcon ??
+                      (isReels ? LucideIcons.video : LucideIcons.layoutGrid),
                   size: 30,
                   color: iconColor,
                 ),
@@ -539,7 +542,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 14),
             Text(
-              isReels ? 'No Reels Yet' : 'No Posts Yet',
+              emptyTitle ?? (isReels ? 'No Reels Yet' : 'No Posts Yet'),
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -574,10 +577,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     unawaited(() async {
       try {
+        bool toBool(dynamic v) {
+          if (v is bool) return v;
+          if (v is num) return v != 0;
+          final s = v?.toString().trim().toLowerCase() ?? '';
+          return s == 'true' || s == '1' || s == 'yes' || s == 'y';
+        }
+
+        final profile = _profile;
+        final followingByMe = (profile?['is_followed_by_me'] as bool?) ??
+            (profile?['isFollowing'] as bool?) ??
+            (profile?['is_following'] as bool?) ??
+            false;
+        final isPrivate = toBool(
+          profile?['is_private'] ??
+              profile?['isPrivate'] ??
+              profile?['private'] ??
+              profile?['private_account'] ??
+              profile?['isPrivateAccount'],
+        );
+        final canMessage = !isPrivate || followingByMe;
+
         final conversation = await ChatApi()
             .createOrGetConversation(participantId: participantId);
         if (!mounted) return;
-        final id = (conversation['_id'] ?? conversation['id'])?.toString();
+        final mergedConversation = <String, dynamic>{
+          ...Map<String, dynamic>.from(conversation),
+          'other_is_private': isPrivate,
+          'can_message': canMessage,
+        };
+        final id =
+            (mergedConversation['_id'] ?? mergedConversation['id'])?.toString();
         if (id == null || id.isEmpty) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const MessagingScreen()),
@@ -588,7 +618,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           MaterialPageRoute(
             builder: (_) => ChatConversationScreen(
               conversationId: id,
-              initialConversation: conversation,
+              initialConversation: mergedConversation,
             ),
           ),
         );
@@ -2064,13 +2094,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         );
       }
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: _emptyGridPlaceholder(
-          context,
-          isReels: false,
-          isOwnProfile: isMe,
-        ),
+      return _emptyGridPlaceholder(
+        context,
+        isReels: false,
+        isOwnProfile: isMe,
+        emptyIcon: LucideIcons.messageCircle,
+        emptyTitle: 'No Tweets Yet',
       );
     }
 
@@ -2523,8 +2552,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : (promotePosts.isEmpty
                   ? _emptyGridPlaceholder(
                       context,
-                      isReels: true,
+                      isReels: false,
                       isOwnProfile: isMe,
+                      emptyIcon: LucideIcons.megaphone,
+                      emptyTitle: 'No Promote Yet',
                     )
                   : PostsGrid(
                       posts: promotePosts,
@@ -2600,60 +2631,88 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: NestedScrollView(
                     headerSliverBuilder: (context, innerBoxIsScrolled) => [
                       SliverToBoxAdapter(
-                        child: ProfileHeader(
-                          username: username,
-                          fullName: fullName,
-                          bio: bio,
-                          avatarUrl: avatar,
-                          avatarHeaders: _reelImageHeaders,
-                          posts: postsCount,
-                          followers: followers,
-                          following: following,
-                          ads: _vendorAds.length,
-                          isMe: isMe,
-                          isVendor: isVendor,
-                          isValidated: isValidated,
-                          isFollowing:
+                        child: (() {
+                          bool toBool(dynamic v) {
+                            if (v is bool) return v;
+                            if (v is num) return v != 0;
+                            final s = v?.toString().trim().toLowerCase() ?? '';
+                            return s == 'true' ||
+                                s == '1' ||
+                                s == 'yes' ||
+                                s == 'y';
+                          }
+
+                          final followingByMe =
                               (displayProfile?['is_followed_by_me'] as bool?) ??
-                                  false,
-                          isFavorite: _isFavoriteProfile,
-                          isSuggestionsOpen:
-                              isMe ? _showFollowSuggestions : false,
-                          hasStory: _hasStory,
-                          onEdit: isMe ? _onEdit : null,
-                          onFollow: isMe ? null : _onFollow,
-                          onShare: () => _shareProfile(displayProfile),
-                          onFavorite: () => _toggleFavoriteProfile(username),
-                          onMore: () => _showProfileMoreActions(displayProfile),
-                          onMessage: _openMessaging,
-                          onUser: isMe ? _toggleFollowSuggestions : null,
-                          onAvatarTap: _openStoriesFromProfile,
-                          onAvatarEdit: isMe && !_avatarUploading
-                              ? _showAvatarOptionsSheet
-                              : null,
-                          onFollowersTap: profileUserId.isNotEmpty
-                              ? () => FollowListScreen.open(
-                                    context,
-                                    userId: profileUserId,
-                                    username: username,
-                                    mode: FollowListMode.followers,
-                                    isOwnProfile: isMe,
-                                    initialFollowersCount: followers,
-                                    initialFollowingCount: following,
-                                  )
-                              : null,
-                          onFollowingTap: profileUserId.isNotEmpty
-                              ? () => FollowListScreen.open(
-                                    context,
-                                    userId: profileUserId,
-                                    username: username,
-                                    mode: FollowListMode.following,
-                                    isOwnProfile: isMe,
-                                    initialFollowersCount: followers,
-                                    initialFollowingCount: following,
-                                  )
-                              : null,
-                        ),
+                                  (displayProfile?['isFollowing'] as bool?) ??
+                                  (displayProfile?['is_following'] as bool?) ??
+                                  false;
+                          final isPrivate = toBool(
+                            displayProfile?['is_private'] ??
+                                displayProfile?['isPrivate'] ??
+                                displayProfile?['private'] ??
+                                displayProfile?['private_account'] ??
+                                displayProfile?['isPrivateAccount'],
+                          );
+                          final canMessage =
+                              isMe || !isPrivate || followingByMe;
+
+                          return ProfileHeader(
+                            username: username,
+                            fullName: fullName,
+                            bio: bio,
+                            avatarUrl: avatar,
+                            avatarHeaders: _reelImageHeaders,
+                            posts: postsCount,
+                            followers: followers,
+                            following: following,
+                            ads: _vendorAds.length,
+                            isMe: isMe,
+                            isVendor: isVendor,
+                            isValidated: isValidated,
+                            isFollowing: followingByMe,
+                            canMessage: canMessage,
+                            isFavorite: _isFavoriteProfile,
+                            isSuggestionsOpen:
+                                isMe ? _showFollowSuggestions : false,
+                            hasStory: _hasStory,
+                            onEdit: isMe ? _onEdit : null,
+                            onFollow: isMe ? null : _onFollow,
+                            onShare: () => _shareProfile(displayProfile),
+                            onFavorite: () => _toggleFavoriteProfile(username),
+                            onMore: () =>
+                                _showProfileMoreActions(displayProfile),
+                            onMessage:
+                                (!isMe && canMessage) ? _openMessaging : null,
+                            onUser: isMe ? _toggleFollowSuggestions : null,
+                            onAvatarTap: _openStoriesFromProfile,
+                            onAvatarEdit: isMe && !_avatarUploading
+                                ? _showAvatarOptionsSheet
+                                : null,
+                            onFollowersTap: profileUserId.isNotEmpty
+                                ? () => FollowListScreen.open(
+                                      context,
+                                      userId: profileUserId,
+                                      username: username,
+                                      mode: FollowListMode.followers,
+                                      isOwnProfile: isMe,
+                                      initialFollowersCount: followers,
+                                      initialFollowingCount: following,
+                                    )
+                                : null,
+                            onFollowingTap: profileUserId.isNotEmpty
+                                ? () => FollowListScreen.open(
+                                      context,
+                                      userId: profileUserId,
+                                      username: username,
+                                      mode: FollowListMode.following,
+                                      isOwnProfile: isMe,
+                                      initialFollowersCount: followers,
+                                      initialFollowingCount: following,
+                                    )
+                                : null,
+                          );
+                        })(),
                       ),
                       SliverToBoxAdapter(
                         child: isMe

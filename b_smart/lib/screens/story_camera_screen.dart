@@ -932,9 +932,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
     }
     try {
       await _controller!.startVideoRecording();
-      setState(() {
-        _recording = true;
-      });
+      if (!mounted) return;
+      setState(() => _recording = true);
     } catch (e) {
       debugPrint('Error starting video recording: $e');
     }
@@ -1010,11 +1009,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
 
   Future<void> _onRecordEnd() async {
     if (_controller == null || !_controller!.value.isRecordingVideo) {
-      if (_recording) {
-        setState(() {
-          _recording = false;
-        });
-      }
+      if (_recording && mounted) setState(() => _recording = false);
       return;
     }
     if (_boomerangEnabled) {
@@ -1023,9 +1018,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
     }
     try {
       final xfile = await _controller!.stopVideoRecording();
-      setState(() {
-        _recording = false;
-      });
+      if (!mounted) return;
+      setState(() => _recording = false);
       _mode = UploadMode.story;
       File videoFile = File(xfile.path);
       try {
@@ -1042,9 +1036,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       );
     } catch (e) {
       debugPrint('Error stopping video recording: $e');
-      setState(() {
-        _recording = false;
-      });
+      if (mounted) setState(() => _recording = false);
     }
   }
 

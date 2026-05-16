@@ -2015,8 +2015,11 @@ class _ActionButton extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isPrimary = kind == _ActionButtonKind.primary;
     final bg = backgroundOverride ??
-        (isPrimary ? cs.primary : cs.onSurface.withValues(alpha: 0.10));
-    final fg = foregroundOverride ?? (isPrimary ? cs.onPrimary : cs.onSurface);
+        (isPrimary
+            ? const Color(0xFF3B82F6)
+            : cs.onSurface.withValues(alpha: 0.10));
+    final fg =
+        foregroundOverride ?? (isPrimary ? Colors.white : cs.onSurface);
     return SizedBox(
       height: 32,
       child: OutlinedButton(

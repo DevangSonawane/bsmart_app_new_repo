@@ -1069,30 +1069,14 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Widget _buildVideoCard({required bool isDesktop}) {
     final current = _reels[_currentIndex];
-    const actionsBottomMobile = 50.0;
-    const actionsBottomDesktop = 20.0;
-    // The actions column has a squared avatar below the mute button:
-    // SizedBox(12) + avatar(36). Align the username/content row with the mute slot.
-    const actionsAvatarGap = 12.0;
-    const actionsAvatarSize = 36.0;
-    const actionButtonSize = 36.0;
-    const muteCenterLineMobile = actionsBottomMobile +
-        actionsAvatarGap +
-        actionsAvatarSize +
-        (actionButtonSize / 2);
-    const muteCenterLineDesktop = actionsBottomDesktop +
-        actionsAvatarGap +
-        actionsAvatarSize +
-        (actionButtonSize / 2);
-    const minimalBottomPadding = 8.0;
+    const actionsBottomMobile = 40.0;
+    const minimalBottomPadding = 10.0;
     final caption = (current.caption ?? '').trim();
     final hasBottomText = caption.isNotEmpty || current.hashtags.isNotEmpty;
     final infoBottomMobile = minimalBottomPadding;
     final infoBottomDesktop = minimalBottomPadding;
-    final maxInfoHeightMobile =
-        (muteCenterLineMobile - minimalBottomPadding).clamp(48.0, 240.0);
-    final maxInfoHeightDesktop =
-        (muteCenterLineDesktop - minimalBottomPadding).clamp(48.0, 240.0);
+    const maxInfoHeightMobile = 220.0;
+    const maxInfoHeightDesktop = 240.0;
 
     return ClipRRect(
       borderRadius: isDesktop ? BorderRadius.circular(20) : BorderRadius.zero,
@@ -1148,7 +1132,7 @@ class _ReelsScreenState extends State<ReelsScreen>
               left: 0,
               right: 0,
               bottom: 0,
-              height: 280,
+              height: 260,
               child: IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -1176,7 +1160,7 @@ class _ReelsScreenState extends State<ReelsScreen>
               duration: const Duration(milliseconds: 240),
               curve: Curves.easeInOutCubic,
               left: 16,
-              right: isDesktop ? 14 : 92,
+              right: isDesktop ? 14 : 78,
               bottom: isDesktop ? infoBottomDesktop : infoBottomMobile,
               child: hasBottomText
                   ? ConstrainedBox(
@@ -1586,7 +1570,7 @@ class _ReelsScreenState extends State<ReelsScreen>
           label: _formatCount(reel.views),
           onTap: () {},
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         _LikeBump(
           isLiked: reel.isLiked,
           child: GlassActionButton(
@@ -1596,26 +1580,26 @@ class _ReelsScreenState extends State<ReelsScreen>
             onTap: _toggleLike,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         GlassActionButton(
           icon: LucideIcons.messageCircle,
           label: _formatCount(reel.comments),
           onTap: () => unawaited(_openComments()),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         GlassActionButton(
           icon: LucideIcons.send,
           label: '',
           rotate: -0.2,
           onTap: () => unawaited(_shareCurrent()),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         GlassActionButton(
-          icon: LucideIcons.ellipsis,
+          icon: reel.isSaved ? Icons.bookmark : Icons.bookmark_border,
           label: '',
-          onTap: () {},
+          onTap: _toggleSave,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         GlassActionButton(
           icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
           label: '',
@@ -1629,13 +1613,6 @@ class _ReelsScreenState extends State<ReelsScreen>
               unawaited(_setControllerVolumeSafely(controller, volume));
             }
           },
-        ),
-        const SizedBox(height: 12),
-        ExcludeSemantics(
-          child: Opacity(
-            opacity: 0,
-            child: _buildAvatarThumb(reel, size: 36),
-          ),
         ),
       ],
     );
@@ -1652,39 +1629,33 @@ class _ReelsScreenState extends State<ReelsScreen>
           label: _formatCount(reel.views),
           onTap: () {},
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         GlassActionButton(
           icon: reel.isLiked ? Icons.favorite : LucideIcons.heart,
           label: _formatCount(reel.likes),
           iconColor: reel.isLiked ? Colors.red : Colors.white,
           onTap: _toggleLike,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         GlassActionButton(
           icon: LucideIcons.messageCircle,
           label: _formatCount(reel.comments),
           onTap: () => unawaited(_openComments()),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         GlassActionButton(
           icon: LucideIcons.send,
           label: '',
           rotate: -0.2,
           onTap: () => unawaited(_shareCurrent()),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         GlassActionButton(
           icon: reel.isSaved ? Icons.bookmark : Icons.bookmark_border,
           label: '',
           onTap: _toggleSave,
         ),
-        const SizedBox(height: 16),
-        GlassActionButton(
-          icon: LucideIcons.ellipsis,
-          label: '',
-          onTap: () {},
-        ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         GlassActionButton(
           icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
           label: '',
@@ -1697,13 +1668,6 @@ class _ReelsScreenState extends State<ReelsScreen>
               unawaited(_setControllerVolumeSafely(controller, volume));
             }
           },
-        ),
-        const SizedBox(height: 12),
-        ExcludeSemantics(
-          child: Opacity(
-            opacity: 0,
-            child: _buildAvatarThumb(reel, size: 36),
-          ),
         ),
       ],
     );
@@ -1754,79 +1718,109 @@ class _ReelsScreenState extends State<ReelsScreen>
     final hasCaption = caption.isNotEmpty;
     final hasHashtags = reel.hashtags.isNotEmpty;
     if (!hasCaption && !hasHashtags) {
-      return SizedBox(
-        height: 36,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            InkWell(
-              onTap: () => unawaited(_openUserProfile(reel.userId)),
-              borderRadius: BorderRadius.circular(999),
-              child: CircleAvatar(
-                radius: 15,
-                backgroundColor: Colors.grey[700],
-                backgroundImage:
-                    reel.userAvatarUrl != null && reel.userAvatarUrl!.isNotEmpty
-                        ? CachedNetworkImageProvider(
-                            UrlHelper.absoluteUrl(reel.userAvatarUrl!),
-                          )
-                        : null,
-                child: reel.userAvatarUrl == null || reel.userAvatarUrl!.isEmpty
-                    ? Text(
-                        (reel.userName.isEmpty ? 'U' : reel.userName[0])
-                            .toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
-                    : null,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: InkWell(
-                onTap: () => unawaited(_openUserProfile(reel.userId)),
-                child: Text(
-                  reel.userName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            if (canShowFollow) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.10),
-                  border: Border.all(color: Colors.white54),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: GestureDetector(
-                  onTap: _isFollowLoading
-                      ? null
-                      : () => unawaited(_toggleFollow()),
-                  child: Text(
-                    _isFollowLoading ? '...' : 'Follow',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+      const usernameStyle = TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.w800,
+        fontSize: 15,
+      );
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 44,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const avatarSize = 36.0; // CircleAvatar radius 18
+                const gapAfterAvatar = 10.0;
+                const gapBeforeFollow = 10.0;
+                const followHeight = 30.0;
+                const followPadH = 10.0;
+                const followPadV = 6.0;
+                const approxFollowWidth = 72.0;
+                final availableWithoutDots = constraints.maxWidth -
+                    avatarSize -
+                    gapAfterAvatar -
+                    (canShowFollow ? (gapBeforeFollow + approxFollowWidth) : 0);
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    InkWell(
+                      onTap: () => unawaited(_openUserProfile(reel.userId)),
+                      borderRadius: BorderRadius.circular(999),
+                      child: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.grey[700],
+                        backgroundImage: reel.userAvatarUrl != null &&
+                                reel.userAvatarUrl!.isNotEmpty
+                            ? CachedNetworkImageProvider(
+                                UrlHelper.absoluteUrl(reel.userAvatarUrl!),
+                              )
+                            : null,
+                        child: reel.userAvatarUrl == null ||
+                                reel.userAvatarUrl!.isEmpty
+                            ? Text(
+                                (reel.userName.isEmpty ? 'U' : reel.userName[0])
+                                    .toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
+                      ),
                     ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+                    const SizedBox(width: gapAfterAvatar),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => unawaited(_openUserProfile(reel.userId)),
+                        child: Text(
+                          reel.userName,
+                          style: usernameStyle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    if (canShowFollow) ...[
+                      const SizedBox(width: gapBeforeFollow),
+                      SizedBox(
+                        height: followHeight,
+                        child: OutlinedButton(
+                          onPressed:
+                              _isFollowLoading ? null : () => unawaited(_toggleFollow()),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: BorderSide(color: Colors.white.withValues(alpha: 0.65)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: followPadH,
+                              vertical: followPadV,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: Text(
+                            _isFollowLoading ? '...' : 'Follow',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+          // Keep layout height stable even when there's no caption, and align
+          // the username row with the mute button on the action rail.
+          const SizedBox(height: 26),
+        ],
       );
     }
     final words = caption.trim().isEmpty
@@ -1835,29 +1829,46 @@ class _ReelsScreenState extends State<ReelsScreen>
     final isLong = words.length > 5;
     final preview = isLong ? words.take(5).join(' ') : caption;
 
+    const usernameStyle = TextStyle(
+      color: Colors.white,
+      fontWeight: FontWeight.w800,
+      fontSize: 15,
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          height: 36,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              InkWell(
-                onTap: () => unawaited(_openUserProfile(reel.userId)),
-                borderRadius: BorderRadius.circular(999),
-                child: CircleAvatar(
-                  radius: 15,
-                  backgroundColor: Colors.grey[700],
-                  backgroundImage: reel.userAvatarUrl != null &&
-                          reel.userAvatarUrl!.isNotEmpty
-                      ? CachedNetworkImageProvider(
-                          UrlHelper.absoluteUrl(reel.userAvatarUrl!),
-                        )
-                      : null,
-                  child:
-                      reel.userAvatarUrl == null || reel.userAvatarUrl!.isEmpty
+          height: 44,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const avatarSize = 36.0; // CircleAvatar radius 18
+              const gapAfterAvatar = 10.0;
+              const gapBeforeFollow = 10.0;
+              const followHeight = 30.0;
+              const approxFollowWidth = 72.0;
+              final availableWithoutDots = constraints.maxWidth -
+                  avatarSize -
+                  gapAfterAvatar -
+                  (canShowFollow ? (gapBeforeFollow + approxFollowWidth) : 0);
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  InkWell(
+                    onTap: () => unawaited(_openUserProfile(reel.userId)),
+                    borderRadius: BorderRadius.circular(999),
+                    child: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: Colors.grey[700],
+                      backgroundImage: reel.userAvatarUrl != null &&
+                              reel.userAvatarUrl!.isNotEmpty
+                          ? CachedNetworkImageProvider(
+                              UrlHelper.absoluteUrl(reel.userAvatarUrl!),
+                            )
+                          : null,
+                      child: reel.userAvatarUrl == null ||
+                              reel.userAvatarUrl!.isEmpty
                           ? Text(
                               (reel.userName.isEmpty ? 'U' : reel.userName[0])
                                   .toUpperCase(),
@@ -1868,115 +1879,102 @@ class _ReelsScreenState extends State<ReelsScreen>
                               ),
                             )
                           : null,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: InkWell(
-                        onTap: () => unawaited(_openUserProfile(reel.userId)),
-                        child: Text(
-                          reel.userName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(width: gapAfterAvatar),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => unawaited(_openUserProfile(reel.userId)),
+                      child: Text(
+                        reel.userName,
+                        style: usernameStyle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  if (canShowFollow) ...[
+                    const SizedBox(width: gapBeforeFollow),
+                    SizedBox(
+                      height: followHeight,
+                      child: OutlinedButton(
+                        onPressed:
+                            _isFollowLoading ? null : () => unawaited(_toggleFollow()),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.65),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: Text(
+                          _isFollowLoading ? '...' : 'Follow',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    if (canShowFollow)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.10),
-                          border: Border.all(color: Colors.white54),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: GestureDetector(
-                          onTap: _isFollowLoading
-                              ? null
-                              : () => unawaited(_toggleFollow()),
-                          child: Text(
-                            _isFollowLoading ? '...' : 'Follow',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 8),
-        Padding(
-          padding: const EdgeInsets.only(left: 42),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (caption.isNotEmpty)
-                Text.rich(
-                  TextSpan(
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      height: 1.35,
-                    ),
-                    children: [
-                      TextSpan(text: isExpanded || !isLong ? caption : preview),
-                      if (isLong)
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _captionExpanded[reel.id] = !isExpanded;
-                              });
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 5),
-                              child: Text(
-                                isExpanded ? 'less' : '... more',
-                                style: const TextStyle(
-                                  color: Colors.white60,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
+        if (caption.isNotEmpty)
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                height: 1.35,
+              ),
+              children: [
+                TextSpan(text: isExpanded || !isLong ? caption : preview),
+                if (isLong)
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _captionExpanded[reel.id] = !isExpanded;
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Text(
+                          isExpanded ? 'less' : '... more',
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                    ],
+                      ),
+                    ),
                   ),
-                  maxLines: isExpanded ? 3 : 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              if (reel.hashtags.isNotEmpty) ...[
-                const SizedBox(height: 5),
-                Text(
-                  reel.hashtags.map((t) => '#$t').join(' '),
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
               ],
-            ],
+            ),
+            maxLines: isExpanded ? 3 : 2,
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
+        if (reel.hashtags.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            reel.hashtags.map((t) => '#$t').join(' '),
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ],
     );
   }

@@ -165,7 +165,9 @@ class PromoteService {
 
         final likesCount = toInt(item['likes_count'] ?? item['likesCount'] ?? item['like_count']);
         final commentsCount = toInt(item['comments_count'] ?? item['commentsCount'] ?? item['comment_count']);
+        final viewsCount = toInt(item['views_count'] ?? item['viewsCount'] ?? item['currentViews'] ?? item['current_views'] ?? item['views']);
         final isLikedByMe = item['is_liked_by_me'] == true || item['liked_by_me'] == true || item['isLikedByMe'] == true;
+        final isSavedByMe = item['is_saved_by_me'] == true || item['saved_by_me'] == true || item['isSavedByMe'] == true;
 
         final tagsRaw = item['tags'];
         final tags = <String>[];
@@ -213,6 +215,7 @@ class PromoteService {
 
         return {
           'id': id,
+          'postId': asId(item['postId'] ?? item['post_id'] ?? item['post']?['_id'] ?? item['post']?['id']),
           'userId': pickedUserId,
           'username': username,
           'avatarUrl': (avatarUrl ?? ''),
@@ -221,7 +224,9 @@ class PromoteService {
               : videoUrl,
           'likesCount': likesCount,
           'commentsCount': commentsCount,
+          'viewsCount': viewsCount,
           'isLikedByMe': isLikedByMe,
+          'isSavedByMe': isSavedByMe,
           'likes': likesCount.toString(),
           'comments': commentsCount.toString(),
           'description': (item['caption'] ?? item['description'] ?? '').toString(),

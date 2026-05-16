@@ -25,7 +25,8 @@ class MessagingScreen extends StatefulWidget {
   State<MessagingScreen> createState() => _MessagingScreenState();
 }
 
-class _MessagingScreenState extends State<MessagingScreen> {
+class _MessagingScreenState extends State<MessagingScreen>
+    with WidgetsBindingObserver {
   int _selectedFilter = 0; // 0=Primary, 1=Unread, 2=Community, 3=Requests
 
   final _chatApi = ChatApi();
@@ -44,10 +45,14 @@ class _MessagingScreenState extends State<MessagingScreen> {
   Timer? _socketRefreshDebounce;
   SocketHandler? _onSocketNewMessage;
   SocketHandler? _onSocketOnlineUsers;
+  Timer? _pollTimer;
+  bool _refreshingList = false;
+  int _pollTick = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
     _searchController.addListener(() {
       final q = _searchController.text.trim();
@@ -58,6 +63,8 @@ class _MessagingScreenState extends State<MessagingScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
     _socketRefreshDebounce?.cancel();
     if (_onSocketNewMessage != null) {
       _chatSocket.off('new-message', _onSocketNewMessage!);
@@ -69,6 +76,21 @@ class _MessagingScreenState extends State<MessagingScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startPolling();
+      unawaited(_refreshAllSilent());
+      unawaited(_refreshOnlineUsers());
+      return;
+    }
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _stopPolling();
+    }
+  }
+
   Future<void> _init() async {
     final uid = await CurrentUser.id;
     if (!mounted) return;
@@ -76,6 +98,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
     await Future.wait([_loadMe(), _loadNormal()]);
     await _initSocket();
     await _refreshOnlineUsers();
+    _startPolling();
     if (!mounted) return;
     final cid = widget.initialConversationId;
     if (cid != null && cid.isNotEmpty) {
@@ -98,6 +121,38 @@ class _MessagingScreenState extends State<MessagingScreen> {
       if (conv.isNotEmpty) {
         _openConversation(conv);
       }
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      unawaited(_refreshAllSilent());
+    });
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  Future<void> _refreshAllSilent() async {
+    if (_refreshingList) return;
+    _refreshingList = true;
+    try {
+      _pollTick++;
+      final refreshRequests =
+          _selectedFilter == 3 || (_pollTick % 3 == 0); // ~every 12s
+      if (refreshRequests) {
+        await Future.wait([
+          _loadNormal(showLoading: false),
+          _loadRequests(showLoading: false),
+        ]);
+      } else {
+        await _loadNormal(showLoading: false);
+      }
+    } finally {
+      _refreshingList = false;
     }
   }
 
@@ -226,11 +281,70 @@ class _MessagingScreenState extends State<MessagingScreen> {
 
   List<Map<String, dynamic>> _sortByLastMessageAt(
       List<Map<String, dynamic>> data) {
+    DateTime readAt(Map<String, dynamic> c) {
+      dynamic pick(List<String> keys) {
+        for (final k in keys) {
+          if (!c.containsKey(k)) continue;
+          final v = c[k];
+          if (v == null) continue;
+          return v;
+        }
+        return null;
+      }
+
+      DateTime? parse(dynamic v) {
+        if (v == null) return null;
+        if (v is DateTime) return v;
+        if (v is num) {
+          final ms = v.toInt();
+          if (ms <= 0) return null;
+          return DateTime.fromMillisecondsSinceEpoch(ms);
+        }
+        if (v is String) {
+          final s = v.trim();
+          if (s.isEmpty) return null;
+          final asNum = num.tryParse(s);
+          if (asNum != null) {
+            final ms = asNum.toInt();
+            if (ms <= 0) return null;
+            return DateTime.fromMillisecondsSinceEpoch(ms);
+          }
+          return DateTime.tryParse(s);
+        }
+        if (v is Map) {
+          final m = Map<String, dynamic>.from(v);
+          return parse(m['createdAt'] ??
+              m['created_at'] ??
+              m['timestamp'] ??
+              m['sentAt'] ??
+              m['sent_at']);
+        }
+        return null;
+      }
+
+      final direct = pick(const [
+        'lastMessageAt',
+        'last_message_at',
+        'last_message_time',
+        'lastMessageTime',
+        'updatedAt',
+        'updated_at',
+        'createdAt',
+        'created_at',
+      ]);
+      final fromDirect = parse(direct);
+      if (fromDirect != null) return fromDirect;
+
+      final lastMessage = pick(const ['lastMessage', 'last_message']);
+      final fromLastMessage = parse(lastMessage);
+      if (fromLastMessage != null) return fromLastMessage;
+
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
     data.sort((a, b) {
-      final aAt = DateTime.tryParse((a['lastMessageAt'] ?? '').toString()) ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final bAt = DateTime.tryParse((b['lastMessageAt'] ?? '').toString()) ??
-          DateTime.fromMillisecondsSinceEpoch(0);
+      final aAt = readAt(a);
+      final bAt = readAt(b);
       return bAt.compareTo(aAt);
     });
     return data;
@@ -378,71 +492,69 @@ class _MessagingScreenState extends State<MessagingScreen> {
           ),
           const Divider(height: 1),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: _refreshAll,
-              child: _loading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                          color: DesignTokens.instaPink))
-                  : _error != null
-                      ? ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.all(16),
-                          children: [
-                            const Icon(LucideIcons.circleAlert,
-                                color: Colors.redAccent),
-                            const SizedBox(height: 8),
-                            Text(_error!, textAlign: TextAlign.center),
-                            const SizedBox(height: 12),
-                            Center(
-                              child: TextButton.icon(
-                                onPressed: _loadCurrent,
-                                icon:
-                                    const Icon(LucideIcons.refreshCw, size: 16),
-                                label: const Text('Retry'),
-                              ),
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: DesignTokens.instaPink,
+                    ),
+                  )
+                : _error != null
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          const Icon(LucideIcons.circleAlert,
+                              color: Colors.redAccent),
+                          const SizedBox(height: 8),
+                          Text(_error!, textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          Center(
+                            child: TextButton.icon(
+                              onPressed: _loadCurrent,
+                              icon: const Icon(LucideIcons.refreshCw, size: 16),
+                              label: const Text('Retry'),
                             ),
-                          ],
-                        )
-                      : ListView.builder(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
-                          itemCount: visibleConversations.isEmpty
-                              ? 1
-                              : visibleConversations.length,
-                          itemBuilder: (context, index) {
-                            if (visibleConversations.isEmpty) {
-                              final q = _searchQuery.trim();
-                              final msg = q.isNotEmpty
-                                  ? 'No results for "$q"'
-                                  : _selectedFilter == 3
-                                      ? 'No message requests'
-                                      : 'No conversations yet';
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 80, 16, 24),
-                                child: Center(
-                                  child: Text(
-                                    msg,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium
-                                              ?.color
-                                              ?.withValues(alpha: 0.7) ??
-                                          Colors.grey,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                          ),
+                        ],
+                      )
+                    : ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
+                        itemCount: visibleConversations.isEmpty
+                            ? 1
+                            : visibleConversations.length,
+                        itemBuilder: (context, index) {
+                          if (visibleConversations.isEmpty) {
+                            final q = _searchQuery.trim();
+                            final msg = q.isNotEmpty
+                                ? 'No results for "$q"'
+                                : _selectedFilter == 3
+                                    ? 'No message requests'
+                                    : 'No conversations yet';
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 80, 16, 24),
+                              child: Center(
+                                child: Text(
+                                  msg,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.color
+                                            ?.withValues(alpha: 0.7) ??
+                                        Colors.grey,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              );
-                            }
-                            final conv = visibleConversations[index];
-                            return _conversationTile(conv);
-                          },
-                        ),
-            ),
+                              ),
+                            );
+                          }
+                          final conv = visibleConversations[index];
+                          return _conversationTile(conv);
+                        },
+                      ),
           ),
         ],
       ),
@@ -474,7 +586,9 @@ class _MessagingScreenState extends State<MessagingScreen> {
       list = list.where((c) => _conversationSearchText(c).contains(q)).toList();
     }
 
-    return _reorderToMatchActiveHeader(list);
+    final sorted = List<Map<String, dynamic>>.from(list);
+    _sortByLastMessageAt(sorted);
+    return sorted;
   }
 
   bool _isCommunity(Map<String, dynamic> conversation) {
@@ -621,40 +735,6 @@ class _MessagingScreenState extends State<MessagingScreen> {
     return out;
   }
 
-  List<Map<String, dynamic>> _reorderToMatchActiveHeader(
-      List<Map<String, dynamic>> list) {
-    final orderedOnlineIds = <String>[];
-    for (final u in _onlineActiveUsers()) {
-      final id = _userId(u);
-      if (id != null && id.isNotEmpty) orderedOnlineIds.add(id);
-    }
-    if (orderedOnlineIds.isEmpty) return list;
-    final orderedOnlineSet = orderedOnlineIds.toSet();
-
-    final buckets = <String, List<Map<String, dynamic>>>{};
-    final remaining = <Map<String, dynamic>>[];
-
-    for (final conv in list) {
-      final other = _otherParticipant(conv);
-      final otherId = _userId(other);
-      if (otherId != null &&
-          otherId.isNotEmpty &&
-          orderedOnlineSet.contains(otherId)) {
-        (buckets[otherId] ??= <Map<String, dynamic>>[]).add(conv);
-      } else {
-        remaining.add(conv);
-      }
-    }
-
-    final out = <Map<String, dynamic>>[];
-    for (final id in orderedOnlineIds) {
-      final bucket = buckets[id];
-      if (bucket != null && bucket.isNotEmpty) out.addAll(bucket);
-    }
-    out.addAll(remaining);
-    return out;
-  }
-
   Widget _buildActiveUsersRow(BuildContext context) {
     final all = _activeUsers();
     if (all.isEmpty) return const SizedBox.shrink();
@@ -796,7 +876,7 @@ class _MessagingScreenState extends State<MessagingScreen> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     for (var index = 0; index < labels.length; index++) ...[
                       if (index > 0) const SizedBox(width: 8),
