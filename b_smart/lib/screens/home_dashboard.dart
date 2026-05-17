@@ -165,7 +165,13 @@ class _FeedHeader extends StatelessWidget {
   }
 }
 
-enum _FeedRenderRowType { post, suggestions, reelsSuggestions }
+enum _FeedRenderRowType {
+  post,
+  suggestedReels,
+  suggestedAds,
+  suggestedPeople,
+  suggestedVendors,
+}
 
 class _FeedRenderRow {
   final _FeedRenderRowType type;
@@ -186,9 +192,17 @@ class _FeedRenderRow {
     );
   }
 
-  factory _FeedRenderRow.suggestions(int blockIndex) {
+  factory _FeedRenderRow.peopleSuggestions(int blockIndex) {
     return _FeedRenderRow._(
-      type: _FeedRenderRowType.suggestions,
+      type: _FeedRenderRowType.suggestedPeople,
+      post: null,
+      suggestionBlockIndex: blockIndex,
+    );
+  }
+
+  factory _FeedRenderRow.vendorSuggestions(int blockIndex) {
+    return _FeedRenderRow._(
+      type: _FeedRenderRowType.suggestedVendors,
       post: null,
       suggestionBlockIndex: blockIndex,
     );
@@ -196,8 +210,16 @@ class _FeedRenderRow {
 
   factory _FeedRenderRow.reelsSuggestions() {
     return const _FeedRenderRow._(
-      type: _FeedRenderRowType.reelsSuggestions,
+      type: _FeedRenderRowType.suggestedReels,
       post: null,
+      suggestionBlockIndex: -1,
+    );
+  }
+
+  factory _FeedRenderRow.adsSuggestion(FeedPost? post) {
+    return _FeedRenderRow._(
+      type: _FeedRenderRowType.suggestedAds,
+      post: post,
       suggestionBlockIndex: -1,
     );
   }
@@ -410,6 +432,13 @@ class _HomeDashboardState extends State<HomeDashboard>
   final Set<String> _suggestionFollowOpsInFlight = <String>{};
   Map<String, String> _suggestionImageHeaders = const <String, String>{};
 
+  bool _vendorSuggestionsLoading = false;
+  List<SuggestionUser> _vendorSuggestions = <SuggestionUser>[];
+  final Set<String> _dismissedVendorSuggestionIds = <String>{};
+
+  bool _adSuggestionsLoading = false;
+  List<FeedPost> _adSuggestions = const <FeedPost>[];
+
   bool _reelSuggestionsLoading = false;
   List<Reel> _suggestedReels = const <Reel>[];
 
@@ -563,6 +592,8 @@ class _HomeDashboardState extends State<HomeDashboard>
       _loadData(store);
       _loadInitialFeed(forceNetwork: true);
       unawaited(_loadFollowSuggestions());
+      unawaited(_loadVendorSuggestions());
+      unawaited(_loadAdSuggestions());
       unawaited(_loadReelSuggestions(force: true));
       _fetchCurrentLocation();
     });
@@ -742,6 +773,157 @@ class _HomeDashboardState extends State<HomeDashboard>
           _followSuggestionsLoading = false;
         });
       }
+    }
+  }
+
+  String _vendorSuggestionIdOf(Map<String, dynamic> v) {
+    final embedded = v['vendor'] ?? v['business'] ?? v['company'];
+    if (embedded is Map) {
+      final e = Map<String, dynamic>.from(embedded);
+      final raw = e['_id'] ?? e['id'] ?? e['vendorId'] ?? e['userId'];
+      return raw == null ? '' : raw.toString();
+    }
+    final raw = v['_id'] ?? v['id'] ?? v['vendorId'] ?? v['userId'];
+    return raw == null ? '' : raw.toString();
+  }
+
+  String _vendorSuggestionTitleOf(Map<String, dynamic> v) {
+    final embedded = v['vendor'] ?? v['business'] ?? v['company'];
+    if (embedded is Map) {
+      return _vendorSuggestionTitleOf(Map<String, dynamic>.from(embedded));
+    }
+    final raw = v['businessName'] ??
+        v['vendorName'] ??
+        v['shopName'] ??
+        v['storeName'] ??
+        v['brandName'] ??
+        v['companyName'] ??
+        v['displayName'] ??
+        v['display_name'] ??
+        v['name'] ??
+        v['username'] ??
+        v['userName'];
+    final title = raw == null ? '' : raw.toString().trim();
+    if (title.isNotEmpty) return title;
+    // Fallback to user-style parsing if vendor payload is basically a user object.
+    final maybeUserTitle = _suggestionTitleOf(v).trim();
+    return maybeUserTitle.isNotEmpty ? maybeUserTitle : 'business';
+  }
+
+  String? _vendorSuggestionSubtitleOf(Map<String, dynamic> v) {
+    final embedded = v['vendor'] ?? v['business'] ?? v['company'];
+    if (embedded is Map) {
+      return _vendorSuggestionSubtitleOf(Map<String, dynamic>.from(embedded));
+    }
+    final raw = v['category'] ??
+        v['tagline'] ??
+        v['subtitle'] ??
+        v['location'] ??
+        v['city'];
+    final s = raw == null ? '' : raw.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  String _vendorSuggestionAvatarOf(Map<String, dynamic> v) {
+    final embedded = v['vendor'] ?? v['business'] ?? v['company'];
+    if (embedded is Map) {
+      return _vendorSuggestionAvatarOf(Map<String, dynamic>.from(embedded));
+    }
+    final raw = v['logo'] ??
+        v['logoUrl'] ??
+        v['logo_url'] ??
+        v['avatar_url'] ??
+        v['avatarUrl'] ??
+        v['profile_picture'] ??
+        v['profilePic'] ??
+        v['profilePicture'] ??
+        v['avatar'];
+    return raw == null ? '' : raw.toString();
+  }
+
+  Future<void> _loadVendorSuggestions({bool force = false}) async {
+    if (_vendorSuggestionsLoading) return;
+    if (!force && _vendorSuggestions.isNotEmpty) return;
+    setState(() => _vendorSuggestionsLoading = true);
+    try {
+      final list = await _suggestionsApi.getVendorSuggestions(limit: 80);
+      final parsed = <SuggestionUser>[];
+      for (final v in list) {
+        final role = (v['role'] ??
+                (v['vendor'] is Map ? (v['vendor'] as Map)['role'] : null))
+            ?.toString()
+            .toLowerCase()
+            .trim();
+        final isVendor = (v['isVendor'] == true) ||
+            (v['is_vendor'] == true) ||
+            (role == 'vendor');
+        if (!isVendor && (role != null && role.isNotEmpty)) {
+          continue;
+        }
+        final id = _vendorSuggestionIdOf(v).trim();
+        if (id.isEmpty) continue;
+        final avatar = _vendorSuggestionAvatarOf(v).trim();
+        parsed.add(
+          SuggestionUser(
+            id: id,
+            title: _vendorSuggestionTitleOf(v),
+            subtitle: _vendorSuggestionSubtitleOf(v),
+            avatarUrl: avatar.isEmpty ? null : UrlHelper.absoluteUrl(avatar),
+          ),
+        );
+      }
+      if (!mounted) return;
+      setState(() => _vendorSuggestions = parsed);
+    } catch (_) {
+      // ignore
+    } finally {
+      if (mounted) setState(() => _vendorSuggestionsLoading = false);
+    }
+  }
+
+  void _dismissVendorSuggestion(String vendorId) {
+    final id = vendorId.trim();
+    if (id.isEmpty) return;
+    setState(() => _dismissedVendorSuggestionIds.add(id));
+  }
+
+  Future<void> _followVendorSuggestion(SuggestionUser vendor) async {
+    if (_suggestionFollowOpsInFlight.contains(vendor.id)) return;
+    _suggestionFollowOpsInFlight.add(vendor.id);
+    _dismissVendorSuggestion(vendor.id);
+    try {
+      await _followsApi.follow(vendor.id);
+      unawaited(_supabase.syncFollowStatus(vendor.id, true));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _dismissedVendorSuggestionIds.remove(vendor.id));
+    } finally {
+      _suggestionFollowOpsInFlight.remove(vendor.id);
+    }
+  }
+
+  Future<void> _loadAdSuggestions({bool force = false}) async {
+    if (_adSuggestionsLoading) return;
+    if (!force && _adSuggestions.isNotEmpty) return;
+    setState(() => _adSuggestionsLoading = true);
+    try {
+      final raw = await _suggestionsApi.getAdSuggestions(limit: 10);
+      final parsed = <FeedPost>[];
+      for (final e in raw) {
+        try {
+          final p = FeedPost.fromJson(e);
+          if (p.id.trim().isEmpty) continue;
+          parsed.add(p);
+        } catch (_) {
+          // ignore
+        }
+      }
+      if (!mounted) return;
+      setState(() => _adSuggestions = parsed);
+    } catch (_) {
+      // ignore
+    } finally {
+      if (mounted) setState(() => _adSuggestionsLoading = false);
     }
   }
 
@@ -929,6 +1111,19 @@ class _HomeDashboardState extends State<HomeDashboard>
     return out;
   }
 
+  List<SuggestionUser> _vendorsForBlock(int blockIndex, {int count = 10}) {
+    final all = _vendorSuggestions
+        .where((u) => !_dismissedVendorSuggestionIds.contains(u.id))
+        .toList();
+    if (all.isEmpty) return const <SuggestionUser>[];
+    final start = (blockIndex * count) % all.length;
+    final out = <SuggestionUser>[];
+    for (var i = 0; i < count && i < all.length; i++) {
+      out.add(all[(start + i) % all.length]);
+    }
+    return out;
+  }
+
   void _dismissSuggestionUser(String userId) {
     final id = userId.trim();
     if (id.isEmpty) return;
@@ -971,28 +1166,47 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   List<_FeedRenderRow> _buildFeedRows(List<FeedPost> posts) {
     final rows = <_FeedRenderRow>[];
-    var suggestionBlockIndex = 0;
-    for (final p in posts) {
-      rows.add(_FeedRenderRow.post(p));
-      if (p.isAd) {
-        rows.add(_FeedRenderRow.suggestions(suggestionBlockIndex));
-        suggestionBlockIndex++;
-      }
+    var postCount = 0;
+    var peopleBlockIndex = 0;
+    var vendorBlockIndex = 0;
+
+    FeedPost? nextAdForBlock(int idx) {
+      final list = _adSuggestions;
+      if (list.isEmpty) return null;
+      return list[idx % list.length];
     }
 
-    // React parity: insert suggested reels near the top on mobile.
-    if (_suggestedReels.isNotEmpty) {
-      var insertAt = rows.length;
-      var postCount = 0;
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].type != _FeedRenderRowType.post) continue;
-        postCount++;
-        if (postCount >= 2) {
-          insertAt = i + 1;
-          break;
-        }
+    for (final p in posts) {
+      rows.add(_FeedRenderRow.post(p));
+      postCount++;
+      if (postCount % 5 != 0) continue;
+
+      // After every 5 posts, insert the hierarchy:
+      // Reels → Ads → People → Vendors
+      if (_reelSuggestionsLoading || _suggestedReels.isNotEmpty) {
+        rows.add(_FeedRenderRow.reelsSuggestions());
       }
-      rows.insert(insertAt, _FeedRenderRow.reelsSuggestions());
+
+      final ad = nextAdForBlock(postCount ~/ 5);
+      if (_adSuggestionsLoading || _adSuggestions.isNotEmpty) {
+        rows.add(_FeedRenderRow.adsSuggestion(ad));
+      }
+
+      final hasPeople = _followSuggestions.any(
+        (u) => !_dismissedSuggestionUserIds.contains(u.id),
+      );
+      if (_followSuggestionsLoading || hasPeople) {
+        rows.add(_FeedRenderRow.peopleSuggestions(peopleBlockIndex));
+        peopleBlockIndex++;
+      }
+
+      final hasVendors = _vendorSuggestions.any(
+        (u) => !_dismissedVendorSuggestionIds.contains(u.id),
+      );
+      if (_vendorSuggestionsLoading || hasVendors) {
+        rows.add(_FeedRenderRow.vendorSuggestions(vendorBlockIndex));
+        vendorBlockIndex++;
+      }
     }
     return rows;
   }
@@ -2890,7 +3104,20 @@ class _HomeDashboardState extends State<HomeDashboard>
                               (context, index) {
                                 final row = rows[index];
                                 if (row.type ==
-                                    _FeedRenderRowType.reelsSuggestions) {
+                                    _FeedRenderRowType.suggestedReels) {
+                                  if (_suggestedReels.isEmpty &&
+                                      _reelSuggestionsLoading) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 12),
+                                      child: _SuggestedReelsPlaceholder(
+                                        isLoading: true,
+                                      ),
+                                    );
+                                  }
+                                  if (_suggestedReels.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
                                   return SuggestedReelsCard(
                                     reels: _suggestedReels,
                                     imageHeaders:
@@ -2909,9 +3136,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                                   );
                                 }
                                 if (row.type ==
-                                    _FeedRenderRowType.suggestions) {
-                                  final isLoading = _followSuggestionsLoading ||
-                                      _followSuggestions.isEmpty;
+                                    _FeedRenderRowType.suggestedPeople) {
+                                  final isLoading = _followSuggestionsLoading;
                                   final users = isLoading
                                       ? const <SuggestionUser>[]
                                       : _suggestionsForBlock(
@@ -2920,7 +3146,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                         );
                                   return SuggestionFollowBlock(
                                     key: ValueKey(
-                                        'follow-suggestions-${row.suggestionBlockIndex}'),
+                                        'people-suggestions-${row.suggestionBlockIndex}'),
                                     isLoading: isLoading,
                                     imageHeaders:
                                         _suggestionImageHeaders.isEmpty
@@ -2928,12 +3154,11 @@ class _HomeDashboardState extends State<HomeDashboard>
                                             : _suggestionImageHeaders,
                                     sections: [
                                       SuggestionFollowSection(
-                                        title:
-                                            'Follow businesses that you might like',
+                                        title: 'Follow people you might like',
                                         helperText:
-                                            'Connect with businesses based on your interests.',
+                                            'Find and follow other people based on your interests.',
                                         users: users,
-                                        onSeeAll: _openSuggestionsSeeAll,
+                                        onSeeAll: null,
                                         onOverflow: null,
                                       ),
                                     ],
@@ -2946,6 +3171,123 @@ class _HomeDashboardState extends State<HomeDashboard>
                                     },
                                     onFollow: (user) =>
                                         unawaited(_followSuggestionUser(user)),
+                                  );
+                                }
+                                if (row.type ==
+                                    _FeedRenderRowType.suggestedVendors) {
+                                  final isLoading = _vendorSuggestionsLoading;
+                                  final vendors = isLoading
+                                      ? const <SuggestionUser>[]
+                                      : _vendorsForBlock(
+                                          row.suggestionBlockIndex,
+                                          count: 10,
+                                        );
+                                  return SuggestionFollowBlock(
+                                    key: ValueKey(
+                                        'vendor-suggestions-${row.suggestionBlockIndex}'),
+                                    isLoading: isLoading,
+                                    imageHeaders:
+                                        _suggestionImageHeaders.isEmpty
+                                            ? null
+                                            : _suggestionImageHeaders,
+                                    sections: [
+                                      SuggestionFollowSection(
+                                        title:
+                                            'Follow businesses you’re interested in',
+                                        helperText:
+                                            'Discover vendors and follow businesses you care about.',
+                                        users: vendors,
+                                        onSeeAll: _openSuggestionsSeeAll,
+                                        onOverflow: null,
+                                      ),
+                                    ],
+                                    onDismissUser: _dismissVendorSuggestion,
+                                    onUserTap: (vendorId) {
+                                      final id = vendorId.trim();
+                                      if (id.isEmpty) return;
+                                      Navigator.of(context)
+                                          .pushNamed('/vendor/$id/public');
+                                    },
+                                    onFollow: (vendor) => unawaited(
+                                        _followVendorSuggestion(vendor)),
+                                  );
+                                }
+                                if (row.type ==
+                                    _FeedRenderRowType.suggestedAds) {
+                                  final ad = row.post;
+                                  if (ad == null) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 12),
+                                      child: _SuggestedAdsPlaceholder(
+                                        isLoading: _adSuggestionsLoading,
+                                      ),
+                                    );
+                                  }
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Padding(
+                                        padding:
+                                            EdgeInsets.fromLTRB(14, 12, 14, 6),
+                                        child: Text(
+                                          'Suggested ad',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                      Builder(
+                                        builder: (context) {
+                                          final p = ad;
+                                          final isOwnPost =
+                                              _currentUserId != null &&
+                                                  p.userId == _currentUserId;
+                                          return VisibilityDetector(
+                                            key: ValueKey('feed-vis-${p.id}'),
+                                            onVisibilityChanged: (info) {
+                                              _onFeedItemVisibilityChanged(
+                                                p.id,
+                                                info.visibleFraction,
+                                              );
+                                            },
+                                            child: RepaintBoundary(
+                                              child: PostCard(
+                                                key: ValueKey('card-${p.id}'),
+                                                post: p,
+                                                isTabActive:
+                                                    _currentIndex == 0 &&
+                                                        _isRouteActive,
+                                                isActive: false,
+                                                activeIdListenable:
+                                                    _activeFeedPostIdListenable,
+                                                isOwnPost: isOwnPost,
+                                                onUserTap: p.userId.isNotEmpty
+                                                    ? () => Navigator.of(
+                                                            context)
+                                                        .pushNamed(
+                                                            '/vendor/${p.userId}/public')
+                                                    : null,
+                                                onLike: () => _onLikePost(p),
+                                                onDoubleTapLike: () =>
+                                                    _onDoubleTapLikePost(p),
+                                                onComment: () =>
+                                                    _onCommentPost(p),
+                                                onShare: () => _onSharePost(p),
+                                                onSave: () => _onSavePost(p),
+                                                onFollow: isOwnPost
+                                                    ? null
+                                                    : () => _onFollowPost(p),
+                                                onMore: () =>
+                                                    _onMorePost(context, p),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
                                   );
                                 }
 
@@ -3484,6 +3826,158 @@ class _FloatingWallet extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SuggestedAdsPlaceholder extends StatelessWidget {
+  final bool isLoading;
+  const _SuggestedAdsPlaceholder({required this.isLoading});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF1F1F1F) : Colors.white;
+    final border = isDark ? Colors.white12 : Colors.black12;
+    final titleColor = theme.colorScheme.onSurface;
+    final subColor =
+        theme.textTheme.bodySmall?.color ?? theme.colorScheme.onSurfaceVariant;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white10
+                  : Colors.black.withValues(alpha: 0.06),
+              shape: BoxShape.circle,
+            ),
+            child: isLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    LucideIcons.badgeDollarSign,
+                    size: 18,
+                    color: titleColor.withValues(alpha: 0.75),
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Suggested ads',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: titleColor,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isLoading
+                      ? 'Loading suggestions…'
+                      : 'No ad suggestions right now.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.2,
+                    color: subColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuggestedReelsPlaceholder extends StatelessWidget {
+  final bool isLoading;
+  const _SuggestedReelsPlaceholder({required this.isLoading});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF1F1F1F) : Colors.white;
+    final border = isDark ? Colors.white12 : Colors.black12;
+    final titleColor = theme.colorScheme.onSurface;
+    final subColor =
+        theme.textTheme.bodySmall?.color ?? theme.colorScheme.onSurfaceVariant;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white10
+                  : Colors.black.withValues(alpha: 0.06),
+              shape: BoxShape.circle,
+            ),
+            child: isLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    LucideIcons.clapperboard,
+                    size: 18,
+                    color: titleColor.withValues(alpha: 0.75),
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Suggested reels',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: titleColor,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isLoading
+                      ? 'Loading suggestions…'
+                      : 'No reel suggestions right now.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.2,
+                    color: subColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

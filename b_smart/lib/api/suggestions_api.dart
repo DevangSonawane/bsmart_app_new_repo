@@ -34,6 +34,7 @@ class SuggestionsApi {
         'items',
         'ads',
         'reels',
+        'vendors',
       ]) {
         if (map[key] is List) {
           list = map[key];
@@ -41,7 +42,15 @@ class SuggestionsApi {
         }
         if (map[key] is Map) {
           final nested = Map<String, dynamic>.from(map[key]);
-          for (final nestedKey in const ['data', 'items', 'results', 'users', 'ads', 'reels']) {
+          for (final nestedKey in const [
+            'data',
+            'items',
+            'results',
+            'users',
+            'ads',
+            'reels',
+            'vendors',
+          ]) {
             if (nested[nestedKey] is List) {
               list = nested[nestedKey];
               break;
@@ -70,7 +79,8 @@ class SuggestionsApi {
     return <String, dynamic>{'data': res};
   }
 
-  Future<List<Map<String, dynamic>>> getUserSuggestions({int limit = 10}) async {
+  Future<List<Map<String, dynamic>>> getUserSuggestions(
+      {int limit = 10}) async {
     final res = await _client.get(
       '$_basePath/suggestions/users',
       queryParams: <String, String>{'limit': '$limit'},
@@ -78,7 +88,8 @@ class SuggestionsApi {
     return _extractList(res);
   }
 
-  Future<List<Map<String, dynamic>>> getReelSuggestions({int limit = 10}) async {
+  Future<List<Map<String, dynamic>>> getReelSuggestions(
+      {int limit = 10}) async {
     final res = await _client.get(
       '$_basePath/suggestions/reels',
       queryParams: <String, String>{'limit': '$limit'},
@@ -93,5 +104,13 @@ class SuggestionsApi {
     );
     return _extractList(res);
   }
-}
 
+  Future<List<Map<String, dynamic>>> getVendorSuggestions(
+      {int limit = 10}) async {
+    final res = await _client.get(
+      '$_basePath/suggestions/vendors',
+      queryParams: <String, String>{'limit': '$limit'},
+    );
+    return _extractList(res);
+  }
+}
