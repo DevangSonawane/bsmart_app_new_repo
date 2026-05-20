@@ -2598,7 +2598,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   title: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(username, style: TextStyle(color: fgColor)),
+                      Flexible(
+                        child: Text(
+                          username,
+                          style: TextStyle(color: fgColor),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                        ),
+                      ),
                       const SizedBox(width: 4),
                       SvgPicture.string(
                         _verifiedBadgeSvg,
