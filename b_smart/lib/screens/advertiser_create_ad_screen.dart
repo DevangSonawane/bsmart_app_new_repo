@@ -785,17 +785,7 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
 
       final createdId =
           pickId(created['id'] ?? created['_id'] ?? created['ad'] ?? created['data']);
-      NotificationService().addNotification(
-        NotificationItem(
-          id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-          typeKey: 'ad_submitted',
-          title: 'Ad submitted',
-          message: 'Your ad has been submitted for review',
-          timestamp: DateTime.now(),
-          isRead: false,
-          relatedId: createdId,
-        ),
-      );
+      // Server is responsible for creating notifications.
 
       if (!mounted) return;
       setState(() {

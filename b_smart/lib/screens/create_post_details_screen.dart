@@ -285,18 +285,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
       final createdId = pickId(
         created['id'] ?? created['_id'] ?? created['post'] ?? created['data'],
       );
-      final isReel = widget.media.type == MediaType.video;
-      NotificationService().addNotification(
-        NotificationItem(
-          id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-          typeKey: isReel ? 'reel_posted' : 'post_posted',
-          title: isReel ? 'Reel shared' : 'Post shared',
-          message: isReel ? 'Your reel is now live' : 'Your post is now live',
-          timestamp: DateTime.now(),
-          isRead: false,
-          relatedId: createdId,
-        ),
-      );
+      // Server is responsible for creating notifications.
 
       if (mounted) {
         Navigator.of(context).pop(); // Close loading

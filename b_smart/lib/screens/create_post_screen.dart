@@ -967,17 +967,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             created['_id'] ??
             created['post'] ??
             created['data']);
-        NotificationService().addNotification(
-          NotificationItem(
-            id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-            typeKey: 'post_posted',
-            title: 'Post shared',
-            message: 'Your post is now live',
-            timestamp: DateTime.now(),
-            isRead: false,
-            relatedId: createdId,
-          ),
-        );
+        // Server is responsible for creating notifications.
       }
       if (created.isNotEmpty && mounted) {
         Navigator.of(context).pop(true);

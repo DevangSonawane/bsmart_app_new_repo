@@ -15,52 +15,10 @@ class NotificationService {
   final StreamController<List<NotificationItem>> _controller = StreamController.broadcast();
   StreamSubscription<dynamic>? _subscription;
 
-  // Initialize with dummy notifications
+  // Server-backed notifications (no seeded mock data).
   NotificationService._internal() {
-    _notifications = _generateDummyNotifications();
-    // seed controller
-    _controller.add(_sortedCopy(_notifications));
-  }
-
-  List<NotificationItem> _generateDummyNotifications() {
-    final now = DateTime.now();
-    return [
-      NotificationItem(
-        id: 'notif-1',
-        typeKey: 'ad',
-        title: 'New Ad Available',
-        message: 'A new ad has been added. Check it out now.',
-        timestamp: now.subtract(const Duration(minutes: 5)),
-        isRead: false,
-        relatedId: 'ad-1',
-      ),
-      NotificationItem(
-        id: 'notif-1b',
-        typeKey: 'reel_posted',
-        title: 'Reel shared',
-        message: 'Your reel is now live',
-        timestamp: now.subtract(const Duration(minutes: 18)),
-        isRead: true,
-        relatedId: 'reel-1',
-      ),
-      NotificationItem(
-        id: 'notif-1c',
-        typeKey: 'post_posted',
-        title: 'Post shared',
-        message: 'Your post is now live',
-        timestamp: now.subtract(const Duration(minutes: 25)),
-        isRead: true,
-        relatedId: 'post-1',
-      ),
-      NotificationItem(
-        id: 'notif-2',
-        typeKey: 'follow',
-        title: 'New Follower',
-        message: 'Alice Smith started following you',
-        timestamp: now.subtract(const Duration(hours: 1)),
-        isRead: false,
-      ),
-    ];
+    // Seed stream with empty list so UI can render immediately.
+    _controller.add(const <NotificationItem>[]);
   }
 
   String get _basePath {

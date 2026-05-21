@@ -279,18 +279,6 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
       // Record in eligibility service
       _eligibilityService.recordAdWatch(_userId, _currentAd!.id, _currentAd!.coinReward);
 
-      // Send notification
-      _notificationService.addNotification(
-        NotificationItem(
-          id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-          typeKey: 'reward',
-          title: 'Coins Earned',
-          message: 'You earned ${_currentAd!.coinReward} coins by watching an ad',
-          timestamp: DateTime.now(),
-          isRead: false,
-        ),
-      );
-
       // Show success
       if (mounted) {
         final earned = _currentAd!.coinReward;

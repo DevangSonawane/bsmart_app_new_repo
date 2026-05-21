@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/auth/login/login_screen.dart';
 import 'screens/home_dashboard.dart';
 import 'theme/app_theme.dart';
@@ -114,21 +113,9 @@ void main() async {
     PaintingBinding.instance.imageCache.maximumSize = 200; // max 200 images
     PaintingBinding.instance.imageCache.maximumSizeBytes =
         150 * 1024 * 1024; // 150MB
-          
-    try {
-      await dotenv.load(fileName: ".env");
-    } catch (e) {
-      debugPrint('Error loading .env: $e');
-      // ignore - .env may be absent in some environments
-    }
 
-    {
-      String? apiBaseUrl;
-      try {
-        apiBaseUrl = dotenv.env['API_BASE_URL'];
-      } catch (_) {}
-      ApiConfig.init(baseUrl: apiBaseUrl);
-    }
+    // Non-sensitive API base URL is configured in `ApiConfig` defaults.
+    ApiConfig.init();
 
     // In development, proactively clear the image cache so hot-reload does not
     // show stale media from disk cache while URLs stay the same on the server.

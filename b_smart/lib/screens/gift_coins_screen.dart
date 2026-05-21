@@ -124,23 +124,6 @@ class _GiftCoinsScreenState extends State<GiftCoinsScreen> {
         // Refresh balance
         await _loadBalance();
 
-        // In real app, the server would:
-        // 1. Deduct coins from sender
-        // 2. Add coins to receiver
-        // 3. Send notification to receiver
-        
-        // For demo: Show notification that gift was sent
-        _notificationService.addNotification(
-          NotificationItem(
-            id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-            typeKey: 'reward',
-            title: 'Gift Sent',
-            message: 'You sent $amount coins to ${_selectedUser!['full_name'] ?? _selectedUser!['username']}',
-            timestamp: DateTime.now(),
-            isRead: false,
-          ),
-        );
-
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(

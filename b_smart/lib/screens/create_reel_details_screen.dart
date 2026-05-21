@@ -408,17 +408,6 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
 
       final createdId =
           pickId(created['id'] ?? created['_id'] ?? created['reel'] ?? created['data']);
-      NotificationService().addNotification(
-        NotificationItem(
-          id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
-          typeKey: 'reel_posted',
-          title: 'Reel shared',
-          message: 'Your reel is now live',
-          timestamp: DateTime.now(),
-          isRead: false,
-          relatedId: createdId,
-        ),
-      );
 
       if (mounted) {
         Navigator.of(context).pop(true);

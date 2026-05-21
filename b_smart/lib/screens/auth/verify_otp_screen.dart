@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../api/email_api.dart';
 import '../../theme/design_tokens.dart';
 import '../home_dashboard.dart';
 
@@ -18,8 +19,13 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
   final _otpController = TextEditingController();
   bool _loading = false;
   bool _resending = false;
+  bool _sending = false;
+  bool _autoSent = false;
+  int _cooldown = 0;
   String _message = '';
   String _error = '';
+
+  static const String _purposeEmailVerification = 'email_verification';
 
   @override
   void initState() {
@@ -34,6 +40,49 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
     super.dispose();
   }
 
+  Future<void> _sendOtp({bool showMessage = true}) async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() => _error = 'Email is required.');
+      return;
+    }
+
+    setState(() {
+      _sending = true;
+      _error = '';
+      if (showMessage) _message = '';
+    });
+    try {
+      await EmailApi().sendOtp(
+        email: email,
+        purpose: _purposeEmailVerification,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (showMessage) {
+          _message = 'Verification code sent. Check your email.';
+        }
+        _cooldown = 60;
+      });
+      _tickCooldown();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _tickCooldown() {
+    if (_cooldown <= 0) return;
+    Future.delayed(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      if (_cooldown <= 0) return;
+      setState(() => _cooldown -= 1);
+      _tickCooldown();
+    });
+  }
+
   Future<void> _verify() async {
     setState(() {
       _error = '';
@@ -41,7 +90,16 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
       _loading = true;
     });
     try {
-      await Future.delayed(const Duration(seconds: 1));
+      final email = _emailController.text.trim();
+      final otp = _otpController.text.trim();
+      if (email.isEmpty) throw Exception('Email is required.');
+      if (otp.length < 6) throw Exception('Enter the 6-digit code.');
+
+      await EmailApi().verifyOtp(
+        email: email,
+        otp: otp,
+        purpose: _purposeEmailVerification,
+      );
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const HomeDashboard()),
@@ -50,7 +108,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
       }
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = e.toString().replaceAll('Exception: ', '');
         _loading = false;
       });
     }
@@ -64,22 +122,12 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
       _error = '';
       _message = '';
     });
-    try {
-      await Future.delayed(const Duration(seconds: 1));
-      if (mounted) {
-        setState(() {
-        _message = 'Verification code resent successfully!';
-        _resending = false;
-      });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-        _error = e.toString();
-        _resending = false;
-      });
-      }
-    }
+    await _sendOtp(showMessage: false);
+    if (!mounted) return;
+    setState(() {
+      if (_error.isEmpty) _message = 'Verification code resent successfully!';
+      _resending = false;
+    });
   }
 
   @override
@@ -87,6 +135,15 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
     final emailFromArgs = ModalRoute.of(context)?.settings.arguments as String?;
     if (emailFromArgs != null && _emailController.text != emailFromArgs) {
       _emailController.text = emailFromArgs;
+    }
+
+    final effectiveEmail = _emailController.text.trim();
+    if (!_autoSent && effectiveEmail.isNotEmpty) {
+      _autoSent = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _sendOtp(showMessage: false);
+      });
     }
 
     return Scaffold(
@@ -146,6 +203,28 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
+              OutlinedButton.icon(
+                onPressed: (_sending || _cooldown > 0)
+                    ? null
+                    : () {
+                        _sendOtp();
+                      },
+                icon: _sending
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(LucideIcons.mail, size: 18),
+                label: Text(_cooldown > 0 ? 'Resend in ${_cooldown}s' : 'Send code'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: DesignTokens.instaPink,
+                  side: BorderSide(color: DesignTokens.instaPink.withValues(alpha: 0.35)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 16),
               const Text('Verification Code', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
               const SizedBox(height: 6),
               TextField(
@@ -165,7 +244,11 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
               ),
               const SizedBox(height: 24),
               FilledButton(
-                onPressed: _loading ? null : _verify,
+                onPressed: _loading
+                    ? null
+                    : () {
+                        _verify();
+                      },
                 style: FilledButton.styleFrom(
                   backgroundColor: DesignTokens.instaPink,
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -184,7 +267,14 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                         alignment: PlaceholderAlignment.baseline,
                         baseline: TextBaseline.alphabetic,
                         child: TextButton(
-                          onPressed: (_resending || _emailController.text.trim().isEmpty) ? null : _resend,
+                          onPressed: (_resending ||
+                                  _sending ||
+                                  _cooldown > 0 ||
+                                  _emailController.text.trim().isEmpty)
+                              ? null
+                              : () {
+                                  _resend();
+                                },
                           style: TextButton.styleFrom(foregroundColor: DesignTokens.instaPink, padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                           child: Text(_resending ? 'Sending...' : 'Resend'),
                         ),
