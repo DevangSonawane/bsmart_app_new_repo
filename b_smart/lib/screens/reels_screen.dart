@@ -1474,10 +1474,12 @@ class _ReelsScreenState extends State<ReelsScreen>
                     color: Colors.white.withValues(alpha: 0.22),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: FractionallySizedBox(
-                        widthFactor: _clamp01(fraction),
-                        child: Container(color: Colors.white),
-                      ),
+                      child: (_isScrubbing || !canScrub)
+                          ? FractionallySizedBox(
+                              widthFactor: _clamp01(fraction),
+                              child: Container(color: Colors.white),
+                            )
+                          : _SmoothReelProgressBar(controller: controller!),
                     ),
                   ),
                 ),
@@ -2068,6 +2070,8 @@ class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
   bool _isPlaying = false;
   int _baseEpochMs = 0;
   static const int _snapBackToleranceMs = 120;
+  int _lastNotifiedDurationMs = 0;
+  int _lastNotifiedBasePosMs = -1;
 
   @override
   void initState() {
@@ -2160,7 +2164,18 @@ class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
     final wasPlaying = _isPlaying;
     _syncFromController();
     if (!mounted) return;
-    if (wasPlaying != _isPlaying) setState(() {});
+    final durMs = _duration.inMilliseconds;
+    final baseMs = _basePosition.inMilliseconds;
+    final durationChanged = durMs != _lastNotifiedDurationMs;
+    final baseChanged = baseMs != _lastNotifiedBasePosMs;
+    if (durationChanged) _lastNotifiedDurationMs = durMs;
+    if (baseChanged) _lastNotifiedBasePosMs = baseMs;
+
+    // Ensure we repaint when key values change (especially while paused, where
+    // the ticker is not running).
+    if (wasPlaying != _isPlaying || durationChanged || baseChanged) {
+      setState(() {});
+    }
   }
 
   void _updateTicker() {
@@ -2176,7 +2191,10 @@ class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
   @override
   Widget build(BuildContext context) {
     final durationMs = _duration.inMilliseconds;
-    if (durationMs <= 0) return const SizedBox.shrink();
+    if (durationMs <= 0) {
+      // Keep layout stable; just show an empty fill until duration resolves.
+      return const SizedBox.expand(child: SizedBox.shrink());
+    }
 
     var positionMs = _basePosition.inMilliseconds;
     if (_isPlaying) {
@@ -2187,10 +2205,12 @@ class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
     final progress = (positionMs / durationMs).clamp(0.0, 1.0);
 
     return RepaintBoundary(
-      child: FractionallySizedBox(
-        alignment: Alignment.centerLeft,
-        widthFactor: progress,
-        child: const ColoredBox(color: Colors.white),
+      child: SizedBox.expand(
+        child: FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: progress,
+          child: const ColoredBox(color: Colors.white),
+        ),
       ),
     );
   }

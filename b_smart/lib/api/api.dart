@@ -19,3 +19,5 @@ export 'ads_api.dart';
 export 'highlights_api.dart';
 export 'notification_preferences_api.dart';
 export 'suggestions_api.dart';
+export 'wallet_api.dart';
+export 'views_api.dart';

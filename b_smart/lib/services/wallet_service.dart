@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api.dart';
+import '../api/wallet_api.dart';
 import '../models/account_details_model.dart';
 import '../models/ledger_model.dart';
 
@@ -12,8 +13,8 @@ class WalletService {
 
   static const String _accountDetailsKey = 'wallet_account_details_v1';
 
-  final ApiClient _apiClient = ApiClient();
   final AuthApi _authApi = AuthApi();
+  final WalletApi _walletApi = WalletApi();
 
   AccountDetails? _accountDetails;
   bool _hasLoadedAccountDetails = false;
@@ -78,8 +79,8 @@ class WalletService {
       throw Exception('Could not resolve current user id');
     }
 
-    final raw = await _apiClient.get('/wallet/member/$userId/history');
-    final data = await _normalizeMap(raw);
+    final data =
+        await _walletApi.memberHistory(userId: userId);
     final success = data['success'];
     if (success is bool && !success) {
       final message = data['message']?.toString() ?? 'Failed to load wallet data';
@@ -88,8 +89,37 @@ class WalletService {
     return data;
   }
 
+  /// `GET /wallet/me` — current wallet + recent transactions (best-effort).
+  Future<Map<String, dynamic>> fetchWalletMe({int? limit, int? page}) async {
+    final data = await _walletApi.me(limit: limit, page: page);
+    final success = data['success'];
+    if (success is bool && !success) {
+      final message = data['message']?.toString() ?? 'Failed to load wallet data';
+      throw Exception(message);
+    }
+    return data;
+  }
+
+  /// `GET /wallet` — backend-dependent wallet response (best-effort).
+  Future<Map<String, dynamic>> fetchWallet({int? limit, int? page}) async {
+    final data = await _walletApi.wallet(limit: limit, page: page);
+    final success = data['success'];
+    if (success is bool && !success) {
+      final message = data['message']?.toString() ?? 'Failed to load wallet data';
+      throw Exception(message);
+    }
+    return data;
+  }
+
+  /// Mirrors React web app fallback balance logic (`/wallet/me` then `/wallet`).
+  Future<int> fetchWalletBalance({int? limit}) async {
+    return _walletApi.getBalance(limit: limit);
+  }
+
   Future<int> getCoinBalance() async {
     try {
+      final bal = await fetchWalletBalance(limit: 1);
+      if (bal > 0) return bal;
       final data = await fetchMemberWalletHistoryForCurrentUser();
       dynamic wallet = data['wallet'];
       if (wallet == null && data['data'] is Map) {

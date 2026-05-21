@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -33,8 +34,6 @@ class _PromoteScreenState extends State<PromoteScreen> {
   bool _loading = true;
   List<Map<String, dynamic>> _promotes = [];
   final Map<int, VideoPlayerController> _controllers = {};
-  final Map<int, double> _progressByIndex = {};
-  final Map<int, VoidCallback> _progressListeners = {};
   final Map<String, bool> _followByUserId = {};
   final Set<String> _followLoadingUserIds = <String>{};
   final Map<int, bool> _productsOpenByIndex = <int, bool>{};
@@ -116,32 +115,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
     await controller.initialize();
     controller.setLooping(true);
     if (mounted && _currentIndex == index) controller.play();
-    _attachProgressListener(index, controller);
     setState(() {});
-  }
-
-  void _attachProgressListener(int index, VideoPlayerController controller) {
-    if (_progressListeners.containsKey(index)) return;
-    int lastMs = 0;
-    void listener() {
-      if (!mounted) return;
-      if (!controller.value.isInitialized) return;
-      final dur = controller.value.duration;
-      final pos = controller.value.position;
-      final totalMs = dur.inMilliseconds;
-      if (totalMs <= 0) return;
-      final nowMs = DateTime.now().millisecondsSinceEpoch;
-      if (nowMs - lastMs < 120) return;
-      lastMs = nowMs;
-      final pct = pos.inMilliseconds / totalMs;
-      final clamped = pct.isNaN ? 0.0 : pct.clamp(0.0, 1.0);
-      final prev = _progressByIndex[index];
-      if (prev != null && (prev - clamped).abs() < 0.004) return;
-      setState(() => _progressByIndex[index] = clamped);
-    }
-
-    _progressListeners[index] = listener;
-    controller.addListener(listener);
   }
 
   void _disposeFarControllers(int keepIndex) {
@@ -149,15 +123,10 @@ class _PromoteScreenState extends State<PromoteScreen> {
     for (final k in keys) {
       if ((k - keepIndex).abs() > 1) {
         try {
-          final l = _progressListeners.remove(k);
-          if (l != null) {
-            _controllers[k]?.removeListener(l);
-          }
           _controllers[k]?.pause();
           _controllers[k]?.dispose();
         } catch (_) {}
         _controllers.remove(k);
-        _progressByIndex.remove(k);
       }
     }
   }
@@ -169,15 +138,11 @@ class _PromoteScreenState extends State<PromoteScreen> {
       final idx = entry.key;
       final c = entry.value;
       try {
-        final l = _progressListeners.remove(idx);
-        if (l != null) c.removeListener(l);
         c.pause();
         c.dispose();
       } catch (_) {}
     }
     _controllers.clear();
-    _progressListeners.clear();
-    _progressByIndex.clear();
     super.dispose();
   }
 
@@ -647,12 +612,10 @@ class _PromoteScreenState extends State<PromoteScreen> {
                     child: Container(
                       height: 4,
                       color: Colors.white.withValues(alpha: 0.22),
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor:
-                            (_progressByIndex[index] ?? 0.0).clamp(0.0, 1.0),
-                        child: Container(color: Colors.white),
-                      ),
+                      child: (controller != null &&
+                              controller.value.isInitialized)
+                          ? _SmoothVideoProgressBar(controller: controller)
+                          : const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -840,6 +803,159 @@ class _PromoteScreenState extends State<PromoteScreen> {
         ),
       ),
     ).then((_) => setState(() {}));
+  }
+}
+
+class _SmoothVideoProgressBar extends StatefulWidget {
+  final VideoPlayerController controller;
+  const _SmoothVideoProgressBar({required this.controller});
+
+  @override
+  State<_SmoothVideoProgressBar> createState() => _SmoothVideoProgressBarState();
+}
+
+class _SmoothVideoProgressBarState extends State<_SmoothVideoProgressBar>
+    with SingleTickerProviderStateMixin {
+  Ticker? _ticker;
+  Duration _duration = Duration.zero;
+  Duration _basePosition = Duration.zero;
+  double _playbackSpeed = 1.0;
+  bool _isPlaying = false;
+  int _baseEpochMs = 0;
+
+  static const int _snapBackToleranceMs = 120;
+  int _lastNotifiedDurationMs = 0;
+  int _lastNotifiedBasePosMs = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker(_onTick);
+    widget.controller.addListener(_onControllerValueChanged);
+    _syncFromController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SmoothVideoProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller == widget.controller) return;
+    oldWidget.controller.removeListener(_onControllerValueChanged);
+    widget.controller.addListener(_onControllerValueChanged);
+    _syncFromController();
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onControllerValueChanged);
+    _ticker?.dispose();
+    super.dispose();
+  }
+
+  void _onTick(Duration _) {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  int _predictedPositionMs(int nowMs) {
+    var positionMs = _basePosition.inMilliseconds;
+    if (_isPlaying) {
+      final elapsedMs = (nowMs - _baseEpochMs).clamp(0, 1 << 30);
+      positionMs += (elapsedMs * _playbackSpeed).round();
+    }
+    return positionMs;
+  }
+
+  void _syncFromController() {
+    if (!mounted) return;
+    try {
+      final value = widget.controller.value;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final nextDuration = value.duration;
+      final nextSpeed = value.playbackSpeed;
+      final nextIsPlaying = value.isPlaying;
+      final controllerPos = value.position;
+
+      _duration = nextDuration;
+
+      if (_isPlaying && nextIsPlaying && _playbackSpeed != nextSpeed) {
+        _basePosition = Duration(milliseconds: _predictedPositionMs(nowMs));
+        _baseEpochMs = nowMs;
+      }
+      _playbackSpeed = nextSpeed;
+      _isPlaying = nextIsPlaying;
+
+      if (!_isPlaying) {
+        _basePosition = controllerPos;
+        _baseEpochMs = nowMs;
+      } else {
+        final predictedMs = _predictedPositionMs(nowMs);
+        final controllerMs = controllerPos.inMilliseconds;
+        if (controllerMs > predictedMs) {
+          _basePosition = controllerPos;
+          _baseEpochMs = nowMs;
+        } else if (controllerMs < predictedMs - _snapBackToleranceMs) {
+          _basePosition = controllerPos;
+          _baseEpochMs = nowMs;
+        }
+      }
+      _updateTicker();
+    } catch (_) {
+      _isPlaying = false;
+      _updateTicker();
+    }
+  }
+
+  void _onControllerValueChanged() {
+    final wasPlaying = _isPlaying;
+    _syncFromController();
+    if (!mounted) return;
+    final durMs = _duration.inMilliseconds;
+    final baseMs = _basePosition.inMilliseconds;
+    final durationChanged = durMs != _lastNotifiedDurationMs;
+    final baseChanged = baseMs != _lastNotifiedBasePosMs;
+    if (durationChanged) _lastNotifiedDurationMs = durMs;
+    if (baseChanged) _lastNotifiedBasePosMs = baseMs;
+
+    if (wasPlaying != _isPlaying || durationChanged || baseChanged) {
+      setState(() {});
+    }
+  }
+
+  void _updateTicker() {
+    final ticker = _ticker;
+    if (ticker == null) return;
+    if (_isPlaying) {
+      if (!ticker.isActive) ticker.start();
+    } else {
+      if (ticker.isActive) ticker.stop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final durationMs = _duration.inMilliseconds;
+    if (durationMs <= 0) {
+      // Keep layout stable; show empty fill until duration resolves.
+      return const SizedBox.expand(child: SizedBox.shrink());
+    }
+
+    var positionMs = _basePosition.inMilliseconds;
+    if (_isPlaying) {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final elapsedMs = (nowMs - _baseEpochMs).clamp(0, 1 << 30);
+      positionMs += (elapsedMs * _playbackSpeed).round();
+    }
+    final progress = (positionMs / durationMs).clamp(0.0, 1.0);
+
+    return RepaintBoundary(
+      child: SizedBox.expand(
+        child: FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: progress,
+          child: const ColoredBox(color: Colors.white),
+        ),
+      ),
+    );
   }
 }
 
