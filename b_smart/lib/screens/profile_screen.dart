@@ -2691,7 +2691,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onMore: () =>
                                 _showProfileMoreActions(displayProfile),
                             onMessage:
-                                (!isMe && canMessage) ? _openMessaging : null,
+                                isMe ? _openMessaging : (canMessage ? _openMessaging : null),
                             onUser: isMe ? _toggleFollowSuggestions : null,
                             onAvatarTap: _openStoriesFromProfile,
                             onAvatarEdit: isMe && !_avatarUploading
