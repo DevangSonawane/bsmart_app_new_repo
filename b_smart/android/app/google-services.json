@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "775304408229",
+    "project_id": "bsmart-224b2",
+    "storage_bucket": "bsmart-224b2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:775304408229:android:eac238430ec3c41f64714c",
+        "android_client_info": {
+          "package_name": "com.bsmart.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBDYEf5vEoLExg50J5nRnQMts-SXc9fo1E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

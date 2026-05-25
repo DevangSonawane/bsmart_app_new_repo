@@ -32,11 +32,27 @@ class PushService {
   bool _initialized = false;
   bool _localNotifsReady = false;
 
+  void _log(String message) {
+    if (kReleaseMode) return;
+    debugPrint('[PushService] $message');
+  }
+
+  static const bool _logTokens =
+      bool.fromEnvironment('PUSH_LOG_TOKENS', defaultValue: false);
+
+  String _redact(String? value) {
+    if (value == null || value.isEmpty) return '';
+    if (_logTokens) return value;
+    if (value.length <= 10) return '***';
+    return '${value.substring(0, 6)}…${value.substring(value.length - 4)}';
+  }
+
   Future<void> initialize() async {
     if (kIsWeb) return;
     if (_initialized) return;
     _initialized = true;
 
+    _log('initialize() start');
     _storage = const FlutterSecureStorage(
       webOptions: WebOptions(
         dbName: 'b_smart_secure',
@@ -46,30 +62,41 @@ class PushService {
 
     // Android 13+ needs runtime notification permission.
     if (defaultTargetPlatform == TargetPlatform.android) {
-      await Permission.notification.request();
+      final status = await Permission.notification.request();
+      _log('notification permission: $status');
     }
 
     await _initLocalNotifications();
+    _log('local notifications ready=$_localNotifsReady');
 
     _onMessageSub =
         FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     _onMessageOpenedSub =
         FirebaseMessaging.onMessageOpenedApp.listen(_handleOpenFromMessage);
     _tokenRefreshSub = _messaging.onTokenRefresh.listen((token) async {
-      await _registerIfAuthenticated(token);
+      _log('onTokenRefresh token=${_redact(token)}');
+      await _registerIfAuthenticated(token, force: false);
     });
 
     // Register current token if user is already logged in.
     final token = await _messaging.getToken();
     if (token != null && token.isNotEmpty) {
-      await _registerIfAuthenticated(token);
+      _log('getToken() token=${_redact(token)}');
+      await _registerIfAuthenticated(token, force: false);
+    } else {
+      _log('getToken() returned empty/null');
     }
 
     // If the app was launched by tapping a notification.
     final initial = await _messaging.getInitialMessage();
     if (initial != null) {
+      _log(
+          'getInitialMessage() present; dataKeys=${initial.data.keys.toList()}');
       await _handleOpenFromMessage(initial);
+    } else {
+      _log('getInitialMessage() null');
     }
+    _log('initialize() done');
   }
 
   Future<void> dispose() async {
@@ -83,18 +110,47 @@ class PushService {
 
   Future<void> syncTokenWithBackend() async {
     if (kIsWeb) return;
+    _log('syncTokenWithBackend()');
     final token = await _messaging.getToken();
-    if (token == null || token.isEmpty) return;
-    await _registerIfAuthenticated(token);
+    if (token == null || token.isEmpty) {
+      _log('syncTokenWithBackend(): getToken() empty/null');
+      return;
+    }
+    await _registerIfAuthenticated(token, force: false);
+  }
+
+  /// Force-register the current token with backend even if it hasn't changed.
+  /// Useful when backend-side token storage/SNS endpoints were reset.
+  Future<void> forceRegisterWithBackend() async {
+    if (kIsWeb) return;
+    _log('forceRegisterWithBackend()');
+    final token = await _messaging.getToken();
+    if (token == null || token.isEmpty) {
+      _log('forceRegisterWithBackend(): getToken() empty/null');
+      return;
+    }
+    await _registerIfAuthenticated(token, force: true);
+  }
+
+  /// Clears the locally remembered "last registered" token so the next sync
+  /// will register again.
+  Future<void> clearLastRegisteredToken() async {
+    if (kIsWeb) return;
+    _log('clearLastRegisteredToken()');
+    await _write(_storedTokenKey, '');
   }
 
   Future<void> unregisterFromBackend() async {
     if (kIsWeb) return;
+    _log('unregisterFromBackend()');
     try {
       // Must be called before token is cleared (needs Authorization header).
-      await _api.delete('/api/push/unregister');
-    } catch (_) {
+      await _api.delete('/push/unregister');
+      _log('backend unregister success');
+    } catch (e, st) {
       // Best-effort cleanup; logout should still continue.
+      _log('backend unregister failed (ignored): $e');
+      _log(st.toString());
     } finally {
       await _write(_storedTokenKey, '');
     }
@@ -137,6 +193,9 @@ class PushService {
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     if (!_localNotifsReady) return;
+    _log(
+      'onMessage (foreground) dataKeys=${message.data.keys.toList()} title=${message.notification?.title ?? message.data['title']}',
+    );
     final title =
         message.notification?.title ?? (message.data['title'] ?? 'Bsmart');
     final body = message.notification?.body ?? (message.data['body'] ?? '');
@@ -168,6 +227,7 @@ class PushService {
   Future<void> _handleOpenFromMessage(RemoteMessage message) async {
     final link = (message.data['link'] ?? '').toString().trim();
     if (link.isEmpty) return;
+    _log('onMessageOpenedApp/getInitialMessage link=$link');
     await _navigate(link);
   }
 
@@ -175,31 +235,49 @@ class PushService {
     // If navigator isn't ready yet, keep it to replay later.
     final navigator = AppNavigator.state;
     if (navigator == null) {
+      _log('navigator not ready; storing pending link=$link');
       await _write(_pendingLinkKey, link);
       return;
     }
     await _write(_pendingLinkKey, '');
+    _log('navigating pushNamed($link)');
     unawaited(navigator.pushNamed(link));
   }
 
   Future<void> replayPendingNavigationIfAny() async {
     final link = await _read(_pendingLinkKey);
     if (link == null || link.trim().isEmpty) return;
+    _log('replayPendingNavigationIfAny link=$link');
     await _navigate(link.trim());
   }
 
-  Future<void> _registerIfAuthenticated(String fcmToken) async {
+  Future<void> _registerIfAuthenticated(
+    String fcmToken, {
+    required bool force,
+  }) async {
     final hasAuth = await _api.hasToken;
-    if (!hasAuth) return;
+    if (!hasAuth) {
+      _log('skip register: not authenticated (no JWT)');
+      return;
+    }
 
     final last = await _read(_storedTokenKey);
-    if (last != null && last == fcmToken) return;
+    if (!force && last != null && last == fcmToken) {
+      _log('skip register: token unchanged');
+      return;
+    }
 
     try {
-      await _api.post('/api/push/register-fcm', body: {'fcm_token': fcmToken});
+      _log(
+        'registering token with backend force=$force token=${_redact(fcmToken)}',
+      );
+      await _api.post('/push/register-fcm', body: {'fcm_token': fcmToken});
       await _write(_storedTokenKey, fcmToken);
-    } catch (_) {
+      _log('backend register success');
+    } catch (e, st) {
       // Best-effort; will retry on next app start or login.
+      _log('backend register failed (will retry later): $e');
+      _log(st.toString());
     }
   }
 

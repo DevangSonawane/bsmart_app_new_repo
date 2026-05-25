@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/auth_api.dart';
 import '../theme/design_tokens.dart';
@@ -38,6 +40,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _showPushDebug() async {
+    final push = PushService();
+    await push.syncTokenWithBackend();
+    // If needed, use `flutter run --dart-define=PUSH_LOG_TOKENS=true` to log it.
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Push Debug'),
+          content: const Text(
+            'Actions:\n'
+            '• Force re-register token with backend\n'
+            '• Clear local last-registered token\n\n'
+            'Check Logcat/`flutter logs` for [PushService] lines.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await push.clearLastRegisteredToken();
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Clear Local'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await push.forceRegisterWithBackend();
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Force Register'),
+            ),
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(
+                  const ClipboardData(text: '[PushService]'),
+                );
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Copy Tag'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -75,6 +124,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               label: 'Notifications',
               subLabel: 'Manage notifications',
               onTap: () {}),
+          if (!kReleaseMode)
+            _settingTile(
+              icon: LucideIcons.bug,
+              label: 'Push Debug',
+              subLabel: 'FCM token + backend register',
+              onTap: _showPushDebug,
+            ),
           const SizedBox(height: 24),
           _sectionTitle('Account'),
           _settingTile(
