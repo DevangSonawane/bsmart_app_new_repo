@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/services.dart';
 import 'screens/auth/login/login_screen.dart';
@@ -25,17 +27,26 @@ import 'screens/vendor_public_profile_react_screen.dart';
 import 'utils/system_ui.dart';
 import 'widgets/profile_setup_gate.dart';
 import 'utils/app_navigator.dart';
+import 'services/push_service.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+}
 
 void main() async {
-  
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    await PushService().initialize();
     // Forward Flutter framework errors to the current zone handler so they
     // don't bring down the app during debug/testing of plugin failures.
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
       final message = details.exceptionAsString();
-      final isRenderFlexOverflow = message.contains('A RenderFlex overflowed by');
+      final isRenderFlexOverflow =
+          message.contains('A RenderFlex overflowed by');
       if (isRenderFlexOverflow) {
         // Layout overflow warnings are common during development and should not
         // be promoted to "uncaught errors" (they otherwise spam `flutter logs`).
@@ -65,7 +76,8 @@ void main() async {
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
                     child: Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -240,6 +252,10 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
         _isAuthenticated = authed;
         _isInitialized = true;
       });
+      if (authed) {
+        unawaited(PushService().syncTokenWithBackend());
+        unawaited(PushService().replayPendingNavigationIfAny());
+      }
     }
   }
 

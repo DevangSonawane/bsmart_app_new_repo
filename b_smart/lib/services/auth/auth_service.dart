@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import '../../models/auth/auth_user_model.dart' as model;
 import '../../models/auth/signup_session_model.dart';
 import '../../utils/validators.dart';
 import '../../utils/constants.dart';
+import '../push_service.dart';
 
 class AuthLoginOutcome {
   final bool requires2fa;
@@ -306,6 +308,7 @@ class AuthService {
       }
 
       final user = data['user'] as Map<String, dynamic>? ?? {};
+      unawaited(PushService().syncTokenWithBackend());
       return AuthLoginOutcome(
         requires2fa: false,
         user: _userFromApiMap(user),
@@ -375,6 +378,7 @@ class AuthService {
 
   /// Logout – clears stored JWT.
   Future<void> logout() async {
+    await PushService().unregisterFromBackend();
     await _googleSignIn.signOut();
     await _authApi.logout();
   }

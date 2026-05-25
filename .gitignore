@@ -1,2 +1,6 @@
 # macOS
 .DS_Store
+
+# Firebase Admin SDK keys (server-side only; never commit to client app repo)
+*firebase-adminsdk-*.json
+*adminsdk*.json

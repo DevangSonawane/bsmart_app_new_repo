@@ -5,6 +5,7 @@ import '../theme/design_tokens.dart';
 import '../theme/theme_scope.dart';
 import 'auth/login/login_screen.dart';
 import '../services/ui_prefs.dart';
+import '../services/push_service.dart';
 
 /// Settings: Preferences, Account, About sections + Log out.
 class SettingsScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _logout() async {
     setState(() => _loggingOut = true);
     try {
+      await PushService().unregisterFromBackend();
       await AuthApi().logout();
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(

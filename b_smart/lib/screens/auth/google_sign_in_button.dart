@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../api/auth_api.dart';
 import '../../services/auth/auth_service.dart';
+import '../../services/push_service.dart';
 import '../home_dashboard.dart';
 
 class GoogleSignInButton extends StatefulWidget {
@@ -44,6 +45,7 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> {
       if (!mounted) return;
 
       if (user != null) {
+        await PushService().syncTokenWithBackend();
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const HomeDashboard()),
           (route) => false,
