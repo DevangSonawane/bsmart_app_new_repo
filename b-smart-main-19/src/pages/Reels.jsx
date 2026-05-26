@@ -1,0 +1,1354 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  Heart, MessageCircle, Send, MoreHorizontal, Music2,
+  Volume2, VolumeX, Bookmark, Loader2, X, Trash2, ChevronLeft,
+  Search
+} from 'lucide-react';
+import { useSelector } from 'react-redux';
+import commentService from '../services/commentService';
+import api from '../lib/api';
+import ContentReportModal from '../components/ContentReportModal';
+import EditContentModal from '../components/EditContentModal';
+import OwnerContentOptionsModal from '../components/OwnerContentOptionsModal';
+import ShareContentModal from '../components/ShareContentModal';
+
+const BASE_URL = 'https://api.bebsmart.in/api';
+
+const getToken = () => localStorage.getItem('token');
+const authHeaders = () => ({
+  'Content-Type': 'application/json',
+  ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+});
+
+const normalizeApiArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  const candidates = [
+    value.data,
+    value?.data?.data,
+    value.posts,
+    value.reels,
+    value.feed,
+    value.items,
+    value.results,
+    value?.data?.posts,
+    value?.data?.reels,
+    value?.data?.feed,
+    value?.data?.items,
+    value?.data?.results,
+    value?.data?.data?.posts,
+    value?.data?.data?.reels,
+    value?.data?.data?.feed,
+    value?.data?.data?.items,
+    value?.data?.data?.results,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c;
+  }
+  return [];
+};
+
+const normalizeAssetUrl = (value) => {
+  if (!value) return null;
+  const baseUrl = 'https://api.bebsmart.in';
+  if (/^http:\/\/api\.bebsmart\.in/i.test(String(value))) return String(value).replace(/^http:\/\//i, 'https://');
+  if (String(value).startsWith('http')) return value;
+  const normalized = String(value).replace(/^\/+/, '');
+  if (normalized.startsWith('uploads/')) return `${baseUrl}/${normalized}`;
+  return `${baseUrl}/uploads/${normalized}`;
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const formatCount = (count) => {
+  if (!count && count !== 0) return '0';
+  if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+  if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
+  return count.toString();
+};
+
+const resolveCommentsCount = (item) => {
+  const explicit =
+    item?.commentsCount
+    ?? item?.comments_count
+    ?? item?.commentCount
+    ?? item?.comment_count;
+  if (Number.isFinite(Number(explicit))) return Number(explicit);
+  return Array.isArray(item?.comments) ? item.comments.length : 0;
+};
+
+const formatTimeAgo = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+  const diff = Math.floor((Date.now() - date) / 1000);
+  if (diff < 60) return `${Math.max(0, diff)}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
+  return `${Math.floor(diff / 604800)}w`;
+};
+
+// ─── Caption with "...more" expand ───────────────────────────────────────────
+const Caption = ({ text }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (!text) return null;
+  const words = text.trim().split(/\s+/);
+  const isLong = words.length > 5;
+  const preview = isLong ? words.slice(0, 5).join(' ') : text;
+  return (
+    <p className="text-white text-sm leading-relaxed mb-2">
+      {expanded || !isLong ? (
+        <>
+          {text}
+          {expanded && isLong && (
+            <button onClick={() => setExpanded(false)} className="text-white/60 ml-1.5 hover:text-white transition-colors text-sm font-semibold">less</button>
+          )}
+        </>
+      ) : (
+        <>
+          {preview}
+          <button onClick={() => setExpanded(true)} className="text-white/60 ml-1 hover:text-white transition-colors font-medium">... more</button>
+        </>
+      )}
+    </p>
+  );
+};
+
+// ─── Follow Button ────────────────────────────────────────────────────────────
+const FollowButton = ({ userId, initialFollowing = false }) => {
+  const [following, setFollowing] = useState(initialFollowing);
+  const [loading, setLoading] = useState(false);
+
+  const handleToggle = async (e) => {
+    e.stopPropagation();
+    if (loading || !userId) return;
+    setLoading(true);
+    const wasFollowing = following;
+    setFollowing(!wasFollowing);
+    try {
+      const endpoint = wasFollowing ? `${BASE_URL}/unfollow` : `${BASE_URL}/follow`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ followedUserId: String(userId) }),
+      });
+      if (!res.ok) setFollowing(wasFollowing);
+    } catch (e) {
+      console.error('Follow error:', e);
+      setFollowing(wasFollowing);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleToggle}
+      disabled={loading}
+      className={`px-3 py-1 rounded-lg text-[12px] font-semibold transition-all backdrop-blur-sm flex-shrink-0 disabled:opacity-60 ${
+        following
+          ? 'border border-white/30 bg-white/10 text-white hover:bg-red-500/20 hover:border-red-400/40'
+          : 'border border-white/40 bg-white/10 text-white hover:bg-white/25'
+      }`}
+    >
+      {loading ? <Loader2 size={10} className="animate-spin inline" /> : following ? 'Following' : 'Follow'}
+    </button>
+  );
+};
+
+const ActionButtons = ({ reel, mobile = false, onLike, onComment, onShare, onSave, onMore }) => {
+  const reelId = reel?._id || reel?.post_id;
+  const likesCount = reel?.likes_count ?? 0;
+  const commentsCount = resolveCommentsCount(reel);
+  const isLiked = !!reel?.is_liked_by_me;
+  const isSaved = !!reel?.is_saved_by_me;
+  const avatarUrl = reel?.user_id?.avatar_url;
+  const initial = (reel?.user_id?.username || reel?.user_id?.full_name || 'U')[0]?.toUpperCase();
+
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <button onClick={() => reelId && onLike?.(reelId, isLiked)} className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <Heart size={20} className={isLiked ? 'text-red-500 fill-red-500' : mobile ? 'text-white' : 'text-gray-800 dark:text-white'} />
+        </div>
+        <span className={`text-xs font-semibold ${mobile ? 'text-white' : 'text-gray-700 dark:text-white'}`}>
+          {formatCount(likesCount)}
+        </span>
+      </button>
+
+      <button onClick={() => onComment?.(reel)} className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <MessageCircle size={20} className={mobile ? 'text-white' : 'text-gray-800 dark:text-white'} />
+        </div>
+        <span className={`text-xs font-semibold ${mobile ? 'text-white' : 'text-gray-700 dark:text-white'}`}>
+          {formatCount(commentsCount)}
+        </span>
+      </button>
+
+      <button onClick={() => onShare?.(reel)} className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <Send size={18} className={`-rotate-12 relative left-[-2px] ${mobile ? 'text-white' : 'text-gray-800 dark:text-white'}`} />
+        </div>
+        <span className={`text-xs font-semibold ${mobile ? 'text-white' : 'text-gray-700 dark:text-white'}`}>Share</span>
+      </button>
+
+      <button onClick={() => reelId && onSave?.(reelId, isSaved)} className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <Bookmark size={20} className={isSaved ? (mobile ? 'text-yellow-400 fill-yellow-400' : 'text-yellow-500 fill-yellow-500') : mobile ? 'text-white' : 'text-gray-800 dark:text-white'} />
+        </div>
+        <span className={`text-xs font-semibold ${mobile ? 'text-white' : 'text-gray-700 dark:text-white'}`}>Save</span>
+      </button>
+
+      <button onClick={() => onMore?.(reel)} className="flex flex-col items-center gap-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90
+          ${mobile ? 'bg-black/30 backdrop-blur-sm' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          <MoreHorizontal size={20} className={mobile ? 'text-white' : 'text-gray-800 dark:text-white'} />
+        </div>
+      </button>
+
+      <div className={`w-9 h-9 rounded-full border-2 ${mobile ? 'border-white' : 'border-gray-300 dark:border-gray-600'} overflow-hidden shadow-md mt-1`}>
+        {avatarUrl
+          ? <img src={avatarUrl} className="w-full h-full object-cover" alt="user" />
+          : <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
+              {initial}
+            </div>
+        }
+      </div>
+    </div>
+  );
+};
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+import Avatar from '../components/Avatar';
+
+// ─── CommentsUI ───────────────────────────────────────────────────────────────
+// Mirrors PostDetailModal comment logic exactly:
+//   - uses commentService for all API calls
+//   - replies stored in parent-level state { [commentId]: [] }
+//   - auto-loads replies for every comment on fetch
+//   - expandedComments tracks open/closed state per comment
+const CommentsUI = ({ reel, onClose, userObject }) => {
+  const reelId = reel?._id || reel?.post_id;
+  const currentUserId = userObject?._id || userObject?.id;
+
+  // Same state shape as PostDetailModal
+  const [comments, setComments] = useState([]);
+  const [replies, setReplies] = useState({});             // { [commentId]: reply[] }
+  const [expandedComments, setExpandedComments] = useState({}); // { [commentId]: bool }
+  const [replyTo, setReplyTo] = useState(null);           // { id, username }
+  const [newComment, setNewComment] = useState('');
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
+  const [posting, setPosting] = useState(false);
+
+  const inputRef = useRef(null);
+  const scrollRef = useRef(null);
+  const currentUserAvatar = userObject?.avatar_url || null;
+  const currentUserName = userObject?.full_name || userObject?.username || 'You';
+
+  // ── fetchComments — identical to PostDetailModal ───────────────────────────
+  const fetchComments = useCallback(async (postId = null) => {
+    try {
+      const id = postId || reelId;
+      if (!id) return;
+      const data = await commentService.getComments(id);
+      setComments(data || []);
+      // Auto-load replies for every comment, same as PostDetailModal
+      if (data && Array.isArray(data)) {
+        data.forEach((comment) => {
+          const commentId = comment._id || comment.id;
+          commentService.getReplies(commentId)
+            .then((repliesData) => {
+              if (repliesData && repliesData.length > 0) {
+                setReplies((prev) => ({ ...prev, [commentId]: repliesData }));
+              }
+            })
+            .catch((err) => console.error('Error auto-loading replies:', err));
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+    }
+  }, [reelId]);
+
+  // ── loadReplies — identical to PostDetailModal ─────────────────────────────
+  const loadReplies = useCallback(async (commentId) => {
+    try {
+      const data = await commentService.getReplies(commentId);
+      setReplies((prev) => ({ ...prev, [commentId]: data }));
+    } catch (error) {
+      console.error('Error loading replies:', error);
+    }
+  }, []);
+
+  // ── Initial fetch when reel changes ───────────────────────────────────────
+  useEffect(() => {
+    if (!reelId) return;
+    setIsLoadingComments(true);
+    setComments([]);
+    setReplies({});
+    setExpandedComments({});
+    setReplyTo(null);
+    setNewComment('');
+    fetchComments(reelId).finally(() => setIsLoadingComments(false));
+  }, [reelId, fetchComments]);
+
+  useEffect(() => { if (replyTo) inputRef.current?.focus(); }, [replyTo]);
+
+  // ── handlePostComment — identical to PostDetailModal ──────────────────────
+  const handlePostComment = async () => {
+    if (!newComment.trim() || posting || !userObject) return;
+    setPosting(true);
+    try {
+      const parentId = replyTo ? replyTo.id : null;
+      await commentService.createComment(reelId, newComment.trim(), parentId);
+      setNewComment('');
+      await fetchComments(reelId);
+      if (replyTo) {
+        await loadReplies(replyTo.id);
+        setExpandedComments((prev) => ({ ...prev, [replyTo.id]: true }));
+        setReplyTo(null);
+      }
+    } catch (error) {
+      console.error('Error posting comment:', error);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  // ── handleLikeComment — identical to PostDetailModal ──────────────────────
+  const handleLikeComment = async (commentId, isLikedByMe) => {
+    try {
+      if (isLikedByMe) {
+        await commentService.unlikeComment(commentId);
+      } else {
+        await commentService.likeComment(commentId);
+      }
+      fetchComments(reelId);
+      Object.keys(replies).forEach((key) => loadReplies(key));
+    } catch (error) {
+      console.error('Error liking comment:', error);
+    }
+  };
+
+  // ── handleDeleteComment — identical to PostDetailModal ────────────────────
+  const handleDeleteComment = async (commentId) => {
+    if (!window.confirm('Are you sure you want to delete this comment?')) return;
+    try {
+      await api.delete(`/comments/${commentId}`);
+      await fetchComments(reelId);
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+    }
+  };
+
+  // ── renderComment — identical logic to PostDetailModal ────────────────────
+  const renderComment = (comment, isReply = false) => {
+    const commentId = comment._id || comment.id;
+    const user = comment.user || comment.users;
+    const isLikedByMe = comment.is_liked_by_me || (
+      comment.likes && Array.isArray(comment.likes) &&
+      comment.likes.some((l) => {
+        if (!currentUserId) return false;
+        if (typeof l === 'string') return l === currentUserId;
+        return (l.user_id || l._id || l.id) === currentUserId;
+      })
+    );
+    const likesCount = comment.likes_count || (comment.likes ? comment.likes.length : 0);
+    const hasReplies =
+      comment.reply_count > 0 ||
+      (replies[commentId] && replies[commentId].length > 0) ||
+      (comment.replies && comment.replies.length > 0);
+    const isOwner = currentUserId && (
+      (user && (String(user._id) === String(currentUserId) || String(user.id) === String(currentUserId))) ||
+      (comment.user_id && String(comment.user_id) === String(currentUserId))
+    );
+
+    return (
+      <div key={commentId} className={`flex gap-3 mb-4 ${isReply ? 'ml-10 pr-4' : 'px-4'}`}>
+        {/* Avatar */}
+        <Link to={`/profile/${user?._id || user?.id || comment.user_id}`} className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden shrink-0">
+          {user?.avatar_url ? (
+            <img src={user.avatar_url} alt={user?.username} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-700 dark:text-gray-300">
+              {user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
+            </div>
+          )}
+        </Link>
+
+        {/* Body */}
+        <div className="flex-1 text-sm group">
+          <div className="flex justify-between items-start gap-2">
+            <div className="flex-1 min-w-0">
+              <Link to={`/profile/${user?._id || user?.id || comment.user_id}`} className="font-semibold mr-1.5 dark:text-white text-gray-900 hover:underline">{user?.username}</Link>
+              <span className="text-gray-800 dark:text-gray-200 break-words">{comment.text || comment.content}</span>
+              <div className="text-gray-400 dark:text-gray-500 text-xs mt-1 flex gap-3 items-center flex-wrap">
+                <span>{formatTimeAgo(comment.createdAt || comment.created_at)}</span>
+                {likesCount > 0 && <span>{likesCount} {likesCount === 1 ? 'like' : 'likes'}</span>}
+                {!isReply && (
+                  <button
+                    className="font-semibold hover:text-gray-900 dark:hover:text-white transition-colors"
+                    onClick={() => setReplyTo({ id: commentId, username: user?.username })}
+                  >
+                    Reply
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Like + Delete */}
+            <div className="flex items-center gap-2 shrink-0 pt-0.5">
+              <button
+                onClick={() => handleLikeComment(commentId, isLikedByMe)}
+                className={`transition-colors ${isLikedByMe ? 'text-red-500' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+              >
+                <Heart size={12} fill={isLikedByMe ? 'currentColor' : 'none'} />
+              </button>
+              {isOwner && (
+                <button
+                  onClick={() => handleDeleteComment(commentId)}
+                  className="text-gray-400 dark:text-gray-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* View / Hide replies — only on top-level comments, same as PostDetailModal */}
+          {!isReply && hasReplies && (
+            <div className="mt-2">
+              <button
+                className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 hover:text-gray-900 dark:hover:text-white transition-colors"
+                onClick={() => {
+                  if (!replies[commentId] && !comment.replies) loadReplies(commentId);
+                  setExpandedComments((prev) => ({ ...prev, [commentId]: !prev[commentId] }));
+                }}
+              >
+                <div className="w-6 h-px bg-gray-400 dark:bg-gray-600" />
+                <span className="font-semibold">
+                  {expandedComments[commentId]
+                    ? 'Hide replies'
+                    : `View replies (${
+                        comment.reply_count ||
+                        (comment.replies ? comment.replies.length : 0) ||
+                        (replies[commentId] ? replies[commentId].length : '')
+                      })`
+                  }
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Expanded replies — same as PostDetailModal */}
+          {!isReply && expandedComments[commentId] && (replies[commentId] || comment.replies) && (
+            <div className="mt-2">
+              {(replies[commentId] || comment.replies).map((reply) => renderComment(reply, true))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-white dark:bg-[#262626]">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-white/10 shrink-0">
+        <span className="font-bold text-sm dark:text-white text-gray-900">Comments ({comments.length})</span>
+        <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-400 transition-colors">
+          <X size={20} />
+        </button>
+      </div>
+
+      {/* Comments list */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto py-3 scrollbar-none">
+        {isLoadingComments ? (
+          <div className="flex justify-center py-8 text-gray-400">
+            <Loader2 className="animate-spin" />
+          </div>
+        ) : comments.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-gray-400 text-sm gap-2">
+            <MessageCircle size={32} className="opacity-40" />
+            No comments yet. Be the first!
+          </div>
+        ) : (
+          comments.map((comment) => renderComment(comment))
+        )}
+      </div>
+
+      {/* Input footer */}
+      <div className="border-t border-gray-100 dark:border-white/10 bg-white dark:bg-[#262626] shrink-0"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
+        {replyTo && (
+          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 px-4 pt-2">
+            <span>Replying to <span className="font-bold text-blue-500">@{replyTo.username}</span></span>
+            <button onClick={() => setReplyTo(null)} className="hover:text-gray-900 dark:hover:text-white">
+              <X size={13} />
+            </button>
+          </div>
+        )}
+        <div className="flex items-center gap-2 px-3 py-3">
+          <Avatar src={currentUserAvatar} username={currentUserName} size="xs" />
+          <div className="flex-1 flex items-center gap-2 bg-gray-100 dark:bg-white/10 rounded-full px-3 py-2">
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder={replyTo ? `Reply to @${replyTo.username}...` : 'Add a comment...'}
+              className="flex-1 bg-transparent border-none outline-none text-sm dark:text-white text-gray-900 placeholder:text-gray-400"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handlePostComment()}
+            />
+            <button
+              onClick={handlePostComment}
+              disabled={!newComment.trim() || posting}
+              className="text-blue-500 disabled:opacity-40 font-semibold text-sm hover:text-blue-600 transition-colors shrink-0"
+            >
+              {posting ? <Loader2 size={14} className="animate-spin" /> : 'Post'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Desktop Comments Side Panel ──────────────────────────────────────────────
+const CommentsPopup = ({ reel, onClose, userObject, anchorRight }) => (
+  <div
+    className="hidden md:block fixed z-50"
+    style={{
+      top: '16%',
+      left: `${anchorRight}px`,
+      transform: 'translateY(-50%)',
+      animation: 'slideInLeft 0.22s cubic-bezier(0.32,0.72,0,1) forwards',
+    }}
+  >
+    {/* Arrow pointing LEFT towards the action buttons */}
+    <div style={{ position: 'absolute', left: -10, top: '45%', transform: 'translateY(-50%)', width: 0, height: 0, borderTop: '10px solid transparent', borderBottom: '10px solid transparent' }} className="border-r-[10px] border-r-white dark:border-r-[#262626]" />
+    <div
+      className="rounded-2xl shadow-2xl overflow-hidden flex flex-col bg-white dark:bg-[#262626] border border-gray-200 dark:border-white/10"
+      style={{ width: 340, height: '78vh', maxHeight: 640 }}
+    >
+      <CommentsUI reel={reel} onClose={onClose} userObject={userObject} />
+    </div>
+  </div>
+);
+
+// ─── Mobile Bottom Sheet ──────────────────────────────────────────────────────
+const CommentsBottomSheet = ({ reel, onClose, userObject }) => (
+  <div className="flex flex-col h-full rounded-t-2xl overflow-hidden bg-white dark:bg-[#262626]">
+    <div className="flex justify-center pt-3 pb-0 flex-shrink-0">
+      <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-white/25" />
+    </div>
+    <CommentsUI reel={reel} onClose={onClose} userObject={userObject} />
+  </div>
+);
+
+// ─── Main Reels Component ─────────────────────────────────────────────────────
+const Reels = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [reels, setReels] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isMuted, setIsMuted] = useState(true);
+  const [touchStartY, setTouchStartY] = useState(null);
+  const [videoErrors, setVideoErrors] = useState({});
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [reportReel, setReportReel] = useState(null);
+  const [editReel, setEditReel] = useState(null);
+  const [ownerOptionsReel, setOwnerOptionsReel] = useState(null);
+  const [shareReel, setShareReel] = useState(null);
+  const [isPausedByUser, setIsPausedByUser] = useState(false);
+  const [reelProgress, setReelProgress] = useState(0);
+  const isAnimatingRef = useRef(false);
+  const videoRefs = useRef({});
+  const actionPanelRef = useRef(null);
+  const [actionPanelRight, setActionPanelRight] = useState(100);
+
+  const { userObject } = useSelector((state) => state.auth);
+  const currentUserId = userObject?._id || userObject?.id || null;
+  const [walletBalance, setWalletBalance] = useState(
+    userObject?.wallet?.balance ? Math.floor(Number(userObject.wallet.balance)) : 0
+  );
+
+  // ── Search state ────────────────────────────────────────────────────────────
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchDropdownVisible, setSearchDropdownVisible] = useState(false);
+  const searchInputRef = useRef(null);
+  const searchContainerRef = useRef(null);
+  const searchDebounceRef = useRef(null);
+
+  const runSearch = useCallback(async (q) => {
+    const query = q.trim();
+    if (!query) { setSearchResults([]); setSearchDropdownVisible(false); return; }
+    setSearchLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      // Call both endpoints in parallel: existing ads/users and new reels search
+      const [adsRes, reelsRes] = await Promise.all([
+        fetch(`${BASE_URL}/ads/search?q=${encodeURIComponent(query)}&status=active&page=1&limit=20`, { headers }),
+        fetch(`${BASE_URL}/search/reels?q=${encodeURIComponent(query)}&page=1&limit=20`, { headers })
+      ]);
+
+      const adsData = await adsRes.json();
+      const reelsData = await reelsRes.json();
+
+      const ads = Array.isArray(adsData) ? adsData : (adsData.ads || adsData.data || adsData.results || []);
+      const users = adsData.users || adsData.vendors || [];
+      const reelsResults = normalizeApiArray(reelsData);
+
+      setSearchResults([
+        ...users.map(u => ({ _type: 'user', ...u })),
+        ...ads.map(a => ({ _type: 'ad', ...a })),
+        ...reelsResults.map(r => ({ _type: 'reel', ...r })),
+      ]);
+      setSearchDropdownVisible(true);
+    } catch (err) { 
+      console.error('Search error:', err);
+      setSearchResults([]); 
+    }
+    finally { setSearchLoading(false); }
+  }, []);
+
+  const handleSearchInput = (e) => {
+    const q = e.target.value;
+    setSearchQuery(q);
+    clearTimeout(searchDebounceRef.current);
+    if (!q.trim()) { setSearchResults([]); setSearchDropdownVisible(false); return; }
+    searchDebounceRef.current = setTimeout(() => runSearch(q), 350);
+  };
+
+  const handleSearchOpen = () => {
+    setSearchOpen(true);
+    setTimeout(() => searchInputRef.current?.focus(), 50);
+  };
+
+  const handleSearchClose = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchDropdownVisible(false);
+  };
+
+  const handleSearchResultClick = (item) => {
+    handleSearchClose();
+    if (item._type === 'user') {
+      const profilePath = item.role === 'vendor' 
+        ? `/vendor/${item._id || item.id}/public` 
+        : `/profile/${item._id || item.id}`;
+      navigate(profilePath);
+      return;
+    }
+    if (item._type === 'ad') {
+      const adId = item._id || item.id;
+      if (adId) navigate(`/ads?ad=${adId}`);
+      return;
+    }
+    if (item._type === 'reel') {
+      const reelId = item._id || item.id;
+      if (reelId) navigate(`/reels?reel=${reelId}`);
+      return;
+    }
+  };
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setSearchDropdownVisible(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const fetchWallet = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('https://api.bebsmart.in/api/wallet', {
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const bal = data?.balance ?? data?.wallet?.balance ?? data?.data?.balance;
+        if (bal !== undefined) setWalletBalance(Math.floor(Number(bal)));
+      } catch { /* silent */ }
+    };
+    fetchWallet();
+  }, []);
+
+  useEffect(() => {
+    const measure = () => {
+      if (actionPanelRef.current) {
+        const rect = actionPanelRef.current.getBoundingClientRect();
+        // Store right edge of the action panel so comment popup can anchor to it
+        setActionPanelRight(rect.right + 12);
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [reels, currentIndex]);
+
+  useEffect(() => {
+    const fetchReels = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await fetch(`${BASE_URL}/posts/reels`, { headers: authHeaders() });
+        if (!res.ok) throw new Error('Failed to fetch reels');
+        const data = await res.json();
+        setReels(normalizeApiArray(data));
+      } catch (err) { setError(err.message); }
+      finally { setLoading(false); }
+    };
+    fetchReels();
+  }, []);
+
+  useEffect(() => {
+    const targetReelId = String(searchParams.get('reel') || '').trim();
+    if (!targetReelId || !reels.length) return;
+
+    const targetIndex = reels.findIndex((item) => (
+      String(item?._id || item?.post_id || '') === targetReelId
+    ));
+    if (targetIndex < 0) return;
+    if (targetIndex === currentIndex) return;
+
+    setCurrentIndex(targetIndex);
+    setCommentsOpen(false);
+    setIsPausedByUser(false);
+    setReelProgress(0);
+  }, [reels, searchParams, currentIndex]);
+
+  useEffect(() => {
+    setReelProgress(0);
+    setIsPausedByUser(false);
+    Object.entries(videoRefs.current).forEach(([index, video]) => {
+      if (!video) return;
+      if (parseInt(index) === currentIndex) {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+        video.currentTime = 0;
+      }
+    });
+  }, [currentIndex, reels]);
+
+  const goToIndex = useCallback((index) => {
+    if (isAnimatingRef.current) return;
+    const next = Math.min(reels.length - 1, Math.max(0, index));
+    if (next === currentIndex) return;
+    isAnimatingRef.current = true;
+    setCurrentIndex(next);
+    setCommentsOpen(false);
+    setIsPausedByUser(false);
+    setReelProgress(0);
+    setTimeout(() => { isAnimatingRef.current = false; }, 500);
+  }, [currentIndex, reels.length]);
+
+  const handleVideoTap = useCallback((index) => {
+    const vid = videoRefs.current[index];
+    if (!vid) return;
+    if (vid.paused) {
+      vid.play().catch(() => {});
+      setIsPausedByUser(false);
+    } else {
+      vid.pause();
+      setIsPausedByUser(true);
+    }
+  }, []);
+
+  const handleWheel = (e) => {
+    if (commentsOpen) return;
+    if (Math.abs(e.deltaY) < 20) return;
+    goToIndex(e.deltaY > 0 ? currentIndex + 1 : currentIndex - 1);
+  };
+
+  const handleKeyDown = useCallback((e) => {
+    if (commentsOpen) return;
+    if (e.key === 'ArrowDown') goToIndex(currentIndex + 1);
+    else if (e.key === 'ArrowUp') goToIndex(currentIndex - 1);
+  }, [currentIndex, commentsOpen, goToIndex]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  const handleTouchStart = (e) => {
+    if (commentsOpen) return;
+    if (e.touches?.[0]) setTouchStartY(e.touches[0].clientY);
+  };
+  const handleTouchEnd = (e) => {
+    if (commentsOpen) return;
+    if (touchStartY == null || !e.changedTouches?.[0]) return;
+    const diff = touchStartY - e.changedTouches[0].clientY;
+    if (Math.abs(diff) > 50) goToIndex(currentIndex + (diff > 0 ? 1 : -1));
+    setTouchStartY(null);
+  };
+
+  const handleLike = async (reelId, isLiked) => {
+    const endpoint = isLiked ? `${BASE_URL}/posts/${reelId}/unlike` : `${BASE_URL}/posts/${reelId}/like`;
+    setReels(prev => prev.map(r => {
+      if ((r._id || r.post_id) !== reelId) return r;
+      return { ...r, is_liked_by_me: !isLiked, likes_count: isLiked ? (r.likes_count || 1) - 1 : (r.likes_count || 0) + 1 };
+    }));
+    try { await fetch(endpoint, { method: 'POST', headers: authHeaders() }); }
+    catch {
+      setReels(prev => prev.map(r => {
+        if ((r._id || r.post_id) !== reelId) return r;
+        return { ...r, is_liked_by_me: isLiked, likes_count: isLiked ? (r.likes_count || 0) + 1 : (r.likes_count || 1) - 1 };
+      }));
+    }
+  };
+
+  const handleSave = async (reelId, isSaved) => {
+    const endpoint = isSaved ? `${BASE_URL}/posts/${reelId}/unsave` : `${BASE_URL}/posts/${reelId}/save`;
+    setReels(prev => prev.map(r => (r._id || r.post_id) === reelId ? { ...r, is_saved_by_me: !isSaved } : r));
+    try { await fetch(endpoint, { method: 'POST', headers: authHeaders() }); }
+    catch { setReels(prev => prev.map(r => (r._id || r.post_id) === reelId ? { ...r, is_saved_by_me: isSaved } : r)); }
+  };
+
+  const handleShare = (reel) => {
+    setShareReel(reel || null);
+  };
+
+  const getVideoUrl = (reel) => reel.media?.[0]?.fileUrl || null;
+  const getThumbnail = (reel) => reel.media?.[0]?.thumbnail?.fileUrl || reel.user_id?.avatar_url || null;
+  const getAspectClass = (reel) => {
+    const ratio =
+      reel.media?.[0]?.crop?.aspect_ratio ||
+      reel.media?.[0]?.aspect_ratio ||
+      reel.crop?.aspect_ratio ||
+      reel.aspect_ratio;
+    if (ratio === '1:1') return 'aspect-[1/1]';
+    if (ratio === '16:9') return 'aspect-[16/9]';
+    if (ratio === '4:5') return 'aspect-[4/5]';
+    return 'aspect-[9/16]';
+  };
+
+  const pageHeightClass = "h-[calc(100dvh-4rem)] md:h-[calc(100dvh-1rem)]";
+  const handleReelMore = (reel) => {
+    const reelOwnerId = reel?.user_id?._id || reel?.user_id?.id || reel?.user_id;
+    if (currentUserId && reelOwnerId && String(currentUserId) === String(reelOwnerId)) {
+      setOwnerOptionsReel(reel);
+      return;
+    }
+    setReportReel(reel);
+  };
+
+  if (loading) return (
+    <div className={`w-full ${pageHeightClass} flex justify-center items-center dark:bg-black bg-white overflow-hidden`}>
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 size={36} className="text-white animate-spin" />
+        <span className="text-white/60 text-sm">Loading reels...</span>
+      </div>
+    </div>
+  );
+
+  if (error) return (
+    <div className={`w-full ${pageHeightClass} flex justify-center items-center bg-black overflow-hidden`}>
+      <div className="flex flex-col items-center gap-4 px-6 text-center">
+        <span className="text-white font-semibold">Failed to load reels</span>
+        <span className="text-white/50 text-sm">{error}</span>
+        <button onClick={() => window.location.reload()} className="px-4 py-2 bg-white text-black rounded-full text-sm font-medium">Try again</button>
+      </div>
+    </div>
+  );
+
+  if (!reels.length) return (
+    <div className={`w-full ${pageHeightClass} flex justify-center items-center bg-black overflow-hidden`}>
+      <span className="text-white/60">No reels found</span>
+    </div>
+  );
+
+  const currentReel = reels[currentIndex];
+  const currentReelId = currentReel?._id || currentReel?.post_id;
+  const commentCount = resolveCommentsCount(currentReel);
+
+  return (
+    <>
+      <div className={`w-full ${pageHeightClass} overflow-hidden flex flex-col dark:bg-black bg-white`}>
+        <div className="shrink-0 relative flex items-center px-3 py-2 md:px-4 md:py-2 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black overflow-visible w-full">
+          <button onClick={() => navigate(-1)} className={`p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500 mr-1 shrink-0 transition-all duration-300 ${searchOpen ? 'opacity-0 w-0 overflow-hidden mr-0 p-0' : 'opacity-100'}`}>
+            <ChevronLeft size={16} />
+          </button>
+          
+          {!searchOpen && (
+            <div className="absolute left-1/2 -translate-x-1/2 text-gray-900 dark:text-white font-bold text-sm md:text-base">
+              Reels
+            </div>
+          )}
+
+          {/* Search — expands to full width */}
+          <div ref={searchContainerRef} className={`transition-all duration-300 ease-in-out shrink-0 ${searchOpen ? 'flex-1 min-w-0' : 'ml-auto'}`}>
+            {searchOpen ? (
+              <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-2 w-full">
+                <Search size={15} className="text-gray-400 shrink-0" />
+                <input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  onChange={handleSearchInput}
+                  placeholder="Search ads, users…"
+                  className="flex-1 bg-transparent text-sm outline-none text-gray-900 dark:text-white placeholder-gray-400"
+                />
+                {searchLoading
+                  ? <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />
+                  : searchQuery
+                    ? <button onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchDropdownVisible(false); searchInputRef.current?.focus(); }}>
+                        <X size={14} className="text-gray-400 hover:text-gray-700 dark:hover:text-white" />
+                      </button>
+                    : null
+                }
+                <button onClick={handleSearchClose} className="text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white ml-1 shrink-0">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button onClick={handleSearchOpen} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500 transition-colors">
+                <Search size={18} className="text-gray-900 dark:text-white" />
+              </button>
+            )}
+
+            {/* Desktop Search Dropdown */}
+            {searchOpen && searchDropdownVisible && (
+              <div className="absolute left-0 right-0 top-full mt-1 mx-4 bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800 z-[60] max-h-96 overflow-y-auto">
+                {searchLoading && (
+                  <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-sm">Searching…</span>
+                  </div>
+                )}
+                {!searchLoading && searchResults.length === 0 && searchQuery.trim() && (
+                  <div className="flex flex-col items-center justify-center py-8 text-gray-400 gap-2">
+                    <Search size={20} className="opacity-40" />
+                    <span className="text-sm">No results for "{searchQuery}"</span>
+                  </div>
+                )}
+                {!searchLoading && searchResults.length > 0 && (
+                  <>
+                    {/* Users */}
+                    {searchResults.filter(r => r._type === 'user').length > 0 && (
+                      <div>
+                        <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-50 dark:border-gray-800">People</div>
+                        {searchResults.filter(r => r._type === 'user').map(u => (
+                          <button
+                            key={u._id || u.id}
+                            onClick={() => handleSearchResultClick(u)}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+                          >
+                            <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0 flex items-center justify-center">
+                              {u.avatar_url
+                                ? <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
+                                : <span className="text-xs font-bold text-gray-500">{(u.username || u.full_name || '?')[0].toUpperCase()}</span>
+                              }
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.full_name || u.username}</div>
+                              {u.username && <div className="text-xs text-gray-400 truncate">@{u.username}</div>}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Reels */}
+                    {searchResults.filter(r => r._type === 'reel').length > 0 && (
+                      <div>
+                        <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-50 dark:border-gray-800">Reels</div>
+                        {searchResults.filter(r => r._type === 'reel').map(reelItem => {
+                          const reelUser = reelItem.user_id || {};
+                          const mediaItem = reelItem.media?.[0];
+                          const thumb = normalizeAssetUrl(
+                            mediaItem?.thumbnail?.[0]?.fileUrl || 
+                            mediaItem?.thumbnail?.[0]?.fileName || 
+                            mediaItem?.thumbnail_url || 
+                            mediaItem?.fileUrl ||
+                            mediaItem?.fileName
+                          );
+                          return (
+                            <button
+                              key={reelItem._id || reelItem.id}
+                              onClick={() => handleSearchResultClick(reelItem)}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+                            >
+                              <div className="w-10 h-16 rounded-xl overflow-hidden bg-gray-200 dark:bg-gray-700 shrink-0 relative">
+                                {thumb ? (
+                                  <img src={thumb} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-gray-400">🎬</div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{reelItem.caption || 'Reel'}</div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {reelUser.username && <span className="text-[10px] text-gray-400">@{reelUser.username}</span>}
+                                  {reelItem.location && <span className="text-[10px] text-gray-500 truncate">📍 {reelItem.location}</span>}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {/* Ads */}
+                    {searchResults.filter(r => r._type === 'ad').length > 0 && (
+                      <div>
+                        <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-50 dark:border-gray-800">Ads</div>
+                        {searchResults.filter(r => r._type === 'ad').map(adItem => {
+                          const adUser = adItem.user_id || adItem.vendor_id || {};
+                          const mediaItem = adItem.media?.[0];
+                          const isVideoAd = mediaItem?.media_type === 'video';
+                          const thumb = mediaItem?.thumbnails?.[0]?.fileUrl || mediaItem?.thumbnail_url || (!isVideoAd ? mediaItem?.fileUrl : null);
+                          return (
+                            <button
+                              key={adItem._id || adItem.id}
+                              onClick={() => handleSearchResultClick(adItem)}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+                            >
+                              <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-200 dark:bg-gray-700 shrink-0 relative">
+                                {thumb ? (
+                                  <img src={thumb} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-gray-400">🛍️</div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{adItem.caption || adItem.title || 'Ad'}</div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {adItem.category && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium">{adItem.category}</span>}
+                                  {typeof adUser === 'object' && adUser.username && <span className="text-[10px] text-gray-400">@{adUser.username}</span>}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-hidden relative flex items-center justify-center">
+          {/* ── inner centering wrapper (mirrors Ads layout) ── */}
+          <div className="flex-1 flex items-center justify-center relative overflow-hidden h-full bg-gray-50 dark:bg-black">
+
+          {/* ── Video card — same dimensions as Ads carousel ── */}
+          <div
+            className="relative overflow-hidden bg-black
+              w-full max-w-[430px] h-full
+              md:w-[360px] md:h-[90vh] md:rounded-2xl md:shadow-2xl"
+            onWheel={handleWheel}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            {/* Progress bar — white track, white fill, red dot on hover, draggable */}
+            <div className="absolute bottom-0 left-0 right-0 z-40 px-1.5 pb-1 group/progress select-none">
+              <div
+                className="relative h-[4px] w-full rounded-full bg-white/25 cursor-pointer"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+                  const vid = videoRefs.current[currentIndex];
+                  if (vid && vid.duration > 0) { vid.currentTime = pct * vid.duration; setReelProgress(pct * 100); }
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const bar = e.currentTarget;
+                  const scrub = (ev) => {
+                    const rect = bar.getBoundingClientRect();
+                    const pct = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
+                    const vid = videoRefs.current[currentIndex];
+                    if (vid && vid.duration > 0) { vid.currentTime = pct * vid.duration; setReelProgress(pct * 100); }
+                  };
+                  const up = () => { document.removeEventListener('mousemove', scrub); document.removeEventListener('mouseup', up); };
+                  document.addEventListener('mousemove', scrub);
+                  document.addEventListener('mouseup', up);
+                }}
+              >
+                {/* Fill — white */}
+                <div className="absolute left-0 top-0 h-full rounded-full bg-white transition-none" style={{ width: `${reelProgress}%` }} />
+                {/* Dot — white, appears on hover, tracks progress */}
+                <div
+                  className="absolute top-1/2 h-[12px] w-[12px] -translate-y-1/2 rounded-full bg-white opacity-0 group-hover/progress:opacity-100 shadow-[0_0_0_2px_rgba(0,0,0,0.35)] transition-opacity duration-150 pointer-events-none"
+                  style={{ left: `calc(${reelProgress}% - 6px)` }}
+                />
+              </div>
+            </div>
+
+            <div
+              className="h-full w-full transition-transform duration-500 ease-out"
+              style={{ transform: `translateY(-${currentIndex * 100}%)`, willChange: 'transform' }}
+            >
+              {reels.map((reel, index) => {
+                const reelId = reel._id || reel.post_id;
+                const videoUrl = getVideoUrl(reel);
+                const thumbnail = getThumbnail(reel);
+                const hasError = videoErrors[reelId];
+                const isCurrent = index === currentIndex;
+
+                return (
+                  <div key={reelId || index} className="relative w-full h-full bg-black flex items-center justify-center">
+                    {/* Full-size video with object-cover for proper fit */}
+                    <div className="absolute inset-0 w-full h-full">
+                      {videoUrl && !hasError ? (
+                        <video
+                          ref={el => { videoRefs.current[index] = el; }}
+                          src={videoUrl}
+                          poster={thumbnail || undefined}
+                          className="w-full h-full object-cover"
+                          autoPlay={isCurrent}
+                          loop
+                          muted={isMuted}
+                          playsInline
+                          onError={() => setVideoErrors(prev => ({ ...prev, [reelId]: true }))}
+                          onClick={() => isCurrent && handleVideoTap(index)}
+                          onTimeUpdate={e => {
+                            if (!isCurrent) return;
+                            const vid = e.target;
+                            if (vid.duration > 0) {
+                              setReelProgress((vid.currentTime / vid.duration) * 100);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div
+                          className="w-full h-full bg-gray-900 flex items-center justify-center"
+                          style={thumbnail ? { backgroundImage: `url(${thumbnail})`, backgroundSize: 'cover', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' } : {}}
+                        >
+                          {!thumbnail && <Music2 size={48} className="text-white/30" />}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tap-to-pause overlay */}
+                    {isCurrent && isPausedByUser && (
+                      <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                        <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="absolute inset-0 pointer-events-none"
+                      style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, transparent 30%, transparent 55%, rgba(0,0,0,0.85) 100%)' }}
+                    />
+
+                    {videoUrl && !hasError && isCurrent && (
+                      <button
+                        onClick={() => setIsMuted(m => !m)}
+                        className="absolute bottom-[18px] md:bottom-8 right-[55px] md:right-4 bg-black/50 p-2 rounded-full text-white backdrop-blur-sm hover:bg-black/70 z-20"
+                      >
+                        {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                      </button>
+                    )}
+
+                    {isCurrent && (
+                      <div className="md:hidden absolute right-3 bottom-[18px] z-30">
+                        <ActionButtons
+                          reel={reel}
+                          mobile
+                          onLike={handleLike}
+                          onComment={() => { setCurrentIndex(index); setCommentsOpen(true); }}
+                          onShare={handleShare}
+                          onSave={handleSave}
+                          onMore={handleReelMore}
+                        />
+                      </div>
+                    )}
+
+                    {/* Bottom info */}
+                    <div className="absolute bottom-0 left-0 z-20 px-4 pb-8 pr-16" style={{ maxWidth: 'calc(100% - 56px)' }}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Link to={`/profile/${reel.user_id?._id || reel.user_id?.id || reel.user_id}`} className="w-8 h-8 rounded-full border-2 border-white/50 overflow-hidden flex-shrink-0">
+                          {reel.user_id?.avatar_url
+                            ? <img src={reel.user_id.avatar_url} className="w-full h-full object-cover" alt="user" />
+                            : <div className="w-full h-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center">
+                                <span className="text-white text-[10px] font-bold">{(reel.user_id?.username || 'U')[0].toUpperCase()}</span>
+                              </div>
+                          }
+                        </Link>
+                        <Link to={`/profile/${reel.user_id?._id || reel.user_id?.id || reel.user_id}`} className="font-bold text-white text-sm truncate cursor-pointer hover:underline" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+                          {reel.user_id?.username || reel.user_id?.full_name || 'Unknown'}
+                        </Link>
+                        <FollowButton userId={reel.user_id?._id || reel.user_id?.id || reel.user_id} initialFollowing={reel.is_followed_by_me || false} />
+                      </div>
+                      <Caption text={reel.caption} />
+                      {reel.tags?.length > 0 && (
+                        <p className="text-white/80 text-xs mb-1.5">{reel.tags.map(t => `#${t}`).join(' ')}</p>
+                      )}
+                      <div className="flex items-center gap-1.5 text-white/90 text-xs mt-1">
+                        <Music2 size={11} className="flex-shrink-0" />
+                        <span className="truncate max-w-[180px]" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                          Original Audio · {reel.user_id?.username || 'unknown'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {currentReel && (
+            <div ref={actionPanelRef} className="hidden md:flex flex-col gap-2 ml-4 justify-end h-full md:h-[85vh] pb-4">
+              <ActionButtons
+                reel={currentReel}
+                onLike={handleLike}
+                onComment={() => setCommentsOpen(v => !v)}
+                onShare={handleShare}
+                onSave={handleSave}
+                onMore={handleReelMore}
+              />
+            </div>
+          )}
+          </div>{/* end inner centering wrapper */}
+        </div>{/* end flex-1 min-h-0 */}
+
+        {/* Nav arrows */}
+        <div className="hidden md:flex fixed right-5 top-1/2 -translate-y-1/2 z-40 flex-col gap-3">
+          <button
+            onClick={() => goToIndex(currentIndex - 1)}
+            disabled={currentIndex === 0}
+            className="w-12 h-12 rounded-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/20 backdrop-blur-md shadow-2xl flex items-center justify-center hover:bg-gray-50 dark:hover:bg-white/25 hover:scale-110 active:scale-95 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-900 dark:text-white"><polyline points="18 15 12 9 6 15" /></svg>
+          </button>
+          <button
+            onClick={() => goToIndex(currentIndex + 1)}
+            disabled={currentIndex === reels.length - 1}
+            className="w-12 h-12 rounded-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/20 backdrop-blur-md shadow-2xl flex items-center justify-center hover:bg-gray-50 dark:hover:bg-white/25 hover:scale-110 active:scale-95 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-900 dark:text-white"><polyline points="6 9 12 15 18 9" /></svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop comments panel */}
+      {commentsOpen && (
+        <CommentsPopup reel={currentReel} onClose={() => setCommentsOpen(false)} userObject={userObject} anchorRight={actionPanelRight} />
+      )}
+
+      {/* Mobile bottom sheet */}
+      {commentsOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={() => setCommentsOpen(false)} />
+          {/* FIX: pb-16 clears the bottom nav bar (~64px); safe-area covers notched phones */}
+          <div
+            className="relative z-10 h-[75vh] pb-16"
+            style={{
+              paddingBottom: 'max(64px, env(safe-area-inset-bottom, 64px))',
+              animation: 'slideUpMobile 0.28s cubic-bezier(0.32,0.72,0,1) forwards',
+            }}
+          >
+            <CommentsBottomSheet reel={currentReel} onClose={() => setCommentsOpen(false)} userObject={userObject} />
+          </div>
+        </div>
+      )}
+
+      <ContentReportModal
+        isOpen={!!reportReel}
+        onClose={() => setReportReel(null)}
+        contentType="reel"
+        contentId={reportReel?._id || reportReel?.post_id}
+        ownerUsername={reportReel?.user_id?.username || reportReel?.user_id?.full_name || ''}
+        contentUrl={reportReel ? `${window.location.origin}/reels/${reportReel._id || reportReel.post_id}` : ''}
+      />
+      <OwnerContentOptionsModal
+        isOpen={!!ownerOptionsReel}
+        onClose={() => setOwnerOptionsReel(null)}
+        item={ownerOptionsReel}
+        contentType="reel"
+        contentUrl={ownerOptionsReel ? `${window.location.origin}/reels/${ownerOptionsReel._id || ownerOptionsReel.post_id}` : ''}
+        onEdit={() => {
+          setEditReel(ownerOptionsReel);
+          setOwnerOptionsReel(null);
+        }}
+        onDelete={() => {
+          const reelToDelete = ownerOptionsReel;
+          setOwnerOptionsReel(null);
+          if (!reelToDelete) return;
+          if (!window.confirm('Delete this reel?')) return;
+          api.delete(`/posts/${reelToDelete._id || reelToDelete.post_id}`)
+            .then(() => {
+              setReels((prev) => prev.filter((reel) => (reel._id || reel.post_id) !== (reelToDelete._id || reelToDelete.post_id)));
+            })
+            .catch((err) => {
+              alert(err?.response?.data?.message || 'Failed to delete reel.');
+            });
+        }}
+        onUpdated={(updated) => {
+          const updatedId = updated?._id || updated?.post_id;
+          setReels((prev) => prev.map((reel) => ((reel._id || reel.post_id) === updatedId ? { ...reel, ...updated } : reel)));
+        }}
+      />
+      <EditContentModal
+        isOpen={!!editReel}
+        onClose={() => setEditReel(null)}
+        item={editReel}
+        contentType="reel"
+        onSaved={(updated) => {
+          const updatedId = updated?._id || updated?.post_id;
+          setReels((prev) => prev.map((reel) => ((reel._id || reel.post_id) === updatedId ? { ...reel, ...updated } : reel)));
+        }}
+      />
+      <ShareContentModal
+        isOpen={!!shareReel}
+        onClose={() => setShareReel(null)}
+        contentType="reel"
+        contentId={shareReel?._id || shareReel?.post_id}
+      />
+
+      <style>{`
+        @keyframes slideInLeft {
+          from { opacity: 0; transform: translateX(-16px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideInRight {
+          from { opacity: 0; transform: translateX(16px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideUpMobile {
+          from { opacity: 0; transform: translateY(40px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </>
+  );
+};
+
+export default Reels;

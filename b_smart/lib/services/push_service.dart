@@ -60,7 +60,22 @@ class PushService {
       ),
     );
 
-    // Android 13+ needs runtime notification permission.
+    // Ask FCM/APNs-level permission first (Android 13+ will also need runtime
+    // POST_NOTIFICATIONS which we request below as a backup).
+    try {
+      final fcmSettings = await _messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        provisional: false,
+      );
+      _log(
+          'messaging.requestPermission() status=${fcmSettings.authorizationStatus}');
+    } catch (e) {
+      _log('messaging.requestPermission() failed: $e');
+    }
+
+    // Android 13+ runtime permission (backup).
     if (defaultTargetPlatform == TargetPlatform.android) {
       final status = await Permission.notification.request();
       _log('notification permission: $status');
@@ -77,6 +92,8 @@ class PushService {
       _log('onTokenRefresh token=${_redact(token)}');
       await _registerIfAuthenticated(token, force: false);
     });
+
+    await _messaging.setAutoInitEnabled(true);
 
     // Register current token if user is already logged in.
     final token = await _messaging.getToken();
