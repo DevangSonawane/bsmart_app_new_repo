@@ -116,6 +116,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
     'assets/banners/18.png',
     'assets/banners/19.png',
   ];
+
+  // Keep this list/order in sync with React web app `AD_CATEGORIES_FALLBACK`.
+  static const List<String> _adCategoriesFallback = <String>[
+    'Accessories',
+    'Action Figures',
+    'Art Supplies',
+    'Baby Products',
+    'Beauty & Personal Care',
+    'Books',
+    'Clothing & Apparel',
+    'Electronics',
+    'Food & Beverages',
+    'Footwear',
+    'Gaming',
+    'Health & Wellness',
+    'Home & Kitchen',
+    'Jewellery',
+    'Mobile & Tablets',
+    'Pet Supplies',
+    'Sports & Fitness',
+    'Toys',
+    'Travel',
+  ];
   bool _avatarUploading = false;
   StreamSubscription<AppState>? _storeSub;
   bool _showFollowSuggestions = false;
@@ -149,6 +172,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _syncLocalListsWithFeedState();
     });
     _load();
+  }
+
+  void _applyBannersForInterests(List<String> interests) {
+    final cleaned =
+        interests.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final indexByName = <String, int>{};
+    for (var i = 0; i < _adCategoriesFallback.length; i++) {
+      indexByName[_adCategoriesFallback[i].toLowerCase()] = i;
+    }
+
+    final next = <String>{};
+    for (final raw in cleaned) {
+      final idx = indexByName[raw.toLowerCase()];
+      if (idx == null) continue;
+      if (idx < 0 || idx >= _favoriteBanners.length) continue;
+      next.add(_favoriteBanners[idx]);
+    }
+    setState(() {
+      _selectedFavoriteBanners
+        ..clear()
+        ..addAll(next);
+    });
+  }
+
+  Future<void> _openInterestsSelector({
+    required String profileUserId,
+    required bool isMe,
+  }) async {
+    if (profileUserId.trim().isEmpty) return;
+    await AdInterestsSheet.show(
+      context,
+      userId: profileUserId,
+      initialInterests: _adInterests,
+      editable: isMe,
+      onSaved: isMe
+          ? (next) {
+              if (!mounted) return;
+              setState(() {
+                _adInterests = next;
+                _isFavoriteProfile = true;
+              });
+              _applyBannersForInterests(next);
+            }
+          : null,
+    );
+    unawaited(_loadAdInterests(profileUserId, force: true));
   }
 
   @override
@@ -190,11 +259,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {
       return 'https://app.bebsmart.online/profile/$safeId';
     }
-  }
-
-  void _toggleFavoriteProfile(String username) {
-    final next = !_isFavoriteProfile;
-    setState(() => _isFavoriteProfile = next);
   }
 
   bool? _parseBoolLike(dynamic value) {
@@ -382,152 +446,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildInterestsPreview(
-    BuildContext context, {
-    required String userId,
-    required bool isMe,
-  }) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-
-    if (!_interestsLoading && _adInterests.isEmpty && !isMe) {
-      return const SizedBox.shrink();
-    }
-
-    Future<void> openSheet() async {
-      await AdInterestsSheet.show(
-        context,
-        userId: userId,
-        initialInterests: _adInterests,
-        editable: isMe,
-        onSaved: isMe
-            ? (next) {
-                if (!mounted) return;
-                setState(() => _adInterests = next);
-              }
-            : null,
-      );
-      unawaited(_loadAdInterests(userId));
-    }
-
-    final shown = _adInterests.take(10).toList();
-    final extra = _adInterests.length - shown.length;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: theme.cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: colors.onSurface.withValues(alpha: 0.08),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(LucideIcons.star, size: 18, color: colors.onSurface),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Interests',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                  if (isMe)
-                    TextButton(
-                      onPressed: openSheet,
-                      child: const Text('Edit'),
-                    )
-                  else
-                    TextButton(
-                      onPressed: openSheet,
-                      child: const Text('View'),
-                    ),
-                ],
-              ),
-              if (_interestsLoading) ...[
-                const SizedBox(height: 6),
-                LinearProgressIndicator(
-                  minHeight: 2,
-                  backgroundColor: colors.onSurface.withValues(alpha: 0.08),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    DesignTokens.instaPink,
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ] else
-                const SizedBox(height: 8),
-              if (shown.isEmpty && !_interestsLoading)
-                Text(
-                  'No interests listed yet.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurface.withValues(alpha: 0.65),
-                    fontWeight: FontWeight.w600,
-                    fontStyle: FontStyle.italic,
-                  ),
-                )
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final interest in shown)
-                      Chip(
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        label: Text(
-                          interest,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: colors.onSurface,
-                          ),
-                        ),
-                        side: BorderSide(
-                          color: colors.onSurface.withValues(alpha: 0.10),
-                        ),
-                        backgroundColor: theme.brightness == Brightness.dark
-                            ? const Color(0xFF121214)
-                            : const Color(0xFFF3F4F6),
-                      ),
-                    if (extra > 0)
-                      Chip(
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        label: Text(
-                          '+$extra more',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: colors.onSurface.withValues(alpha: 0.8),
-                          ),
-                        ),
-                        side: BorderSide(
-                          color: colors.onSurface.withValues(alpha: 0.10),
-                        ),
-                        backgroundColor: theme.brightness == Brightness.dark
-                            ? const Color(0xFF121214)
-                            : const Color(0xFFF3F4F6),
-                      ),
-                  ],
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildFavoriteCategoryStrip(BuildContext context) {
     if (!_isFavoriteProfile) return const SizedBox.shrink();
+    if (_selectedFavoriteBanners.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF0B0B0C) : const Color(0xFFF3F4F6);
     const bannerAspect = 625 / 313; // Source banners are 625x313 (~2:1)
     final borderColor = theme.dividerColor.withValues(alpha: 0.55);
-    final tileBorderColor = theme.dividerColor.withValues(alpha: 0.45);
-    const selectedBorderColor = Color(0xFF1D9BF0); // blue tick/border
+    final tileBorderColor = theme.dividerColor.withValues(alpha: 0.35);
+
+    final banners = _selectedFavoriteBanners.toList();
 
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 10),
@@ -548,12 +477,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: _favoriteBanners.length,
+            itemCount: banners.length,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
-              final asset = _favoriteBanners[index];
+              final asset = banners[index];
               final w = 56 * bannerAspect;
-              final selected = _selectedFavoriteBanners.contains(asset);
               return ClipRRect(
                 borderRadius: BorderRadius.circular(14),
                 child: SizedBox(
@@ -561,71 +489,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   height: 56,
                   child: Material(
                     color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          if (selected) {
-                            _selectedFavoriteBanners.remove(asset);
-                          } else {
-                            _selectedFavoriteBanners.add(asset);
-                          }
-                        });
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 160),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: selected
-                                ? selectedBorderColor
-                                : tileBorderColor,
-                            width: selected ? 2 : 1,
-                          ),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(13),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Image.asset(
-                                asset,
-                                fit: BoxFit.cover,
-                                filterQuality: FilterQuality.medium,
-                              ),
-                              if (selected)
-                                Positioned(
-                                  top: 6,
-                                  right: 6,
-                                  child: Container(
-                                    width: 20,
-                                    height: 20,
-                                    decoration: BoxDecoration(
-                                      color: selectedBorderColor,
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.85),
-                                        width: 1,
-                                      ),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Colors.black26,
-                                          blurRadius: 8,
-                                          offset: Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.check,
-                                        size: 14,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: tileBorderColor, width: 1),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(13),
+                        child: Image.asset(
+                          asset,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.medium,
                         ),
                       ),
                     ),
@@ -1666,6 +1540,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _loading = false;
       });
       unawaited(_loadAdInterests(targetId, force: true));
+      if (_adInterests.isNotEmpty) {
+        _applyBannersForInterests(_adInterests);
+      }
       _loadStoryStatus(targetId);
       // Cache own profile in Redux for instant load next time
       if (widget.userId == null) {
@@ -2817,32 +2694,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                   actions: [
-                    IconButton(
-                      tooltip: 'Interests',
-                      icon: Icon(LucideIcons.star, color: fgColor),
-                      onPressed: profileUserId.isEmpty
-                          ? null
-                          : () async {
-                              await AdInterestsSheet.show(
-                                context,
-                                userId: profileUserId,
-                                initialInterests: _adInterests,
-                                editable: isMe,
-                                onSaved: isMe
-                                    ? (next) {
-                                        if (!mounted) return;
-                                        setState(() => _adInterests = next);
-                                      }
-                                    : null,
-                              );
-                              unawaited(_loadAdInterests(profileUserId));
-                            },
-                    ),
                     if (isMe) ...[
                       IconButton(
                         icon: Icon(LucideIcons.squarePlus, color: fgColor),
-                        onPressed: () => _openCreateUpload(
-                          mode: UploadMode.post,
+                        onPressed: () => _openInterestsSelector(
+                          profileUserId: profileUserId,
+                          isMe: true,
                         ),
                       ),
                       IconButton(
@@ -2907,7 +2764,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onEdit: isMe ? _onEdit : null,
                             onFollow: isMe ? null : _onFollow,
                             onShare: () => _shareProfile(displayProfile),
-                            onFavorite: () => _toggleFavoriteProfile(username),
+                            onFavorite: profileUserId.isEmpty
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _isFavoriteProfile = !_isFavoriteProfile;
+                                    });
+                                    if (_isFavoriteProfile) {
+                                      if (_adInterests.isEmpty) {
+                                        unawaited(_loadAdInterests(
+                                            profileUserId,
+                                            force: true));
+                                      }
+                                      _applyBannersForInterests(_adInterests);
+                                    }
+                                  },
                             onMore: () =>
                                 _showProfileMoreActions(displayProfile),
                             onMessage: isMe
@@ -2942,15 +2813,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 : null,
                           );
                         })(),
-                      ),
-                      SliverToBoxAdapter(
-                        child: profileUserId.isEmpty
-                            ? const SizedBox.shrink()
-                            : _buildInterestsPreview(
-                                context,
-                                userId: profileUserId,
-                                isMe: isMe,
-                              ),
                       ),
                       SliverToBoxAdapter(
                         child: isMe
