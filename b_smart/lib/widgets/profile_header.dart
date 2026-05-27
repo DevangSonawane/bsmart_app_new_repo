@@ -285,8 +285,7 @@ class ProfileHeader extends StatelessWidget {
                 const SizedBox(width: 12),
                 _actionIconButton(
                   context,
-                  icon: LucideIcons.star,
-                  selected: isFavorite,
+                  icon: isFavorite ? Icons.star : Icons.star_border,
                   onTap: onFavorite ?? () {},
                 ),
                 const SizedBox(width: 12),
@@ -342,8 +341,7 @@ class ProfileHeader extends StatelessWidget {
                 const SizedBox(width: 8),
                 _actionIconButton(
                   context,
-                  icon: LucideIcons.star,
-                  selected: isFavorite,
+                  icon: isFavorite ? Icons.star : Icons.star_border,
                   onTap: onFavorite ?? () {},
                 ),
                 if (onUser != null) ...[
@@ -474,14 +472,9 @@ class ProfileHeader extends StatelessWidget {
     BuildContext context, {
     required IconData icon,
     required VoidCallback onTap,
-    bool selected = false,
   }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final fgColor = selected ? Colors.white : theme.colorScheme.onSurface;
-    final bgColor = selected
-        ? (isDark ? Colors.white10 : Colors.black87)
-        : Colors.transparent;
+    final fgColor = theme.colorScheme.onSurface;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -492,7 +485,7 @@ class ProfileHeader extends StatelessWidget {
           height: 38,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: bgColor,
+            color: Colors.transparent,
           ),
           child: Icon(icon, size: 22, color: fgColor),
         ),
