@@ -944,6 +944,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
+    final targetTrim = targetId.trim();
+    if (mounted &&
+        _interestsLoadedForUserId.isNotEmpty &&
+        _interestsLoadedForUserId != targetTrim) {
+      setState(() {
+        _isFavoriteProfile = false;
+        _selectedFavoriteBanners.clear();
+      });
+    }
+
     final profileFuture = isMe ? AuthApi().me() : _svc.getUserById(targetId);
     final postsFuture = _svc.getUserPosts(targetId, limit: _initialPostsLimit);
     final savedFuture = isMe
@@ -1598,6 +1608,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _interestsLoadedForUserId = id;
         _interestsLoading = false;
       });
+      if (_isFavoriteProfile && _interestsLoadedForUserId == id) {
+        _applyBannersForInterests(_adInterests);
+      }
     } catch (_) {
       final fallback = parseStringList(_profile?['ad_interests']);
       if (!mounted) return;
@@ -1609,6 +1622,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _interestsLoadedForUserId = id;
         _interestsLoading = false;
       });
+      if (_isFavoriteProfile && _interestsLoadedForUserId == id) {
+        _applyBannersForInterests(_adInterests);
+      }
     }
   }
 
@@ -2767,17 +2783,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onFavorite: profileUserId.isEmpty
                                 ? null
                                 : () {
-                                    setState(() {
-                                      _isFavoriteProfile = !_isFavoriteProfile;
-                                    });
-                                    if (_isFavoriteProfile) {
-                                      if (_adInterests.isEmpty) {
-                                        unawaited(_loadAdInterests(
-                                            profileUserId,
-                                            force: true));
+                                    final next = !_isFavoriteProfile;
+                                    setState(() => _isFavoriteProfile = next);
+                                    if (!next) return;
+                                    unawaited(() async {
+                                      await _loadAdInterests(
+                                        profileUserId,
+                                        force: true,
+                                      );
+                                      if (!mounted) return;
+                                      if (!_isFavoriteProfile) return;
+                                      if (_interestsLoadedForUserId !=
+                                          profileUserId.trim()) {
+                                        return;
                                       }
                                       _applyBannersForInterests(_adInterests);
-                                    }
+                                    }());
                                   },
                             onMore: () =>
                                 _showProfileMoreActions(displayProfile),
@@ -2815,9 +2836,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         })(),
                       ),
                       SliverToBoxAdapter(
-                        child: isMe
-                            ? _buildFavoriteCategoryStrip(context)
-                            : const SizedBox.shrink(),
+                        child: _buildFavoriteCategoryStrip(context),
                       ),
                       SliverToBoxAdapter(
                         child: _buildFollowSuggestionsBlock(context),
