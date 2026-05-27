@@ -19,6 +19,9 @@ import '../config/api_config.dart';
 ///   DELETE /promote-reels/comments/:commentId/replies/:replyId
 ///   POST   /promote-reels/comments/:commentId/like
 ///   POST   /promote-reels/comments/:commentId/unlike
+///
+/// Search endpoint (React Promote.jsx):
+///   GET /search/promote-reels?q=...&page=1&limit=20
 class PromoteReelsApi {
   static final PromoteReelsApi _instance = PromoteReelsApi._internal();
   factory PromoteReelsApi() => _instance;
@@ -35,6 +38,21 @@ class PromoteReelsApi {
 
   Future<dynamic> listPromoteReels({int page = 1, int limit = 20}) async {
     final res = await _client.get('$_basePath/promote-reels', queryParams: {
+      'page': page.toString(),
+      'limit': limit.toString(),
+    });
+    return res;
+  }
+
+  Future<dynamic> searchPromoteReels({
+    required String q,
+    int page = 1,
+    int limit = 10,
+  }) async {
+    final query = q.trim();
+    if (query.isEmpty) return const [];
+    final res = await _client.get('$_basePath/search/promote-reels', queryParams: {
+      'q': query,
       'page': page.toString(),
       'limit': limit.toString(),
     });
@@ -192,4 +210,3 @@ class PromoteReelsApi {
     return out;
   }
 }
-

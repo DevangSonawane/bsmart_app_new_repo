@@ -30,7 +30,11 @@ const AuthCallback = () => {
           navigate('/');
         } catch (error) {
           console.error('Error fetching user details:', error);
-          navigate('/login', { state: { message: 'Authentication failed' } });
+          const msg =
+            error?.response?.data?.message ||
+            error?.message ||
+            'Authentication failed';
+          navigate('/login', { state: { message: msg } });
         }
       } else {
         // Handle error param if present

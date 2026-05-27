@@ -59,7 +59,7 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useDispatch();
-  const { isAuthenticated } = useSelector((state) => state.auth);
+  const { isAuthenticated, error: authError } = useSelector((state) => state.auth);
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -69,6 +69,14 @@ const Login = () => {
   const [otp, setOtp] = useState('');
   const [pending2FA, setPending2FA] = useState(false);
   const [twoFAEmail, setTwoFAEmail] = useState('');
+
+  const normalizeLoginError = (raw) => {
+    const text = String(raw || '').toLowerCase();
+    if (text.includes('account_banned') || text.includes('banned') || text.includes('inactive')) {
+      return raw || 'Your account has been banned. Please contact support.'
+    }
+    return raw || 'Login failed'
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -100,10 +108,10 @@ const Login = () => {
           console.log('User Profile:', resultAction.payload?.user || resultAction.payload);
           navigate('/');
         } else {
-          setError('Login failed');
+          setError('Your account has been banned. Please contact support.');
         }
       } else {
-        setError(resultAction.payload || 'Login failed');
+        setError(normalizeLoginError(resultAction.payload));
       }
     } catch {
       setError('An unexpected error occurred');
@@ -154,7 +162,11 @@ const Login = () => {
             navigate('/');
           } catch (err) {
             console.error('Failed to fetch user details:', err);
-            setError('Authentication successful but failed to load user data');
+            const msg =
+              err?.response?.data?.message ||
+              err?.message ||
+              'Authentication successful but failed to load user data';
+            setError(normalizeLoginError(msg));
           } finally {
             setLoading(false);
           }
@@ -260,10 +272,10 @@ const Login = () => {
               </div>
             )}
 
-            {error && (
+            {(error || authError) && (
               <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-600 dark:text-red-400 text-sm flex items-center">
                 <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
-                {error}
+                {error || authError}
               </div>
             )}
 

@@ -39,10 +39,27 @@ class _PromoteScreenState extends State<PromoteScreen> {
   final Map<int, bool> _productsOpenByIndex = <int, bool>{};
   String? _myUserId;
   double _cachedBottomInset = 0;
+  String _searchInput = '';
+  bool _searchOpen = false;
+  bool _searchLoading = false;
+  bool _searchLoadingMore = false;
+  bool _searchDropdownVisible = false;
+  List<Map<String, dynamic>> _searchResults = [];
+  String _searchQuery = '';
+  int _searchPage = 1;
+  bool _searchHasMore = true;
+  static const int _searchPageSize = 20;
+  Timer? _searchDebounce;
+  int _searchEpoch = 0;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode =
+      FocusNode(debugLabel: 'promote-search-focus');
+  final ScrollController _searchScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _searchScrollController.addListener(_onSearchScroll);
     unawaited(() async {
       _myUserId = await CurrentUser.id;
       if (mounted) setState(() {});
@@ -134,6 +151,10 @@ class _PromoteScreenState extends State<PromoteScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _searchScrollController.dispose();
     for (final entry in _controllers.entries) {
       final idx = entry.key;
       final c = entry.value;
@@ -174,6 +195,194 @@ class _PromoteScreenState extends State<PromoteScreen> {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
     return n.toString();
+  }
+
+  void _openSearch() {
+    setState(() {
+      _searchOpen = true;
+      _searchDropdownVisible = true;
+    });
+    _searchController.text = _searchInput;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _searchFocusNode.requestFocus();
+    });
+  }
+
+  void _closeSearch() {
+    setState(() {
+      _searchOpen = false;
+      _searchDropdownVisible = false;
+      _searchLoading = false;
+      _searchLoadingMore = false;
+      _searchInput = '';
+      _searchResults = [];
+      _searchQuery = '';
+      _searchPage = 1;
+      _searchHasMore = true;
+      _searchEpoch++;
+    });
+    _searchController.clear();
+    _searchFocusNode.unfocus();
+    try {
+      if (_searchScrollController.hasClients) {
+        _searchScrollController.jumpTo(0);
+      }
+    } catch (_) {}
+  }
+
+  void _onSearchChanged(String value) {
+    final next = value;
+    setState(() {
+      _searchInput = next;
+    });
+    _searchDebounce?.cancel();
+
+    if (next.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searchDropdownVisible = false;
+        _searchLoading = false;
+      });
+      return;
+    }
+
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      unawaited(_runSearch(next));
+    });
+  }
+
+  Future<void> _runSearch(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _searchLoading = false;
+        _searchLoadingMore = false;
+        _searchResults = [];
+        _searchDropdownVisible = false;
+      });
+      return;
+    }
+
+    final epoch = ++_searchEpoch;
+    setState(() {
+      _searchLoading = true;
+      _searchLoadingMore = false;
+      _searchDropdownVisible = true;
+      _searchQuery = q;
+      _searchPage = 1;
+      _searchHasMore = true;
+    });
+
+    try {
+      final results =
+          await _promoteService.searchPromotes(q: q, page: 1, limit: _searchPageSize);
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() {
+        _searchResults =
+            results.map((e) => Map<String, dynamic>.from(e)).toList();
+        _searchLoading = false;
+        _searchHasMore = results.length >= _searchPageSize;
+        _searchDropdownVisible = true;
+      });
+    } catch (_) {
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() {
+        _searchResults = [];
+        _searchLoading = false;
+        _searchLoadingMore = false;
+        _searchHasMore = false;
+        _searchDropdownVisible = true;
+      });
+    }
+  }
+
+  void _onSearchScroll() {
+    if (!_searchOpen || !_searchDropdownVisible) return;
+    if (_searchLoading || _searchLoadingMore) return;
+    if (!_searchHasMore) return;
+    if (!_searchScrollController.hasClients) return;
+
+    final pos = _searchScrollController.position;
+    if (pos.maxScrollExtent <= 0) return;
+    final remaining = pos.maxScrollExtent - pos.pixels;
+    if (remaining > 160) return;
+    unawaited(_loadMoreSearch());
+  }
+
+  Future<void> _loadMoreSearch() async {
+    final q = _searchQuery.trim();
+    if (q.isEmpty) return;
+    if (_searchLoading || _searchLoadingMore) return;
+    if (!_searchHasMore) return;
+
+    final epoch = _searchEpoch;
+    final nextPage = _searchPage + 1;
+    setState(() => _searchLoadingMore = true);
+    try {
+      final next = await _promoteService.searchPromotes(
+        q: q,
+        page: nextPage,
+        limit: _searchPageSize,
+      );
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() {
+        _searchPage = nextPage;
+        _searchResults = [
+          ..._searchResults,
+          ...next.map((e) => Map<String, dynamic>.from(e)),
+        ];
+        _searchHasMore = next.length >= _searchPageSize;
+        _searchLoadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() {
+        _searchHasMore = false;
+        _searchLoadingMore = false;
+      });
+    }
+  }
+
+  Future<void> _handleSearchPromoteTap(Map<String, dynamic> item) async {
+    final id = _toId(item['id'] ?? item['_id'] ?? item['promote_reel_id']);
+    _closeSearch();
+    if (id.isEmpty) return;
+
+    final idx = _promotes.indexWhere((p) {
+      final pid = _toId(p['id'] ?? p['_id'] ?? p['promote_reel_id']);
+      return pid == id;
+    });
+    if (idx >= 0) {
+      await _pageController.animateToPage(
+        idx,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+
+    try {
+      final raw = await _promoteReelsApi.getPromoteReelById(id);
+      dynamic payload = raw;
+      if (raw['data'] is Map) payload = raw['data'];
+      final mapped = _promoteService.mapPromote(payload);
+      if (!mounted) return;
+      setState(() {
+        _promotes = [..._promotes, Map<String, dynamic>.from(mapped)];
+      });
+      final nextIndex = _promotes.length - 1;
+      await _pageController.animateToPage(
+        nextIndex,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+      unawaited(_initControllerForIndex(nextIndex));
+      unawaited(_loadFollowStatuses());
+    } catch (_) {
+      // ignore
+    }
   }
 
   Future<void> _toggleLike(int index) async {
@@ -360,46 +569,51 @@ class _PromoteScreenState extends State<PromoteScreen> {
     return Scaffold(
       extendBody: true,
       backgroundColor: Colors.black,
-      body: PageView.builder(
-        controller: _pageController,
-        scrollDirection: Axis.vertical,
-        onPageChanged: _onPageChanged,
-        itemCount: _promotes.length,
-        itemBuilder: (context, index) {
-          final item = _promotes[index];
-          final products = (item['products'] as List<dynamic>?) ?? [];
-          final controller = _controllers[index];
-          final actionsBottom = 96.0 + bottomSystemInset;
-          final likesCount = _toInt(
-              item['likesCount'] ?? item['likes_count'] ?? item['likes']);
-          final commentsCount = _toInt(item['commentsCount'] ??
-              item['comments_count'] ??
-              item['comments']);
-          final isLiked =
-              item['isLikedByMe'] == true || item['is_liked_by_me'] == true;
-          final uid = _toId(item['userId'] ?? item['user_id']);
-          final caption =
-              (item['caption'] ?? item['description'] ?? '').toString().trim();
-          final tagsRaw = item['tags'];
-          final tags = <String>[];
-          if (tagsRaw is List) {
-            for (final t in tagsRaw) {
-              final s = (t ?? '').toString().trim();
-              if (s.isEmpty) continue;
-              tags.add(s.startsWith('#') ? s : '#$s');
-            }
-          }
-          final productsOpen = _productsOpenByIndex[index] ?? true;
-          final productsToggleHeight = products.isNotEmpty ? 28.0 : 0.0;
-          final productsListHeight =
-              (products.isNotEmpty && productsOpen) ? (10.0 + 82.0) : 0.0;
-          final productsPanelHeight = productsToggleHeight + productsListHeight;
-          final infoBottomPadding =
-              bottomSystemInset + 12.0 + productsPanelHeight + 12.0;
-          return Stack(
-            fit: StackFit.expand,
-            clipBehavior: Clip.none,
-            children: [
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            scrollDirection: Axis.vertical,
+            onPageChanged: _onPageChanged,
+            itemCount: _promotes.length,
+            itemBuilder: (context, index) {
+              final item = _promotes[index];
+              final products = (item['products'] as List<dynamic>?) ?? [];
+              final controller = _controllers[index];
+              final actionsBottom = 96.0 + bottomSystemInset;
+              final likesCount = _toInt(
+                  item['likesCount'] ?? item['likes_count'] ?? item['likes']);
+              final commentsCount = _toInt(item['commentsCount'] ??
+                  item['comments_count'] ??
+                  item['comments']);
+              final isLiked = item['isLikedByMe'] == true ||
+                  item['is_liked_by_me'] == true;
+              final uid = _toId(item['userId'] ?? item['user_id']);
+              final caption = (item['caption'] ?? item['description'] ?? '')
+                  .toString()
+                  .trim();
+              final tagsRaw = item['tags'];
+              final tags = <String>[];
+              if (tagsRaw is List) {
+                for (final t in tagsRaw) {
+                  final s = (t ?? '').toString().trim();
+                  if (s.isEmpty) continue;
+                  tags.add(s.startsWith('#') ? s : '#$s');
+                }
+              }
+              final productsOpen = _productsOpenByIndex[index] ?? true;
+              final productsToggleHeight = products.isNotEmpty ? 28.0 : 0.0;
+              final productsListHeight =
+                  (products.isNotEmpty && productsOpen) ? (10.0 + 82.0) : 0.0;
+              final productsPanelHeight =
+                  productsToggleHeight + productsListHeight;
+              final infoBottomPadding =
+                  bottomSystemInset + 12.0 + productsPanelHeight + 12.0;
+              return Stack(
+                fit: StackFit.expand,
+                clipBehavior: Clip.none,
+                children: [
               // 0. Solid black for nav bar zone
               if (bottomSystemInset > 0)
                 Positioned(
@@ -710,8 +924,137 @@ class _PromoteScreenState extends State<PromoteScreen> {
                   ),
                 ),
             ],
-          );
-        },
+              );
+            },
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: SafeArea(
+              bottom: false,
+              child: _searchOpen
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 8, horizontal: 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.20),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(LucideIcons.search,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.8),
+                                      size: 16),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _searchController,
+                                      focusNode: _searchFocusNode,
+                                      onChanged: _onSearchChanged,
+                                      onSubmitted: (value) =>
+                                          _runSearch(value.trim()),
+                                      style: const TextStyle(
+                                          color: Colors.white, fontSize: 13),
+                                      cursorColor: Colors.white,
+                                      textInputAction: TextInputAction.search,
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        border: InputBorder.none,
+                                        hintText: 'Search promote reels…',
+                                        hintStyle: TextStyle(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.60),
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  if (_searchLoading)
+                                    const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white70),
+                                      ),
+                                    )
+                                  else if (_searchInput.trim().isNotEmpty)
+                                    IconButton(
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        _onSearchChanged('');
+                                      },
+                                      icon: Icon(LucideIcons.x,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.70),
+                                          size: 16),
+                                      padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                              width: 28, height: 28),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: _closeSearch,
+                            child: Text(
+                              'Cancel',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.90),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 8, horizontal: 4),
+                      child: Row(
+                        children: [
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(LucideIcons.search,
+                                color: Colors.white, size: 24),
+                            onPressed: _openSearch,
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ),
+          if (_searchOpen && _searchDropdownVisible)
+            Positioned(
+              left: 12,
+              right: 12,
+              top: mq.padding.top + 60,
+              child: _PromoteSearchDropdown(
+                query: _searchInput.trim(),
+                loading: _searchLoading,
+                loadingMore: _searchLoadingMore,
+                results: _searchResults,
+                controller: _searchScrollController,
+                onTapResult: _handleSearchPromoteTap,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1081,6 +1424,198 @@ class _PromoteUsernamePill extends StatelessWidget {
             )
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _PromoteSearchDropdown extends StatelessWidget {
+  final String query;
+  final bool loading;
+  final bool loadingMore;
+  final List<Map<String, dynamic>> results;
+  final ScrollController controller;
+  final ValueChanged<Map<String, dynamic>> onTapResult;
+
+  const _PromoteSearchDropdown({
+    required this.query,
+    required this.loading,
+    required this.loadingMore,
+    required this.results,
+    required this.controller,
+    required this.onTapResult,
+  });
+
+  String _toId(dynamic v) => (v ?? '').toString().trim();
+
+  @override
+  Widget build(BuildContext context) {
+    if (query.trim().isEmpty) return const SizedBox.shrink();
+    final hasResults = results.isNotEmpty;
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(maxHeight: 360),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        ),
+        child: loading && !hasResults
+            ? const Padding(
+                padding: EdgeInsets.all(18),
+                child: Center(
+                  child: SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ),
+              )
+            : (!hasResults
+                ? Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Text(
+                      'No results',
+                      style: TextStyle(color: Colors.grey.shade400),
+                    ),
+                  )
+                : ListView.separated(
+                    controller: controller,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    shrinkWrap: true,
+                    itemCount: results.length + (loadingMore ? 1 : 0),
+                    separatorBuilder: (_, __) => Divider(
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                    itemBuilder: (context, index) {
+                      if (loadingMore && index == results.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(14),
+                          child: Center(
+                            child: SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final item = results[index];
+                      final id = _toId(
+                          item['id'] ?? item['_id'] ?? item['promote_reel_id']);
+                      final username = (item['username'] ?? 'User')
+                          .toString()
+                          .trim();
+                      final caption = (item['caption'] ??
+                              item['description'] ??
+                              '')
+                          .toString()
+                          .trim();
+                      final avatar =
+                          (item['avatarUrl'] ?? item['avatar_url'] ?? '')
+                              .toString()
+                              .trim();
+
+                      return InkWell(
+                        onTap: id.isEmpty ? null : () => onTapResult(item),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          child: Row(
+                            children: [
+                              _SearchAvatar(url: avatar, fallback: username),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      username.isEmpty ? 'User' : username,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    if (caption.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        caption,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.72),
+                                          fontSize: 12,
+                                          height: 1.2,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  )),
+      ),
+    );
+  }
+}
+
+class _SearchAvatar extends StatelessWidget {
+  final String? url;
+  final String fallback;
+
+  const _SearchAvatar({this.url, required this.fallback});
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = (fallback.trim().isEmpty ? '?' : fallback.trim()[0])
+        .toUpperCase();
+    final trimmed = (url ?? '').trim();
+    if (trimmed.isEmpty) {
+      return CircleAvatar(
+        radius: 18,
+        backgroundColor: Colors.white.withValues(alpha: 0.12),
+        child: Text(
+          initials,
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+        ),
+      );
+    }
+    return ClipOval(
+      child: CachedNetworkImage(
+        imageUrl: trimmed,
+        width: 36,
+        height: 36,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => Container(
+          width: 36,
+          height: 36,
+          color: Colors.white.withValues(alpha: 0.10),
+        ),
+        errorWidget: (_, __, ___) => CircleAvatar(
+          radius: 18,
+          backgroundColor: Colors.white.withValues(alpha: 0.12),
+          child: Text(
+            initials,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
       ),
     );
   }

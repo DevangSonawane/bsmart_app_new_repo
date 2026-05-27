@@ -38,6 +38,14 @@ const initialState = {
   error: null,
 };
 
+const getBanMessage = (user = {}) => {
+  if (user?.ban_type === 'permanent') return 'This account has been banned forever.'
+  if (user?.ban_type === 'temporary' && user?.ban_until) {
+    return `This account has been banned and will resume after ${new Date(user.ban_until).toUTCString()}.`
+  }
+  return 'This account is inactive.'
+}
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -63,9 +71,17 @@ const authSlice = createSlice({
       })
       .addCase(login.fulfilled, (state, action) => {
         console.log('Login Payload (Redux):', action.payload);
+        const user = action.payload?.user || action.payload || {}
+        if (user?.is_active === false) {
+          state.loading = false;
+          state.isAuthenticated = false;
+          state.userObject = null;
+          state.error = getBanMessage(user);
+          return;
+        }
         state.loading = false;
         state.isAuthenticated = !!action.payload?.token;
-        state.userObject = action.payload?.token ? (action.payload?.user || action.payload) : null;
+        state.userObject = action.payload?.token ? user : null;
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -77,14 +93,23 @@ const authSlice = createSlice({
         state.loading = true;
       })
       .addCase(fetchMe.fulfilled, (state, action) => {
+        const user = action.payload?.user || action.payload || {}
+        if (user?.is_active === false) {
+          state.loading = false;
+          state.isAuthenticated = false;
+          state.userObject = null;
+          state.error = getBanMessage(user);
+          return;
+        }
         state.loading = false;
         state.isAuthenticated = true;
-        state.userObject = action.payload?.user || action.payload;
+        state.userObject = user;
       })
-      .addCase(fetchMe.rejected, (state) => {
+      .addCase(fetchMe.rejected, (state, action) => {
         state.loading = false;
         state.isAuthenticated = false;
         state.userObject = null;
+        state.error = action.payload || 'Session expired. Please log in again.';
       })
       .addCase(logoutUser.fulfilled, (state) => {
         state.userObject = null;
