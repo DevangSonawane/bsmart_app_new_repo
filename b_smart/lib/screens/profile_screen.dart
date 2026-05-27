@@ -46,6 +46,7 @@ import 'follow_list_screen.dart';
 import '../api/users_api.dart';
 import '../api/follows_api.dart';
 import '../api/promote_reels_api.dart';
+import '../widgets/ad_interests_sheet.dart';
 import '../widgets/suggestion_follow.dart';
 import '../widgets/post_card.dart';
 import 'promote_screen.dart';
@@ -126,6 +127,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _tweetsLoading = false;
   String _tweetsLoadedForUserId = '';
   bool _tabListenerAttached = false;
+  bool _interestsLoading = false;
+  String _interestsLoadedForUserId = '';
+  List<String> _adInterests = const <String>[];
+  List<String> _availableInterestCategories = const <String>[];
 
   @override
   void initState() {
@@ -373,6 +378,143 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         },
         onFollow: _followSuggestionUser,
+      ),
+    );
+  }
+
+  Widget _buildInterestsPreview(
+    BuildContext context, {
+    required String userId,
+    required bool isMe,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    if (!_interestsLoading && _adInterests.isEmpty && !isMe) {
+      return const SizedBox.shrink();
+    }
+
+    Future<void> openSheet() async {
+      await AdInterestsSheet.show(
+        context,
+        userId: userId,
+        initialInterests: _adInterests,
+        editable: isMe,
+        onSaved: isMe
+            ? (next) {
+                if (!mounted) return;
+                setState(() => _adInterests = next);
+              }
+            : null,
+      );
+      unawaited(_loadAdInterests(userId));
+    }
+
+    final shown = _adInterests.take(10).toList();
+    final extra = _adInterests.length - shown.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: colors.onSurface.withValues(alpha: 0.08),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(LucideIcons.star, size: 18, color: colors.onSurface),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Interests',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  if (isMe)
+                    TextButton(
+                      onPressed: openSheet,
+                      child: const Text('Edit'),
+                    )
+                  else
+                    TextButton(
+                      onPressed: openSheet,
+                      child: const Text('View'),
+                    ),
+                ],
+              ),
+              if (_interestsLoading) ...[
+                const SizedBox(height: 6),
+                LinearProgressIndicator(
+                  minHeight: 2,
+                  backgroundColor: colors.onSurface.withValues(alpha: 0.08),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    DesignTokens.instaPink,
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ] else
+                const SizedBox(height: 8),
+              if (shown.isEmpty && !_interestsLoading)
+                Text(
+                  'No interests listed yet.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurface.withValues(alpha: 0.65),
+                    fontWeight: FontWeight.w600,
+                    fontStyle: FontStyle.italic,
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final interest in shown)
+                      Chip(
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        label: Text(
+                          interest,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: colors.onSurface,
+                          ),
+                        ),
+                        side: BorderSide(
+                          color: colors.onSurface.withValues(alpha: 0.10),
+                        ),
+                        backgroundColor: theme.brightness == Brightness.dark
+                            ? const Color(0xFF121214)
+                            : const Color(0xFFF3F4F6),
+                      ),
+                    if (extra > 0)
+                      Chip(
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        label: Text(
+                          '+$extra more',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: colors.onSurface.withValues(alpha: 0.8),
+                          ),
+                        ),
+                        side: BorderSide(
+                          color: colors.onSurface.withValues(alpha: 0.10),
+                        ),
+                        backgroundColor: theme.brightness == Brightness.dark
+                            ? const Color(0xFF121214)
+                            : const Color(0xFFF3F4F6),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1523,6 +1665,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _storyGroups = const [];
         _loading = false;
       });
+      unawaited(_loadAdInterests(targetId, force: true));
       _loadStoryStatus(targetId);
       // Cache own profile in Redux for instant load next time
       if (widget.userId == null) {
@@ -1533,6 +1676,62 @@ class _ProfileScreenState extends State<ProfileScreen> {
           StoreProvider.of<AppState>(context).dispatch(SetProfile(merged));
         }
       }
+    }
+  }
+
+  Future<void> _loadAdInterests(
+    String userId, {
+    bool force = false,
+  }) async {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    if (_interestsLoading) return;
+    if (!force && _interestsLoadedForUserId == id) return;
+
+    if (mounted) {
+      setState(() {
+        _interestsLoading = true;
+        if (_interestsLoadedForUserId != id) {
+          _adInterests = const <String>[];
+          _availableInterestCategories = const <String>[];
+        }
+      });
+    }
+
+    List<String> parseStringList(dynamic raw) {
+      if (raw is! List) return const <String>[];
+      final out = <String>[];
+      for (final v in raw) {
+        final s = (v ?? '').toString().trim();
+        if (s.isNotEmpty) out.add(s);
+      }
+      return out;
+    }
+
+    try {
+      final res = await _usersApi.getAdInterests(id);
+      final nextInterests = parseStringList(res['ad_interests']);
+      final nextAvail = parseStringList(res['available_categories']);
+
+      if (!mounted) return;
+      setState(() {
+        _adInterests = nextInterests;
+        _availableInterestCategories =
+            nextAvail.isNotEmpty ? nextAvail : nextInterests;
+        _interestsLoadedForUserId = id;
+        _interestsLoading = false;
+      });
+    } catch (_) {
+      final fallback = parseStringList(_profile?['ad_interests']);
+      if (!mounted) return;
+      setState(() {
+        if (fallback.isNotEmpty) _adInterests = fallback;
+        _availableInterestCategories = _availableInterestCategories.isNotEmpty
+            ? _availableInterestCategories
+            : _adInterests;
+        _interestsLoadedForUserId = id;
+        _interestsLoading = false;
+      });
     }
   }
 
@@ -2618,6 +2817,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                   actions: [
+                    IconButton(
+                      tooltip: 'Interests',
+                      icon: Icon(LucideIcons.star, color: fgColor),
+                      onPressed: profileUserId.isEmpty
+                          ? null
+                          : () async {
+                              await AdInterestsSheet.show(
+                                context,
+                                userId: profileUserId,
+                                initialInterests: _adInterests,
+                                editable: isMe,
+                                onSaved: isMe
+                                    ? (next) {
+                                        if (!mounted) return;
+                                        setState(() => _adInterests = next);
+                                      }
+                                    : null,
+                              );
+                              unawaited(_loadAdInterests(profileUserId));
+                            },
+                    ),
                     if (isMe) ...[
                       IconButton(
                         icon: Icon(LucideIcons.squarePlus, color: fgColor),
@@ -2690,8 +2910,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onFavorite: () => _toggleFavoriteProfile(username),
                             onMore: () =>
                                 _showProfileMoreActions(displayProfile),
-                            onMessage:
-                                isMe ? _openMessaging : (canMessage ? _openMessaging : null),
+                            onMessage: isMe
+                                ? _openMessaging
+                                : (canMessage ? _openMessaging : null),
                             onUser: isMe ? _toggleFollowSuggestions : null,
                             onAvatarTap: _openStoriesFromProfile,
                             onAvatarEdit: isMe && !_avatarUploading
@@ -2721,6 +2942,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 : null,
                           );
                         })(),
+                      ),
+                      SliverToBoxAdapter(
+                        child: profileUserId.isEmpty
+                            ? const SizedBox.shrink()
+                            : _buildInterestsPreview(
+                                context,
+                                userId: profileUserId,
+                                isMe: isMe,
+                              ),
                       ),
                       SliverToBoxAdapter(
                         child: isMe

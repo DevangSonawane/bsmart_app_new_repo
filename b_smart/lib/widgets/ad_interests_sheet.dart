@@ -9,12 +9,14 @@ import '../theme/design_tokens.dart';
 class AdInterestsSheet extends StatefulWidget {
   final String userId;
   final List<String> initialInterests;
+  final bool editable;
   final ValueChanged<List<String>>? onSaved;
 
   const AdInterestsSheet({
     super.key,
     required this.userId,
     this.initialInterests = const <String>[],
+    this.editable = true,
     this.onSaved,
   });
 
@@ -22,6 +24,7 @@ class AdInterestsSheet extends StatefulWidget {
     BuildContext context, {
     required String userId,
     List<String> initialInterests = const <String>[],
+    bool editable = true,
     ValueChanged<List<String>>? onSaved,
   }) async {
     await showModalBottomSheet<void>(
@@ -38,6 +41,7 @@ class AdInterestsSheet extends StatefulWidget {
           child: AdInterestsSheet(
             userId: userId,
             initialInterests: initialInterests,
+            editable: editable,
             onSaved: onSaved,
           ),
         ),
@@ -218,7 +222,8 @@ class _AdInterestsSheetState extends State<AdInterestsSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final disabled = !_dirty || _saving || _loading;
+    final isReadOnly = !widget.editable;
+    final disabled = isReadOnly || !_dirty || _saving || _loading;
     final selectedCount = _selected.length;
 
     return Column(
@@ -229,7 +234,7 @@ class _AdInterestsSheetState extends State<AdInterestsSheet> {
             children: [
               Expanded(
                 child: Text(
-                  'Your Interests',
+                  widget.editable ? 'Your Interests' : 'Interests',
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -274,7 +279,9 @@ class _AdInterestsSheetState extends State<AdInterestsSheet> {
                   const SizedBox(height: 12),
                 ],
                 Text(
-                  '$selectedCount selected · tap to toggle',
+                  isReadOnly
+                      ? '$selectedCount selected'
+                      : '$selectedCount selected · tap to toggle',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colors.onSurface.withValues(alpha: 0.65),
                     fontWeight: FontWeight.w700,
@@ -321,15 +328,17 @@ class _AdInterestsSheetState extends State<AdInterestsSheet> {
                             ? Colors.transparent
                             : colors.onSurface.withValues(alpha: 0.10),
                       ),
-                      onSelected: (v) {
-                        setState(() {
-                          if (v) {
-                            _selected.add(c);
-                          } else {
-                            _selected.remove(c);
-                          }
-                        });
-                      },
+                      onSelected: isReadOnly
+                          ? null
+                          : (v) {
+                              setState(() {
+                                if (v) {
+                                  _selected.add(c);
+                                } else {
+                                  _selected.remove(c);
+                                }
+                              });
+                            },
                     );
                   }).toList(),
                 ),
@@ -354,43 +363,45 @@ class _AdInterestsSheetState extends State<AdInterestsSheet> {
                         color: colors.onSurface.withValues(alpha: 0.15),
                       ),
                     ),
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(fontWeight: FontWeight.w900),
+                    child: Text(
+                      isReadOnly ? 'Close' : 'Cancel',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SizedBox(
-                  height: 48,
-                  child: FilledButton(
-                    onPressed: disabled ? null : _save,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: DesignTokens.instaPink,
-                      disabledBackgroundColor:
-                          DesignTokens.instaPink.withValues(alpha: 0.35),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+              if (!isReadOnly) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: disabled ? null : _save,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: DesignTokens.instaPink,
+                        disabledBackgroundColor:
+                            DesignTokens.instaPink.withValues(alpha: 0.35),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
-                    ),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+                      child: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Save Interests',
+                              style: TextStyle(fontWeight: FontWeight.w900),
                             ),
-                          )
-                        : const Text(
-                            'Save Interests',
-                            style: TextStyle(fontWeight: FontWeight.w900),
-                          ),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
