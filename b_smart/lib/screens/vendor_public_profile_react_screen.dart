@@ -108,8 +108,10 @@ class _VendorPublicProfileReactScreenState
             vendor['userId'] ??
             vendor['user'],
       );
-      final rawUserId =
-          data['user_id'] ?? data['userId'] ?? vendor['user_id'] ?? vendor['userId'];
+      final rawUserId = data['user_id'] ??
+          data['userId'] ??
+          vendor['user_id'] ??
+          vendor['userId'];
       final vendorUserId = (user['_id'] ??
               user['id'] ??
               ((rawUserId is String || rawUserId is num) ? rawUserId : null) ??
@@ -198,7 +200,8 @@ class _VendorPublicProfileReactScreenState
       }
     }
 
-    Future<void> toggle(BuildContext sheetCtx, StateSetter setSheetState) async {
+    Future<void> toggle(
+        BuildContext sheetCtx, StateSetter setSheetState) async {
       if (toggling) return;
       toggling = true;
       error = null;
@@ -555,100 +558,90 @@ class _VendorPublicProfileReactScreenState
     final country = _country(data);
     final user = _map(data['user_id']);
     final username = (user['username'] ?? '').toString().trim();
-    final vendorDocId =
-        (data['_id'] ?? data['id'])?.toString().trim() ?? '';
+    final vendorDocId = (data['_id'] ?? data['id'])?.toString().trim() ?? '';
     final notificationTargetId =
         vendorDocId.isNotEmpty ? vendorDocId : (_vendorUserId ?? widget.userId);
 
     return Scaffold(
       backgroundColor: background,
-      body: DefaultTabController(
-        length: 3,
-        child: NestedScrollView(
-          headerSliverBuilder: (_, __) {
-            return [
-              SliverToBoxAdapter(
-                child: _VendorHeader(
-                  isDark: isDark,
-                  background: background,
-                  surface: surface,
-                  border: border,
-                  text: text,
-                  muted: muted,
-                  coverController: _coverController,
-                  coverUrls: coverUrls,
-                  coverIndex: _coverIndex,
-                  onCoverChanged: (i) => setState(() => _coverIndex = i),
-                  onBack: () => Navigator.of(context).maybePop(),
-                  onMore: () => _showMoreActions(
-                    companyName: companyName,
-                    vendorId: notificationTargetId,
-                  ),
+      body: NestedScrollView(
+        headerSliverBuilder: (_, __) {
+          return [
+            SliverToBoxAdapter(
+              child: _VendorHeader(
+                isDark: isDark,
+                background: background,
+                surface: surface,
+                border: border,
+                text: text,
+                muted: muted,
+                coverController: _coverController,
+                coverUrls: coverUrls,
+                coverIndex: _coverIndex,
+                onCoverChanged: (i) => setState(() => _coverIndex = i),
+                onBack: () => Navigator.of(context).maybePop(),
+                onMore: () => _showMoreActions(
                   companyName: companyName,
-                  verified: verified,
+                  vendorId: notificationTargetId,
+                ),
+                companyName: companyName,
+                verified: verified,
+                avatarUrl: avatarUrl,
+                onAvatarTap: () => _showAvatarLightbox(
+                  isDark: isDark,
+                  name: companyName,
                   avatarUrl: avatarUrl,
-                  onAvatarTap: () => _showAvatarLightbox(
-                    isDark: isDark,
-                    name: companyName,
-                    avatarUrl: avatarUrl,
-                  ),
-                  websiteUrl: websiteUrl,
-                  industry: industry,
-                  coverage: coverage,
-                  country: country,
-                  username: username,
+                ),
+                websiteUrl: websiteUrl,
+                industry: industry,
+                coverage: coverage,
+                country: country,
+                username: username,
+              ),
+            ),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _TabHeaderDelegate(
+                background: isDark
+                    ? Colors.black.withValues(alpha: 0.95)
+                    : Colors.white.withValues(alpha: 0.95),
+                border: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.06),
+                tabBar: TabBar(
+                  controller: _tabController,
+                  indicatorColor: const Color(0xFFEC4899),
+                  labelColor: const Color(0xFFEC4899),
+                  unselectedLabelColor: muted,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w900),
+                  tabs: const [
+                    Tab(text: 'Info'),
+                    Tab(text: 'Ads'),
+                    Tab(text: 'Contact'),
+                  ],
                 ),
               ),
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _TabHeaderDelegate(
-                  background: isDark
-                      ? Colors.black.withValues(alpha: 0.95)
-                      : Colors.white.withValues(alpha: 0.95),
-                  border: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : Colors.black.withValues(alpha: 0.06),
-                  tabBar: TabBar(
-                    controller: _tabController,
-                    indicatorColor: const Color(0xFFEC4899),
-                    labelColor: const Color(0xFFEC4899),
-                    unselectedLabelColor: muted,
-                    labelStyle: const TextStyle(fontWeight: FontWeight.w900),
-                    tabs: const [
-                      Tab(
-                          icon: Icon(Icons.info_outline, size: 18),
-                          text: 'Info'),
-                      Tab(
-                          icon: Icon(Icons.campaign_outlined, size: 18),
-                          text: 'Ads'),
-                      Tab(
-                          icon: Icon(Icons.person_outline, size: 18),
-                          text: 'Contact'),
-                    ],
-                  ),
-                ),
-              ),
-            ];
-          },
-          body: TabBarView(
-            controller: _tabController,
-            children: [
-              _InformationTab(
-                data: data,
-                isDark: isDark,
-              ),
-              _AdsTab(
-                isDark: isDark,
-                loading: _adsLoading,
-                error: _adsError,
-                ads: _ads,
-              ),
-              _ContactTabReact(
-                data: data,
-                isDark: isDark,
-              ),
-            ],
-          ),
+            ),
+          ];
+        },
+        body: TabBarView(
+          controller: _tabController,
+          children: [
+            _InformationTab(
+              data: data,
+              isDark: isDark,
+            ),
+            _AdsTab(
+              isDark: isDark,
+              loading: _adsLoading,
+              error: _adsError,
+              ads: _ads,
+            ),
+            _ContactTabReact(
+              data: data,
+              isDark: isDark,
+            ),
+          ],
         ),
       ),
     );
@@ -1131,10 +1124,10 @@ class _TabHeaderDelegate extends SliverPersistentHeaderDelegate {
   });
 
   @override
-  double get minExtent => 54;
+  double get minExtent => tabBar.preferredSize.height;
 
   @override
-  double get maxExtent => 54;
+  double get maxExtent => tabBar.preferredSize.height;
 
   @override
   Widget build(
