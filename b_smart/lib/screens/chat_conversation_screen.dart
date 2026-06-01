@@ -299,20 +299,34 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   Widget _chatStatusBuilder(types.Message message,
       {required BuildContext context}) {
+    // Timestamp is rendered inside the bubble (via message builders).
+    return const SizedBox.shrink();
+  }
+
+  String _timeLabelFor(types.Message message) {
     final createdAt = message.createdAt;
-    if (createdAt == null || createdAt == 0) return const SizedBox.shrink();
+    if (createdAt == null || createdAt == 0) return '';
     final dt = DateTime.fromMillisecondsSinceEpoch(createdAt).toLocal();
-    final label = DateFormat('h:mm a').format(dt);
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: cs.onSurface.withValues(alpha: 0.45),
-        ),
+    return DateFormat('h:mm a').format(dt);
+  }
+
+  Widget _bubbleTimestamp({
+    required String label,
+    required bool outgoing,
+  }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final color = outgoing
+        ? cs.onPrimary.withValues(alpha: isDark ? 0.82 : 0.78)
+        : cs.onSurface.withValues(alpha: isDark ? 0.65 : 0.55);
+    return Text(
+      label,
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        height: 1.0,
+        color: color,
       ),
     );
   }
@@ -1330,6 +1344,62 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         isLastPage: !_hasMore,
                         customBottomWidget: const SizedBox.shrink(),
                         customStatusBuilder: _chatStatusBuilder,
+                        textMessageBuilder: (text, {required messageWidth, required showName}) {
+                          final outgoing =
+                              text.author.id == (_currentUserId ?? '').trim();
+                          final label = _timeLabelFor(text);
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              TextMessage(
+                                emojiEnlargementBehavior:
+                                    EmojiEnlargementBehavior.multi,
+                                hideBackgroundOnEmojiMessages: true,
+                                message: text,
+                                showName: showName,
+                                usePreviewData: true,
+                              ),
+                              if (label.isNotEmpty)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                                  child: _bubbleTimestamp(
+                                    label: label,
+                                    outgoing: outgoing,
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                        imageMessageBuilder: (image, {required messageWidth}) {
+                          final outgoing =
+                              image.author.id == (_currentUserId ?? '').trim();
+                          final label = _timeLabelFor(image);
+                          return Stack(
+                            children: [
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  right: 54,
+                                  bottom: label.isEmpty ? 0 : 16,
+                                ),
+                                child: ImageMessage(
+                                  message: image,
+                                  messageWidth: messageWidth,
+                                ),
+                              ),
+                              if (label.isNotEmpty)
+                                Positioned(
+                                  right: 8,
+                                  bottom: 6,
+                                  child: _bubbleTimestamp(
+                                    label: label,
+                                    outgoing: outgoing,
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
                         systemMessageBuilder: (message) {
                           if (message.id == _headerSystemMessageId()) {
                             return Container(
@@ -1367,12 +1437,33 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                           );
                         },
                         audioMessageBuilder: (audio, {required messageWidth}) {
-                          final mine =
+                          final outgoing =
                               audio.author.id == (_currentUserId ?? '').trim();
-                          return VoiceMessageContent(
-                            audioUrl: UrlHelper.normalizeUrl(audio.uri),
-                            totalDurationSeconds: audio.duration.inSeconds,
-                            isOutgoing: mine,
+                          final label = _timeLabelFor(audio);
+                          return Stack(
+                            children: [
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  right: 54,
+                                  bottom: label.isEmpty ? 0 : 16,
+                                ),
+                                child: VoiceMessageContent(
+                                  audioUrl: UrlHelper.normalizeUrl(audio.uri),
+                                  totalDurationSeconds:
+                                      audio.duration.inSeconds,
+                                  isOutgoing: outgoing,
+                                ),
+                              ),
+                              if (label.isNotEmpty)
+                                Positioned(
+                                  right: 8,
+                                  bottom: 6,
+                                  child: _bubbleTimestamp(
+                                    label: label,
+                                    outgoing: outgoing,
+                                  ),
+                                ),
+                            ],
                           );
                         },
                         onEndReached: () async {
