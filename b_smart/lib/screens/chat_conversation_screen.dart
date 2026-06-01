@@ -154,6 +154,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     return types.User(id: id.isEmpty ? 'me' : id);
   }
 
+  String _headerSystemMessageId() =>
+      '__conversation_header__${_effectiveConversationId()}';
+
   bool _isAudioMessage(Map<String, dynamic> m) {
     final mediaTypeRaw = (m['mediaType'] ?? m['media_type'] ?? '')
         .toString()
@@ -277,6 +280,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     }
 
     out.sort((a, b) => (b.createdAt ?? 0).compareTo(a.createdAt ?? 0));
+    out.add(
+      types.SystemMessage(
+        id: _headerSystemMessageId(),
+        createdAt: null,
+        text: '',
+      ),
+    );
     return out;
   }
 
@@ -1300,47 +1310,77 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       ),
       body: Column(
         children: [
-          if (!_loading)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: _conversationHeader(
-                userId: otherId,
-                username: otherName,
-                avatarUrl: otherAvatar ?? '',
-              ),
-            ),
           Expanded(
             child: _loading
                 ? const Center(
                     child: CircularProgressIndicator(
                         color: DesignTokens.instaPink),
                   )
-                : RefreshIndicator(
-                    onRefresh: () => _load(page: 1, replace: true),
-                    child: Chat(
-                      messages: _chatUiMessages(),
-                      onSendPressed: _handleSendPressed,
-                      user: _chatUiUser,
-                      showUserAvatars: false,
-                      showUserNames: false,
-                      isAttachmentUploading: _sending || _uploadingMedia,
-                      isLastPage: !_hasMore,
-                      customBottomWidget: const SizedBox.shrink(),
-                      customStatusBuilder: _chatStatusBuilder,
-                      audioMessageBuilder: (audio, {required messageWidth}) {
-                        final mine =
-                            audio.author.id == (_currentUserId ?? '').trim();
-                        return VoiceMessageContent(
-                          audioUrl: UrlHelper.normalizeUrl(audio.uri),
-                          totalDurationSeconds: audio.duration.inSeconds,
-                          isOutgoing: mine,
-                        );
-                      },
-                      onEndReached: () async {
-                        if (_loadingMore || _loading) return;
-                        if (!_hasMore) return;
-                        await _load(page: _page + 1, replace: false);
-                      },
+                : ClipRect(
+                    child: RefreshIndicator(
+                      onRefresh: () => _load(page: 1, replace: true),
+                      child: Chat(
+                        messages: _chatUiMessages(),
+                        onSendPressed: _handleSendPressed,
+                        user: _chatUiUser,
+                        scrollPhysics: const ClampingScrollPhysics(),
+                        showUserAvatars: false,
+                        showUserNames: false,
+                        isAttachmentUploading: _sending || _uploadingMedia,
+                        isLastPage: !_hasMore,
+                        customBottomWidget: const SizedBox.shrink(),
+                        customStatusBuilder: _chatStatusBuilder,
+                        systemMessageBuilder: (message) {
+                          if (message.id == _headerSystemMessageId()) {
+                            return Container(
+                              width: double.infinity,
+                              color:
+                                  Theme.of(context).scaffoldBackgroundColor,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                                child: _conversationHeader(
+                                  userId: otherId,
+                                  username: otherName,
+                                  avatarUrl: otherAvatar ?? '',
+                                ),
+                              ),
+                            );
+                          }
+                          final cs = Theme.of(context).colorScheme;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            child: Center(
+                              child: Text(
+                                message.text,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: cs.onSurface.withValues(alpha: 0.55),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        audioMessageBuilder: (audio, {required messageWidth}) {
+                          final mine =
+                              audio.author.id == (_currentUserId ?? '').trim();
+                          return VoiceMessageContent(
+                            audioUrl: UrlHelper.normalizeUrl(audio.uri),
+                            totalDurationSeconds: audio.duration.inSeconds,
+                            isOutgoing: mine,
+                          );
+                        },
+                        onEndReached: () async {
+                          if (_loadingMore || _loading) return;
+                          if (!_hasMore) return;
+                          await _load(page: _page + 1, replace: false);
+                        },
+                      ),
                     ),
                   ),
           ),

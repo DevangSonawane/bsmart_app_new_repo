@@ -87,6 +87,20 @@ class _GroupChatConversationScreenState
 
   bool _isGroupConversation() => true;
 
+  String _effectiveConversationId() {
+    final fromState = (_conversation?['_id'] ??
+            _conversation?['id'] ??
+            _conversation?['conversationId'] ??
+            _conversation?['conversation_id'])
+        ?.toString()
+        .trim();
+    if (fromState != null && fromState.isNotEmpty) return fromState;
+    return widget.conversationId.trim();
+  }
+
+  String _headerSystemMessageId() =>
+      '__conversation_header__${_effectiveConversationId()}';
+
   String _groupName() {
     final c = _conversation;
     final explicit =
@@ -631,6 +645,13 @@ class _GroupChatConversationScreenState
     }
 
     out.sort((a, b) => (b.createdAt ?? 0).compareTo(a.createdAt ?? 0));
+    out.add(
+      types.SystemMessage(
+        id: _headerSystemMessageId(),
+        createdAt: null,
+        text: '',
+      ),
+    );
     return out;
   }
 
@@ -1533,80 +1554,119 @@ class _GroupChatConversationScreenState
             ),
       body: Column(
         children: [
-          if (!_loading && isGroup) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: _groupHeader(
-                name: otherName,
-                avatarUrl: otherAvatar,
-                membersCount: membersCount,
-                participants: _participants(),
-                onEdit: _showEditGroupSheet,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (_groupCreatedTimeLabel().isNotEmpty)
-              Text(
-                _groupCreatedTimeLabel(),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: cs.onSurface.withValues(alpha: 0.40),
-                ),
-              ),
-            const SizedBox(height: 6),
-            Text(
-              _groupCreatedLine(),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: cs.onSurface.withValues(alpha: 0.45),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (!_loading && !isGroup)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: _conversationHeader(
-                userId: otherId,
-                username: otherName,
-                avatarUrl: otherAvatar ?? '',
-              ),
-            ),
           Expanded(
             child: _loading
                 ? const Center(
                     child: CircularProgressIndicator(
                         color: DesignTokens.instaPink),
                   )
-                : RefreshIndicator(
-                    onRefresh: () => _load(page: 1, replace: true),
-                    child: Chat(
-                      messages: _chatUiMessages(),
-                      onSendPressed: _handleSendPressed,
-                      user: _chatUiUser,
-                      showUserAvatars: false,
-                      showUserNames: true,
-                      isAttachmentUploading: _sending || _uploadingMedia,
-                      isLastPage: !_hasMore,
-                      customBottomWidget: const SizedBox.shrink(),
-                      customStatusBuilder: _chatStatusBuilder,
-                      audioMessageBuilder: (audio, {required messageWidth}) {
-                        final mine =
-                            audio.author.id == (_currentUserId ?? '').trim();
-                        return VoiceMessageContent(
-                          audioUrl: UrlHelper.normalizeUrl(audio.uri),
-                          totalDurationSeconds: audio.duration.inSeconds,
-                          isOutgoing: mine,
-                        );
-                      },
-                      onEndReached: () async {
-                        if (_loadingMore || _loading) return;
-                        if (!_hasMore) return;
-                        await _load(page: _page + 1, replace: false);
-                      },
+                : ClipRect(
+                    child: RefreshIndicator(
+                      onRefresh: () => _load(page: 1, replace: true),
+                      child: Chat(
+                        messages: _chatUiMessages(),
+                        onSendPressed: _handleSendPressed,
+                        user: _chatUiUser,
+                        scrollPhysics: const ClampingScrollPhysics(),
+                        showUserAvatars: false,
+                        showUserNames: true,
+                        isAttachmentUploading: _sending || _uploadingMedia,
+                        isLastPage: !_hasMore,
+                        customBottomWidget: const SizedBox.shrink(),
+                        customStatusBuilder: _chatStatusBuilder,
+                        systemMessageBuilder: (message) {
+                          if (message.id == _headerSystemMessageId()) {
+                            if (isGroup) {
+                              return Container(
+                                width: double.infinity,
+                                color: theme.scaffoldBackgroundColor,
+                                child: Column(
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          12, 12, 12, 0),
+                                      child: _groupHeader(
+                                        name: otherName,
+                                        avatarUrl: otherAvatar,
+                                        membersCount: membersCount,
+                                        participants: _participants(),
+                                        onEdit: _showEditGroupSheet,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    if (_groupCreatedTimeLabel().isNotEmpty)
+                                      Text(
+                                        _groupCreatedTimeLabel(),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: cs.onSurface
+                                              .withValues(alpha: 0.40),
+                                        ),
+                                      ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _groupCreatedLine(),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color:
+                                            cs.onSurface.withValues(alpha: 0.45),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                ),
+                              );
+                            }
+                            return Container(
+                              width: double.infinity,
+                              color: theme.scaffoldBackgroundColor,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                                child: _conversationHeader(
+                                  userId: otherId,
+                                  username: otherName,
+                                  avatarUrl: otherAvatar ?? '',
+                                ),
+                              ),
+                            );
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            child: Center(
+                              child: Text(
+                                message.text,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: cs.onSurface.withValues(alpha: 0.55),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        audioMessageBuilder: (audio, {required messageWidth}) {
+                          final mine =
+                              audio.author.id == (_currentUserId ?? '').trim();
+                          return VoiceMessageContent(
+                            audioUrl: UrlHelper.normalizeUrl(audio.uri),
+                            totalDurationSeconds: audio.duration.inSeconds,
+                            isOutgoing: mine,
+                          );
+                        },
+                        onEndReached: () async {
+                          if (_loadingMore || _loading) return;
+                          if (!_hasMore) return;
+                          await _load(page: _page + 1, replace: false);
+                        },
+                      ),
                     ),
                   ),
           ),
