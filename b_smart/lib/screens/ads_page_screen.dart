@@ -2427,7 +2427,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     // Slightly higher so the column doesn't sit too low.
     final actionsBottom = 132.0 + widget.bottomInset;
     // Keep the bottom info overlay above the CTA buttons.
-    final infoBottom = (ctaBottom + 34.0).clamp(0.0, double.infinity);
+    final infoBottom = (ctaBottom + 28.0).clamp(0.0, double.infinity);
     final media = Container(
       color: Colors.black,
       child: _isInitialized && _controller != null && _isVideoAd

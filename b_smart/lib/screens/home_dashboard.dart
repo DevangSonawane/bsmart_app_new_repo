@@ -1169,6 +1169,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     var postCount = 0;
     var peopleBlockIndex = 0;
     var vendorBlockIndex = 0;
+    var insertCycleIndex = 0;
 
     FeedPost? nextAdForBlock(int idx) {
       final list = _adSuggestions;
@@ -1181,31 +1182,42 @@ class _HomeDashboardState extends State<HomeDashboard>
       postCount++;
       if (postCount % 5 != 0) continue;
 
-      // After every 5 posts, insert the hierarchy:
-      // Reels → Ads → People → Vendors
-      if (_reelSuggestionsLoading || _suggestedReels.isNotEmpty) {
-        rows.add(_FeedRenderRow.reelsSuggestions());
-      }
+      // After every 5 posts, insert ONE block in a repeating cycle:
+      // Reels → Ads → People → Vendors → (repeat)
+      final cycle = insertCycleIndex % 4;
+      insertCycleIndex++;
 
-      final ad = nextAdForBlock(postCount ~/ 5);
-      if (_adSuggestionsLoading || _adSuggestions.isNotEmpty) {
-        rows.add(_FeedRenderRow.adsSuggestion(ad));
-      }
-
-      final hasPeople = _followSuggestions.any(
-        (u) => !_dismissedSuggestionUserIds.contains(u.id),
-      );
-      if (_followSuggestionsLoading || hasPeople) {
-        rows.add(_FeedRenderRow.peopleSuggestions(peopleBlockIndex));
-        peopleBlockIndex++;
-      }
-
-      final hasVendors = _vendorSuggestions.any(
-        (u) => !_dismissedVendorSuggestionIds.contains(u.id),
-      );
-      if (_vendorSuggestionsLoading || hasVendors) {
-        rows.add(_FeedRenderRow.vendorSuggestions(vendorBlockIndex));
-        vendorBlockIndex++;
+      switch (cycle) {
+        case 0:
+          if (_reelSuggestionsLoading || _suggestedReels.isNotEmpty) {
+            rows.add(_FeedRenderRow.reelsSuggestions());
+          }
+          break;
+        case 1:
+          final ad = nextAdForBlock(postCount ~/ 5);
+          if (_adSuggestionsLoading || _adSuggestions.isNotEmpty) {
+            rows.add(_FeedRenderRow.adsSuggestion(ad));
+          }
+          break;
+        case 2:
+          final hasPeople = _followSuggestions.any(
+            (u) => !_dismissedSuggestionUserIds.contains(u.id),
+          );
+          if (_followSuggestionsLoading || hasPeople) {
+            rows.add(_FeedRenderRow.peopleSuggestions(peopleBlockIndex));
+            peopleBlockIndex++;
+          }
+          break;
+        case 3:
+        default:
+          final hasVendors = _vendorSuggestions.any(
+            (u) => !_dismissedVendorSuggestionIds.contains(u.id),
+          );
+          if (_vendorSuggestionsLoading || hasVendors) {
+            rows.add(_FeedRenderRow.vendorSuggestions(vendorBlockIndex));
+            vendorBlockIndex++;
+          }
+          break;
       }
     }
     return rows;
