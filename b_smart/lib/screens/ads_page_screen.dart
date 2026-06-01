@@ -2712,8 +2712,9 @@ class _AdVideoItemState extends State<AdVideoItem>
             left: 16,
             right: 92,
             bottom: infoBottom,
-            child: Stack(
-              clipBehavior: Clip.none,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 SizedBox(
                   height: 36,
@@ -2822,10 +2823,9 @@ class _AdVideoItemState extends State<AdVideoItem>
                     ],
                   ),
                 ),
-                Positioned(
-                  top: 40,
-                  left: 42,
-                  right: 0,
+                const SizedBox(height: 4),
+                Padding(
+                  padding: const EdgeInsets.only(left: 42),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -2900,7 +2900,8 @@ class _AdVideoItemState extends State<AdVideoItem>
                                   const SizedBox(width: 8),
                                   GestureDetector(
                                     behavior: HitTestBehavior.opaque,
-                                    onTap: () => unawaited(_showCaptionSheet(caption)),
+                                    onTap: () => unawaited(
+                                        _showCaptionSheet(caption)),
                                     child: const Padding(
                                       padding: EdgeInsets.symmetric(
                                           horizontal: 6, vertical: 6),
