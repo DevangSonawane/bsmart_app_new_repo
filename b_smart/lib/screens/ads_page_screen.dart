@@ -2421,13 +2421,13 @@ class _AdVideoItemState extends State<AdVideoItem>
 
   @override
   Widget build(BuildContext context) {
-    const ctaBottomPadding = 10.0;
+    const ctaBottomPadding = 24.0;
     final ctaBottom = widget.bottomInset + ctaBottomPadding;
 
     // Slightly higher so the column doesn't sit too low.
-    final actionsBottom = 96.0 + widget.bottomInset;
-    // Keep content aligned with the mute button line (mute is the last item in the actions column).
-    final infoBottom = actionsBottom;
+    final actionsBottom = 132.0 + widget.bottomInset;
+    // Keep the bottom info overlay above the CTA buttons.
+    final infoBottom = (ctaBottom + 34.0).clamp(0.0, double.infinity);
     final media = Container(
       color: Colors.black,
       child: _isInitialized && _controller != null && _isVideoAd
@@ -2706,9 +2706,7 @@ class _AdVideoItemState extends State<AdVideoItem>
           ),
 
           // 5. Bottom Info Overlay
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 240),
-            curve: Curves.easeInOutCubic,
+          Positioned(
             left: 16,
             right: 92,
             bottom: infoBottom,
@@ -2868,58 +2866,70 @@ class _AdVideoItemState extends State<AdVideoItem>
                           ],
                         );
                       }),
-                      if (!_ctaVisible)
-                        Builder(builder: (context) {
-                          final caption =
-                              (widget.ad.caption ?? widget.ad.description)
-                                  .trim();
-                          if (caption.isEmpty) {
-                            return const SizedBox.shrink();
-                          }
-                          final words = caption.trim().split(RegExp(r'\s+'));
-                          final isLong = words.length > 8;
-                          final preview =
-                              isLong ? words.take(8).join(' ') : caption;
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    preview,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ),
-                                if (isLong) ...[
-                                  const SizedBox(width: 8),
-                                  GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: () => unawaited(
-                                        _showCaptionSheet(caption)),
-                                    child: const Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 6),
+                      Builder(builder: (context) {
+                        final caption =
+                            (widget.ad.caption ?? widget.ad.description).trim();
+                        if (caption.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        final words = caption.trim().split(RegExp(r'\s+'));
+                        final isLong = words.length > 8;
+                        final preview =
+                            isLong ? words.take(8).join(' ') : caption;
+                        return SizedBox(
+                          height: 38,
+                          child: IgnorePointer(
+                            ignoring: _ctaVisible,
+                            child: AnimatedOpacity(
+                              opacity: _ctaVisible ? 0 : 1,
+                              duration: const Duration(milliseconds: 160),
+                              curve: Curves.easeInOut,
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Row(
+                                  children: [
+                                    Expanded(
                                       child: Text(
-                                        'Read more',
-                                        style: TextStyle(
-                                          color: Color(0xCCFFFFFF),
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w800,
+                                        preview,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          height: 1.4,
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ],
+                                    if (isLong) ...[
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () => unawaited(
+                                          _showCaptionSheet(caption),
+                                        ),
+                                        child: const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 6,
+                                          ),
+                                          child: Text(
+                                            'Read more',
+                                            style: TextStyle(
+                                              color: Color(0xCCFFFFFF),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
                             ),
-                          );
-                        }),
+                          ),
+                        );
+                      }),
                     ],
                   ),
                 ),
