@@ -1030,11 +1030,10 @@ class _GroupChatConversationScreenState
     final timeText = _messageTimeText(message);
 
     final reactionsRaw = message['reactions'];
-    final reactions =
-        (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
+    final reactions = (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
     final uid = _currentUserId ?? '';
     final own = uid.isEmpty ? null : _ownReactionFor(message, uid);
     final primaryEmoji = (own?['emoji']?.toString().trim().isNotEmpty == true)
@@ -1053,7 +1052,8 @@ class _GroupChatConversationScreenState
       showTail: false,
       groupPosition: groupPosition,
       timestampText: timeText,
-      deliveryStatus: _deliveryStatusFor(message, mine: mine, showSeen: showSeen),
+      deliveryStatus:
+          _deliveryStatusFor(message, mine: mine, showSeen: showSeen),
       reactions: (!isDeleted && reactions.isNotEmpty && primaryEmoji.isNotEmpty)
           ? [
               ChatReaction(
@@ -3575,11 +3575,10 @@ class _GroupChatConversationScreenState
     final timeText = _messageTimeText(message);
 
     final reactionsRaw = message['reactions'];
-    final reactions =
-        (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
+    final reactions = (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
     final uid = _currentUserId ?? '';
     final own = uid.isEmpty ? null : _ownReactionFor(message, uid);
     final primaryEmoji = (own?['emoji']?.toString().trim().isNotEmpty == true)
@@ -3602,7 +3601,8 @@ class _GroupChatConversationScreenState
     final shared = _sharedContentFor(message);
     final sharedCard = shared == null ? null : _sharedContentCard(shared, mine);
     final cleanedText = shared != null
-        ? text.replaceAll(RegExp(r'https?:\\/\\/\\S+', caseSensitive: false), '')
+        ? text.replaceAll(
+            RegExp(r'https?:\\/\\/\\S+', caseSensitive: false), '')
         : text;
 
     final isMediaMessage = !isDeleted && mediaUrl.trim().isNotEmpty;

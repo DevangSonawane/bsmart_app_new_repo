@@ -843,11 +843,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final timeText = _messageTimeText(message);
 
     final reactionsRaw = message['reactions'];
-    final reactions =
-        (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
+    final reactions = (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
     final uid = _currentUserId ?? '';
     final own = uid.isEmpty ? null : _ownReactionFor(message, uid);
     final primaryEmoji = (own?['emoji']?.toString().trim().isNotEmpty == true)
@@ -2178,7 +2177,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final path = uri?.path.isNotEmpty == true ? uri!.path : url;
 
     String? matchGroup(Pattern pattern) {
-      final m = RegExp(pattern.toString(), caseSensitive: false).firstMatch(path);
+      final m =
+          RegExp(pattern.toString(), caseSensitive: false).firstMatch(path);
       final v = m?.groupCount == 1 ? m?.group(1) : null;
       return v?.trim();
     }
@@ -2201,7 +2201,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     }
   }
 
-  ({String type, String id}) _resolveSharedContent(Map<String, dynamic> shared) {
+  ({String type, String id}) _resolveSharedContent(
+      Map<String, dynamic> shared) {
     var type = _sharedContentType(shared);
     var id = _sharedContentId(shared);
     final shareUrl = _sharedShareUrl(shared);
@@ -2285,7 +2286,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
           for (final tRaw in thumbs) {
             if (tRaw is! Map) continue;
             final t = Map<String, dynamic>.from(tRaw);
-            final u = norm(t['fileUrl'] ?? t['file_url'] ?? t['url'] ?? t['path']);
+            final u =
+                norm(t['fileUrl'] ?? t['file_url'] ?? t['url'] ?? t['path']);
             if (u.isNotEmpty && !isVideoLike(u)) return u;
           }
         }
@@ -2294,7 +2296,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             .toString()
             .toLowerCase()
             .trim();
-        final fileUrl = norm(m['fileUrl'] ?? m['file_url'] ?? m['url'] ?? m['path']);
+        final fileUrl =
+            norm(m['fileUrl'] ?? m['file_url'] ?? m['url'] ?? m['path']);
         if (fileUrl.isNotEmpty &&
             (mediaType.contains('image') || !isVideoLike(fileUrl)) &&
             !isVideoLike(fileUrl)) {
@@ -2438,19 +2441,25 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final isPostOrTweetShare = type == 'post' || type == 'tweet';
 
     final cardBg = isDark ? theme.cardColor : Colors.white;
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.10);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.10);
     final textColor = isDark ? Colors.white : cs.onSurface;
-    final mutedText =
-        isDark ? Colors.white.withValues(alpha: 0.75) : cs.onSurface.withValues(alpha: 0.70);
-    final pillBg =
-        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.06);
-    final pillBorder =
-        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.08);
-    final headerBg =
-        isDark ? Colors.black.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.03);
-    final captionBg =
-        isDark ? Colors.black.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.04);
+    final mutedText = isDark
+        ? Colors.white.withValues(alpha: 0.75)
+        : cs.onSurface.withValues(alpha: 0.70);
+    final pillBg = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.06);
+    final pillBorder = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.08);
+    final headerBg = isDark
+        ? Colors.black.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.03);
+    final captionBg = isDark
+        ? Colors.black.withValues(alpha: 0.12)
+        : Colors.black.withValues(alpha: 0.04);
 
     Widget typePill() {
       IconData icon = LucideIcons.share2;
@@ -2581,8 +2590,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     Widget previewPlaceholder(String label, {double height = 260}) {
       return Container(
         height: height,
-        color:
-            isDark ? Colors.black.withValues(alpha: 0.20) : Colors.black.withValues(alpha: 0.06),
+        color: isDark
+            ? Colors.black.withValues(alpha: 0.20)
+            : Colors.black.withValues(alpha: 0.06),
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Text(
@@ -2605,9 +2615,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     if (preview.isNotEmpty && resolvedRaw == null && type != 'ad') {
       _ensureSharedPreviewAspectRatio(preview);
     }
-    final resolvedRatio = (resolvedRaw != null && resolvedRaw > 0)
-        ? resolvedRaw
-        : null;
+    final resolvedRatio =
+        (resolvedRaw != null && resolvedRaw > 0) ? resolvedRaw : null;
     final frameAspect = _quantizeSharedAspectRatio(
       resolvedRatio ?? _defaultSharedAspectRatioForType(type),
     );
@@ -2631,12 +2640,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
       return LayoutBuilder(
         builder: (context, constraints) {
-          final availableWidth =
-              constraints.maxWidth.isFinite ? constraints.maxWidth : maxCardWidth;
+          final availableWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : maxCardWidth;
           final width = min(availableWidth, maxCardWidth);
           final height = width / frameAspect;
           final bg = contain
-              ? (isDark ? Colors.black.withValues(alpha: 0.18) : Colors.black.withValues(alpha: 0.04))
+              ? (isDark
+                  ? Colors.black.withValues(alpha: 0.18)
+                  : Colors.black.withValues(alpha: 0.04))
               : Colors.transparent;
           return SizedBox(
             width: width,
@@ -2800,11 +2812,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final timeText = _messageTimeText(message);
 
     final reactionsRaw = message['reactions'];
-    final reactions =
-        (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
+    final reactions = (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
     final uid = _currentUserId ?? '';
     final own = uid.isEmpty ? null : _ownReactionFor(message, uid);
     final primaryEmoji = (own?['emoji']?.toString().trim().isNotEmpty == true)
@@ -2827,7 +2838,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final shared = _sharedContentFor(message);
     final sharedCard = shared == null ? null : _sharedContentCard(shared, mine);
     final cleanedText = shared != null
-        ? text.replaceAll(RegExp(r'https?:\\/\\/\\S+', caseSensitive: false), '')
+        ? text.replaceAll(
+            RegExp(r'https?:\\/\\/\\S+', caseSensitive: false), '')
         : text;
 
     Widget content;
