@@ -751,112 +751,217 @@ class _VendorHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final coverHeight = MediaQuery.sizeOf(context).width >= 600 ? 288.0 : 220.0;
     final safeTop = MediaQuery.paddingOf(context).top;
+    final avatarSize = MediaQuery.sizeOf(context).width >= 600 ? 112.0 : 96.0;
+    final avatarOverlap = avatarSize / 2;
+    final category =
+        (categoryLabel ?? '').trim().isEmpty ? null : categoryLabel!.trim();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          height: coverHeight,
-          width: double.infinity,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: coverUrls.isEmpty
-                    ? DecoratedBox(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFFFB923C),
-                              Color(0xFFEC4899),
-                              Color(0xFF9333EA),
-                            ],
-                          ),
-                        ),
-                        child: Center(
-                          child: Icon(
-                            Icons.image_outlined,
-                            size: 56,
-                            color: Colors.white.withValues(alpha: 0.18),
-                          ),
-                        ),
-                      )
-                    : PageView.builder(
-                        controller: coverController,
-                        itemCount: coverUrls.length,
-                        onPageChanged: onCoverChanged,
-                        itemBuilder: (_, i) => Image.network(
-                          coverUrls[i],
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-              ),
-              Positioned(
-                top: safeTop + 12,
-                left: 16,
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: IconButton(
-                    onPressed: onBack,
-                    icon: const Icon(Icons.arrow_back),
-                    color: Colors.white,
-                    splashRadius: 22,
-                    tooltip: 'Back',
-                  ),
-                ),
-              ),
-              if (coverUrls.length > 1)
+        Builder(builder: (context) {
+          final infoHeight =
+              MediaQuery.sizeOf(context).width >= 600 ? 148.0 : 132.0;
+          return SizedBox(
+            height: coverHeight + infoHeight,
+            width: double.infinity,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
                 Positioned(
                   left: 0,
                   right: 0,
-                  bottom: 12,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(coverUrls.length, (i) {
-                      final active = i == coverIndex;
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        width: active ? 18 : 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: Colors.white
-                              .withValues(alpha: active ? 0.85 : 0.35),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                      );
-                    }),
+                  top: 0,
+                  height: coverHeight,
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(16),
+                      bottomRight: Radius.circular(16),
+                    ),
+                    child: coverUrls.isEmpty
+                        ? DecoratedBox(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Color(0xFFFB923C),
+                                  Color(0xFFEC4899),
+                                  Color(0xFF9333EA),
+                                ],
+                              ),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                Icons.image_outlined,
+                                size: 56,
+                                color: Colors.white.withValues(alpha: 0.18),
+                              ),
+                            ),
+                          )
+                        : PageView.builder(
+                            controller: coverController,
+                            itemCount: coverUrls.length,
+                            onPageChanged: onCoverChanged,
+                            itemBuilder: (_, i) => Image.network(
+                              coverUrls[i],
+                              fit: BoxFit.cover,
+                            ),
+                          ),
                   ),
                 ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  InkWell(
+                Positioned(
+                  top: safeTop + 12,
+                  left: 8,
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: IconButton(
+                      onPressed: onBack,
+                      icon: const Icon(Icons.arrow_back),
+                      color: Colors.white,
+                      splashRadius: 22,
+                      tooltip: 'Back',
+                    ),
+                  ),
+                ),
+                if (coverUrls.length > 1)
+                  Positioned(
+                    right: 14,
+                    bottom: infoHeight + 14,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(coverUrls.length, (i) {
+                        final active = i == coverIndex;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(
+                              alpha: active ? 0.95 : 0.45,
+                            ),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: coverHeight,
+                  height: infoHeight,
+                  child: Container(
+                    color: surface,
+                    padding:
+                        EdgeInsets.fromLTRB(16 + avatarSize + 16, 14, 16, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                companyName,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: text,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 20,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                            ),
+                            if (verified) ...[
+                              const SizedBox(width: 8),
+                              const _VerifiedBadge(),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              '$followersCount followers',
+                              style: TextStyle(
+                                color: muted,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text('•',
+                                style: TextStyle(
+                                    color: muted,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 12)),
+                            Text(
+                              '$followingCount following',
+                              style: TextStyle(
+                                color: muted,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                            if (category != null) ...[
+                              Text('•',
+                                  style: TextStyle(
+                                      color: muted,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12)),
+                              Text(
+                                category!,
+                                style: TextStyle(
+                                  color: muted,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Welcome to the $companyName channel',
+                          style: TextStyle(
+                            color: text,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          height: 1,
+                          color: border,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 16,
+                  top: coverHeight - avatarOverlap,
+                  child: InkWell(
                     onTap: onAvatarTap,
                     borderRadius: BorderRadius.circular(999),
                     child: Container(
-                      width: 74,
-                      height: 74,
+                      width: avatarSize,
+                      height: avatarSize,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: surface,
                         border: Border.all(
-                          width: 3,
+                          width: 4,
                           color:
                               isDark ? const Color(0xFF0B0B0B) : Colors.white,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.18),
+                            color: Colors.black.withValues(alpha: 0.22),
                             blurRadius: 18,
                             offset: const Offset(0, 10),
                           ),
@@ -878,7 +983,7 @@ class _VendorHeader extends StatelessWidget {
                                 child: Center(
                                   child: Icon(
                                     Icons.person,
-                                    size: 30,
+                                    size: 34,
                                     color: Colors.white.withValues(alpha: 0.95),
                                   ),
                                 ),
@@ -889,7 +994,7 @@ class _VendorHeader extends StatelessWidget {
                                 errorBuilder: (_, __, ___) => Center(
                                   child: Icon(
                                     Icons.person,
-                                    size: 30,
+                                    size: 34,
                                     color: muted,
                                   ),
                                 ),
@@ -897,133 +1002,12 @@ class _VendorHeader extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            companyName,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: text,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 20,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        ),
-                        if (verified) ...[
-                          const SizedBox(width: 8),
-                          const _VerifiedBadge(),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _HeroStat(
-                      isDark: isDark,
-                      label: 'Followers',
-                      value: followersCount.toString(),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _HeroStat(
-                      isDark: isDark,
-                      label: 'Following',
-                      value: followingCount.toString(),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _HeroStat(
-                      isDark: isDark,
-                      label: 'Category',
-                      value: (categoryLabel ?? '').trim().isEmpty
-                          ? '—'
-                          : categoryLabel!.trim(),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Welcome to the $companyName channel',
-                style: TextStyle(
-                  color: text,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14,
                 ),
-              ),
-            ],
-          ),
-        ),
+              ],
+            ),
+          );
+        }),
       ],
-    );
-  }
-}
-
-class _HeroStat extends StatelessWidget {
-  final bool isDark;
-  final String label;
-  final String value;
-
-  const _HeroStat({
-    required this.isDark,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final text = isDark ? Colors.white : const Color(0xFF111827);
-    final muted = isDark
-        ? Colors.white.withValues(alpha: 0.70)
-        : Colors.black.withValues(alpha: 0.55);
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : Colors.black.withValues(alpha: 0.08);
-    final fill = isDark ? const Color(0xFF0B0B0B) : Colors.white;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: text,
-              fontWeight: FontWeight.w900,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: muted,
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
