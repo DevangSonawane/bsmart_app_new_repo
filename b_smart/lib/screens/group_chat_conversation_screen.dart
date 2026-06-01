@@ -8,6 +8,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
+import 'package:flutter_chat_ui/flutter_chat_ui.dart';
 
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
@@ -486,6 +488,177 @@ class _GroupChatConversationScreenState
     if (!mounted) return;
     // Only used to refresh send-button state. Kept intentionally lightweight.
     setState(() {});
+  }
+
+  types.User get _chatUiUser {
+    final id = (_currentUserId ?? '').trim();
+    return types.User(id: id.isEmpty ? 'me' : id);
+  }
+
+  bool _isAudioMessage(Map<String, dynamic> m) {
+    final mediaTypeRaw = (m['mediaType'] ?? m['media_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (mediaTypeRaw.isEmpty) return false;
+    if (mediaTypeRaw == 'audio' || mediaTypeRaw == 'voice') return true;
+    if (mediaTypeRaw.startsWith('audio/')) return true;
+    if (mediaTypeRaw == 'm4a' ||
+        mediaTypeRaw == 'aac' ||
+        mediaTypeRaw == 'mp3' ||
+        mediaTypeRaw == 'wav') return true;
+    return false;
+  }
+
+  bool _looksLikeAudioUrl(String url) {
+    final u = url.trim().toLowerCase();
+    return u.endsWith('.m4a') ||
+        u.endsWith('.aac') ||
+        u.endsWith('.mp3') ||
+        u.endsWith('.wav') ||
+        u.contains('.m4a?') ||
+        u.contains('.aac?') ||
+        u.contains('.mp3?') ||
+        u.contains('.wav?');
+  }
+
+  types.User _authorFor(Map<String, dynamic> message) {
+    final sender = message['sender'];
+    final senderId = (sender is Map
+            ? (sender['_id'] ?? sender['id'] ?? sender['user_id'])
+            : sender)
+        ?.toString()
+        .trim();
+    final id = (senderId ?? '').isEmpty ? 'unknown' : senderId!;
+    final senderMap = sender is Map ? Map<String, dynamic>.from(sender) : null;
+    final name = (senderMap?['username'] ??
+            senderMap?['full_name'] ??
+            senderMap?['name'])
+        ?.toString()
+        .trim();
+    return types.User(
+      id: id,
+      firstName: (name != null && name.isNotEmpty) ? name : null,
+    );
+  }
+
+  List<types.Message> _chatUiMessages() {
+    final out = <types.Message>[];
+    for (final m in _messages) {
+      final id = _messageId(m).trim();
+      if (id.isEmpty) continue;
+      final createdAt = _createdAtMillis(m);
+      final author = _authorFor(m);
+
+      if (_isGroupSystemNoticeMessage(m)) {
+        final text = _groupSystemNoticeDisplayText(m).trim();
+        if (text.isNotEmpty) {
+          out.add(
+            types.SystemMessage(
+              id: id,
+              createdAt: createdAt == 0 ? null : createdAt,
+              text: text,
+            ),
+          );
+        }
+        continue;
+      }
+
+      if (m['isDeleted'] == true) {
+        out.add(
+          types.TextMessage(
+            id: id,
+            author: author,
+            createdAt: createdAt == 0 ? null : createdAt,
+            text: 'Message unsent',
+          ),
+        );
+        continue;
+      }
+
+      final mediaUrl = _mediaUrlFor(m);
+      final mediaTypeLower = (m['mediaType'] ?? m['media_type'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      final text = (m['text'] ?? '').toString();
+
+      final isAudio = _isAudioMessage(m) || _looksLikeAudioUrl(mediaUrl);
+      if (isAudio && mediaUrl.isNotEmpty) {
+        final storedDuration = (m['audioDuration'] ?? m['duration'] ?? 0);
+        final totalSecs = storedDuration is num
+            ? storedDuration.toInt()
+            : int.tryParse(storedDuration.toString()) ?? 0;
+        out.add(
+          types.AudioMessage(
+            id: id,
+            author: author,
+            createdAt: createdAt == 0 ? null : createdAt,
+            duration: Duration(seconds: totalSecs.clamp(0, 60 * 60)),
+            name: 'voice',
+            size: 0,
+            mimeType: mediaTypeLower.startsWith('audio/')
+                ? mediaTypeLower
+                : 'audio/m4a',
+            uri: UrlHelper.normalizeUrl(mediaUrl),
+          ),
+        );
+        continue;
+      }
+
+      if (mediaUrl.isNotEmpty && mediaTypeLower != 'audio') {
+        out.add(
+          types.ImageMessage(
+            id: id,
+            author: author,
+            createdAt: createdAt == 0 ? null : createdAt,
+            name: 'image',
+            size: 0,
+            uri: UrlHelper.normalizeUrl(mediaUrl),
+          ),
+        );
+        continue;
+      }
+
+      out.add(
+        types.TextMessage(
+          id: id,
+          author: author,
+          createdAt: createdAt == 0 ? null : createdAt,
+          text: text,
+        ),
+      );
+    }
+
+    out.sort((a, b) => (b.createdAt ?? 0).compareTo(a.createdAt ?? 0));
+    return out;
+  }
+
+  void _handleSendPressed(types.PartialText message) {
+    final text = message.text.trim();
+    if (text.isEmpty) return;
+    _inputController.text = text;
+    unawaited(_send());
+  }
+
+  Widget _chatStatusBuilder(types.Message message,
+      {required BuildContext context}) {
+    final createdAt = message.createdAt;
+    if (createdAt == null || createdAt == 0) return const SizedBox.shrink();
+    final dt = DateTime.fromMillisecondsSinceEpoch(createdAt).toLocal();
+    final label = DateFormat('h:mm a').format(dt);
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: cs.onSurface.withValues(alpha: 0.45),
+        ),
+      ),
+    );
   }
 
   bool _shallowMapEquals(Map<String, dynamic> a, Map<String, dynamic> b) {
@@ -1360,6 +1533,48 @@ class _GroupChatConversationScreenState
             ),
       body: Column(
         children: [
+          if (!_loading && isGroup) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: _groupHeader(
+                name: otherName,
+                avatarUrl: otherAvatar,
+                membersCount: membersCount,
+                participants: _participants(),
+                onEdit: _showEditGroupSheet,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_groupCreatedTimeLabel().isNotEmpty)
+              Text(
+                _groupCreatedTimeLabel(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: cs.onSurface.withValues(alpha: 0.40),
+                ),
+              ),
+            const SizedBox(height: 6),
+            Text(
+              _groupCreatedLine(),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: cs.onSurface.withValues(alpha: 0.45),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (!_loading && !isGroup)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: _conversationHeader(
+                userId: otherId,
+                username: otherName,
+                avatarUrl: otherAvatar ?? '',
+              ),
+            ),
           Expanded(
             child: _loading
                 ? const Center(
@@ -1368,204 +1583,29 @@ class _GroupChatConversationScreenState
                   )
                 : RefreshIndicator(
                     onRefresh: () => _load(page: 1, replace: true),
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                      itemCount: _messages.length +
-                          (isGroup ? 2 : 1) +
-                          (_loadingMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (_loadingMore && index == 0) {
-                          return const Padding(
-                            padding: EdgeInsets.only(bottom: 10),
-                            child: Center(
-                              child: SizedBox(
-                                width: 18,
-                                height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            ),
-                          );
-                        }
-                        final base = _loadingMore ? index - 1 : index;
-                        if (base == 0) {
-                          if (isGroup) {
-                            return _groupHeader(
-                              name: otherName,
-                              avatarUrl: otherAvatar,
-                              membersCount: membersCount,
-                              participants: _participants(),
-                              onEdit: _showEditGroupSheet,
-                            );
-                          }
-                          return _conversationHeader(
-                            userId: otherId,
-                            username: otherName,
-                            avatarUrl: otherAvatar ?? '',
-                          );
-                        }
-                        if (isGroup && base == 1) {
-                          final timeLabel = _groupCreatedTimeLabel();
-                          return Column(
-                            children: [
-                              const SizedBox(height: 12),
-                              Center(
-                                child: Text(
-                                  timeLabel,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: cs.onSurface.withValues(alpha: 0.40),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Center(
-                                child: Text(
-                                  _groupCreatedLine(),
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: cs.onSurface.withValues(alpha: 0.45),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                            ],
-                          );
-                        }
-
-                        final i = isGroup ? base - 2 : base - 1;
-                        final message = _messages[i];
-                        final uid = _currentUserId ?? '';
-                        final sender = message['sender'];
-                        final senderId = (sender is Map
-                                ? (sender['_id'] ??
-                                    sender['id'] ??
-                                    sender['user_id'])
-                                : sender)
-                            ?.toString();
-                        final mine = senderId != null &&
-                            senderId.isNotEmpty &&
-                            senderId == uid;
-                        final senderMap = sender is Map
-                            ? Map<String, dynamic>.from(sender)
-                            : null;
-                        final showSeen = mine &&
-                            latestSeenOwnId.isNotEmpty &&
-                            _messageId(message) == latestSeenOwnId;
-
-                        String _sid(Map<String, dynamic> m) {
-                          final s = m['sender'];
-                          final id = (s is Map
-                                  ? (s['_id'] ?? s['id'] ?? s['user_id'])
-                                  : s)
-                              ?.toString()
-                              .trim();
-                          return id ?? '';
-                        }
-
-                        final prevSame =
-                            i > 0 && _sid(_messages[i - 1]) == _sid(message);
-                        final nextSame = (i + 1) < _messages.length &&
-                            _sid(_messages[i + 1]) == _sid(message);
-                        final groupPosition = (!prevSame && !nextSame)
-                            ? ChatBubbleGroupPosition.single
-                            : (!prevSame && nextSame)
-                                ? ChatBubbleGroupPosition.top
-                                : (prevSame && nextSame)
-                                    ? ChatBubbleGroupPosition.middle
-                                    : ChatBubbleGroupPosition.bottom;
-                        final showTail = !nextSame;
-                        const outgoingTight = 2.0;
-                        const outgoingLoose = 6.0;
-                        final outerPadding = mine
-                            ? EdgeInsets.only(
-                                top: prevSame ? outgoingTight : outgoingLoose,
-                                bottom:
-                                    nextSame ? outgoingTight : outgoingLoose,
-                              )
-                            : const EdgeInsets.symmetric(vertical: 2);
-
-                        // Instagram-like grouping: if multiple images were sent
-                        // together, they arrive as consecutive image-only
-                        // messages. Render them as a single carousel bubble.
-                        if (_isImageOnlyMessage(message) &&
-                            i > 0 &&
-                            _shouldGroupWith(_messages[i - 1], message)) {
-                          return const SizedBox.shrink();
-                        }
-
-                        if (_isImageOnlyMessage(message)) {
-                          final urls = <String>[_mediaUrlFor(message)];
-                          var j = i + 1;
-                          while (j < _messages.length &&
-                              urls.length < 10 &&
-                              _shouldGroupWith(message, _messages[j])) {
-                            final u = _mediaUrlFor(_messages[j]);
-                            if (u.isNotEmpty) urls.add(u);
-                            j++;
-                          }
-                          if (urls.length > 1) {
-                            var groupHasSeen = showSeen;
-                            if (!groupHasSeen &&
-                                mine &&
-                                latestSeenOwnId.isNotEmpty) {
-                              for (var k = i; k < j; k++) {
-                                if (_messageId(_messages[k]) ==
-                                    latestSeenOwnId) {
-                                  groupHasSeen = true;
-                                  break;
-                                }
-                              }
-                            }
-                            return _albumBubble(
-                              message: message,
-                              mine: mine,
-                              senderMap: senderMap,
-                              urls: urls,
-                              showSeen: groupHasSeen,
-                              seenText: seenText,
-                              groupPosition: groupPosition,
-                              showTail: showTail,
-                              outerPadding: outerPadding,
-                            );
-                          }
-                        }
-
-                        if (isGroup && _isGroupSystemNoticeMessage(message)) {
-                          final display =
-                              _groupSystemNoticeDisplayText(message);
-                          if (display.isEmpty) {
-                            return const SizedBox.shrink();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Center(
-                              child: Text(
-                                display,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: cs.onSurface.withValues(alpha: 0.45),
-                                ),
-                              ),
-                            ),
-                          );
-                        }
-
-                        return _bubbleWhatsapp(
-                          message,
-                          mine,
-                          senderMap: senderMap,
-                          showSeen: showSeen,
-                          seenText: seenText,
-                          groupPosition: groupPosition,
-                          showTail: showTail,
-                          outerPadding: outerPadding,
+                    child: Chat(
+                      messages: _chatUiMessages(),
+                      onSendPressed: _handleSendPressed,
+                      user: _chatUiUser,
+                      showUserAvatars: false,
+                      showUserNames: true,
+                      isAttachmentUploading: _sending || _uploadingMedia,
+                      isLastPage: !_hasMore,
+                      customBottomWidget: const SizedBox.shrink(),
+                      customStatusBuilder: _chatStatusBuilder,
+                      audioMessageBuilder: (audio, {required messageWidth}) {
+                        final mine =
+                            audio.author.id == (_currentUserId ?? '').trim();
+                        return VoiceMessageContent(
+                          audioUrl: UrlHelper.normalizeUrl(audio.uri),
+                          totalDurationSeconds: audio.duration.inSeconds,
+                          isOutgoing: mine,
                         );
+                      },
+                      onEndReached: () async {
+                        if (_loadingMore || _loading) return;
+                        if (!_hasMore) return;
+                        await _load(page: _page + 1, replace: false);
                       },
                     ),
                   ),
