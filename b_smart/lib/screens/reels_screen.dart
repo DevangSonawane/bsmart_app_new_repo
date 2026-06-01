@@ -1070,7 +1070,9 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget _buildVideoCard({required bool isDesktop}) {
     final current = _reels[_currentIndex];
     const actionsBottomMobile = 40.0;
-    const minimalBottomPadding = 10.0;
+    const progressOverlayHeight = 40.0;
+    const captionToProgressGap = 1.0;
+    const minimalBottomPadding = progressOverlayHeight + captionToProgressGap;
     final caption = (current.caption ?? '').trim();
     final hasBottomText = caption.isNotEmpty || current.hashtags.isNotEmpty;
     final infoBottomMobile = minimalBottomPadding;

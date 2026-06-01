@@ -2877,40 +2877,45 @@ class _AdVideoItemState extends State<AdVideoItem>
                             return const SizedBox.shrink();
                           }
                           final words = caption.trim().split(RegExp(r'\s+'));
-                          final isLong = words.length > 5;
+                          final isLong = words.length > 8;
                           final preview =
-                              isLong ? words.take(5).join(' ') : caption;
+                              isLong ? words.take(8).join(' ') : caption;
                           return Padding(
                             padding: const EdgeInsets.only(top: 4),
-                            child: RichText(
-                              text: TextSpan(
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  height: 1.4,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    preview,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      height: 1.4,
+                                    ),
+                                  ),
                                 ),
-                                children: [
-                                  TextSpan(text: isLong ? preview : caption),
-                                  if (isLong)
-                                    WidgetSpan(
-                                      alignment: PlaceholderAlignment.middle,
-                                      child: GestureDetector(
-                                        onTap: () => _showCaptionSheet(caption),
-                                        child: const Padding(
-                                          padding: EdgeInsets.only(left: 3),
-                                          child: Text(
-                                            '  Read more',
-                                            style: TextStyle(
-                                              color: Color(0xCCFFFFFF),
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
+                                if (isLong) ...[
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => unawaited(_showCaptionSheet(caption)),
+                                    child: const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 6),
+                                      child: Text(
+                                        'Read more',
+                                        style: TextStyle(
+                                          color: Color(0xCCFFFFFF),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w800,
                                         ),
                                       ),
                                     ),
+                                  ),
                                 ],
-                              ),
+                              ],
                             ),
                           );
                         }),
