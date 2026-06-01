@@ -903,33 +903,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                       ),
                     ),
                   ),
-                  if (ctaType.isNotEmpty) ...[
-                    const SizedBox(width: 10),
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: _handleCtaTap,
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.10)
-                                : Colors.black.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: glassBorder),
-                          ),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            Icons.open_in_new,
-                            size: 18,
-                            color: foregroundColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  // CTA link icon intentionally removed from header.
                 ],
               ),
             ),
@@ -946,90 +920,6 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            InkWell(
-                              onTap: _likeLoading ? null : _toggleLike,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 6,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      _liked
-                                          ? Icons.favorite
-                                          : Icons.favorite_border,
-                                      color:
-                                          _liked ? Colors.red : foregroundColor,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _compactCount(_likesCount),
-                                      style: TextStyle(
-                                        color: mutedForegroundColor,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            InkWell(
-                              onTap: () => _showComingSoon('Comments'),
-                              borderRadius: BorderRadius.circular(12),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 6,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.mode_comment_outlined,
-                                      color: foregroundColor,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _compactCount(ad.commentsCount),
-                                      style: TextStyle(
-                                        color: mutedForegroundColor,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.remove_red_eye_outlined,
-                                  color: foregroundColor,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _compactCount(ad.currentViews),
-                                  style: TextStyle(
-                                    color: mutedForegroundColor,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
                         _VendorRow(
                           uid: uid,
                           vendorName: businessName.isNotEmpty
@@ -1077,8 +967,8 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                             ),
                           ),
                         ],
-                        const SizedBox(height: 14),
-                        if (captionPreview.isNotEmpty)
+                        if (captionPreview.isNotEmpty) ...[
+                          const SizedBox(height: 14),
                           Container(
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
@@ -1117,6 +1007,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                               ],
                             ),
                           ),
+                        ],
                         const SizedBox(height: 12),
                         _TagsSection(
                           isDark: isDark,
@@ -1124,16 +1015,6 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                           fallbackTags: ad.hashtags,
                         ),
                         const SizedBox(height: 18),
-                        if (galleryUrls.isNotEmpty) ...[
-                          AdPublicGallerySection(
-                            urls: galleryUrls,
-                            httpHeaders: galleryUrls
-                                    .any(UrlHelper.shouldAttachAuthHeader)
-                                ? (_mediaHeaders ?? const {})
-                                : null,
-                          ),
-                          const SizedBox(height: 18),
-                        ],
                         if (_vendorAdsLoading || _vendorAds.isNotEmpty) ...[
                           Row(
                             children: [
@@ -1185,6 +1066,91 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                                 ),
                           const SizedBox(height: 18),
                         ],
+                        if (galleryUrls.isNotEmpty) ...[
+                          AdPublicGallerySection(
+                            urls: galleryUrls,
+                            httpHeaders: galleryUrls
+                                    .any(UrlHelper.shouldAttachAuthHeader)
+                                ? (_mediaHeaders ?? const {})
+                                : null,
+                          ),
+                          const SizedBox(height: 18),
+                        ],
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Ratings & Comments',
+                                style: TextStyle(
+                                  color: foregroundColor,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: _likeLoading ? null : _toggleLike,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 6,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _liked
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      color:
+                                          _liked ? Colors.red : foregroundColor,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _compactCount(_likesCount),
+                                      style: TextStyle(
+                                        color: mutedForegroundColor,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            InkWell(
+                              onTap: () => _showComingSoon('Comments'),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 6,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.mode_comment_outlined,
+                                      color: foregroundColor,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _compactCount(ad.commentsCount),
+                                      style: TextStyle(
+                                        color: mutedForegroundColor,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
                         _TopCommentsSection(
                           isDark: isDark,
                           commentsLoading: _commentsLoading,
@@ -1696,41 +1662,6 @@ class _VendorRow extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             child: Row(
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFFFB923C),
-                        Color(0xFFEC4899),
-                      ],
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: avatarUrl.isNotEmpty
-                        ? Image.network(avatarUrl, fit: BoxFit.cover)
-                        : Center(
-                            child: Text(
-                              vendorName.trim().isEmpty
-                                  ? 'V'
-                                  : vendorName
-                                      .trim()
-                                      .substring(0, 1)
-                                      .toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1740,9 +1671,7 @@ class _VendorRow extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              vendorName.trim().isEmpty
-                                  ? 'Vendor'
-                                  : vendorName.trim(),
+                              'Info',
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: foregroundColor,
@@ -1751,35 +1680,8 @@ class _VendorRow extends StatelessWidget {
                               ),
                             ),
                           ),
-                          if (isVerified) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              width: 16,
-                              height: 16,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF0095F6),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.verified,
-                                  color: Colors.white,
-                                  size: 10,
-                                ),
-                              ),
-                            ),
-                          ],
+                          // Verified tick intentionally removed for Info row.
                         ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '@$username',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: mutedForegroundColor.withValues(alpha: 0.85),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
                       ),
                     ],
                   ),
