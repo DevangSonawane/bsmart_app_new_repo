@@ -49,7 +49,7 @@ class _VendorPublicProfileReactScreenState
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _load();
   }
 
@@ -580,10 +580,6 @@ class _VendorPublicProfileReactScreenState
                 coverIndex: _coverIndex,
                 onCoverChanged: (i) => setState(() => _coverIndex = i),
                 onBack: () => Navigator.of(context).maybePop(),
-                onMore: () => _showMoreActions(
-                  companyName: companyName,
-                  vendorId: notificationTargetId,
-                ),
                 companyName: companyName,
                 verified: verified,
                 avatarUrl: avatarUrl,
@@ -614,9 +610,22 @@ class _VendorPublicProfileReactScreenState
                   labelColor: const Color(0xFFEC4899),
                   unselectedLabelColor: muted,
                   labelStyle: const TextStyle(fontWeight: FontWeight.w900),
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  physics: const BouncingScrollPhysics(),
+                  onTap: (index) {
+                    if (_tabController.index == index) return;
+                    _tabController.animateTo(index);
+                  },
                   tabs: const [
-                    Tab(text: 'Info'),
+                    Tab(text: 'About'),
+                    Tab(text: 'Products'),
+                    Tab(text: 'Gallery'),
                     Tab(text: 'Ads'),
+                    Tab(text: 'Events'),
+                    Tab(text: 'Locations'),
                     Tab(text: 'Contact'),
                   ],
                 ),
@@ -631,11 +640,23 @@ class _VendorPublicProfileReactScreenState
               data: data,
               isDark: isDark,
             ),
+            _ProductsTab(isDark: isDark),
+            _GalleryTab(
+              isDark: isDark,
+              loading: _adsLoading,
+              error: _adsError,
+              ads: _ads,
+            ),
             _AdsTab(
               isDark: isDark,
               loading: _adsLoading,
               error: _adsError,
               ads: _ads,
+            ),
+            _EventsTab(isDark: isDark),
+            _LocationsTab(
+              isDark: isDark,
+              vendorLocations: _stringList(data['locations']),
             ),
             _ContactTabReact(
               data: data,
@@ -660,7 +681,6 @@ class _VendorHeader extends StatelessWidget {
   final int coverIndex;
   final ValueChanged<int> onCoverChanged;
   final VoidCallback onBack;
-  final VoidCallback onMore;
   final String companyName;
   final bool verified;
   final String? avatarUrl;
@@ -683,7 +703,6 @@ class _VendorHeader extends StatelessWidget {
     required this.coverIndex,
     required this.onCoverChanged,
     required this.onBack,
-    required this.onMore,
     required this.companyName,
     required this.verified,
     required this.avatarUrl,
@@ -743,59 +762,15 @@ class _VendorHeader extends StatelessWidget {
               Positioned(
                 top: safeTop + 12,
                 left: 16,
-                child: InkWell(
-                  onTap: onBack,
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.10),
-                      ),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.arrow_back, color: Colors.white, size: 16),
-                        SizedBox(width: 6),
-                        Text(
-                          'Back',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: safeTop + 12,
-                right: 16,
-                child: InkWell(
-                  onTap: onMore,
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.10),
-                      ),
-                    ),
-                    child: const Icon(
-                      LucideIcons.ellipsis,
-                      color: Colors.white,
-                      size: 18,
-                    ),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: IconButton(
+                    onPressed: onBack,
+                    icon: const Icon(Icons.arrow_back),
+                    color: Colors.white,
+                    splashRadius: 22,
+                    tooltip: 'Back',
                   ),
                 ),
               ),
@@ -1132,7 +1107,7 @@ class _TabHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(
       BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
+    return Material(
       color: background,
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -1464,6 +1439,400 @@ class _InformationTab extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+class _PlaceholderTab extends StatelessWidget {
+  final bool isDark;
+  final String title;
+  final String emptyMessage;
+
+  const _PlaceholderTab({
+    required this.isDark,
+    required this.title,
+    required this.emptyMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = isDark
+        ? Colors.white.withValues(alpha: 0.70)
+        : Colors.black.withValues(alpha: 0.55);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            color: isDark ? Colors.white : const Color(0xFF111827),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          emptyMessage,
+          style: TextStyle(color: muted, height: 1.35),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProductsTab extends StatelessWidget {
+  final bool isDark;
+
+  const _ProductsTab({required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = isDark ? Colors.white : const Color(0xFF111827);
+    final muted = isDark
+        ? Colors.white.withValues(alpha: 0.70)
+        : Colors.black.withValues(alpha: 0.55);
+
+    final products = const [
+      (
+        name: 'Wireless Headphones',
+        subtitle: 'Noise cancelling • Bluetooth 5.3',
+        price: '₹4,999',
+        image:
+            'https://images.unsplash.com/photo-1518441314036-5b2f6d64c77d?w=1200&q=80',
+      ),
+      (
+        name: 'Running Shoes',
+        subtitle: 'Lightweight • Breathable',
+        price: '₹2,799',
+        image:
+            'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1200&q=80',
+      ),
+      (
+        name: 'Laptop',
+        subtitle: '16GB RAM • 512GB SSD',
+        price: '₹59,999',
+        image:
+            'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=1200&q=80',
+      ),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+      children: [
+        Text(
+          'Products',
+          style:
+              TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: text),
+        ),
+        const SizedBox(height: 12),
+        ...products.map((p) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0B0B0B) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.10)
+                    : Colors.black.withValues(alpha: 0.08),
+              ),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius:
+                      const BorderRadius.horizontal(left: Radius.circular(16)),
+                  child: SizedBox(
+                    width: 96,
+                    height: 96,
+                    child: Image.network(
+                      p.image,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : Colors.black.withValues(alpha: 0.06),
+                        child: Icon(Icons.image_not_supported_outlined,
+                            color: muted),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p.name,
+                          style: TextStyle(
+                            color: text,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          p.subtitle,
+                          style: TextStyle(
+                              color: muted, fontWeight: FontWeight.w700),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          p.price,
+                          style: TextStyle(
+                            color: isDark
+                                ? const Color(0xFF34D399)
+                                : const Color(0xFF059669),
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+            ),
+          );
+        }),
+        Text(
+          'Demo products for now.',
+          style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+}
+
+class _GalleryTab extends StatelessWidget {
+  final bool loading;
+  final String? error;
+  final List<Ad> ads;
+  final bool isDark;
+
+  const _GalleryTab({
+    required this.isDark,
+    required this.loading,
+    required this.error,
+    required this.ads,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = isDark ? Colors.white : const Color(0xFF111827);
+    final muted = isDark
+        ? Colors.white.withValues(alpha: 0.70)
+        : Colors.black.withValues(alpha: 0.55);
+
+    final images = <String>[];
+    for (final ad in ads) {
+      images.addAll(ad.imageUrls.where((u) => u.trim().isNotEmpty));
+      final single = (ad.imageUrl ?? '').trim();
+      if (single.isNotEmpty) images.add(single);
+    }
+    final deduped = <String>[];
+    final seen = <String>{};
+    for (final u in images) {
+      final key = u.trim();
+      if (key.isEmpty || seen.contains(key)) continue;
+      seen.add(key);
+      deduped.add(key);
+    }
+
+    if (loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (error != null && error!.trim().isNotEmpty) {
+      return Center(child: Text(error!, style: TextStyle(color: muted)));
+    }
+    if (deduped.isEmpty) {
+      return _PlaceholderTab(
+        isDark: isDark,
+        title: 'Gallery',
+        emptyMessage: 'No gallery images yet.',
+      );
+    }
+
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Text(
+              'Gallery',
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w900, color: text),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final url = deduped[index];
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : Colors.black.withValues(alpha: 0.04),
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Center(
+                        child: Icon(Icons.broken_image_outlined, color: muted),
+                      ),
+                    ),
+                  ),
+                );
+              },
+              childCount: deduped.length,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EventsTab extends StatelessWidget {
+  final bool isDark;
+
+  const _EventsTab({required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = isDark ? Colors.white : const Color(0xFF111827);
+    final muted = isDark
+        ? Colors.white.withValues(alpha: 0.70)
+        : Colors.black.withValues(alpha: 0.55);
+
+    final items = const [
+      (
+        title: 'New Collection Launch',
+        subtitle: 'This Friday • 6:00 PM',
+      ),
+      (
+        title: 'Weekend Sale',
+        subtitle: 'Sat–Sun • Up to 30% off',
+      ),
+      (
+        title: 'Live Demo',
+        subtitle: 'Next week • Online',
+      ),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+      children: [
+        Text(
+          'Events',
+          style:
+              TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: text),
+        ),
+        const SizedBox(height: 12),
+        ...items.map(
+          (e) => Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0B0B0B) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.10)
+                    : Colors.black.withValues(alpha: 0.08),
+              ),
+            ),
+            child: ListTile(
+              leading: const Icon(Icons.event_available_outlined),
+              title: Text(e.title,
+                  style: TextStyle(color: text, fontWeight: FontWeight.w900)),
+              subtitle: Text(e.subtitle,
+                  style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ),
+        Text(
+          'Demo events for now.',
+          style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+}
+
+class _LocationsTab extends StatelessWidget {
+  final bool isDark;
+  final List<String> vendorLocations;
+
+  const _LocationsTab({
+    required this.isDark,
+    required this.vendorLocations,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = isDark ? Colors.white : const Color(0xFF111827);
+    final muted = isDark
+        ? Colors.white.withValues(alpha: 0.70)
+        : Colors.black.withValues(alpha: 0.55);
+
+    final demo = const [
+      'Mumbai, Maharashtra',
+      'Pune, Maharashtra',
+      'Bengaluru, Karnataka',
+    ];
+    final locations = vendorLocations.isNotEmpty ? vendorLocations : demo;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+      children: [
+        Text(
+          'Locations',
+          style:
+              TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: text),
+        ),
+        const SizedBox(height: 12),
+        ...locations.map(
+          (l) => Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0B0B0B) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.10)
+                    : Colors.black.withValues(alpha: 0.08),
+              ),
+            ),
+            child: ListTile(
+              leading: const Icon(Icons.place_outlined),
+              title: Text(l,
+                  style: TextStyle(color: text, fontWeight: FontWeight.w900)),
+              subtitle: Text('Open now',
+                  style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ),
+        Text(
+          vendorLocations.isNotEmpty
+              ? 'Vendor locations.'
+              : 'Demo locations for now.',
+          style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+        ),
       ],
     );
   }
