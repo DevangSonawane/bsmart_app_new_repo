@@ -78,6 +78,23 @@ class _VendorPublicProfileReactScreenState
     return const <String>[];
   }
 
+  int? _tryParseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim());
+    return null;
+  }
+
+  int _readCount(Map<String, dynamic> data, List<String> keys) {
+    for (final k in keys) {
+      if (data.containsKey(k)) {
+        final v = _tryParseInt(data[k]);
+        if (v != null) return v;
+      }
+    }
+    return 0;
+  }
+
   Future<void> _load() async {
     final uid = widget.userId.trim();
     if (uid.isEmpty) {
@@ -552,12 +569,34 @@ class _VendorPublicProfileReactScreenState
     final verified = _isVerified(data);
     final avatarUrl = _avatarUrl(data);
     final coverUrls = _stringList(data['cover_image_urls']);
-    final websiteUrl = _websiteUrl(data);
     final industry = _industry(data);
-    final coverage = _serviceCoverage(data);
-    final country = _country(data);
     final user = _map(data['user_id']);
-    final username = (user['username'] ?? '').toString().trim();
+    final stats = _map(data['stats']);
+    final vendor = _map(data['vendor']);
+    final vendorUser = _map(data['user'] ?? data['userId'] ?? data['user_id']);
+
+    final followersCount = _readCount(
+      stats.isNotEmpty ? stats : data,
+      const [
+        'followers_count',
+        'followersCount',
+        'followers',
+        'followerCount',
+      ],
+    );
+    final followingCount = _readCount(
+      stats.isNotEmpty ? stats : data,
+      const [
+        'following_count',
+        'followingCount',
+        'following',
+        'followingCountTotal',
+      ],
+    );
+
+    final categoryLabel = (industry ??
+            (vendor['category'] ?? vendorUser['category'])?.toString().trim())
+        ?.trim();
     final vendorDocId = (data['_id'] ?? data['id'])?.toString().trim() ?? '';
     final notificationTargetId =
         vendorDocId.isNotEmpty ? vendorDocId : (_vendorUserId ?? widget.userId);
@@ -588,11 +627,9 @@ class _VendorPublicProfileReactScreenState
                   name: companyName,
                   avatarUrl: avatarUrl,
                 ),
-                websiteUrl: websiteUrl,
-                industry: industry,
-                coverage: coverage,
-                country: country,
-                username: username,
+                followersCount: followersCount,
+                followingCount: followingCount,
+                categoryLabel: categoryLabel,
               ),
             ),
             SliverPersistentHeader(
@@ -685,11 +722,9 @@ class _VendorHeader extends StatelessWidget {
   final bool verified;
   final String? avatarUrl;
   final VoidCallback onAvatarTap;
-  final String? websiteUrl;
-  final String? industry;
-  final String? coverage;
-  final String? country;
-  final String username;
+  final int followersCount;
+  final int followingCount;
+  final String? categoryLabel;
 
   const _VendorHeader({
     required this.isDark,
@@ -707,11 +742,9 @@ class _VendorHeader extends StatelessWidget {
     required this.verified,
     required this.avatarUrl,
     required this.onAvatarTap,
-    required this.websiteUrl,
-    required this.industry,
-    required this.coverage,
-    required this.country,
-    required this.username,
+    required this.followersCount,
+    required this.followingCount,
+    required this.categoryLabel,
   });
 
   @override
@@ -801,185 +834,38 @@ class _VendorHeader extends StatelessWidget {
           ),
         ),
         Padding(
-          // Pull the profile card upward to overlap the cover banner (React parity).
-          // Keep layout + tab spacing tight (avoid large blank gap under the translated card).
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Transform.translate(
-            offset: const Offset(0, -26),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: 44),
-                  padding: const EdgeInsets.fromLTRB(16, 56, 16, 16),
-                  decoration: BoxDecoration(
-                    color: surface,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: border),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black
-                            .withValues(alpha: isDark ? 0.35 : 0.10),
-                        blurRadius: 24,
-                        offset: const Offset(0, 14),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        companyName,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: text,
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 22,
-                                          letterSpacing: -0.2,
-                                        ),
-                                      ),
-                                    ),
-                                    if (verified) ...[
-                                      const SizedBox(width: 8),
-                                      const _VerifiedBadge(),
-                                    ],
-                                  ],
-                                ),
-                                if (username.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    '@${username.trim()}',
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: muted,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          if (websiteUrl != null) ...[
-                            const SizedBox(width: 12),
-                            ConstrainedBox(
-                              // Row gives non-flex children unbounded width constraints.
-                              // Constrain the CTA so its internal `Row + Flexible` can layout.
-                              constraints: const BoxConstraints(maxWidth: 160),
-                              child: AdGradientCtaButton(
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => ExternalLinkScreen(
-                                        url: websiteUrl!,
-                                        title: 'Visit Website',
-                                      ),
-                                    ),
-                                  );
-                                },
-                                icon: Icons.public,
-                                label: 'Visit Website',
-                                boxShadow: const [],
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 12,
-                                ),
-                                borderRadius: const BorderRadius.all(
-                                  Radius.circular(18),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          if (industry != null)
-                            _MetaPill(
-                              label: industry!,
-                              icon: Icons.local_offer_outlined,
-                              color: muted,
-                              border: border,
-                              fill: surface,
-                            ),
-                          if (coverage != null)
-                            _MetaPill(
-                              label: coverage!,
-                              icon: Icons.place_outlined,
-                              color: muted,
-                              border: border,
-                              fill: surface,
-                            ),
-                          if (country != null)
-                            _MetaPill(
-                              label: '🌏 ${country!}',
-                              icon: null,
-                              color: muted,
-                              border: border,
-                              fill: surface,
-                            ),
-                          if (verified)
-                            _MetaPill(
-                              label: 'Verified Business',
-                              icon: Icons.verified_outlined,
-                              color: isDark
-                                  ? const Color(0xFF34D399)
-                                  : const Color(0xFF059669),
-                              border: isDark
-                                  ? const Color(0xFF064E3B)
-                                  : const Color(0xFFBDE9D4),
-                              fill: isDark
-                                  ? const Color(0xFF03251B)
-                                  : const Color(0xFFE7F9F1),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  child: InkWell(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  InkWell(
                     onTap: onAvatarTap,
-                    borderRadius: BorderRadius.circular(22),
+                    borderRadius: BorderRadius.circular(999),
                     child: Container(
-                      width: 92,
-                      height: 92,
+                      width: 74,
+                      height: 74,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(22),
+                        shape: BoxShape.circle,
                         color: surface,
                         border: Border.all(
-                          width: 4,
+                          width: 3,
                           color:
                               isDark ? const Color(0xFF0B0B0B) : Colors.white,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.25),
+                            color: Colors.black.withValues(alpha: 0.18),
                             blurRadius: 18,
                             offset: const Offset(0, 10),
                           ),
                         ],
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
+                      child: ClipOval(
                         child: avatarUrl == null
-                            ? const DecoratedBox(
-                                decoration: BoxDecoration(
+                            ? DecoratedBox(
+                                decoration: const BoxDecoration(
                                   gradient: LinearGradient(
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
@@ -992,22 +878,152 @@ class _VendorHeader extends StatelessWidget {
                                 child: Center(
                                   child: Icon(
                                     Icons.person,
-                                    size: 28,
-                                    color: Colors.white,
+                                    size: 30,
+                                    color: Colors.white.withValues(alpha: 0.95),
                                   ),
                                 ),
                               )
-                            : Image.network(avatarUrl!, fit: BoxFit.cover),
+                            : Image.network(
+                                avatarUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Center(
+                                  child: Icon(
+                                    Icons.person,
+                                    size: 30,
+                                    color: muted,
+                                  ),
+                                ),
+                              ),
                       ),
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            companyName,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: text,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 20,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        if (verified) ...[
+                          const SizedBox(width: 8),
+                          const _VerifiedBadge(),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _HeroStat(
+                      isDark: isDark,
+                      label: 'Followers',
+                      value: followersCount.toString(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HeroStat(
+                      isDark: isDark,
+                      label: 'Following',
+                      value: followingCount.toString(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HeroStat(
+                      isDark: isDark,
+                      label: 'Category',
+                      value: (categoryLabel ?? '').trim().isEmpty
+                          ? '—'
+                          : categoryLabel!.trim(),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Welcome to the $companyName channel',
+                style: TextStyle(
+                  color: text,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
                 ),
-                // Button is rendered next to username inside the card.
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _HeroStat extends StatelessWidget {
+  final bool isDark;
+  final String label;
+  final String value;
+
+  const _HeroStat({
+    required this.isDark,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = isDark ? Colors.white : const Color(0xFF111827);
+    final muted = isDark
+        ? Colors.white.withValues(alpha: 0.70)
+        : Colors.black.withValues(alpha: 0.55);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.08);
+    final fill = isDark ? const Color(0xFF0B0B0B) : Colors.white;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: text,
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: muted,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
