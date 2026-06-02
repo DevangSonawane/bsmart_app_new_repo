@@ -290,13 +290,7 @@ class SupabaseService {
 
   Future<Map<String, dynamic>?> getUserByEmail(String email) async {
     try {
-      final results = await _usersApi.search(email);
-      final match = results.firstWhere(
-        (u) => (u['email'] as String?)?.toLowerCase() == email.toLowerCase(),
-        orElse: () => {},
-      );
-      if (match.isEmpty) return null;
-      return match;
+      return await _usersApi.getUserByEmail(email);
     } catch (_) {
       return null;
     }

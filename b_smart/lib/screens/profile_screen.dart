@@ -5,7 +5,6 @@ import 'package:flutter_redux/flutter_redux.dart';
 import 'dart:async';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/reels_service.dart';
 import '../models/reel_model.dart';
@@ -1650,51 +1649,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _changeAvatarFromProfile() async {
     if (_avatarUploading) return;
-    final picker = ImagePicker();
-    final xfile = await picker.pickImage(source: ImageSource.gallery);
-    if (xfile == null) return;
-
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: xfile.path,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Adjust Photo',
-          toolbarColor: DesignTokens.instaPink,
-          toolbarWidgetColor: Colors.white,
-          activeControlsWidgetColor: DesignTokens.instaPink,
-          statusBarColor: DesignTokens.instaPink,
-          cropStyle: CropStyle.circle,
-          aspectRatioPresets: const [CropAspectRatioPreset.square],
-          initAspectRatio: CropAspectRatioPreset.square,
-          lockAspectRatio: true,
-          hideBottomControls: false,
-        ),
-        IOSUiSettings(
-          title: 'Adjust Photo',
-          cropStyle: CropStyle.circle,
-          aspectRatioPresets: const [CropAspectRatioPreset.square],
-          aspectRatioLockEnabled: true,
-          resetAspectRatioEnabled: false,
-        ),
-        WebUiSettings(
-          context: context,
-          presentStyle: WebPresentStyle.dialog,
-          size: const CropperSize(width: 320, height: 320),
-          viewwMode: WebViewMode.mode_1,
-          dragMode: WebDragMode.move,
-          zoomable: true,
-          zoomOnWheel: true,
-          cropBoxMovable: true,
-          cropBoxResizable: true,
-        ),
-      ],
-    );
-
-    if (cropped == null) return;
-
     setState(() => _avatarUploading = true);
+    final picker = ImagePicker();
     try {
-      final bytes = await cropped.readAsBytes();
+      final xfile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+      if (!mounted || xfile == null) return;
+
+      final bytes = await xfile.readAsBytes();
+      if (bytes.isEmpty) {
+        throw 'Selected image is empty.';
+      }
       final res = await _svc.uploadAvatarBytes(bytes: bytes);
       final newUrl = _extractAvatarUrl(res);
       if (newUrl == null || newUrl.isEmpty) {
@@ -2972,51 +2941,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _uploadAvatar() async {
-    final picker = ImagePicker();
-    final xfile = await picker.pickImage(source: ImageSource.gallery);
-    if (xfile == null) return;
-
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: xfile.path,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Adjust Photo',
-          toolbarColor: DesignTokens.instaPink,
-          toolbarWidgetColor: Colors.white,
-          activeControlsWidgetColor: DesignTokens.instaPink,
-          statusBarColor: DesignTokens.instaPink,
-          cropStyle: CropStyle.circle,
-          aspectRatioPresets: const [CropAspectRatioPreset.square],
-          initAspectRatio: CropAspectRatioPreset.square,
-          lockAspectRatio: true,
-          hideBottomControls: false,
-        ),
-        IOSUiSettings(
-          title: 'Adjust Photo',
-          cropStyle: CropStyle.circle,
-          aspectRatioPresets: const [CropAspectRatioPreset.square],
-          aspectRatioLockEnabled: true,
-          resetAspectRatioEnabled: false,
-        ),
-        WebUiSettings(
-          context: context,
-          presentStyle: WebPresentStyle.dialog,
-          size: const CropperSize(width: 320, height: 320),
-          viewwMode: WebViewMode.mode_1,
-          dragMode: WebDragMode.move,
-          zoomable: true,
-          zoomOnWheel: true,
-          cropBoxMovable: true,
-          cropBoxResizable: true,
-        ),
-      ],
-    );
-
-    if (cropped == null) return;
-
+    if (_uploading) return;
     setState(() => _uploading = true);
+    final picker = ImagePicker();
     try {
-      final bytes = await cropped.readAsBytes();
+      final xfile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+      if (!mounted || xfile == null) return;
+
+      final bytes = await xfile.readAsBytes();
+      if (bytes.isEmpty) {
+        throw 'Selected image is empty.';
+      }
       final res = await _svc.uploadAvatarBytes(bytes: bytes);
       final newUrl = _extractAvatarUrl(res);
       if (newUrl == null || newUrl.isEmpty) {

@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import 'search_api.dart';
 
 /// REST API wrapper for `/users` endpoints.
 ///
@@ -118,6 +119,36 @@ class UsersApi {
       final fullName = (u['full_name'] as String?)?.toLowerCase() ?? '';
       return username.contains(q) || fullName.contains(q);
     }).toList();
+  }
+
+  /// Find a user by email by scanning the public users list.
+  ///
+  /// The React forgot-password flow first checks whether the email belongs to
+  /// an account before requesting a reset email. We mirror that behavior here.
+  Future<Map<String, dynamic>?> getUserByEmail(String email) async {
+    final normalized = email.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+
+    final res = await SearchApi().search(query: normalized, limit: 20);
+    final results = res['results'];
+    if (results is! Map) return null;
+    final usersRaw = results['users'];
+    if (usersRaw is! List) return null;
+
+    for (final item in usersRaw) {
+      if (item is! Map) continue;
+      final user = Map<String, dynamic>.from(item);
+      final embedded = user['user'];
+      final candidate = embedded is Map
+          ? Map<String, dynamic>.from(embedded)
+          : user;
+      final userEmail = (candidate['email'] as String?)?.trim().toLowerCase();
+      if (userEmail == normalized) {
+        return candidate;
+      }
+    }
+
+    return null;
   }
 
   /// Get user's ad interest categories for profile.
