@@ -1,13 +1,13 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { ChevronDown, MapPin, UserPlus, Play, X, MoreHorizontal, Search } from 'lucide-react';
-import StoryRail from '../components/StoryRail';
+import { ChevronDown, MapPin, X, MoreHorizontal, Search } from 'lucide-react';
 import PostCard from '../components/PostCard';
 import PostDetailModal from '../components/PostDetailModal';
 import TweetDetailModal from '../components/TweetDetailModal';
 import PromoteCard from '../components/PromoteCard';
 import PromoteDetailModal from '../components/PromoteDetailModal';
+import StoryRail from '../components/StoryRail';
 import api from '../lib/api';
 import {
   checkFollowStatus,
@@ -184,45 +184,92 @@ const LocationSelector = ({ className = "" }) => (
 );
 
 // ── Location Bar ──────────────────────────────────────────────────────────────
-const LocationBar = ({ searchQuery, onSearchChange, searchLoading }) => (
-  <div className="hidden md:block sticky top-0 z-30 bg-white dark:bg-black mb-4 border-b border-gray-100 dark:border-gray-800 w-full xl:px-6">
-    <div className="max-w-[1200px] mx-auto">
-      <div className="flex items-center justify-between py-3">
-        <div className="flex items-center gap-12 flex-1">
-          <h1 className="text-3xl font-normal text-[#bc1888] italic" style={{ fontFamily: "'Dancing Script', cursive" }}>
-            b_smart
-          </h1>
-          
-          {/* Search bar */}
-          <div className="relative w-full max-w-[400px]">
-            <div className="flex items-center gap-3 bg-gray-100 dark:bg-gray-900 px-4 py-2 rounded-xl border border-transparent focus-within:border-gray-200 dark:focus-within:border-gray-700 transition-all">
-              <Search size={18} className="text-gray-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-                placeholder="Search"
-                className="bg-transparent border-none outline-none text-sm w-full dark:text-white"
-              />
-              {searchLoading && (
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-insta-pink" />
+const LocationBar = ({ searchQuery, onSearchChange, searchLoading, searchResults }) => {
+  const navigate = useNavigate();
+  return (
+    <div className="hidden md:block sticky top-0 z-30 bg-white dark:bg-black mb-4 border-b border-gray-100 dark:border-gray-800 w-full xl:px-6">
+      <div className="max-w-[1200px] ml-auto">
+        <div className="flex items-center justify-between py-3">
+          <div className="flex items-center gap-12 flex-1">
+            <h1 className="text-3xl font-normal text-[#bc1888] italic" style={{ fontFamily: "'Dancing Script', cursive" }}>
+              b_smart
+            </h1>
+            
+            {/* Search bar */}
+            <div className="relative w-full max-w-[400px]">
+              <div className="flex items-center gap-3 bg-gray-100 dark:bg-gray-900 px-4 py-2 rounded-xl border border-transparent focus-within:border-gray-200 dark:focus-within:border-gray-700 transition-all">
+                <Search size={18} className="text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  placeholder="Search"
+                  className="bg-transparent border-none outline-none text-sm w-full dark:text-white"
+                />
+                {searchLoading && (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-insta-pink" />
+                )}
+              </div>
+
+              {/* Search Results Dropdown - Now nested inside the relative container */}
+              {searchQuery.trim() && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-[#1c1c1c] rounded-2xl border border-gray-100 dark:border-white/10 shadow-2xl z-[100] max-h-[400px] overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                  {searchLoading && searchResults.users.length === 0 && searchResults.posts.length === 0 && (
+                    <div className="p-8 text-center text-gray-400">Searching...</div>
+                  )}
+                  
+                  {!searchLoading && searchResults.users.length === 0 && searchResults.posts.length === 0 && searchResults.reels.length === 0 && (
+                    <div className="p-8 text-center text-gray-400">No results found for "{searchQuery}"</div>
+                  )}
+
+                  {searchResults.users.length > 0 && (
+                    <div className="p-2 border-b border-gray-50 dark:border-white/5">
+                      <p className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">People</p>
+                      {searchResults.users.map(u => (
+                        <button
+                          key={u._id || u.id}
+                          onClick={() => {
+                            const profilePath = u.role === 'vendor' ? `/vendor/${u._id || u.id}/public` : `/profile/${u._id || u.id}`;
+                            navigate(profilePath);
+                            onSearchChange(''); // Clear search using the prop function
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-xl transition-colors text-left"
+                        >
+                          <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0">
+                            {u.avatar_url || u.profile_picture ? (
+                              <img src={u.avatar_url || u.profile_picture} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400">
+                                {(u.username || u.full_name || '?')[0].toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.full_name || u.username}</p>
+                            {u.username && <p className="text-xs text-gray-500 truncate">@{u.username}</p>}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
-        </div>
 
-        {/* Right: Location Selector aligned with Sidebar */}
-        <div className="hidden xl:block w-[350px]">
-          <LocationSelector />
+          {/* Right: Location Selector aligned with Sidebar */}
+          <div className="hidden xl:block w-[350px]">
+            <LocationSelector />
+          </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 // ── Skeleton Loader ───────────────────────────────────────────────────────────
 const FeedSkeleton = () => (
-  <div className="max-w-[470px] mx-auto">
+  <div className="max-w-[650px] ml-0">
     {[1, 2, 3].map(i => (
       <div key={i} className="bg-white dark:bg-black mb-4 border-b border-gray-200 dark:border-gray-800 pb-4 md:rounded-lg md:border animate-pulse">
         <div className="flex items-center gap-2.5 p-3">
@@ -244,7 +291,7 @@ const FeedSkeleton = () => (
 );
 
 // ── Mobile Suggested Users Card (horizontal scroll, Instagram-style) ──────────
-const MobileSuggestedUsersCard = ({ users, onDismiss }) => {
+const MobileSuggestedUsersCard = ({ users }) => {
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState({});
   if (!users || users.length === 0) return null;
@@ -420,7 +467,6 @@ const DesktopSuggestionsRail = ({ currentUser, suggestedUsers }) => {
             const user = entry.user || entry;
             const userId = user._id || user.id;
             const username = user.username || user.full_name || `user-${idx}`;
-            const fullName = user.full_name || user.name || username;
             const avatar = normalizeAssetUrl(user.avatar_url || user.avatar || user.profile_picture);
             const reason = user.mutual_friends_count
               ? `${user.mutual_friends_count} mutual connections`
@@ -478,41 +524,12 @@ const Footer = () => (
   </footer>
 );
 
-// ── Build feed with ads + mobile suggestions ──────────────────────────────────
-const AD_INTERVAL = 4;
-
-const buildFeed = (posts, ads, suggestedUsers, suggestedReels) => {
-  const safePosts = normalizeApiArray(posts);
-  const safeAds   = normalizeApiArray(ads);
-
-  // Pick a random position between index 2 and 5 for suggestion block
-  const suggPos = safePosts.length > 2 ? 2 + Math.floor(Math.random() * Math.min(3, safePosts.length - 2)) : -1;
-
-  const feed = [];
-  let adIdx = 0;
-  let suggInserted = false;
-  let reelsInserted = false;
-
-  safePosts.forEach((post, i) => {
-    feed.push(post);
-    // Insert ad
-    if (safeAds.length > 0 && (i + 1) % AD_INTERVAL === 0 && adIdx < safeAds.length) {
-      feed.push({ ...safeAds[adIdx % safeAds.length], item_type: 'ad' });
-      adIdx++;
-      if (!reelsInserted && suggestedReels.length > 0) {
-        feed.push({ item_type: 'mobile_reels_suggestion', reels: suggestedReels });
-        reelsInserted = true;
-      }
-    }
-    // Insert suggestion block (mobile only — hidden on lg via CSS)
-    if (!suggInserted && i === suggPos && suggestedUsers.length > 0) {
-      feed.push({ item_type: 'mobile_suggestion', users: suggestedUsers });
-      suggInserted = true;
-    }
-  });
-
-  if (!reelsInserted && suggestedReels.length > 0) {
-    feed.splice(Math.min(feed.length, 2), 0, { item_type: 'mobile_reels_suggestion', reels: suggestedReels });
+// Feed order is determined by the API. Frontend only injects the mobile
+// suggested-users card once at position 2 (a UI-only widget, not content).
+const injectSuggestionCard = (posts, suggestedUsers) => {
+  const feed = [...posts];
+  if (suggestedUsers.length > 0 && feed.length > 2) {
+    feed.splice(2, 0, { item_type: 'mobile_suggestion', users: suggestedUsers });
   }
   return feed;
 };
@@ -525,7 +542,6 @@ const Home = () => {
 
   const [posts,          setPosts]          = useState([]);
   const [suggestedUsers, setSuggestedUsers] = useState([]);
-  const [suggestedReels, setSuggestedReels] = useState([]);
   const [feed,           setFeed]           = useState([]);
   const [loading,        setLoading]        = useState(true);
   const [selectedItem,   setSelectedItem]   = useState(null);
@@ -577,40 +593,27 @@ const Home = () => {
       const res = await fetch(`${BASE_URL}/api/suggestions/users`, { headers: adAuthHeaders() });
       if (!res.ok) return [];
       return normalizeApiArray(await res.json());
-    } catch (e) { return []; }
-  }, []);
-
-  const fetchSuggestedReels = useCallback(async () => {
-    try {
-      const res = await fetch(`${BASE_URL}/api/suggestions/reels?limit=10`, { headers: adAuthHeaders() });
-      if (!res.ok) return [];
-      return normalizeApiArray(await res.json());
-    } catch (e) { return []; }
+    } catch { return []; }
   }, []);
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
-    const [fetchedPosts, fetchedUsers, fetchedReels] = await Promise.all([
+    const [fetchedPosts, fetchedUsers] = await Promise.all([
       fetchPosts(),
       fetchSuggestedUsers(),
-      activeTab === 'tweets' ? Promise.resolve([]) : fetchSuggestedReels(),
     ]);
     const viewerId = userObject?._id || userObject?.id;
-    const [visiblePosts, visibleReels] = await Promise.all([
-      filterPrivateItemsForViewer(fetchedPosts, viewerId),
-      filterPrivateItemsForViewer(fetchedReels, viewerId),
-    ]);
+    const visiblePosts = await filterPrivateItemsForViewer(fetchedPosts, viewerId);
     setPosts(visiblePosts);
     setSuggestedUsers(fetchedUsers);
-    setSuggestedReels(visibleReels);
-    setFeed(activeTab === 'tweets' ? visiblePosts : buildFeed(visiblePosts, [], fetchedUsers, visibleReels));
+    setFeed(injectSuggestionCard(visiblePosts, fetchedUsers));
     setLoading(false);
-  }, [activeTab, fetchPosts, fetchSuggestedUsers, fetchSuggestedReels, userObject]);
+  }, [fetchPosts, fetchSuggestedUsers, userObject]);
 
   useEffect(() => { loadFeed(); }, [loadFeed]);
   useEffect(() => {
-    setFeed(activeTab === 'tweets' ? posts : buildFeed(posts, [], suggestedUsers, suggestedReels));
-  }, [activeTab, posts, suggestedUsers, suggestedReels]);
+    setFeed(injectSuggestionCard(posts, suggestedUsers));
+  }, [activeTab, posts, suggestedUsers]);
 
   useEffect(() => {
     if (userObject?.role === 'vendor') navigate('/vendor/dashboard');
@@ -642,58 +645,17 @@ const Home = () => {
         searchQuery={searchQuery} 
         onSearchChange={handleSearchChange} 
         searchLoading={searchLoading} 
+        searchResults={searchResults}
       />
 
       {/* Search Results Dropdown */}
-      {searchQuery.trim() && (
-        <div className="hidden md:block absolute top-16 left-1/2 -translate-x-1/2 w-full max-w-[400px] bg-white dark:bg-[#1c1c1c] rounded-b-2xl border border-gray-100 dark:border-white/10 shadow-2xl z-[100] max-h-[400px] overflow-y-auto">
-          {searchLoading && searchResults.users.length === 0 && searchResults.posts.length === 0 && (
-            <div className="p-8 text-center text-gray-400">Searching...</div>
-          )}
-          
-          {!searchLoading && searchResults.users.length === 0 && searchResults.posts.length === 0 && searchResults.reels.length === 0 && (
-            <div className="p-8 text-center text-gray-400">No results found for "{searchQuery}"</div>
-          )}
-
-          {searchResults.users.length > 0 && (
-            <div className="p-2 border-b border-gray-50 dark:border-white/5">
-              <p className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">People</p>
-              {searchResults.users.map(u => (
-                <button
-                  key={u._id || u.id}
-                  onClick={() => {
-                    const profilePath = u.role === 'vendor' ? `/vendor/${u._id || u.id}/public` : `/profile/${u._id || u.id}`;
-                    navigate(profilePath);
-                    setSearchQuery('');
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-xl transition-colors text-left"
-                >
-                  <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0">
-                    {u.avatar_url || u.profile_picture ? (
-                      <img src={u.avatar_url || u.profile_picture} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400">
-                        {(u.username || u.full_name || '?')[0].toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.full_name || u.username}</p>
-                    {u.username && <p className="text-xs text-gray-500 truncate">@{u.username}</p>}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-          {/* Add more sections for posts/reels if desired, but user asked for "similar", so users is primary */}
-        </div>
-      )}
+      {/* Moved inside LocationBar search container to fix overlapping */}
 
       <div className="w-full xl:px-6">
-        <div className="max-w-[1200px] mx-auto xl:flex xl:items-start xl:justify-between xl:gap-8">
+        <div className="max-w-[1200px] ml-auto xl:flex xl:items-start xl:justify-between xl:gap-8">
           <div className="w-full max-w-[700px]">
             <StoryRail />
-            <div className="mx-auto mb-4 flex w-full max-w-[470px] items-center gap-2 px-2 xl:mx-0">
+            <div className="ml-0 mb-4 flex w-full max-w-[650px] items-center gap-2 px-2 pt-2">
               {[
                 { key: 'all', label: 'All' },
                 { key: 'following', label: 'Following' },
@@ -713,7 +675,7 @@ const Home = () => {
                 </button>
               ))}
             </div>
-            <div className="w-full max-w-[470px] mx-auto xl:mx-0 pb-4">
+            <div className="w-full max-w-[650px] ml-0 pb-4">
             {loading ? (
               <FeedSkeleton />
             ) : feed.length === 0 ? (

@@ -1,11 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
   Heart, MessageCircle, Send, MoreHorizontal,
   Bookmark, ChevronLeft,
   ShoppingBag, Loader2, UserPlus, UserCheck, X, Trash2,
-  ExternalLink, RefreshCw, Search
+  RefreshCw, Search
 } from 'lucide-react';
 import promoteReelService from '../services/promoteReelService';
 import Avatar from '../components/Avatar';
@@ -207,7 +207,7 @@ const FollowButton = ({ userId, mobile = false }) => {
   };
   return (
     <button onClick={toggle} disabled={loading}
-      className={`shrink-0 whitespace-nowrap flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-semibold transition-all
+      className={`shrink-0 whitespace-nowrap flex items-center justify-center gap-1 min-w-[108px] h-7 px-3 rounded-full text-[10px] font-semibold transition-all
         ${followed
           ? mobile ? 'border border-white/40 bg-white/20 text-white backdrop-blur-sm' : 'border border-green-500/60 bg-green-500/10 text-green-400'
           : mobile ? 'border border-white/40 bg-white/10 text-white backdrop-blur-sm hover:bg-white/20' : 'border border-blue-500/60 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20'
@@ -289,7 +289,6 @@ const Caption = ({ text }) => {
   );
 };
 
-// ─── Product Strip (bottom overlay) ──────────────────────────────────────────
 // ─── HLS Video Player (handles .m3u8 streams via hls.js) ─────────────────────
 const HlsVideo = ({ src, thumb, isCurrent, isPaused, onTimeUpdate, onEnded, onClick, onRef }) => {
   const videoRef = useRef(null);
@@ -315,10 +314,10 @@ const HlsVideo = ({ src, thumb, isCurrent, isPaused, onTimeUpdate, onEnded, onCl
         hls.on(window.Hls.Events.ERROR, (_, d) => { if (d?.fatal) console.error('[HLS] fatal', d); });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = src;
-        setReady(true);
+        setTimeout(() => setReady(true), 0);
       } else {
         video.src = src;
-        setReady(true);
+        setTimeout(() => setReady(true), 0);
       }
     };
 
@@ -332,7 +331,7 @@ const HlsVideo = ({ src, thumb, isCurrent, isPaused, onTimeUpdate, onEnded, onCl
       }
     } else {
       video.src = src;
-      setReady(true);
+      setTimeout(() => setReady(true), 0);
     }
 
     return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
@@ -345,7 +344,7 @@ const HlsVideo = ({ src, thumb, isCurrent, isPaused, onTimeUpdate, onEnded, onCl
       video.play().catch(() => {});
     } else {
       video.pause();
-      if (!isCurrent) { try { video.currentTime = 0; } catch {} }
+      if (!isCurrent) { try { video.currentTime = 0; } catch { /* ignore */ } }
     }
   }, [isCurrent, isPaused, ready]);
 
@@ -378,101 +377,113 @@ const HlsVideo = ({ src, thumb, isCurrent, isPaused, onTimeUpdate, onEnded, onCl
   );
 };
 
-// ─── Product Cards ────────────────────────────────────────────────────────────
-const ProductCards = ({ products }) => {
-  const [open, setOpen] = useState(true);
+// ─── Product Cards (clean white box, horizontal rectangle) ───────────────────
+const ProductCards = ({ products, open }) => {
+  if (!products || products.length === 0 || !open) return null;
+  return (
+    <div
+      className="flex flex-row gap-2 pb-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      onClick={e => e.stopPropagation()}
+    >
+      {products.map((p, i) => {
+        const originalPrice = p.product_price || 0;
+        const discount = p.discount_amount || 0;
+        const finalPrice = Math.max(0, originalPrice - discount);
+        const discountPct = originalPrice && discount
+          ? Math.round((discount / originalPrice) * 100) : 0;
+        const href = p.visit_link && !['', '#'].includes(p.visit_link) ? p.visit_link : null;
+        const rating = p.rating ?? p.product_rating ?? null;
+        return (
+          <div key={i}
+            className="flex-shrink-0 flex flex-row bg-white rounded-xl overflow-hidden shadow-md"
+            style={{ width: 190 }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Left: square thumbnail with rating badge */}
+            <div className="relative flex-shrink-0 bg-gray-100" style={{ width: 64, height: 80 }}>
+              {p.promote_img
+                ? <img src={normalizeAssetUrl(p.promote_img)} alt={p.product_name} className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center"><ShoppingBag size={16} className="text-gray-400" /></div>}
+              {rating != null && (
+                <div className="absolute bottom-1 left-1 flex items-center gap-0.5 bg-black/55 text-white text-[9px] font-medium px-1 py-0.5 rounded-full">
+                  <span>{rating}</span>
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="#FBBF24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                </div>
+              )}
+            </div>
 
-  if (!products || products.length === 0) return null;
+            {/* Right: info + CTA */}
+            <div className="flex flex-col justify-between gap-1 p-2 flex-1 min-w-0">
+              <p className="text-[11px] font-medium text-gray-900 truncate leading-tight">{p.product_name}</p>
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-[12px] font-semibold text-gray-900">₹{finalPrice.toLocaleString()}</span>
+                {discountPct > 0 && (
+                  <>
+                    <span className="text-[10px] font-normal text-gray-400 line-through">₹{originalPrice.toLocaleString()}</span>
+                    <span className="text-[10px] font-medium text-green-500">{discountPct}% off</span>
+                  </>
+                )}
+              </div>
+              {href ? (
+                <a href={href} target="_blank" rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  className="flex items-center justify-center bg-blue-500 hover:bg-blue-600 active:scale-95 text-white text-[10px] font-medium px-2 py-1 rounded-lg transition-all w-full">
+                  Visit Website
+                </a>
+              ) : (
+                <span className="text-[9px] text-gray-400 text-center">No link</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── Per-slide bottom overlay (owns productsOpen state) ───────────────────────
+const SlideBottomInfo = ({ p }) => {
+  const [productsOpen, setProductsOpen] = useState(true);
+  const user = p.user_id || {};
+  const username = user.username || user.full_name || 'User';
+  const products = Array.isArray(p.products) ? p.products : [];
 
   return (
-    <div className="mt-1">
-      {/* Toggle button — pill style, not arrow */}
-      <button
-        onClick={e => { e.stopPropagation(); setOpen(v => !v); }}
-        className="flex items-center gap-1.5 mb-2 bg-black/30 backdrop-blur-sm border border-white/20 rounded-full px-3 py-1 active:scale-95 transition-all"
-      >
-        <ShoppingBag size={11} className="text-white" />
-        <span className="text-white text-[11px] font-semibold">
-          {open ? 'Hide Products' : `${products.length} Product${products.length > 1 ? 's' : ''}`}
-        </span>
-      </button>
-
-      {/* Slide transition wrapper */}
-      <div
-        style={{
-          maxHeight: open ? '200px' : '0px',
-          opacity: open ? 1 : 0,
-          overflow: 'hidden',
-          transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div
-          className="flex  gap-2 pb-1"
-          style={{ overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
-        >
-          {products.map((p, i) => {
-            const finalPrice = Math.max(0, (p.product_price || 0) - (p.discount_amount || 0));
-            const discountPct = p.product_price && p.discount_amount
-              ? Math.round((p.discount_amount / p.product_price) * 100) : 0;
-
-            return (
-              <div
-                key={i}
-                className="flex-shrink-0 w-[200px] bg-white rounded-2xl overflow-hidden shadow-xl flex flex-row"
-              >
-                {/* LEFT — square image */}
-                <div className="w-[70px] h-full bg-gray-100 self-stretch overflow-hidden">
-                  {p.promote_img
-                    ? <img src={p.promote_img} alt={p.product_name} className="w-full h-full object-cover" />
-                    : <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                        <ShoppingBag size={20} className="text-gray-300" />
-                      </div>
-                  }
-                </div>
-
-                {/* RIGHT — info */}
-                <div className="flex-1 px-2.5 py-2 flex flex-col gap-0.5 min-w-0">
-                  {/* Name + description */}
-                  <p className="text-gray-900 text-[11px] font-bold line-clamp-2 leading-tight">{p.product_name}</p>
-                  {p.product_description && (
-                    <p className="text-gray-400 text-[9px] line-clamp-1 leading-tight">{p.product_description}</p>
-                  )}
-
-                  {/* Price row */}
-                  <div className="flex items-baseline gap-1 flex-wrap mt-0.5">
-                    <span className="text-gray-900 text-[12px] font-black">₹{finalPrice}</span>
-                    {discountPct > 0 && (
-                      <>
-                        <span className="text-gray-400 text-[9px] line-through">₹{p.product_price}</span>
-                        <span className="text-green-600 text-[9px] font-bold">{discountPct}% off</span>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Add to Cart button */}
-                  {p.visit_link ? (
-                    <a
-                      href={p.visit_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="mt-1.5 flex items-center justify-center gap-1 w-full py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-bold hover:bg-blue-600 active:scale-95 transition-all"
-                    >
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                      Visit Website
-                    </a>
-                  ) : (
-                    <div className="mt-1.5 w-full py-1.5 rounded-lg bg-gray-100 text-gray-400 text-[10px] text-center">
-                      No link
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+    <div className="px-4 pt-4 pb-6">
+      {/* User row — avatar + username + Follow inline */}
+      <div className="flex items-center gap-2 mb-2">
+        {user.avatar_url
+          ? <img src={user.avatar_url} className="w-8 h-8 rounded-full border border-white/30 object-cover shrink-0" alt="user" />
+          : <div className="w-8 h-8 rounded-full border border-white/30 bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold shrink-0">{username[0]}</div>}
+        <span className="font-bold text-white text-sm truncate flex-1">{username}</span>
+        <FollowButton userId={user._id || user.id} mobile />
       </div>
+
+      {/* Caption + Hide Products on the same line */}
+      <div className="flex items-start gap-2 mb-1">
+        <div className="flex-1 min-w-0"><Caption text={p.caption} /></div>
+        {products.length > 0 && (
+          <button
+            onClick={e => { e.stopPropagation(); setProductsOpen(v => !v); }}
+            className="flex items-center justify-center gap-1 min-w-[108px] h-7 px-3 bg-black/30 backdrop-blur-sm border border-white/20 rounded-full text-[10px] active:scale-95 transition-all shrink-0"
+          >
+            <ShoppingBag size={10} className="text-white" />
+            <span className="text-white text-[10px] font-semibold whitespace-nowrap">
+              {productsOpen ? 'Hide Products' : `${products.length} Product${products.length > 1 ? 's' : ''}`}
+            </span>
+          </button>
+        )}
+      </div>
+
+      {Array.isArray(p.tags) && p.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {p.tags.slice(0, 3).map((tag, ti) => (
+            <span key={ti} className="text-white/60 text-[10px]">#{tag}</span>
+          ))}
+        </div>
+      )}
+
+      <ProductCards products={products} open={productsOpen} />
     </div>
   );
 };
@@ -685,7 +696,7 @@ const Promote = () => {
   useEffect(() => {
     if (!promotes.length) return;
     Object.entries(videoRefs.current).forEach(([idx, vid]) => {
-      if (vid && Number(idx) !== currentIndex) { vid.pause(); try { vid.currentTime = 0; } catch {} }
+      if (vid && Number(idx) !== currentIndex) { vid.pause(); try { vid.currentTime = 0; } catch { /* ignore */ } }
     });
     const promote = promotes[currentIndex];
     if (promote?.media?.[0]?.type !== 'video') return;
@@ -737,13 +748,6 @@ const Promote = () => {
     setTouchStartY(null);
   };
 
-  const handleVideoTap = useCallback((index) => {
-    const vid = videoRefs.current[index];
-    if (!vid) return;
-    if (vid.paused) { vid.play().catch(() => {}); setIsPausedByUser(false); }
-    else { vid.pause(); setIsPausedByUser(true); }
-  }, []);
-
   // ── Like / Save ───────────────────────────────────────────────────────────────
   const toggleLike = useCallback(async (id) => {
     const isLiked = likedIds.has(id);
@@ -768,7 +772,7 @@ const Promote = () => {
       const data = await promoteReelService.getReplies(commentId);
       const fetched = Array.isArray(data) ? data : (data.replies || data.data || []);
       setReplies(prev => ({ ...prev, [commentId]: fetched }));
-    } catch {}
+    } catch { /* ignore */ }
   }, []);
 
   const fetchComments = useCallback(async (promoteId) => {
@@ -784,7 +788,7 @@ const Promote = () => {
           .then(r => { const f = Array.isArray(r) ? r : (r.replies || r.data || []); if (f.length > 0) setReplies(prev => ({ ...prev, [cid]: f })); })
           .catch(() => {});
       });
-    } catch {}
+    } catch { /* ignore */ }
     finally { setLoadingComments(false); }
   }, []);
 
@@ -821,7 +825,7 @@ const Promote = () => {
       else await promoteReelService.likeComment(commentId);
       fetchComments(activeCommentId);
       Object.keys(replies).forEach(k => loadReplies(k));
-    } catch {}
+    } catch { /* ignore */ }
   };
 
   const handleLikeReply = async (replyId, isLiked) => {
@@ -829,7 +833,7 @@ const Promote = () => {
       if (isLiked) await promoteReelService.unlikeComment(replyId);
       else await promoteReelService.likeComment(replyId);
       Object.keys(replies).forEach(k => loadReplies(k));
-    } catch {}
+    } catch { /* ignore */ }
   };
 
   const handleDeleteReply = async (replyId) => {
@@ -837,7 +841,7 @@ const Promote = () => {
     try {
       await promoteReelService.deleteComment(replyId);
       Object.keys(replies).forEach(k => loadReplies(k));
-    } catch {}
+    } catch { /* ignore */ }
   };
 
   const onToggleReplies = (commentId) => {
@@ -851,7 +855,7 @@ const Promote = () => {
       await promoteReelService.deleteComment(commentId);
       setComments(prev => prev.filter(c => (c._id || c.id) !== commentId));
       setPromotes(prev => prev.map(p => p._id === activeCommentId ? { ...p, comments_count: Math.max(0, (p.comments_count || 1) - 1) } : p));
-    } catch {}
+    } catch { /* ignore */ }
   };
 
   const promote = promotes[currentIndex];
@@ -1098,36 +1102,9 @@ const Promote = () => {
                       {/* Gradient */}
                       <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/80 pointer-events-none" />
 
-                      {/* Bottom info */}
-                      <div className="absolute bottom-0 left-0 w-full z-20 flex flex-col justify-end lg:pr-0 pr-[60px]" >
-                        <div className="px-4 pt-4 pb-2">
-                          {/* User row */}
-                          <div className="flex items-center gap-2 mb-2 flex-nowrap min-w-0">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              {user.avatar_url
-                                ? <img src={user.avatar_url} className="w-8 h-8 rounded-full border border-white/30 object-cover shrink-0" alt="user" />
-                                : <div className="w-8 h-8 rounded-full border border-white/30 bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold shrink-0">{username[0]}</div>
-                              }
-                              <span className="font-bold text-white text-sm truncate">{username}</span>
-                            </div>
-                            <FollowButton userId={user._id || user.id} mobile />
-                          </div>
-
-                          <Caption text={p.caption} />
-
-                          {/* Tags */}
-                          {Array.isArray(p.tags) && p.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mb-2">
-                              {p.tags.slice(0, 3).map((tag, ti) => (
-                                <span key={ti} className="text-white/60 text-[10px]">#{tag}</span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Products — always open */}
-                          <ProductCards products={p.products} />
-                        </div>
-
+                      {/* Bottom info — SlideBottomInfo owns productsOpen state */}
+                      <div className="absolute bottom-0 left-0 w-full z-20 flex flex-col justify-end pr-[60px] lg:pr-0">
+                        <SlideBottomInfo p={p} />
                       </div>
 
                       {/* Mobile right actions */}

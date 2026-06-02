@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux';
 import {
   Heart, MessageCircle, Send, MoreHorizontal,
   ChevronLeft, ChevronRight, Volume2, VolumeX,
-  ShoppingBag, Zap, ExternalLink, UserPlus, UserCheck, Loader2
+  ShoppingBag, Zap, UserPlus, UserCheck, Loader2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import promoteReelService from '../services/promoteReelService';
@@ -58,47 +58,51 @@ const timeAgo = (raw) => {
   return new Date(raw).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-// ── Product Card — matches the Promote.jsx / detail card style exactly ─────────
+// ── Product Card — horizontal card matching reference design ──────────────────
 const ProductCard = ({ product }) => {
-  const finalPrice = Math.max(0, (product.product_price || 0) - (product.discount_amount || 0));
-  const discountPct = product.product_price && product.discount_amount
-    ? Math.round((product.discount_amount / product.product_price) * 100) : 0;
+  const originalPrice = product.product_price || 0;
+  const discount = product.discount_amount || 0;
+  const finalPrice = Math.max(0, originalPrice - discount);
+  const discountPct = originalPrice && discount
+    ? Math.round((discount / originalPrice) * 100) : 0;
   const href = product.visit_link && !['', '#'].includes(product.visit_link) ? product.visit_link : null;
+  const rating = product.rating ?? product.product_rating ?? null;
 
   return (
-    <div className="flex-shrink-0 w-[160px] rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1a1a1a] shadow-sm">
-      {/* Image */}
-      <div className="w-full h-[90px] bg-gray-100 dark:bg-gray-800 overflow-hidden">
+    <div className="flex-shrink-0 flex flex-row bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden shadow-sm" style={{ width: 220 }}>
+      {/* Left: square thumbnail with rating badge */}
+      <div className="relative flex-shrink-0 bg-gray-100 dark:bg-gray-800" style={{ width: 82, minHeight: 90 }}>
         {product.promote_img
-          ? <img src={toAbsUrl(product.promote_img)} alt={product.product_name} className="w-full h-full object-cover" onError={e => { e.target.style.display = 'none'; }} />
-          : <div className="w-full h-full flex items-center justify-center"><ShoppingBag size={24} className="text-gray-300" /></div>}
-      </div>
-      {/* Info */}
-      <div className="p-2.5">
-        <p className="text-[11px] font-bold text-gray-900 dark:text-white line-clamp-1 leading-tight">{product.product_name}</p>
-        {product.product_description && (
-          <p className="text-[9px] text-gray-400 line-clamp-1 mt-0.5">{product.product_description}</p>
+          ? <img src={toAbsUrl(product.promote_img)} alt={product.product_name} className="w-full h-full object-cover" style={{ minHeight: 90 }} onError={e => { e.target.style.display = 'none'; }} />
+          : <div className="w-full h-full flex items-center justify-center" style={{ minHeight: 90 }}><ShoppingBag size={20} className="text-gray-400" /></div>}
+        {rating != null && (
+          <div className="absolute bottom-1.5 left-1.5 flex items-center gap-0.5 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+            <span>{rating}</span>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="#FBBF24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
         )}
-        {/* Price row */}
-        <div className="flex items-baseline gap-1 flex-wrap mt-1">
-          <span className="text-[13px] font-black text-orange-600 dark:text-orange-400">&#8377;{finalPrice.toLocaleString()}</span>
+      </div>
+
+      {/* Right: info + CTA */}
+      <div className="flex flex-col justify-between gap-1.5 p-2.5 flex-1 min-w-0">
+        <p className="text-[12px] font-bold text-gray-900 dark:text-white truncate leading-tight">{product.product_name}</p>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[13px] font-black text-gray-900 dark:text-white">&#8377;{finalPrice.toLocaleString()}</span>
           {discountPct > 0 && (
             <>
-              <span className="text-[9px] text-gray-400 line-through">&#8377;{product.product_price}</span>
-              <span className="text-[9px] font-bold text-green-500">{discountPct}% off</span>
+              <span className="text-[11px] text-gray-400 line-through">&#8377;{originalPrice.toLocaleString()}</span>
+              <span className="text-[11px] font-semibold text-green-500">{discountPct}% off</span>
             </>
           )}
         </div>
-        {/* Visit Website button */}
         {href ? (
           <a href={href} target="_blank" rel="noopener noreferrer"
             onClick={e => e.stopPropagation()}
-            className="mt-2 flex items-center justify-center w-full py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-bold hover:bg-blue-600 active:scale-95 transition-all gap-1">
-            <ExternalLink size={9} />
+            className="flex items-center justify-center bg-blue-500 hover:bg-blue-600 active:scale-95 text-white text-[11px] font-bold px-2 py-1.5 rounded-lg transition-all w-full">
             Visit Website
           </a>
         ) : (
-          <div className="mt-2 w-full py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-400 text-[10px] text-center">No link</div>
+          <span className="text-[10px] text-gray-400 text-center">No link</span>
         )}
       </div>
     </div>
@@ -329,14 +333,11 @@ const PromoteCard = ({ item, onOpenDetail }) => {
 
   const [isLiked, setIsLiked] = useState(item?.is_liked_by_me || false);
   const [likeCount, setLikeCount] = useState(item?.likes_count ?? (Array.isArray(item?.likes) ? item.likes.length : 0));
+  const [likeLoading, setLikeLoading] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [productsOpen, setProductsOpen] = useState(true);
 
-  const handleToggleProducts = useCallback(() => {
-    setProductsOpen(prev => !prev);
-  }, []);
-
-  const id = item?._id || item?.promote_reel_id;
+  const id = item?._id || item?.id || item?.promote_reel_id;
   const author = item?.user_id || {};
   const username = author?.username || 'User';
   const avatar = author?.avatar_url || '';
@@ -348,27 +349,28 @@ const PromoteCard = ({ item, onOpenDetail }) => {
   const products = Array.isArray(item?.products) ? item.products : [];
   const createdAt = item?.createdAt || item?.created_at;
 
-  useEffect(() => {
-    setIsLiked(item?.is_liked_by_me || false);
-    setLikeCount(item?.likes_count ?? (Array.isArray(item?.likes) ? item.likes.length : 0));
-  }, [item]);
 
   const handleLike = async (e) => {
     e.stopPropagation();
-    if (!currentUserId || !id) return;
+    if (!currentUserId || !id || likeLoading) return;
     const wasLiked = isLiked;
     setIsLiked(!wasLiked);
-    setLikeCount(c => !wasLiked ? c + 1 : Math.max(0, c - 1));
+    setLikeCount(c => wasLiked ? Math.max(0, c - 1) : c + 1);
+    setLikeLoading(true);
     try {
-      wasLiked ? await promoteReelService.unlikePromoteReel(id) : await promoteReelService.likePromoteReel(id);
-    } catch {
+      if (wasLiked) await promoteReelService.unlikePromoteReel(id);
+      else await promoteReelService.likePromoteReel(id);
+    } catch (err) {
+      console.error('[PromoteCard] like/unlike failed — id:', id, 'status:', err?.response?.status, err?.message);
       setIsLiked(wasLiked);
       setLikeCount(c => wasLiked ? c + 1 : Math.max(0, c - 1));
+    } finally {
+      setLikeLoading(false);
     }
   };
 
   return (
-    <div className="relative bg-white dark:bg-black mb-4 border-b border-gray-200 dark:border-gray-800 pb-4 md:rounded-lg md:border max-w-[470px] mx-auto">
+    <div className="relative bg-white dark:bg-black mb-4 border-b border-gray-200 dark:border-gray-800 pb-4 md:rounded-lg md:border max-w-[650px] mx-auto">
 
       {/* ── Header — same as PostCard ── */}
       <div className="relative z-10 flex items-center justify-between bg-white dark:bg-black p-3">
@@ -406,52 +408,43 @@ const PromoteCard = ({ item, onOpenDetail }) => {
       {/* ── Media ── */}
       <CardMedia item={item} />
 
+      {/* ── Products (first) ── */}
+      {products.length > 0 && (
+        <div className="px-3 pt-3">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setProductsOpen(v => !v); }}
+            className="flex items-center gap-2 w-full py-1.5 mb-2"
+          >
+            <ShoppingBag size={13} className="text-orange-500 shrink-0" />
+            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+              Products <span className="text-gray-400 font-normal">({products.length})</span>
+            </span>
+            <svg
+              className="ml-auto text-gray-400 transition-transform duration-300"
+              style={{ transform: productsOpen ? 'rotate(0deg)' : 'rotate(180deg)' }}
+              width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+          </button>
+
+          {productsOpen && (
+            <div className="flex flex-row gap-2 pb-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {products.map((p, i) => <ProductCard key={p._id || i} product={p} />)}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Action Bar ── */}
       <div className="px-3 pt-2">
 
-        {/* Products toggle + panel */}
-        {products.length > 0 && (
-          <div className="mb-3 border-b border-gray-100 dark:border-gray-800">
-            {/* Toggle row */}
-            <button
-              type="button"
-              onClick={handleToggleProducts}
-              className="flex items-center gap-2 w-full py-2"
-            >
-              <ShoppingBag size={13} className="text-orange-500 shrink-0" />
-              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Products</span>
-              <span className="text-[10px] text-gray-400">({products.length})</span>
-              <svg
-                className="ml-auto text-gray-400"
-                style={{ transform: productsOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s ease' }}
-                width="14" height="14" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
-
-            {/* Products panel — always rendered, display toggled via CSS */}
-            <div
-              style={{
-                display: productsOpen ? 'flex' : 'none',
-                gap: '12px',
-                paddingBottom: '12px',
-                overflowX: 'auto',
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
-                WebkitOverflowScrolling: 'touch',
-              }}
-            >
-              {products.map((p, i) => <ProductCard key={p._id || i} product={p} />)}
-            </div>
-          </div>
-        )}
-
         {/* Like | Comment | Send  ···  Follow */}
-        <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-4">
-            <button onClick={handleLike} className="active:scale-90 transition-transform group" aria-label="Like">
+            <button onClick={handleLike} disabled={likeLoading} className="active:scale-90 transition-transform group disabled:cursor-not-allowed" aria-label="Like">
               <Heart size={24} className={`transition-all duration-200 group-active:scale-125 ${isLiked ? 'fill-red-500 text-red-500' : 'text-black dark:text-white'}`} />
             </button>
             <button onClick={() => onOpenDetail && onOpenDetail(item)} className="hover:opacity-60 transition-opacity" aria-label="Comment">

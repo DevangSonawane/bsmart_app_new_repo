@@ -84,9 +84,8 @@ const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
 const PeopleTagsOverlay = ({ tags, visible }) => {
   const [showTags, setShowTags] = useState(false);
 
-  useEffect(() => {
-    if (!visible) setShowTags(false);
-  }, [visible]);
+  // Reset showTags whenever the parent hides the overlay
+  const showTagsPanel = visible && showTags;
 
   if (!tags?.length) return null;
   return (
@@ -99,7 +98,7 @@ const PeopleTagsOverlay = ({ tags, visible }) => {
           <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
         </svg>
       </button>
-      {showTags ? (
+      {showTagsPanel ? (
         <>
           <div className="absolute inset-0 z-20 bg-black/35" onClick={(e) => { e.stopPropagation(); setShowTags(false); }} />
           <div
@@ -958,7 +957,7 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
   }
 
   return (
-    <div className="relative overflow-hidden bg-white dark:bg-black mb-4 border-b border-gray-200 dark:border-gray-800 pb-4 md:rounded-lg md:border max-w-[470px] mx-auto">
+    <div className="relative overflow-hidden bg-white dark:bg-black mb-4 border-b border-gray-200 dark:border-gray-800 pb-4 md:rounded-lg md:border max-w-[650px] mx-auto">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="relative z-10 flex items-center justify-between bg-white dark:bg-black p-3">

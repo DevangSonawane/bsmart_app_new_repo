@@ -7,7 +7,6 @@ import Sidebar from './Sidebar';
 import CreatePostModal from './CreatePostModal';
 import api from '../lib/api';
 import { fetchMe, setUser } from '../store/authSlice';
-import { fetchWallet } from '../store/walletSlice';
 
 const BASE_URL = 'https://api.bebsmart.in';
 
@@ -28,18 +27,39 @@ const Layout = () => {
   const location = useLocation();
   const dispatch = useDispatch();
   const { userObject } = useSelector((state) => state.auth);
-  const walletBalance = useSelector((state) => state.wallet.balance);
   const isMessagesPage = location.pathname.startsWith('/messages');
   const isExcludedPage = ['/profile', '/settings', '/promote'].includes(location.pathname) || isMessagesPage;
   const isFullScreenPage = ['/reels', '/promote', '/ads'].includes(location.pathname) || isMessagesPage;
   const showTopBar = !isExcludedPage && !isFullScreenPage;
 
-  // Fetch wallet on mount and poll every 30s to keep balance live
+  const [walletCoins, setWalletCoins] = useState(null);
+
+  // Direct /wallet/me call — also syncs Redux so TopBar stays live
+  const loadWallet = useCallback(async () => {
+    try {
+      const res = await api.get('/wallet/me');
+      const data = res?.data;
+      const bal =
+        data?.wallet?.balance ??
+        data?.balance ??
+        data?.data?.wallet?.balance ??
+        data?.data?.balance ??
+        null;
+      if (bal !== null && bal !== undefined) {
+        setWalletCoins(Math.floor(Number(bal)));
+      }
+    } catch {
+      // silent — keep last known value
+    }
+  }, []);
+
   useEffect(() => {
-    dispatch(fetchWallet());
-    const interval = setInterval(() => dispatch(fetchWallet()), 30000);
+    const userId = userObject?._id || userObject?.id;
+    if (!userId) return;
+    loadWallet();
+    const interval = setInterval(loadWallet, 30000);
     return () => clearInterval(interval);
-  }, [dispatch]);
+  }, [loadWallet, userObject?._id, userObject?.id]);
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createType, setCreateType] = useState('post');
@@ -219,7 +239,7 @@ const Layout = () => {
     <div className={`flex min-h-screen bg-gray-50 dark:bg-black md:pb-0 ${isFullScreenPage ? 'pb-0' : 'pb-16'}`}>
       <Sidebar onOpenCreateModal={handleOpenCreateModal} />
 
-      <div className="flex-1 min-h-screen transition-all duration-300">
+      <div className="flex-1 min-h-screen transition-all duration-300 md:ml-20">
         {showTopBar && <TopBar />}
 
         <div className={`
@@ -389,8 +409,14 @@ const Layout = () => {
           </div>
           <div className="flex flex-col">
             <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Balance</span>
-            <span className="text-sm font-bold text-gray-900 dark:text-white">
-              Coins {walletBalance}
+            <span className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="inline-block flex-shrink-0" style={{ verticalAlign: '-0.1em' }}>
+                <circle cx="12" cy="12" r="10" fill="#F59E0B" />
+                <circle cx="12" cy="12" r="8" fill="#FBBF24" />
+                <circle cx="12" cy="12" r="6.5" fill="none" stroke="#D97706" strokeWidth="0.8" />
+                <text x="12" y="16" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#92400E" fontFamily="serif">&#8377;</text>
+              </svg>
+              {walletCoins != null ? Number(walletCoins).toLocaleString('en-IN') : '—'}
             </span>
           </div>
         </Link>

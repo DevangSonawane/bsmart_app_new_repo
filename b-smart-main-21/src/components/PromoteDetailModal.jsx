@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X, Heart, MessageCircle, Send, MoreHorizontal,
   Smile, ChevronLeft, ChevronRight, Trash2,
   Volume2, VolumeX, UserPlus, UserCheck, ShoppingBag,
-  Loader2, ExternalLink, Zap
+  Loader2, Zap
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
@@ -72,38 +72,46 @@ const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
 };
 
 const ProductCard = ({ product }) => {
-  const discountPct = product.discount_amount && product.product_price
-    ? Math.round((product.discount_amount / product.product_price) * 100) : 0;
-  const finalPrice = (product.product_price || 0) - (product.discount_amount || 0);
+  const originalPrice = product.product_price || 0;
+  const discount = product.discount_amount || 0;
+  const finalPrice = Math.max(0, originalPrice - discount);
+  const discountPct = originalPrice && discount
+    ? Math.round((discount / originalPrice) * 100) : 0;
   const href = product.visit_link && !['', '#'].includes(product.visit_link) ? product.visit_link : null;
+  const rating = product.rating ?? product.product_rating ?? null;
+
   return (
-    <div className="flex-shrink-0 w-40 bg-white dark:bg-white/5 rounded-2xl overflow-hidden border border-gray-100 dark:border-white/10 shadow-sm">
-      <div className="w-full h-24 bg-gradient-to-br from-orange-50 to-pink-50 dark:from-orange-900/20 dark:to-pink-900/20 flex items-center justify-center">
+    <div className="flex-shrink-0 flex flex-row bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden shadow-sm" style={{ width: 220 }}>
+      <div className="relative flex-shrink-0 bg-gray-100 dark:bg-gray-800" style={{ width: 82, minHeight: 90 }}>
         {product.promote_img
-          ? <img src={toAbsUrl(product.promote_img)} alt={product.product_name} className="w-full h-full object-cover" onError={e => { e.target.style.display = 'none'; }} />
-          : <ShoppingBag size={26} className="text-orange-300" />}
+          ? <img src={toAbsUrl(product.promote_img)} alt={product.product_name} className="w-full h-full object-cover" style={{ minHeight: 90 }} onError={e => { e.target.style.display = 'none'; }} />
+          : <div className="w-full h-full flex items-center justify-center" style={{ minHeight: 90 }}><ShoppingBag size={20} className="text-gray-400" /></div>}
+        {rating != null && (
+          <div className="absolute bottom-1.5 left-1.5 flex items-center gap-0.5 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+            <span>{rating}</span>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="#FBBF24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+        )}
       </div>
-      <div className="p-2.5">
-        <p className="text-xs font-bold text-gray-900 dark:text-white line-clamp-2 leading-tight mb-0.5">{product.product_name}</p>
-        {product.product_description && <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1 mb-1">{product.product_description}</p>}
-        <div className="flex items-baseline gap-1 flex-wrap mt-1 mb-2">
-          <span className="text-sm font-black text-orange-600 dark:text-orange-400">&#8377;{finalPrice.toLocaleString()}</span>
+      <div className="flex flex-col justify-between gap-1.5 p-2.5 flex-1 min-w-0">
+        <p className="text-[12px] font-bold text-gray-900 dark:text-white truncate leading-tight">{product.product_name}</p>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[13px] font-black text-gray-900 dark:text-white">&#8377;{finalPrice.toLocaleString()}</span>
           {discountPct > 0 && (
             <>
-              <span className="text-[10px] text-gray-400 line-through">&#8377;{product.product_price}</span>
-              <span className="text-[10px] font-bold text-green-500">{discountPct}% off</span>
+              <span className="text-[11px] text-gray-400 line-through">&#8377;{originalPrice.toLocaleString()}</span>
+              <span className="text-[11px] font-semibold text-green-500">{discountPct}% off</span>
             </>
           )}
         </div>
         {href ? (
           <a href={href} target="_blank" rel="noopener noreferrer"
             onClick={e => e.stopPropagation()}
-            className="flex items-center justify-center w-full py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-bold hover:bg-blue-600 active:scale-95 transition-all gap-1">
-            <ExternalLink size={9} />
+            className="flex items-center justify-center bg-blue-500 hover:bg-blue-600 active:scale-95 text-white text-[11px] font-bold px-2 py-1.5 rounded-lg transition-all w-full">
             Visit Website
           </a>
         ) : (
-          <div className="w-full py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-400 text-[10px] text-center">No link</div>
+          <span className="text-[10px] text-gray-400 text-center">No link</span>
         )}
       </div>
     </div>
@@ -239,15 +247,14 @@ const CommentRow = ({ comment, replies, expanded, onToggleReplies, onReply, onLi
   );
 };
 
-const ModalMediaPanel = ({ item, isOpen }) => {
+const ModalMediaPanel = ({ item }) => {
   const mediaItems = Array.isArray(item?.media) && item.media.length > 0 ? item.media : [];
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
-  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef(null);
-  const containerRef = useRef(null);
-  const isVisibleRef = useRef(false);
+
+  useEffect(() => { if (videoRef.current) videoRef.current.muted = isMuted; }, [isMuted]);
 
   const currentMedia = mediaItems[currentIndex] || {};
   const mediaSrc = (() => {
@@ -262,24 +269,9 @@ const ModalMediaPanel = ({ item, isOpen }) => {
     if (!first) return null;
     return toAbsUrl(first.fileUrl || first.fileName);
   })();
-  const showThumb = thumbUrl && !videoReady;
 
-  // Auto-play via IntersectionObserver when modal is open
-  useEffect(() => {
-    if (!isVideo || !isOpen) return;
-    const vid = videoRef.current;
-    if (!vid) return;
-    // Small delay to let modal render and browser register interaction if any
-    const t = setTimeout(() => { 
-      if (vid.paused) vid.play().catch((err) => {
-        console.warn("Autoplay failed in modal:", err);
-      }); 
-    }, 300);
-    return () => clearTimeout(t);
-  }, [isVideo, isOpen, mediaSrc]);
-
-  const nextMedia = (e) => { e.stopPropagation(); setCurrentIndex(i => (i + 1) % mediaItems.length); setIsPlaying(false); setVideoReady(false); };
-  const prevMedia = (e) => { e.stopPropagation(); setCurrentIndex(i => (i - 1 + mediaItems.length) % mediaItems.length); setIsPlaying(false); setVideoReady(false); };
+  const nextMedia = (e) => { e.stopPropagation(); setCurrentIndex(i => (i + 1) % mediaItems.length); setIsPlaying(false); };
+  const prevMedia = (e) => { e.stopPropagation(); setCurrentIndex(i => (i - 1 + mediaItems.length) % mediaItems.length); setIsPlaying(false); };
 
   if (!mediaItems.length) return (
     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-orange-900/40 to-pink-900/40">
@@ -298,48 +290,33 @@ const ModalMediaPanel = ({ item, isOpen }) => {
         </span>
       </div>
       {isVideo ? (
-        <div ref={containerRef} className="relative w-full h-full flex items-center justify-center">
-          {/* Thumbnail until video ready */}
-          {thumbUrl && (
-            <img src={thumbUrl} alt="thumbnail"
-              className="absolute inset-0 w-full h-full object-contain"
-              style={{ display: showThumb ? 'block' : 'none' }} />
+        <div className="relative w-full h-full flex items-center justify-center">
+          {/* Thumbnail shown until video starts playing — same as PostDetailModal */}
+          {thumbUrl && !isPlaying && (
+            <img src={thumbUrl} alt="thumbnail" className="absolute inset-0 w-full h-full object-contain" />
           )}
           <video
             ref={videoRef}
-            key={`${mediaSrc}-${currentIndex}`}
             src={mediaSrc}
-            className={`w-full h-full object-contain ${videoReady ? 'block' : 'hidden'}`}
+            className="w-full h-full object-contain"
             autoPlay
             muted={isMuted}
             playsInline
             loop
-            poster={thumbUrl || undefined}
-            onLoadedMetadata={(e) => {
-              setVideoReady(true);
-              e.currentTarget.play().catch(() => {});
-            }}
-            onCanPlay={() => setVideoReady(true)}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onEnded={() => setIsPlaying(false)}
-            onClick={(e) => { e.stopPropagation(); videoRef.current?.paused ? videoRef.current.play().catch(()=>{}) : videoRef.current?.pause(); }}
+            onLoadedMetadata={(e) => { e.currentTarget.play().catch(() => {}); }}
+            onClick={(e) => { e.stopPropagation(); videoRef.current?.paused ? videoRef.current.play().catch(() => {}) : videoRef.current?.pause(); }}
           />
-          {/* Play overlay */}
-          {!isPlaying && videoReady && (
+          {!isPlaying && (
             <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
               <div className="w-16 h-16 rounded-full bg-black/40 flex items-center justify-center">
                 <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
               </div>
             </div>
           )}
-          {/* Loading spinner */}
-          {!videoReady && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center">
-              <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin" />
-            </div>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); if (videoRef.current) videoRef.current.muted = !isMuted; setIsMuted(m => !m); }}
+          <button onClick={(e) => { e.stopPropagation(); setIsMuted(m => !m); }}
             className="absolute bottom-3 right-3 z-20 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition-all opacity-0 group-hover:opacity-100">
             {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
           </button>
@@ -365,7 +342,7 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
   const currentUserId = userObject?._id || userObject?.id || null;
 
   const [item, setItem] = useState(initialItem);
-  const id = item?._id || item?.promote_reel_id;
+  const id = item?._id || item?.id || item?.promote_reel_id;
   const author = item?.user_id || {};
   const username = author?.username || 'User';
   const fullName = author?.full_name || '';
@@ -378,6 +355,7 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
 
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
+  const [likeLoading, setLikeLoading] = useState(false);
   const [comments, setComments] = useState([]);
   const [replies, setReplies] = useState({});
   const [expandedComments, setExpandedComments] = useState({});
@@ -395,7 +373,7 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
       const data = await promoteReelService.getReplies(commentId);
       const fetched = Array.isArray(data) ? data : (data.replies || data.data || []);
       setReplies(prev => ({ ...prev, [commentId]: fetched }));
-    } catch {}
+    } catch { /* ignore */ }
   }, []);
 
   const fetchComments = useCallback(async (itemId) => {
@@ -410,9 +388,9 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
         promoteReelService.getReplies(cId).then(rData => {
           const fetched = Array.isArray(rData) ? rData : (rData.replies || rData.data || []);
           if (fetched?.length > 0) setReplies(prev => ({ ...prev, [cId]: fetched }));
-        }).catch(() => {});
+        }).catch(() => { /* ignore */ });
       });
-    } catch {}
+    } catch { /* ignore */ }
     finally { setLoadingComments(false); }
   }, []);
 
@@ -424,7 +402,10 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
       setLikeCount(initialItem.likes_count ?? (Array.isArray(initialItem.likes) ? initialItem.likes.length : 0));
       const rid = initialItem._id || initialItem.promote_reel_id;
       if (rid) {
-        promoteReelService.getPromoteReelById(rid).then(data => setItem(data)).catch(() => {});
+        // Normalize response — some API wrappers return { data: item }
+        promoteReelService.getPromoteReelById(rid)
+          .then(res => { const normalized = res?.data || res; if (normalized?._id) setItem(normalized); })
+          .catch(() => { /* ignore */ });
         fetchComments(rid);
       }
     }
@@ -449,18 +430,33 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
   };
 
   const handleLikeComment = async (commentId, isLikedArg) => {
-    try { isLikedArg ? await promoteReelService.unlikeComment(commentId) : await promoteReelService.likeComment(commentId); fetchComments(id); } catch {}
+    try {
+      if (isLikedArg) await promoteReelService.unlikeComment(commentId);
+      else await promoteReelService.likeComment(commentId);
+      fetchComments(id);
+    } catch { /* ignore */ }
   };
   const handleLikeReply = async (replyId, isLikedArg) => {
-    try { isLikedArg ? await promoteReelService.unlikeComment(replyId) : await promoteReelService.likeComment(replyId); Object.keys(replies).forEach(key => loadReplies(key)); } catch {}
+    try {
+      if (isLikedArg) await promoteReelService.unlikeComment(replyId);
+      else await promoteReelService.likeComment(replyId);
+      Object.keys(replies).forEach(key => loadReplies(key));
+    } catch { /* ignore */ }
   };
   const handleDeleteComment = async (commentId) => {
     if (!window.confirm('Delete this comment?')) return;
-    try { await promoteReelService.deleteComment(commentId); setComments(prev => prev.filter(c => (c._id || c.id) !== commentId)); setItem(prev => ({ ...prev, comments_count: Math.max(0, (prev?.comments_count || 1) - 1) })); } catch {}
+    try {
+      await promoteReelService.deleteComment(commentId);
+      setComments(prev => prev.filter(c => (c._id || c.id) !== commentId));
+      setItem(prev => ({ ...prev, comments_count: Math.max(0, (prev?.comments_count || 1) - 1) }));
+    } catch { /* ignore */ }
   };
   const handleDeleteReply = async (replyId) => {
     if (!window.confirm('Delete this reply?')) return;
-    try { await promoteReelService.deleteComment(replyId); Object.keys(replies).forEach(key => loadReplies(key)); } catch {}
+    try {
+      await promoteReelService.deleteComment(replyId);
+      Object.keys(replies).forEach(key => loadReplies(key));
+    } catch { /* ignore */ }
   };
   const onToggleReplies = (commentId) => {
     const isExpanded = expandedComments[commentId];
@@ -468,11 +464,21 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
     setExpandedComments(prev => ({ ...prev, [commentId]: !prev[commentId] }));
   };
   const handleLike = async () => {
-    if (!userObject || !id) return;
+    if (!userObject || !id || likeLoading) return;
     const wasLiked = isLiked;
-    setIsLiked(!wasLiked); setLikeCount(c => !wasLiked ? c + 1 : Math.max(0, c - 1));
-    try { wasLiked ? await promoteReelService.unlikePromoteReel(id) : await promoteReelService.likePromoteReel(id); }
-    catch { setIsLiked(wasLiked); setLikeCount(c => wasLiked ? c + 1 : Math.max(0, c - 1)); }
+    setIsLiked(!wasLiked);
+    setLikeCount(c => wasLiked ? Math.max(0, c - 1) : c + 1);
+    setLikeLoading(true);
+    try {
+      if (wasLiked) await promoteReelService.unlikePromoteReel(id);
+      else await promoteReelService.likePromoteReel(id);
+    } catch (err) {
+      console.error('[PromoteDetailModal] like/unlike failed — id:', id, 'status:', err?.response?.status, err?.message);
+      setIsLiked(wasLiked);
+      setLikeCount(c => wasLiked ? c + 1 : Math.max(0, c - 1));
+    } finally {
+      setLikeLoading(false);
+    }
   };
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -480,19 +486,33 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
     catch { alert('Failed to delete'); setIsDeleting(false); setShowDeleteModal(false); }
   };
 
+  // Escape key + outside-click to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !item) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 md:p-10">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 md:p-10"
+      onClick={onClose}
+    >
       <button onClick={onClose} className="absolute top-4 right-4 text-white hover:opacity-75 z-[60]">
         <X size={24} />
       </button>
 
-      <div className="bg-white dark:bg-black max-w-[90vw] md:max-w-[1200px] w-full max-h-[90vh] h-full md:h-[85vh] flex flex-col md:flex-row overflow-hidden rounded-md md:rounded-r-xl animate-in fade-in zoom-in duration-200">
+      <div
+        className="bg-white dark:bg-black max-w-[90vw] md:max-w-[1200px] w-full max-h-[90vh] h-full md:h-[85vh] flex flex-col md:flex-row overflow-hidden rounded-md md:rounded-r-xl animate-in fade-in zoom-in duration-200"
+        onClick={e => e.stopPropagation()}
+      >
 
         {/* Left: Media */}
         <div className="w-full md:w-[55%] h-[42vh] md:h-full">
-          <ModalMediaPanel item={item} isOpen={isOpen} />
+          <ModalMediaPanel item={item} />
         </div>
 
         {/* Right: Details */}
@@ -614,7 +634,7 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
             <div className="p-3 md:p-4 pb-2">
               <div className="flex justify-between mb-2">
                 <div className="flex gap-4">
-                  <button onClick={handleLike} className="hover:opacity-50 transition-opacity active:scale-90">
+                  <button onClick={handleLike} disabled={likeLoading} className="hover:opacity-50 transition-opacity active:scale-90 disabled:cursor-not-allowed">
                     <Heart size={24} className={isLiked ? 'fill-red-500 text-red-500' : 'text-gray-900 dark:text-white'} />
                   </button>
                   <button className="hover:opacity-50 transition-opacity">

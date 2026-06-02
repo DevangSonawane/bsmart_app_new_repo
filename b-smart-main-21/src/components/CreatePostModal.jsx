@@ -553,7 +553,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
   const [uploadStage, setUploadStage] = useState('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
-  const [validationError, setValidationError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   
   const [draggingTagId, setDraggingTagId] = useState(null);
 
@@ -814,6 +814,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
       return;
     }
     if (step === 'share') {
+      setFieldErrors({});
       setStep(postType === 'ad' ? 'adDetails' : postType === 'promote' ? 'promoteProducts' : 'edit');
     } else if (step === 'promoteProducts') {
       setStep('edit');
@@ -922,71 +923,42 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
     } else if (step === 'promoteProducts') {
       setStep('share');
     } else if (step === 'adDetails') {
-      if (!adTitle.trim()) {
-        setValidationError("Please enter an ad title.");
-        return;
-      }
-      if (!selectedCategory) {
-        setValidationError("Please select an ad category.");
-        return;
-      }
-      if (!adType) {
-        setValidationError("Please select an ad type.");
-        return;
-      }
-
-      // CTA Validation
+      const errs = {};
+      if (!adTitle.trim()) errs.adTitle = "Please enter an ad title.";
+      if (!selectedCategory) errs.selectedCategory = "Please select a category.";
+      if (!adType) errs.adType = "Please select an ad type.";
       if (['view_site', 'install_app', 'book_now', 'learn_more'].includes(ctaType)) {
-        if (!ctaUrl.trim()) {
-          setValidationError("Please enter a destination URL.");
-          return;
-        }
+        if (!ctaUrl.trim()) errs.ctaUrl = "Please enter a destination URL.";
       } else if (['contact_info', 'call_now'].includes(ctaType)) {
-        if (!ctaPhone.trim() && !ctaWhatsapp.trim() && !ctaEmail.trim()) {
-          setValidationError("Please provide at least one contact method (Phone, WhatsApp, or Email).");
-          return;
-        }
+        if (!ctaPhone.trim() && !ctaWhatsapp.trim() && !ctaEmail.trim()) errs.ctaContact = "Please provide at least one contact method (Phone, WhatsApp, or Email).";
       }
-
-      if (!policyAgreed) {
-        setValidationError("You must agree to the Ad Content Policy to continue.");
+      if (!policyAgreed) errs.policyAgreed = "You must agree to the Ad Content Policy to continue.";
+      if (Object.keys(errs).length > 0) {
+        setFieldErrors(errs);
         return;
       }
+      setFieldErrors({});
       setStep('share');
     } else if (step === 'share') {
       if (postType === 'ad') {
-        if (selectedCountries.length === 0) {
-          setValidationError("Please select at least one country for targeting.");
-          return;
-        }
-
+        const errs = {};
+        if (selectedCountries.length === 0) errs.countries = "Please select at least one country for targeting.";
         const total = parseFloat(totalBudgetCoins);
         const daily = parseFloat(dailyBudgetCoins);
-
-        if (isNaN(total) || total < 100) {
-          setValidationError("Total budget must be at least 100 coins.");
-          return;
-        }
-
-        if (!isNaN(daily) && daily > 0 && daily > total) {
-          setValidationError("Daily budget limit cannot exceed the total budget.");
-          return;
-        }
-
+        if (isNaN(total) || total < 100) errs.totalBudget = "Total budget must be at least 100 coins.";
+        if (!isNaN(daily) && daily > 0 && !isNaN(total) && daily > total) errs.dailyBudget = "Daily budget cannot exceed the total budget.";
         if (!budgetStartDate) {
-          setValidationError("Please select a start date.");
+          errs.startDate = "Please select a start date.";
+        } else {
+          const today = new Date(); today.setHours(0, 0, 0, 0);
+          const startDate = new Date(budgetStartDate); startDate.setHours(0, 0, 0, 0);
+          if (startDate < today) errs.startDate = "Start date cannot be in the past.";
+        }
+        if (Object.keys(errs).length > 0) {
+          setFieldErrors(errs);
           return;
         }
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const startDate = new Date(budgetStartDate);
-        startDate.setHours(0, 0, 0, 0);
-
-        if (startDate < today) {
-          setValidationError("Start date cannot be in the past.");
-          return;
-        }
+        setFieldErrors({});
       }
 
       if (isSubmitting) return;
@@ -2584,8 +2556,10 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                   <div className="p-4 space-y-3">
                     <div>
                       <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Title <span className="text-blue-500">*</span></label>
-                      <input type="text" placeholder="e.g. Summer Sale — Up to 50% Off" value={adTitle} onChange={(e) => setAdTitle(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                      <input type="text" placeholder="e.g. Summer Sale — Up to 50% Off" value={adTitle}
+                        onChange={(e) => { setAdTitle(e.target.value); if (fieldErrors.adTitle) setFieldErrors(p => ({ ...p, adTitle: undefined })); }}
+                        className={`w-full px-3.5 py-2.5 rounded-xl border bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400 ${fieldErrors.adTitle ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`} />
+                      {fieldErrors.adTitle && <p className="mt-1 text-xs text-red-500">{fieldErrors.adTitle}</p>}
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Ad Description</label>
@@ -2722,8 +2696,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       <div className="relative">
                         <select
                           value={selectedCategory}
-                          onChange={(e) => setSelectedCategory(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all appearance-none"
+                          onChange={(e) => { setSelectedCategory(e.target.value); if (fieldErrors.selectedCategory) setFieldErrors(p => ({ ...p, selectedCategory: undefined })); }}
+                          className={`w-full px-3.5 py-2.5 rounded-xl border bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all appearance-none ${fieldErrors.selectedCategory ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`}
                         >
                           <option value="">Select a Category</option>
                           {categories.map(cat => (
@@ -2732,6 +2706,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                         </select>
                         <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                       </div>
+                      {fieldErrors.selectedCategory && <p className="mt-1 text-xs text-red-500">{fieldErrors.selectedCategory}</p>}
                     </div>
 
                     {/* Ad Type: Promote or General */}
@@ -2742,10 +2717,12 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                           { value: 'promote', label: 'Promote', icon: '🚀', desc: 'Boost your brand reach' },
                           { value: 'general', label: 'General', icon: '📋', desc: 'Standard advertisement' },
                         ].map(t => (
-                          <button key={t.value} onClick={() => setAdType(t.value)}
+                          <button key={t.value} onClick={() => { setAdType(t.value); if (fieldErrors.adType) setFieldErrors(p => ({ ...p, adType: undefined })); }}
                             className={`flex flex-col items-start gap-1 py-3 px-4 rounded-xl text-xs font-bold border-2 transition-all ${
                               adType === t.value
                                 ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-500 shadow-md shadow-blue-200 dark:shadow-blue-900/30'
+                                : fieldErrors.adType
+                                ? 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-red-400 dark:border-red-500 hover:border-blue-300 hover:text-blue-500'
                                 : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300 hover:text-blue-500'
                             }`}>
                             <span className="text-lg">{t.icon}</span>
@@ -2754,6 +2731,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                           </button>
                         ))}
                       </div>
+                      {fieldErrors.adType && <p className="mt-1 text-xs text-red-500">{fieldErrors.adType}</p>}
                     </div>
                   </div>
                 </div>
@@ -2790,8 +2768,10 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       {/* URL & Deep Link: for Site, App, Book, Learn */}
                       {['view_site', 'install_app', 'book_now', 'learn_more'].includes(ctaType) && (
                         <>
-                          <input type="url" placeholder="Destination URL (https://...)" value={ctaUrl} onChange={e => setCtaUrl(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                          <input type="url" placeholder="Destination URL (https://...)" value={ctaUrl}
+                            onChange={e => { setCtaUrl(e.target.value); if (fieldErrors.ctaUrl) setFieldErrors(p => ({ ...p, ctaUrl: undefined })); }}
+                            className={`w-full px-3.5 py-2.5 rounded-xl border bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400 ${fieldErrors.ctaUrl ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`} />
+                          {fieldErrors.ctaUrl && <p className="mt-1 text-xs text-red-500">{fieldErrors.ctaUrl}</p>}
                           <input type="text" placeholder="Deep Link (e.g. myapp://product/123)" value={ctaDeepLink} onChange={e => setCtaDeepLink(e.target.value)}
                             className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
                         </>
@@ -2800,12 +2780,16 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       {/* Contact Info: for Contact & Call Now */}
                       {['contact_info', 'call_now'].includes(ctaType) && (
                         <>
-                          <input type="tel" placeholder="Phone number (for Call Now)" value={ctaPhone} onChange={e => setCtaPhone(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
-                          <input type="text" placeholder="WhatsApp number (e.g. 919876543210)" value={ctaWhatsapp} onChange={e => setCtaWhatsapp(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
-                          <input type="email" placeholder="Contact email" value={ctaEmail} onChange={e => setCtaEmail(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400" />
+                          <input type="tel" placeholder="Phone number (for Call Now)" value={ctaPhone}
+                            onChange={e => { setCtaPhone(e.target.value); if (fieldErrors.ctaContact) setFieldErrors(p => ({ ...p, ctaContact: undefined })); }}
+                            className={`w-full px-3.5 py-2.5 rounded-xl border bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400 ${fieldErrors.ctaContact ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`} />
+                          <input type="text" placeholder="WhatsApp number (e.g. 919876543210)" value={ctaWhatsapp}
+                            onChange={e => { setCtaWhatsapp(e.target.value); if (fieldErrors.ctaContact) setFieldErrors(p => ({ ...p, ctaContact: undefined })); }}
+                            className={`w-full px-3.5 py-2.5 rounded-xl border bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400 ${fieldErrors.ctaContact ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`} />
+                          <input type="email" placeholder="Contact email" value={ctaEmail}
+                            onChange={e => { setCtaEmail(e.target.value); if (fieldErrors.ctaContact) setFieldErrors(p => ({ ...p, ctaContact: undefined })); }}
+                            className={`w-full px-3.5 py-2.5 rounded-xl border bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all placeholder-gray-400 ${fieldErrors.ctaContact ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`} />
+                          {fieldErrors.ctaContact && <p className="mt-1 text-xs text-red-500">{fieldErrors.ctaContact}</p>}
                         </>
                       )}
                     </div>
@@ -2931,8 +2915,10 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     <div className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
                       policyAgreed
                         ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-400 dark:border-blue-700'
+                        : fieldErrors.policyAgreed
+                        ? 'bg-red-50 dark:bg-red-950/20 border-red-400 dark:border-red-600'
                         : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:border-blue-300'
-                    }`} onClick={() => setPolicyAgreed(!policyAgreed)}>
+                    }`} onClick={() => { setPolicyAgreed(!policyAgreed); if (fieldErrors.policyAgreed) setFieldErrors(p => ({ ...p, policyAgreed: undefined })); }}>
                       <div className={`w-5 h-5 rounded-lg flex-shrink-0 border-2 flex items-center justify-center transition-all mt-0.5 ${
                         policyAgreed
                           ? 'bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500'
@@ -2949,6 +2935,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                         </p>
                       </div>
                     </div>
+                    {fieldErrors.policyAgreed && <p className="mt-2 text-xs text-red-500">{fieldErrors.policyAgreed}</p>}
                   </div>
                 </div>
 
@@ -3386,8 +3373,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-1">Audience Targeting</div>
 
                   {/* Country accordion */}
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                    <button onClick={() => setOpenAccordion(openAccordion === 'country' ? null : 'country')}
+                  <div className={`border rounded-xl overflow-hidden ${fieldErrors.countries ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`}>
+                    <button onClick={() => { setOpenAccordion(openAccordion === 'country' ? null : 'country'); if (fieldErrors.countries) setFieldErrors(p => ({ ...p, countries: undefined })); }}
                       className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 text-sm font-semibold dark:text-white">
                       <span className="flex items-center gap-2"><Globe size={14} className="text-blue-500" />Country {selectedCountries.length > 0 && `(${selectedCountries.length} selected)`}</span>
                       <ChevronDown size={16} className={`transition-transform ${openAccordion === 'country' ? 'rotate-180' : ''}`} />
@@ -3426,6 +3413,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       </div>
                     )}
                   </div>
+                  {fieldErrors.countries && <p className="mt-1 text-xs text-red-500">{fieldErrors.countries}</p>}
 
                   {/* State accordion — only shown after country selected */}
                   {selectedCountries.length > 0 && (
@@ -3542,19 +3530,27 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       <div className="p-3 bg-white dark:bg-black space-y-3">
                         <div>
                           <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">Total Budget (Coins) *</label>
-                          <input type="number" value={totalBudgetCoins} onChange={e => setTotalBudgetCoins(e.target.value)} placeholder="e.g. 5000 (min 100)"
-                            className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500" />
+                          <input type="number" value={totalBudgetCoins}
+                            onChange={e => { setTotalBudgetCoins(e.target.value); if (fieldErrors.totalBudget) setFieldErrors(p => ({ ...p, totalBudget: undefined })); }}
+                            placeholder="e.g. 5000 (min 100)"
+                            className={`w-full p-2.5 rounded-lg border bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500 ${fieldErrors.totalBudget ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`} />
+                          {fieldErrors.totalBudget && <p className="mt-1 text-xs text-red-500">{fieldErrors.totalBudget}</p>}
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">Daily Budget Limit (Coins)</label>
-                          <input type="number" value={dailyBudgetCoins} onChange={e => setDailyBudgetCoins(e.target.value)} placeholder="e.g. 500 (0 = no limit)"
-                            className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500" />
+                          <input type="number" value={dailyBudgetCoins}
+                            onChange={e => { setDailyBudgetCoins(e.target.value); if (fieldErrors.dailyBudget) setFieldErrors(p => ({ ...p, dailyBudget: undefined })); }}
+                            placeholder="e.g. 500 (0 = no limit)"
+                            className={`w-full p-2.5 rounded-lg border bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500 ${fieldErrors.dailyBudget ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`} />
+                          {fieldErrors.dailyBudget && <p className="mt-1 text-xs text-red-500">{fieldErrors.dailyBudget}</p>}
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">Start Date</label>
-                            <input type="date" value={budgetStartDate} onChange={e => setBudgetStartDate(e.target.value)}
-                              className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500" />
+                            <input type="date" value={budgetStartDate}
+                              onChange={e => { setBudgetStartDate(e.target.value); if (fieldErrors.startDate) setFieldErrors(p => ({ ...p, startDate: undefined })); }}
+                              className={`w-full p-2.5 rounded-lg border bg-gray-50 dark:bg-gray-900 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500 ${fieldErrors.startDate ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-gray-700'}`} />
+                            {fieldErrors.startDate && <p className="mt-1 text-xs text-red-500">{fieldErrors.startDate}</p>}
                           </div>
                           <div>
                             <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">End Date</label>
@@ -3841,27 +3837,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
         );
       })()}
 
-      {/* Validation Error Popup */}
-      {validationError && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl p-8 w-full max-w-sm shadow-2xl border border-amber-100 dark:border-amber-900/40 flex flex-col items-center gap-5">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 dark:border-amber-800">
-              <svg className="w-9 h-9 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-              </svg>
-            </div>
-            <div className="flex flex-col items-center gap-1 text-center">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Action Required</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{validationError}</p>
-            </div>
-            <div className="flex gap-3 w-full">
-              <button onClick={() => setValidationError('')} className="flex-1 py-3 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold text-sm hover:opacity-90 transition-opacity">
-                Got it, let me fix it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Error Popup */}
       {uploadStage === 'error' && !isSubmitting && (

@@ -49,12 +49,12 @@ const TweetImageGallery = ({ mediaItems = [], onImageClick }) => {
   /* ── 2 images ── */
   if (count === 2) {
     return (
-      <div className="mt-3 flex gap-1.5 max-w-[480px]">
+      <div className="mt-3 flex gap-1.5 max-w-[360px]">
         {images.map((src, idx) => (
           <div
             key={idx}
-            className="flex-1 overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700 cursor-pointer"
-            style={{ aspectRatio: '16/9' }}
+            className="flex-1 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer"
+            style={{ aspectRatio: '4/3' }}
             onClick={() => onImageClick?.(idx)}
           >
             <img
@@ -69,37 +69,27 @@ const TweetImageGallery = ({ mediaItems = [], onImageClick }) => {
   }
 
   /* ── 3+ images ── */
-  const remaining = count - 2; // images hidden after index 1
+  const remaining = count - 2;
 
   return (
-    <div className="mt-3 flex flex-col gap-1.5 max-w-[480px]">
-      {/* Top: first image full width */}
+    <div className="mt-3 flex gap-1.5 max-w-[360px]">
       <div
-        className="w-full overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700 cursor-pointer"
-        style={{ aspectRatio: '16/9' }}
+        className="flex-1 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer"
+        style={{ aspectRatio: '4/3' }}
         onClick={() => onImageClick?.(0)}
       >
-        <img
-          src={images[0]}
-          alt="Tweet media 1"
-          className="w-full h-full object-cover hover:opacity-90 transition-opacity"
-        />
+        <img src={images[0]} alt="Tweet media 1" className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
       </div>
 
-      {/* Bottom: second image with +N overlay if more than 3 */}
       <div
-        className="relative overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700 cursor-pointer"
-        style={{ aspectRatio: '16/9' }}
+        className="flex-1 relative overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer"
+        style={{ aspectRatio: '4/3' }}
         onClick={() => onImageClick?.(1)}
       >
-        <img
-          src={images[1]}
-          alt="Tweet media 2"
-          className="w-full h-full object-cover hover:opacity-90 transition-opacity"
-        />
+        <img src={images[1]} alt="Tweet media 2" className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
         {remaining > 0 && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-            <span className="text-white text-3xl font-bold drop-shadow-lg">+{remaining}</span>
+            <span className="text-white text-2xl font-bold drop-shadow-lg">+{remaining}</span>
           </div>
         )}
       </div>

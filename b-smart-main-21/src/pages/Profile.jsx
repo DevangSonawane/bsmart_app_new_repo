@@ -323,6 +323,16 @@ const InterestedSection = ({ isDesktop = false, interests = [], isOwnProfile = f
                     Interested Section
                 </div>
                 <div className="flex items-center gap-1">
+                    {isOwnProfile && onAdd && (
+                        <button
+                            type="button"
+                            onClick={onAdd}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 hover:bg-blue-600 text-white transition shadow-sm"
+                            aria-label="Add interest"
+                        >
+                            <Plus size={12} />
+                        </button>
+                    )}
                     <button
                         type="button"
                         onClick={() => scroll('left')}
@@ -1472,11 +1482,6 @@ const Profile = () => {
                                                 aria-label="View interests">
                                                 <Star size={18} fill={showInterestsSection ? 'currentColor' : 'none'} />
                                             </button>
-                                            <button type="button" onClick={() => setShowInterestsModal(true)}
-                                                className="flex-1 h-9 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-                                                aria-label="Add photo">
-                                                <Plus size={18} />
-                                            </button>
                                             <button type="button" onClick={handleOpenMessages} className="flex-1 h-9 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-gray-900 dark:text-white shadow-sm" aria-label="Chat">
                                                 <MessageCircle size={18} />
                                             </button>
@@ -1637,11 +1642,6 @@ const Profile = () => {
                                 </button>
                                 <button type="button" onClick={handleStarClick} className={`w-10 h-10 flex items-center justify-center rounded-xl border transition-all ${showInterestsSection ? 'border-orange-300 bg-orange-50 text-orange-500 dark:border-orange-900/20 dark:text-orange-400' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900'}`} aria-label="View interests">
                                     <Star size={17} fill={showInterestsSection ? 'currentColor' : 'none'} />
-                                </button>
-                                <button type="button" onClick={() => setShowInterestsModal(true)}
-                                    className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-                                    aria-label="Add photo">
-                                    <Plus size={17} />
                                 </button>
                                 <button type="button" onClick={handleOpenMessages} className="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors" aria-label="Message">
                                     <MessageCircle size={17} />

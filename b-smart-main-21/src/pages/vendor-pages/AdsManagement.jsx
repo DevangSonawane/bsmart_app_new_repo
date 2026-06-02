@@ -357,21 +357,19 @@ export default function AdsManagement() {
         </div>
 
         {/* ── Summary Stats ── */}
-        {!loading && ads.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            {[
-              { label: "Total Ads",     value: summaryStats.total,                       color: "text-gray-900 dark:text-white",     bg: "bg-white dark:bg-gray-900" },
-              { label: "Active",        value: summaryStats.active,                      color: "text-green-600 dark:text-green-400",bg: "bg-white dark:bg-gray-900" },
-              { label: "Total Budget",  value: `${summaryStats.totalBudget.toLocaleString()} 🪙`, color: "text-amber-600 dark:text-amber-400", bg: "bg-white dark:bg-gray-900" },
-              { label: "Total Spent",   value: `${summaryStats.totalSpent.toLocaleString()} 🪙`,  color: "text-red-500 dark:text-red-400",    bg: "bg-white dark:bg-gray-900" },
-            ].map((s, i) => (
-              <div key={i} className={`${s.bg} border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm`}>
-                <div className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1">{s.label}</div>
-                <div className={`text-lg font-extrabold ${s.color}`}>{s.value}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          {[
+            { label: "Total Ads",     value: summaryStats.total,                       color: "text-gray-900 dark:text-white",     bg: "bg-white dark:bg-gray-900" },
+            { label: "Active",        value: summaryStats.active,                      color: "text-green-600 dark:text-green-400",bg: "bg-white dark:bg-gray-900" },
+            { label: "Total Budget",  value: `${summaryStats.totalBudget.toLocaleString()} 🪙`, color: "text-amber-600 dark:text-amber-400", bg: "bg-white dark:bg-gray-900" },
+            { label: "Total Spent",   value: `${summaryStats.totalSpent.toLocaleString()} 🪙`,  color: "text-red-500 dark:text-red-400",    bg: "bg-white dark:bg-gray-900" },
+          ].map((s, i) => (
+            <div key={i} className={`${s.bg} border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm`}>
+              <div className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1">{s.label}</div>
+              <div className={`text-lg font-extrabold ${s.color}`}>{s.value}</div>
+            </div>
+          ))}
+        </div>
 
         {/* ── Category Tabs ── */}
         <div className="mb-5 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-hide">

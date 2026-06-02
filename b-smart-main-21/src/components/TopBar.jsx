@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import { useNotificationSocket } from '../hooks/useNotificationSocket';
 
 // ─── B-Smart Logo ─────────────────────────────────────────────────────────────
+
 const BSmartLogo = () => (
   <div className="flex items-center gap-2">
     {/* Icon */}
@@ -21,6 +22,7 @@ const BSmartLogo = () => (
 const TopBar = () => {
   const navigate = useNavigate();
   const { userObject } = useSelector((state) => state.auth);
+  const walletBalance = useSelector((state) => state.wallet.balance);
 
   const { unreadCount } = useNotificationSocket({ limit: 10 });
 
@@ -49,7 +51,7 @@ const TopBar = () => {
             <Wallet size={11} />
           </div>
           <span className="text-[11px] font-bold text-gray-900 dark:text-white leading-none">
-            {userObject?.wallet?.balance ? Math.floor(Number(userObject.wallet.balance)) : 0}
+            {walletBalance}
           </span>
         </Link>
 

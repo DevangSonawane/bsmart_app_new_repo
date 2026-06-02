@@ -6,7 +6,7 @@ export const fetchWallet = createAsyncThunk(
   'wallet/fetchWallet',
   async (_, thunkAPI) => {
     // Try multiple endpoint shapes the backend might expose
-    const endpoints = ['/wallet/me', '/wallet', '/users/wallet'];
+    const endpoints = ['/wallet/me'];
     for (const ep of endpoints) {
       try {
         const res = await api.get(ep, {

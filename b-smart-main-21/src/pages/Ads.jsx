@@ -7,7 +7,7 @@ import {
   Volume2, VolumeX, Bookmark, ChevronLeft, Search,
   ShoppingBag, Loader2, UserPlus, UserCheck, X, Smile, Trash2
 } from 'lucide-react';
-import { fetchWallet, setWalletBalance } from '../store/walletSlice';
+import { setWalletBalance } from '../store/walletSlice';
 import api from '../lib/api';
 import ContentReportModal from '../components/ContentReportModal';
 import EditContentModal from '../components/EditContentModal';
@@ -341,15 +341,6 @@ const mediaUrl = (ad) => {
   return null;
 };
 
-const thumbnailUrl = (ad) => {
-  const m = ad?.media?.[0];
-  if (!m) return null;
-  // Use thumbnails[0].fileUrl first, then fallback to thumbnail_url, then fileUrl for images
-  if (m.thumbnails?.[0]?.fileUrl) return m.thumbnails[0].fileUrl;
-  if (m.thumbnail_url) return m.thumbnail_url;
-  if (m.media_type !== 'video' && m.fileUrl) return m.fileUrl;
-  return null;
-};
 
 // ─── Follow Button ─────────────────────────────────────────────────────────────
 const FollowButton = ({ userId, mobile = false }) => {
@@ -524,8 +515,8 @@ const Caption = ({ text }) => {
 // ─── Main Component ────────────────────────────────────────────────────────────
 const Ads = ({ feedMode = 'user' }) => {
   const { userObject } = useSelector((state) => state.auth);
-  const walletBalance = useSelector((state) => state.wallet.balance);
   const dispatch = useDispatch();
+  const [walletBalance, setLocalWalletBalance] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const isVendorUser = userObject?.role === 'vendor';
 
@@ -609,6 +600,14 @@ const Ads = ({ feedMode = 'user' }) => {
   // Track manually paused video (user tapped to pause/resume)
   const [isPausedByUser, setIsPausedByUser] = useState(false);
   const [showCtaButtons, setShowCtaButtons] = useState(false);  // shows after 50% progress
+
+  // Sync muted state directly to video DOM nodes — React's `muted` prop
+  // does not reliably update the browser's .muted property after first render.
+  useEffect(() => {
+    Object.values(videoRefs.current).forEach(video => {
+      if (video) video.muted = isMuted;
+    });
+  }, [isMuted]);
 
   // Auto-dismiss like/dislike message
   useEffect(() => {
@@ -854,12 +853,31 @@ const Ads = ({ feedMode = 'user' }) => {
     };
   }, [ads, loading, searchParams, setSearchParams]);
 
-  // Fetch wallet on mount and every 30s using Redux — keeps balance live across the app
-  useEffect(() => {
-    dispatch(fetchWallet());
-    const interval = setInterval(() => dispatch(fetchWallet()), 30000);
-    return () => clearInterval(interval);
+  // Direct /wallet/me call — bypasses Redux timing issues
+  const refreshWallet = useCallback(async () => {
+    try {
+      const res = await api.get('/wallet/me');
+      const data = res?.data;
+      const bal =
+        data?.wallet?.balance ??
+        data?.balance ??
+        data?.data?.wallet?.balance ??
+        data?.data?.balance ??
+        null;
+      if (bal !== null && bal !== undefined) {
+        const coins = Math.floor(Number(bal));
+        setLocalWalletBalance(coins);
+        dispatch(setWalletBalance(coins));
+      }
+    } catch { /* keep last known value */ }
   }, [dispatch]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    refreshWallet();
+    const interval = setInterval(refreshWallet, 30000);
+    return () => clearInterval(interval);
+  }, [refreshWallet, currentUserId]);
 
   const adsRef = useRef(ads);
   useEffect(() => { adsRef.current = ads; }, [ads]);
@@ -897,36 +915,23 @@ const Ads = ({ feedMode = 'user' }) => {
       try { resData = await res.json(); } catch { /* non-JSON body */ }
 
       if (!res.ok) {
-        // Remove from viewed so it can retry once on next visit
         viewedIdsRef.current.delete(key);
         console.warn(`View API returned ${res.status}:`, resData);
-        // Still refresh wallet — some backends credit coins but return non-2xx
-        dispatch(fetchWallet());
-        setTimeout(() => dispatch(fetchWallet()), 1500);
+        refreshWallet();
+        setTimeout(refreshWallet, 1500);
         return;
       }
 
-      // Parse response — backend may return updated wallet/coins directly
-      const directBal =
-        resData?.wallet?.balance ??
-        resData?.user?.wallet?.balance ??
-        resData?.balance ??
-        resData?.data?.balance ??
-        resData?.coins;
       const coinsRewarded =
         resData?.coins_rewarded ??
         resData?.coins ??
         resData?.reward ??
         resData?.data?.coins_rewarded;
 
-      if (directBal !== undefined && directBal !== null) {
-        dispatch(setWalletBalance(directBal));
-      } else {
-        // Immediately + retry to ensure the credit shows up
-        dispatch(fetchWallet());
-        setTimeout(() => dispatch(fetchWallet()), 1000);
-        setTimeout(() => dispatch(fetchWallet()), 3000);
-      }
+      // Always refresh wallet after view to reflect any coin credit
+      refreshWallet();
+      setTimeout(refreshWallet, 1000);
+      setTimeout(refreshWallet, 3000);
 
       // Show only the top coin toast when rewarded is explicitly true.
       const isRewarded = resData?.rewarded === true;
@@ -944,7 +949,7 @@ const Ads = ({ feedMode = 'user' }) => {
     } catch (err) {
       console.error('View tracking failed:', err);
     }
-  }, [currentUserId, dispatch]);
+  }, [currentUserId, refreshWallet]);
 
   // tracks ad _id strings that have already received a view API call (never double-fires)
   const viewFiredForAdId = useRef(new Set());
@@ -1107,22 +1112,10 @@ const Ads = ({ feedMode = 'user' }) => {
       const endpoint = isLiked ? `/ads/${adId}/dislike` : `/ads/${adId}/like`;
       const { data: resData = {} } = await api.post(endpoint);
 
-      const directBal =
-        resData?.wallet?.balance ??
-        resData?.user?.wallet?.balance ??
-        resData?.balance ??
-        resData?.data?.balance ??
-        resData?.coins;
-
-      if (directBal !== undefined && directBal !== null) {
-        // Backend returned balance directly — use it
-        dispatch(setWalletBalance(directBal));
-      } else {
-        // Poll wallet: immediately, then at 1s and 3s intervals to catch delayed credits
-        dispatch(fetchWallet());
-        setTimeout(() => dispatch(fetchWallet()), 1000);
-        setTimeout(() => dispatch(fetchWallet()), 3000);
-      }
+      // Refresh wallet to reflect any coin change from like/dislike
+      refreshWallet();
+      setTimeout(refreshWallet, 1000);
+      setTimeout(refreshWallet, 3000);
 
       // Show like/dislike coin reward popup
       const coinsRewarded = resData?.coins_rewarded ?? resData?.reward ?? resData?.coins ?? 10;
@@ -1146,7 +1139,7 @@ const Ads = ({ feedMode = 'user' }) => {
         ? { ...a, likes_count: a.likes_count + (isLiked ? 1 : -1), is_liked_by_me: isLiked }
         : a));
     }
-  }, [likedIds, currentUserId, dispatch]);
+  }, [likedIds, refreshWallet]);
 
   // ── Dislike ───────────────────────────────────────────────────────────────────
 
@@ -1809,9 +1802,24 @@ const Ads = ({ feedMode = 'user' }) => {
 
                       {/* Mute btn — video only */}
                       {isVideo && isCurrent && (
-                        <button onClick={() => setIsMuted(m => !m)}
-                          className="absolute bottom-[10px] md:bottom-5 right-[55px] md:right-4 bg-black/50 p-2 rounded-full text-white backdrop-blur-sm hover:bg-black/70 z-20">
-                          {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newMuted = !isMuted;
+                            setIsMuted(newMuted);
+                            // Must set .muted synchronously inside the click handler
+                            // (user-gesture context) so the browser allows audio playback.
+                            const vid = videoRefs.current[currentIndex];
+                            if (vid) {
+                              vid.muted = newMuted;
+                              if (!newMuted && vid.paused) {
+                                vid.play().catch(() => {});
+                              }
+                            }
+                          }}
+                          onTouchEnd={e => e.stopPropagation()}
+                          className="absolute bottom-[24px] md:bottom-10 right-[55px] md:right-4 bg-black/50 p-2.5 rounded-full text-white backdrop-blur-sm hover:bg-black/70 z-50">
+                          {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
                         </button>
                       )}
 
@@ -1850,31 +1858,17 @@ const Ads = ({ feedMode = 'user' }) => {
                             <FollowButton userId={a.user_id?._id} mobile />
                           </div>
 
+                          {a.category && (
+                            <span className="text-white/70 text-[10px] bg-white/10 px-2 py-0.5 rounded-full inline-block mb-1">{a.category}</span>
+                          )}
+
                           <Caption text={a.caption} />
 
                           <div className="flex items-center gap-2 flex-wrap mb-2">
-                            {a.category && <span className="text-white/70 text-[10px] bg-white/10 px-2 py-0.5 rounded-full">{a.category}</span>}
                             {a.hashtags?.slice(0, 3).map(h => <span key={h} className="text-white/50 text-[10px]">#{h}</span>)}
                           </div>
 
                           {a.product_offer?.length > 0 && <ProductOffer offer={a.product_offer[0]} />}
-
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {a.target_language?.slice(0, 3).map(lang => (
-                              <span key={lang} className="flex items-center gap-1 text-[10px] font-medium text-white/80 bg-white/10 backdrop-blur-sm border border-white/15 px-2 py-0.5 rounded-full">
-                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-70"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                                {lang}
-                              </span>
-                            ))}
-                            {a.target_language?.length > 3 && <span className="text-[10px] font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">+{a.target_language.length - 3}</span>}
-                            {a.target_location?.slice(0, 2).map(loc => (
-                              <span key={loc} className="flex items-center gap-1 text-[10px] font-medium text-white/80 bg-white/10 backdrop-blur-sm border border-white/15 px-2 py-0.5 rounded-full">
-                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-70"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                                {loc}
-                              </span>
-                            ))}
-                            {a.target_location?.length > 2 && <span className="text-[10px] font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">+{a.target_location.length - 2} more</span>}
-                          </div>
                         </div>
 
                         {/* CTA Buttons — slide up from bottom, below caption */}
@@ -2052,76 +2046,6 @@ const Ads = ({ feedMode = 'user' }) => {
         </>
       )}
 
-      {/* ── View Reward Popup (first-time watch) ── */}
-      {false && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
-          <div
-            className="pointer-events-auto bg-white dark:bg-[#1c1c1e] rounded-3xl shadow-2xl px-8 py-7 flex flex-col items-center gap-4 border border-amber-200 dark:border-amber-500/30"
-            style={{ animation: 'popupIn 0.4s cubic-bezier(0.22,1,0.36,1) forwards', minWidth: 260 }}
-          >
-            {/* Coin burst */}
-            <div className="relative">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-yellow-300 via-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-300/50" style={{ animation: 'coinPulse 0.6s ease-out' }}>
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" fill="#FCD34D" stroke="#D97706" strokeWidth="1.5"/>
-                  <text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#7C2D12">B</text>
-                </svg>
-              </div>
-              <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-md">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              </div>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-black text-amber-500">+{viewRewardPopup.amount} Coins!</p>
-              <p className="text-gray-700 dark:text-gray-300 font-semibold text-sm mt-0.5">Earned for watching the full ad</p>
-            </div>
-            <button
-              onClick={() => setViewRewardPopup(null)}
-              className="w-full bg-gradient-to-r from-amber-400 to-orange-500 text-white font-bold py-2.5 rounded-2xl text-sm hover:opacity-90 active:scale-95 transition-all shadow-md"
-            >
-              Awesome! 🎉
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── View Recorded Popup (rewarded: false) ── */}
-      {false && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
-          <div
-            className="pointer-events-auto bg-white dark:bg-[#1c1c1e] rounded-3xl shadow-2xl px-8 py-7 flex flex-col items-center gap-4 border border-gray-200 dark:border-white/10"
-            style={{ animation: 'popupIn 0.4s cubic-bezier(0.22,1,0.36,1) forwards', minWidth: 260 }}
-          >
-            {/* Eye / view icon */}
-            <div className="relative">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-gray-400 via-gray-500 to-gray-600 flex items-center justify-center shadow-lg shadow-gray-400/30" style={{ animation: 'coinPulse 0.6s ease-out' }}>
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-              </div>
-              <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center shadow-md">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              </div>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-black text-gray-700 dark:text-gray-200">View Recorded</p>
-              {viewRecordedPopup.view_count !== null && (
-                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                  Total views: <span className="font-bold text-gray-700 dark:text-gray-200">{viewRecordedPopup.view_count}</span>
-                </p>
-              )}
-              <p className="text-gray-500 dark:text-gray-400 text-xs mt-1.5">No coins rewarded for this view</p>
-            </div>
-            <button
-              onClick={() => setViewRecordedPopup(null)}
-              className="w-full bg-gradient-to-r from-gray-500 to-gray-700 text-white font-bold py-2.5 rounded-2xl text-sm hover:opacity-90 active:scale-95 transition-all shadow-md"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Like / Dislike Short Toast */}
       {likeRewardPopup && (

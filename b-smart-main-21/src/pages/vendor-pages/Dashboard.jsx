@@ -149,7 +149,19 @@ const DashboardInfoCard = ({
         )}
         {subtitle ? <p className={`text-base mt-1 font-medium ${highlight ? "text-white/90" : "text-gray-500 dark:text-gray-400"}`}>{subtitle}</p> : null}
         {secondaryBadge ? (
-          <span className={`inline-flex mt-2 text-[11px] font-semibold px-2.5 py-1 rounded-full ${highlight ? "bg-white/20 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"}`}>
+          <span className={`inline-flex mt-2 text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+            highlight && (secondaryBadge === "Verified" || secondaryBadge === "Active")
+              ? "bg-white/25 text-white"
+              : highlight && (secondaryBadge === "Pending" || secondaryBadge === "Inactive")
+              ? "bg-white/15 text-white/80"
+              : highlight
+              ? "bg-white/15 text-white/80"
+              : secondaryBadge === "Verified" || secondaryBadge === "Active"
+              ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+              : secondaryBadge === "Pending" || secondaryBadge === "Inactive"
+              ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+              : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+          }`}>
             {secondaryBadge}
           </span>
         ) : null}
@@ -157,7 +169,14 @@ const DashboardInfoCard = ({
      
     </div>
     {children ? <div className="mt-4 flex-1">{children}</div> : <div className="flex-1" />}
-    {footer ? <div className={`mt-4 text-sm font-semibold text-right ${highlight ? "text-white/80" : "text-pink-600 dark:text-pink-400"}`}>{footer}</div> : null}
+    {footer ? (
+      <div className="mt-4 flex justify-end">
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors cursor-pointer bg-blue-500 hover:bg-blue-600 text-white shadow-sm shadow-blue-900/40">
+          {footer}
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </span>
+      </div>
+    ) : null}
   </div>
 );
 
@@ -469,45 +488,47 @@ export default function VendorDashboard() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <DashboardInfoCard
-            className="bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700 text-gray-900 dark:text-white"
+            className="bg-gradient-to-tr from-indigo-500 to-violet-600 text-white border-transparent shadow-lg shadow-indigo-500/20"
             badge={isVendorVerified ? "Verified" : "Pending"}
             title={vendorName}
             subtitle="Vendor Profile"
             secondaryBadge={isVendorVerified ? "Verified" : "Pending"}
-            footer="View ->>"
+            footer="View"
             loading={dashboardLoading}
             onClick={() => navigate("/vendor/profile")}
+            highlight
           >
-            <div className="space-y-2 text-sm font-medium text-gray-500 dark:text-gray-400">
+            <div className="space-y-2 text-sm font-medium text-white/70">
               <div className="flex items-center justify-between gap-3">
                 <span>Registered Name</span>
-                <span className="text-gray-800 dark:text-gray-200 truncate max-w-[55%] text-right">{vendorRegisteredName}</span>
+                <span className="text-white truncate max-w-[55%] text-right font-semibold">{vendorRegisteredName}</span>
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span>Profile Completion</span>
-                <span className="text-gray-800 dark:text-gray-200">{profileCompletionText}</span>
+                <span className="text-white font-semibold">{profileCompletionText}</span>
               </div>
             </div>
           </DashboardInfoCard>
 
           <DashboardInfoCard
-            className="bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700 text-gray-900 dark:text-white"
+            className="bg-gradient-to-tr from-emerald-500 to-teal-600 text-white border-transparent shadow-lg shadow-emerald-500/20"
             badge={packageStatus}
             title={packageName}
             subtitle="Package Details"
-            secondaryBadge="Verified"
-            footer="View ->>"
+            secondaryBadge={packageStatus}
+            footer="View"
             loading={dashboardLoading}
             onClick={() => navigate("/vendor/billing")}
+            highlight
           >
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <div className="text-4xl md:text-3xl font-bold leading-none">{adsRemainingText}</div>
-                <div className="text-sm mt-1 font-medium opacity-90">Ads Remain</div>
+                <div className="text-sm mt-1 font-medium text-white/80">Ads Remain</div>
               </div>
               <div>
                 <div className="text-4xl md:text-3xl font-bold leading-none">{daysLeftText}</div>
-                <div className="text-sm mt-1 font-medium opacity-90">Days Left</div>
+                <div className="text-sm mt-1 font-medium text-white/80">Days Left</div>
               </div>
             </div>
           </DashboardInfoCard>
@@ -517,8 +538,8 @@ export default function VendorDashboard() {
             badge="Running"
             title={`${activeAdsCount}`}
             subtitle="Active Ads"
-            secondaryBadge="Verified"
-            footer="View ->"
+            secondaryBadge="Running"
+            footer="View"
             loading={dashboardLoading}
             onClick={() => navigate("/vendor/ads-management")}
             highlight
@@ -536,18 +557,18 @@ export default function VendorDashboard() {
           </DashboardInfoCard>
 
           <DashboardInfoCard
-            className="bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700 text-gray-900 dark:text-white"
-            badge="View ->>"
+            className="bg-gradient-to-tr from-blue-500 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/20"
             title={salesOfficer?.full_name || "Not Assigned"}
             subtitle="Sales Officer"
-            secondaryBadge="Verified"
+            secondaryBadge="Officer"
             loading={dashboardLoading}
+            highlight
           >
             <div className="space-y-2 text-sm">
-              <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">Contact Details</div>
+              <div className="text-xs uppercase tracking-wider text-white/60 font-bold">Contact Details</div>
               <div className="font-semibold">{salesOfficer?.phone || "-"}</div>
               <div className="break-all font-semibold">{salesOfficer?.email || "-"}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 pt-1">Location: {salesOfficer?.location || "-"}</div>
+              <div className="text-xs text-white/60 pt-1">Location: {salesOfficer?.location || "-"}</div>
             </div>
           </DashboardInfoCard>
         </div>
