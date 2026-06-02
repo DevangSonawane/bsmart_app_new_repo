@@ -26,6 +26,7 @@ import '../widgets/app_popups/popup_visibility_controller.dart';
 import '../widgets/app_popups/view_recorded_popup_card.dart';
 import '../widgets/ad_image_gallery.dart';
 import '../widgets/share_content_modal.dart';
+import '../routes.dart';
 import 'ad_company_detail_screen.dart';
 import 'external_link_screen.dart';
 
@@ -45,7 +46,7 @@ class AdsPageScreen extends StatefulWidget {
   State<AdsPageScreen> createState() => _AdsPageScreenState();
 }
 
-class _AdsPageScreenState extends State<AdsPageScreen> {
+class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
   final AdsService _adsService = AdsService();
   static const bool _showViewRecordedPopupEnabled = false; // React parity
   static final Set<String> _sessionViewedAdIds = <String>{};
@@ -74,6 +75,10 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   final FocusNode _searchFocusNode = FocusNode(debugLabel: 'ads-search-focus');
   List<Ad> _ads = [];
   bool _categoriesExpanded = false;
+  PageRoute<dynamic>? _subscribedRoute;
+  bool _isRouteActive = true;
+
+  bool get _isScreenActive => widget.isTabActive && _isRouteActive;
 
   List<AdCategory> _ensureAllFirst(List<AdCategory> categories) {
     final allIndex = categories.indexWhere((c) {
@@ -158,6 +163,19 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
   void dispose() {
     _keyboardFocusNode.dispose();
     _pageController.dispose();
@@ -165,7 +183,25 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _popupVisibility.dispose();
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+      _subscribedRoute = null;
+    }
     super.dispose();
+  }
+
+  @override
+  void didPushNext() {
+    if (!_isRouteActive) return;
+    _isRouteActive = false;
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didPopNext() {
+    if (_isRouteActive) return;
+    _isRouteActive = true;
+    if (mounted) setState(() {});
   }
 
   Future<void> _init() async {
@@ -679,7 +715,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> {
             return AdVideoItem(
               key: ValueKey('ad-video-${ad.id}'),
               ad: ad,
-              isActive: widget.isTabActive && index == _focusedIndex,
+              isActive: _isScreenActive && index == _focusedIndex,
               bottomInset:
                   clipFeedBottomInsetForAndroid ? 0 : bottomSystemInset,
               popupVisibility: _popupVisibility,

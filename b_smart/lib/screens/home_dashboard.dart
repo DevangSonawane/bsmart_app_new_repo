@@ -1675,7 +1675,11 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   void _onFeedScroll() {
     if (!_feedScrollController.hasClients) return;
+    final wasScrolling = _isFeedScrolling;
     _isFeedScrolling = true;
+    if (!wasScrolling && _currentIndex == 0 && _isRouteActive) {
+      unawaited(VideoPool.instance.pauseActive());
+    }
     _scrollIdleTimer?.cancel();
     _scrollIdleTimer = Timer(const Duration(milliseconds: 120), () {
       _isFeedScrolling = false;
@@ -1683,6 +1687,10 @@ class _HomeDashboardState extends State<HomeDashboard>
       if (pending != null && pending != _activeFeedPostId) {
         _activeFeedPostId = pending;
         _activeFeedPostIdListenable.value = pending;
+      } else if (_activeFeedPostId != null &&
+          _currentIndex == 0 &&
+          _isRouteActive) {
+        unawaited(VideoPool.instance.resumeActive());
       }
       _pendingActivePostId = null;
     });
@@ -3395,7 +3403,9 @@ class _HomeDashboardState extends State<HomeDashboard>
         return AdsPageScreen(isTabActive: _currentIndex == 1 && _isRouteActive);
       }
       if (idx == 3) {
-        return const PromoteScreen();
+        return PromoteScreen(
+          isActive: _currentIndex == 3 && _isRouteActive,
+        );
       }
       if (idx == 4) {
         return Container(

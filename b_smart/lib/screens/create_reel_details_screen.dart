@@ -59,8 +59,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   double?
       _selectedThumbnailTimeSec; // For API parity with React (video_meta.thumbnail_time)
 
-  VideoPlayerController? _videoController;
-  Future<void>? _videoInit;
+  Future<Uint8List?>? _coverPreviewFuture;
 
   static const _popularEmojis = [
     '😂',
@@ -85,24 +84,8 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
     _loadCurrentUserProfile();
     final media = widget.media;
     if (media.type == MediaType.video && media.filePath != null) {
-      final controller = VideoPlayerController.file(File(media.filePath!));
-      _videoController = controller;
-      _videoInit = controller.initialize().then((_) {
-        if (!mounted) return;
-        controller.setLooping(true);
-        controller.setVolume(_soundOn ? 1.0 : 0.0);
-        controller.play();
-        setState(() {});
-      });
+      _coverPreviewFuture = _buildCoverPreviewBytes(media.filePath!);
     }
-  }
-
-  @override
-  void deactivate() {
-    if (_videoController?.value.isInitialized == true) {
-      _videoController?.pause();
-    }
-    super.deactivate();
   }
 
   Future<void> _pickCustomThumbnail() async {
@@ -148,26 +131,15 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
 
   Future<void> _pickThumbnailFromVideoFrame() async {
     final videoPath = widget.media.filePath;
-    final controller = _videoController;
-    if (widget.media.type != MediaType.video ||
-        videoPath == null ||
-        controller == null) return;
-
-    if (controller.value.isInitialized != true) {
-      try {
-        await _videoInit;
-      } catch (_) {}
-    }
-    if (controller.value.isInitialized != true) return;
+    if (widget.media.type != MediaType.video || videoPath == null) return;
 
     final picked = await showModalBottomSheet<_PickedVideoFrame>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.black,
       builder: (ctx) => _VideoFramePickerSheet(
-        controller: controller,
         videoPath: videoPath,
-        initialMs: controller.value.position.inMilliseconds,
+        initialMs: 0,
       ),
     );
 
@@ -177,6 +149,29 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       _selectedThumbnailTimeSec = picked.timeSec;
       _selectedThumbnailPath = null;
     });
+  }
+
+  Future<Uint8List?> _buildCoverPreviewBytes(String videoPath) async {
+    try {
+      final existing = _selectedThumbnailBytes;
+      if (existing != null && existing.isNotEmpty) return existing;
+      if (_selectedThumbnailPath != null) {
+        final file = File(_selectedThumbnailPath!);
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
+          if (bytes.isNotEmpty) return bytes;
+        }
+      }
+      final bytes = await VideoThumbnail.thumbnailData(
+        video: videoPath,
+        imageFormat: ImageFormat.JPEG,
+        timeMs: 0,
+        quality: 85,
+      );
+      return bytes;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Map<String, dynamic>?> _uploadThumbnailForVideo({
@@ -237,7 +232,6 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
 
   @override
   void dispose() {
-    _videoController?.dispose();
     _captionCtl.dispose();
     super.dispose();
   }
@@ -319,10 +313,8 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       }
 
       // React web creates reels via `POST /api/posts/reels` and uses a specific media schema.
-      final Duration videoDuration = widget.media.duration ??
-          _videoController?.value.duration ??
-          widget.trimEnd ??
-          Duration.zero;
+      final Duration videoDuration =
+          widget.media.duration ?? widget.trimEnd ?? Duration.zero;
       final Duration start = widget.trimStart ?? Duration.zero;
       final Duration end = widget.trimEnd != null && widget.trimEnd! > start
           ? widget.trimEnd!
@@ -406,8 +398,10 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         return s.isEmpty ? null : s;
       }
 
-      final createdId =
-          pickId(created['id'] ?? created['_id'] ?? created['reel'] ?? created['data']);
+      final createdId = pickId(created['id'] ??
+          created['_id'] ??
+          created['reel'] ??
+          created['data']);
 
       if (mounted) {
         Navigator.of(context).pop(true);
@@ -489,36 +483,37 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                                 fit: BoxFit.cover)
                             : null),
                   ),
-                  child: (!hasCustomThumb && _selectedThumbnailPath == null)
-                      ? Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            if (_videoController != null &&
-                                _videoController!.value.isInitialized)
-                              ClipRRect(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (!hasCustomThumb && _selectedThumbnailPath == null)
+                        FutureBuilder<Uint8List?>(
+                          future: _coverPreviewFuture,
+                          builder: (context, snapshot) {
+                            final bytes = snapshot.data;
+                            if (bytes != null && bytes.isNotEmpty) {
+                              return ClipRRect(
                                 borderRadius: BorderRadius.circular(7),
-                                child: FittedBox(
+                                child: Image.memory(
+                                  bytes,
                                   fit: BoxFit.cover,
-                                  child: SizedBox(
-                                    width: _videoController!.value.size.width,
-                                    height: _videoController!.value.size.height,
-                                    child: VideoPlayer(_videoController!),
-                                  ),
                                 ),
-                              )
-                            else
-                              const Center(
-                                  child: Icon(LucideIcons.image,
-                                      color: Colors.grey)),
-                            Container(
-                              color: Colors.black26,
-                              child: const Center(
-                                child: Icon(Icons.edit, color: Colors.white),
-                              ),
-                            ),
-                          ],
-                        )
-                      : null,
+                              );
+                            }
+                            return const Center(
+                              child:
+                                  Icon(LucideIcons.image, color: Colors.grey),
+                            );
+                          },
+                        ),
+                      Container(
+                        color: Colors.black26,
+                        child: const Center(
+                          child: Icon(Icons.edit, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               // Option to pick a frame from the video
@@ -615,22 +610,21 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
                       color: Colors.black,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: _videoController != null &&
-                            _videoController!.value.isInitialized
-                        ? ClipRRect(
+                    child: FutureBuilder<Uint8List?>(
+                      future: _coverPreviewFuture,
+                      builder: (context, snapshot) {
+                        final bytes = snapshot.data;
+                        if (bytes != null && bytes.isNotEmpty) {
+                          return ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: FittedBox(
-                              fit: BoxFit.cover,
-                              child: SizedBox(
-                                width: _videoController!.value.size.width,
-                                height: _videoController!.value.size.height,
-                                child: VideoPlayer(_videoController!),
-                              ),
-                            ),
-                          )
-                        : const Center(
-                            child:
-                                CircularProgressIndicator(color: Colors.white)),
+                            child: Image.memory(bytes, fit: BoxFit.cover),
+                          );
+                        }
+                        return const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        );
+                      },
+                    ),
                   ),
                   const SizedBox(width: 16),
                   // Caption Input
@@ -822,12 +816,10 @@ class _PickedVideoFrame {
 }
 
 class _VideoFramePickerSheet extends StatefulWidget {
-  final VideoPlayerController controller;
   final String videoPath;
   final int initialMs;
 
   const _VideoFramePickerSheet({
-    required this.controller,
     required this.videoPath,
     required this.initialMs,
   });
@@ -837,24 +829,29 @@ class _VideoFramePickerSheet extends StatefulWidget {
 }
 
 class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
+  VideoPlayerController? _controller;
   late double _posMs;
   bool _seeking = false;
 
   int get _durationMs {
-    final d = widget.controller.value.duration.inMilliseconds;
+    final d = _controller?.value.duration.inMilliseconds ?? 0;
     return d <= 0 ? 1 : d;
   }
 
   @override
   void initState() {
     super.initState();
-    _posMs = widget.initialMs.clamp(0, _durationMs).toDouble();
-    try {
-      widget.controller.pause();
-    } catch (_) {}
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    _posMs = widget.initialMs.toDouble();
+    final controller = VideoPlayerController.file(File(widget.videoPath));
+    _controller = controller;
+    controller.initialize().then((_) async {
+      if (!mounted) return;
+      await controller.setLooping(true);
+      await controller.setVolume(0.0);
+      await controller.pause();
+      _posMs = _posMs.clamp(0, _durationMs).toDouble();
       try {
-        await widget.controller.seekTo(Duration(milliseconds: _posMs.toInt()));
+        await controller.seekTo(Duration(milliseconds: _posMs.toInt()));
       } catch (_) {}
       if (mounted) setState(() {});
     });
@@ -862,9 +859,7 @@ class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
 
   @override
   void dispose() {
-    try {
-      widget.controller.play();
-    } catch (_) {}
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -872,7 +867,11 @@ class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
     if (_seeking) return;
     setState(() => _seeking = true);
     try {
-      await widget.controller.seekTo(Duration(milliseconds: ms.toInt()));
+      final controller = _controller;
+      if (controller != null) {
+        await controller.pause();
+        await controller.seekTo(Duration(milliseconds: ms.toInt()));
+      }
     } catch (_) {}
     if (mounted) setState(() => _seeking = false);
   }
@@ -898,7 +897,7 @@ class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final c = widget.controller;
+    final c = _controller;
     return SafeArea(
       child: Container(
         height: MediaQuery.of(context).size.height * 0.8,
@@ -925,7 +924,7 @@ class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
             ),
             Expanded(
               child: Center(
-                child: c.value.isInitialized
+                child: c != null && c.value.isInitialized
                     ? AspectRatio(
                         aspectRatio: c.value.aspectRatio == 0
                             ? (9 / 16)

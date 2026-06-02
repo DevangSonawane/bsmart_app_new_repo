@@ -1,9 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
 import 'dart:async';
 import '../api/api_client.dart';
 import '../utils/url_helper.dart';
 
-class VideoPool {
+class VideoPool extends ChangeNotifier {
   VideoPool._();
   static final VideoPool instance = VideoPool._();
 
@@ -26,12 +27,14 @@ class VideoPool {
   }
 
   Future<void> setMuted(bool muted) async {
+    if (_muted == muted) return;
     _muted = muted;
     for (final ctl in _pool.values) {
       try {
         await ctl.setVolume(_muted ? 0 : 1);
       } catch (_) {}
     }
+    notifyListeners();
   }
 
   Future<void> toggleMuted() => setMuted(!_muted);
@@ -292,6 +295,14 @@ class VideoPool {
     if (_activeId != null && _pool.containsKey(_activeId)) {
       try {
         await _pool[_activeId]!.pause();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> resumeActive() async {
+    if (_activeId != null && _pool.containsKey(_activeId)) {
+      try {
+        await _pool[_activeId]!.play();
       } catch (_) {}
     }
   }

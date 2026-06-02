@@ -25,6 +25,7 @@ import '../instagram_overlay/overlay_sticker.dart';
 import '../instagram_overlay/overlay_sticker_widget.dart';
 import '../features/reel_timeline/reel_timeline_models.dart';
 import '../features/reel_timeline/reel_timeline_renderer.dart';
+import '../routes.dart';
 
 enum _ActiveDragLayer { none, text, sticker }
 
@@ -394,7 +395,7 @@ class CreateEditPreviewScreen extends StatefulWidget {
 }
 
 class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RouteAware {
   static const double _trashProximityRadius = 72.0;
   static const double _trashSize = 68.0;
 
@@ -408,6 +409,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   final Map<String, List<_PreviewTextOverlay>> _mediaTextOverlays = {};
   final Map<String, List<OverlaySticker>> _mediaStickerOverlays = {};
   PageController? _postPageController;
+  PageRoute<dynamic>? _subscribedRoute;
+  bool _isRouteActive = true;
   String? _selectedFilter;
   String? _selectedFilterName;
   String? _selectedMusic;
@@ -1139,6 +1142,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
   }
 
   @override
@@ -1153,6 +1164,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     final listener = _imageStreamListener;
     if (stream != null && listener != null) {
       stream.removeListener(listener);
+    }
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+      _subscribedRoute = null;
     }
     super.dispose();
   }
@@ -1230,13 +1245,24 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   }
 
   @override
-  void deactivate() {
-    // Prevent background audio when another route (e.g. reel details) is pushed.
+  void didPushNext() {
+    if (!_isRouteActive) return;
+    _isRouteActive = false;
     if (_videoController?.value.isInitialized == true) {
-      _videoController?.pause();
+      unawaited(_videoController!.pause());
       _isPlaying = false;
+      if (mounted) setState(() {});
     }
-    super.deactivate();
+  }
+
+  @override
+  void didPopNext() {
+    if (_isRouteActive) return;
+    _isRouteActive = true;
+    if (_videoController?.value.isInitialized == true && _isPlaying) {
+      unawaited(_videoController!.play());
+    }
+    if (mounted) setState(() {});
   }
 
   void _handlePreviewVideoTick() {

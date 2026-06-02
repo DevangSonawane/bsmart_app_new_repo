@@ -60,6 +60,18 @@ class _PostCardState extends State<PostCard> {
 
   bool get _isCarousel => widget.post.mediaUrls.length > 1;
 
+  void _syncMutedState() {
+    final next = VideoPool.instance.isMuted;
+    if (!mounted || next == _isMuted) return;
+    setState(() => _isMuted = next);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    VideoPool.instance.addListener(_syncMutedState);
+  }
+
   String _formatCompactCount(int n) {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
@@ -124,6 +136,7 @@ class _PostCardState extends State<PostCard> {
 
   @override
   void dispose() {
+    VideoPool.instance.removeListener(_syncMutedState);
     _doubleTapLikeTimer?.cancel();
     _pageController.dispose();
     super.dispose();

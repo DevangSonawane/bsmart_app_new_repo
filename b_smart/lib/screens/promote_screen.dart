@@ -14,16 +14,22 @@ import '../widgets/share_content_modal.dart';
 import '../api/follows_api.dart';
 import '../utils/current_user.dart';
 import '../services/supabase_service.dart';
+import '../routes.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class PromoteScreen extends StatefulWidget {
-  const PromoteScreen({super.key});
+  final bool isActive;
+
+  const PromoteScreen({super.key, this.isActive = true});
 
   @override
   State<PromoteScreen> createState() => _PromoteScreenState();
 }
 
-class _PromoteScreenState extends State<PromoteScreen> {
+class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
+  PageRoute<dynamic>? _subscribedRoute;
+  bool _isRouteActive = true;
+
   final PageController _pageController = PageController();
   final PromoteService _promoteService = PromoteService();
   final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
@@ -56,6 +62,8 @@ class _PromoteScreenState extends State<PromoteScreen> {
       FocusNode(debugLabel: 'promote-search-focus');
   final ScrollController _searchScrollController = ScrollController();
 
+  bool get _canPlay => widget.isActive && _isRouteActive;
+
   @override
   void initState() {
     super.initState();
@@ -75,6 +83,19 @@ class _PromoteScreenState extends State<PromoteScreen> {
         });
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
   }
 
   Future<void> _loadPromotes() async {
@@ -131,7 +152,17 @@ class _PromoteScreenState extends State<PromoteScreen> {
     _controllers[index] = controller;
     await controller.initialize();
     controller.setLooping(true);
-    if (mounted && _currentIndex == index) controller.play();
+    if (mounted && _currentIndex == index && _canPlay) {
+      if (!_isMuted) {
+        await controller.setVolume(1.0);
+      } else {
+        await controller.setVolume(0.0);
+      }
+      await controller.play();
+    } else {
+      await controller.setVolume(0.0);
+      await controller.pause();
+    }
     setState(() {});
   }
 
@@ -164,7 +195,51 @@ class _PromoteScreenState extends State<PromoteScreen> {
       } catch (_) {}
     }
     _controllers.clear();
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+      _subscribedRoute = null;
+    }
     super.dispose();
+  }
+
+  @override
+  void didPushNext() {
+    if (!_isRouteActive) return;
+    _isRouteActive = false;
+    _syncPlaybackState();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didPopNext() {
+    if (_isRouteActive) return;
+    _isRouteActive = true;
+    _syncPlaybackState();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant PromoteScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) {
+      _syncPlaybackState();
+    }
+  }
+
+  void _syncPlaybackState() {
+    if (_controllers.isEmpty) return;
+    if (!_canPlay) {
+      for (final controller in _controllers.values) {
+        unawaited(controller.pause());
+        unawaited(controller.setVolume(0.0));
+      }
+      return;
+    }
+    final controller = _controllers[_currentIndex];
+    if (controller == null) return;
+    if (!controller.value.isInitialized) return;
+    unawaited(controller.setVolume(_isMuted ? 0.0 : 1.0));
+    unawaited(controller.play());
   }
 
   void _onPageChanged(int idx) {
@@ -174,7 +249,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
     _initControllerForIndex(idx);
     _disposeFarControllers(idx);
     final c = _controllers[idx];
-    if (c != null) {
+    if (c != null && _canPlay) {
       if (c.value.isInitialized) {
         if (!_isMuted) c.setVolume(1.0);
         c.play();
@@ -276,8 +351,8 @@ class _PromoteScreenState extends State<PromoteScreen> {
     });
 
     try {
-      final results =
-          await _promoteService.searchPromotes(q: q, page: 1, limit: _searchPageSize);
+      final results = await _promoteService.searchPromotes(
+          q: q, page: 1, limit: _searchPageSize);
       if (!mounted || epoch != _searchEpoch) return;
       setState(() {
         _searchResults =
@@ -448,7 +523,8 @@ class _PromoteScreenState extends State<PromoteScreen> {
     });
 
     try {
-      final persisted = await _supabaseService.setPostSaved(id, save: nextSaved);
+      final persisted =
+          await _supabaseService.setPostSaved(id, save: nextSaved);
       if (!mounted) return;
       setState(() {
         final it = Map<String, dynamic>.from(_promotes[index]);
@@ -587,8 +663,8 @@ class _PromoteScreenState extends State<PromoteScreen> {
               final commentsCount = _toInt(item['commentsCount'] ??
                   item['comments_count'] ??
                   item['comments']);
-              final isLiked = item['isLikedByMe'] == true ||
-                  item['is_liked_by_me'] == true;
+              final isLiked =
+                  item['isLikedByMe'] == true || item['is_liked_by_me'] == true;
               final uid = _toId(item['userId'] ?? item['user_id']);
               final caption = (item['caption'] ?? item['description'] ?? '')
                   .toString()
@@ -614,189 +690,178 @@ class _PromoteScreenState extends State<PromoteScreen> {
                 fit: StackFit.expand,
                 clipBehavior: Clip.none,
                 children: [
-              // 0. Solid black for nav bar zone
-              if (bottomSystemInset > 0)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: bottomSystemInset,
-                  child: const ColoredBox(color: Colors.black),
-                ),
-              // Video
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: bottomSystemInset,
-                child: controller != null && controller.value.isInitialized
-                    ? () {
-                        final ar = controller.value.aspectRatio;
-                        final target = 9 / 16;
-                        final isNineSixteen =
-                            ar.isFinite && ar > 0 && (ar - target).abs() < 0.06;
-                        if (isNineSixteen) {
-                          return ClipRect(
-                            child: FittedBox(
-                              fit: BoxFit.cover,
-                              child: SizedBox(
-                                width: controller.value.size.width,
-                                height: controller.value.size.height,
-                                child: VideoPlayer(controller),
+                  // 0. Solid black for nav bar zone
+                  if (bottomSystemInset > 0)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: bottomSystemInset,
+                      child: const ColoredBox(color: Colors.black),
+                    ),
+                  // Video
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: bottomSystemInset,
+                    child: controller != null && controller.value.isInitialized
+                        ? () {
+                            final ar = controller.value.aspectRatio;
+                            final target = 9 / 16;
+                            final isNineSixteen = ar.isFinite &&
+                                ar > 0 &&
+                                (ar - target).abs() < 0.06;
+                            if (isNineSixteen) {
+                              return ClipRect(
+                                child: FittedBox(
+                                  fit: BoxFit.cover,
+                                  child: SizedBox(
+                                    width: controller.value.size.width,
+                                    height: controller.value.size.height,
+                                    child: VideoPlayer(controller),
+                                  ),
+                                ),
+                              );
+                            }
+                            return ColoredBox(
+                              color: Colors.black,
+                              child: Center(
+                                child: AspectRatio(
+                                  aspectRatio: ar,
+                                  child: VideoPlayer(controller),
+                                ),
                               ),
-                            ),
-                          );
-                        }
-                        return ColoredBox(
-                          color: Colors.black,
-                          child: Center(
-                            child: AspectRatio(
-                              aspectRatio: ar,
-                              child: VideoPlayer(controller),
-                            ),
+                            );
+                          }()
+                        : Container(
+                            color: Colors.black,
+                            child: const Center(
+                                child: CircularProgressIndicator(
+                                    color: Colors.white54))),
+                  ),
+                  // Gradient overlay
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: bottomSystemInset,
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.transparent, Colors.black54],
                           ),
-                        );
-                      }()
-                    : Container(
-                        color: Colors.black,
-                        child: const Center(
-                            child: CircularProgressIndicator(
-                                color: Colors.white54))),
-              ),
-              // Gradient overlay
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: bottomSystemInset,
-                child: IgnorePointer(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black54],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-              // Right side actions (aligned with Ads layout)
-              Positioned(
-                right: 4,
-                bottom: actionsBottom,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    GlassActionButton(
-                      icon: LucideIcons.eye,
-                      label: _fmt(_toInt(item['viewsCount'] ?? item['views_count'] ?? item['views'] ?? item['currentViews'] ?? item['current_views'])),
-                      onTap: () {},
+                  // Right side actions (aligned with Ads layout)
+                  Positioned(
+                    right: 4,
+                    bottom: actionsBottom,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        GlassActionButton(
+                          icon: LucideIcons.eye,
+                          label: _fmt(_toInt(item['viewsCount'] ??
+                              item['views_count'] ??
+                              item['views'] ??
+                              item['currentViews'] ??
+                              item['current_views'])),
+                          onTap: () {},
+                        ),
+                        const SizedBox(height: 16),
+                        GlassActionButton(
+                          icon: isLiked ? Icons.favorite : LucideIcons.heart,
+                          label: _fmt(likesCount),
+                          iconColor: isLiked ? Colors.red : Colors.white,
+                          onTap: () => _toggleLike(index),
+                        ),
+                        const SizedBox(height: 16),
+                        GlassActionButton(
+                          icon: LucideIcons.messageCircle,
+                          label: _fmt(commentsCount),
+                          onTap: () => _openComments(index),
+                        ),
+                        const SizedBox(height: 16),
+                        GlassActionButton(
+                          icon: LucideIcons.send,
+                          label: '',
+                          rotate: -0.2,
+                          onTap: () => _openShare(index),
+                        ),
+                        const SizedBox(height: 16),
+                        GlassActionButton(
+                          icon: (item['isSavedByMe'] == true ||
+                                  item['is_saved_by_me'] == true)
+                              ? Icons.bookmark
+                              : Icons.bookmark_border,
+                          label: '',
+                          onTap: () => _toggleSave(index),
+                        ),
+                        const SizedBox(height: 16),
+                        GlassActionButton(
+                          icon: _isMuted
+                              ? LucideIcons.volumeX
+                              : LucideIcons.volume2,
+                          label: '',
+                          onTap: () {
+                            setState(() {
+                              _isMuted = !_isMuted;
+                              final c = _controllers[_currentIndex];
+                              if (c != null && _canPlay) {
+                                c.setVolume(_isMuted ? 0.0 : 1.0);
+                              } else if (c != null) {
+                                c.setVolume(0.0);
+                              }
+                            });
+                          },
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                    GlassActionButton(
-                      icon: isLiked ? Icons.favorite : LucideIcons.heart,
-                      label: _fmt(likesCount),
-                      iconColor: isLiked ? Colors.red : Colors.white,
-                      onTap: () => _toggleLike(index),
-                    ),
-                    const SizedBox(height: 16),
-                    GlassActionButton(
-                      icon: LucideIcons.messageCircle,
-                      label: _fmt(commentsCount),
-                      onTap: () => _openComments(index),
-                    ),
-                    const SizedBox(height: 16),
-                    GlassActionButton(
-                      icon: LucideIcons.send,
-                      label: '',
-                      rotate: -0.2,
-                      onTap: () => _openShare(index),
-                    ),
-                    const SizedBox(height: 16),
-                    GlassActionButton(
-                      icon: (item['isSavedByMe'] == true || item['is_saved_by_me'] == true)
-                          ? Icons.bookmark
-                          : Icons.bookmark_border,
-                      label: '',
-                      onTap: () => _toggleSave(index),
-                    ),
-                    const SizedBox(height: 16),
-                    GlassActionButton(
-                      icon:
-                          _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
-                      label: '',
-                      onTap: () {
-                        setState(() {
-                          _isMuted = !_isMuted;
-                          final c = _controllers[_currentIndex];
-                          if (c != null) c.setVolume(_isMuted ? 0.0 : 1.0);
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              // Bottom: user + caption + tags (bounded within the page height)
-              Positioned.fill(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: 16,
-                    right: 92,
-                    bottom: infoBottomPadding,
                   ),
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 240),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _PromoteUsernamePill(
-                            item: item,
-                            isFollowing: _followByUserId[uid] == true,
-                            isFollowLoading:
-                                _followLoadingUserIds.contains(uid),
-                            showFollow: uid.isNotEmpty &&
-                                (_myUserId == null ||
-                                    _myUserId!.isEmpty ||
-                                    uid != _myUserId),
-                            onFollowTap: () => _toggleFollow(index),
-                          ),
-                          if (caption.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              caption,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                height: 1.25,
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black45,
-                                    offset: Offset(0, 1),
-                                    blurRadius: 2,
-                                  ),
-                                ],
+                  // Bottom: user + caption + tags (bounded within the page height)
+                  Positioned.fill(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: 16,
+                        right: 92,
+                        bottom: infoBottomPadding,
+                      ),
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 240),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _PromoteUsernamePill(
+                                item: item,
+                                isFollowing: _followByUserId[uid] == true,
+                                isFollowLoading:
+                                    _followLoadingUserIds.contains(uid),
+                                showFollow: uid.isNotEmpty &&
+                                    (_myUserId == null ||
+                                        _myUserId!.isEmpty ||
+                                        uid != _myUserId),
+                                onFollowTap: () => _toggleFollow(index),
                               ),
-                            ),
-                          ],
-                          if (tags.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              children: tags.take(3).map((t) {
-                                return Text(
-                                  t,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.70),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    shadows: const [
+                              if (caption.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  caption,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    height: 1.25,
+                                    shadows: [
                                       Shadow(
                                         color: Colors.black45,
                                         offset: Offset(0, 1),
@@ -804,126 +869,151 @@ class _PromoteScreenState extends State<PromoteScreen> {
                                       ),
                                     ],
                                   ),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Progress bar (like Ads/Reels)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: bottomSystemInset,
-                child: IgnorePointer(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: Container(
-                      height: 4,
-                      color: Colors.white.withValues(alpha: 0.22),
-                      child: (controller != null &&
-                              controller.value.isInitialized)
-                          ? _SmoothVideoProgressBar(controller: controller)
-                          : const SizedBox.shrink(),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Products cards (anchored at bottom like before).
-              if (products.isNotEmpty)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: bottomSystemInset + 12,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _productsOpenByIndex[index] = !productsOpen;
-                            });
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.30),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.20),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  LucideIcons.shoppingBag,
-                                  size: 14,
-                                  color: Colors.white,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  productsOpen
-                                      ? 'Hide Products'
-                                      : '${products.length} Product${products.length > 1 ? 's' : ''}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
                                 ),
                               ],
-                            ),
+                              if (tags.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: tags.take(3).map((t) {
+                                    return Text(
+                                      t,
+                                      style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.70),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        shadows: const [
+                                          Shadow(
+                                            color: Colors.black45,
+                                            offset: Offset(0, 1),
+                                            blurRadius: 2,
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ),
-                      AnimatedOpacity(
-                        duration: const Duration(milliseconds: 220),
-                        opacity: productsOpen ? 1 : 0,
-                        child: AnimatedSize(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                          child: productsOpen
-                              ? Padding(
-                                  padding: const EdgeInsets.only(top: 10),
-                                  child: SizedBox(
-                                    height: 82,
-                                    child: ListView.separated(
-                                      clipBehavior: Clip.none,
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12),
-                                      scrollDirection: Axis.horizontal,
-                                      physics: const BouncingScrollPhysics(),
-                                      itemCount: products.length.clamp(0, 8),
-                                      separatorBuilder: (_, __) =>
-                                          const SizedBox(width: 10),
-                                      itemBuilder: (context, i) {
-                                        final p = products[i] is Map
-                                            ? Map<String, dynamic>.from(
-                                                products[i] as Map)
-                                            : <String, dynamic>{};
-                                        return _MiniProductCard(product: p);
-                                      },
-                                    ),
-                                  ),
-                                )
+                    ),
+                  ),
+
+                  // Progress bar (like Ads/Reels)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: bottomSystemInset,
+                    child: IgnorePointer(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: Container(
+                          height: 4,
+                          color: Colors.white.withValues(alpha: 0.22),
+                          child: (controller != null &&
+                                  controller.value.isInitialized)
+                              ? _SmoothVideoProgressBar(controller: controller)
                               : const SizedBox.shrink(),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-            ],
+
+                  // Products cards (anchored at bottom like before).
+                  if (products.isNotEmpty)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: bottomSystemInset + 12,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _productsOpenByIndex[index] = !productsOpen;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.30),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.20),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      LucideIcons.shoppingBag,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      productsOpen
+                                          ? 'Hide Products'
+                                          : '${products.length} Product${products.length > 1 ? 's' : ''}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          AnimatedOpacity(
+                            duration: const Duration(milliseconds: 220),
+                            opacity: productsOpen ? 1 : 0,
+                            child: AnimatedSize(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                              child: productsOpen
+                                  ? Padding(
+                                      padding: const EdgeInsets.only(top: 10),
+                                      child: SizedBox(
+                                        height: 82,
+                                        child: ListView.separated(
+                                          clipBehavior: Clip.none,
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12),
+                                          scrollDirection: Axis.horizontal,
+                                          physics:
+                                              const BouncingScrollPhysics(),
+                                          itemCount:
+                                              products.length.clamp(0, 8),
+                                          separatorBuilder: (_, __) =>
+                                              const SizedBox(width: 10),
+                                          itemBuilder: (context, i) {
+                                            final p = products[i] is Map
+                                                ? Map<String, dynamic>.from(
+                                                    products[i] as Map)
+                                                : <String, dynamic>{};
+                                            return _MiniProductCard(product: p);
+                                          },
+                                        ),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               );
             },
           ),
@@ -1154,7 +1244,8 @@ class _SmoothVideoProgressBar extends StatefulWidget {
   const _SmoothVideoProgressBar({required this.controller});
 
   @override
-  State<_SmoothVideoProgressBar> createState() => _SmoothVideoProgressBarState();
+  State<_SmoothVideoProgressBar> createState() =>
+      _SmoothVideoProgressBarState();
 }
 
 class _SmoothVideoProgressBarState extends State<_SmoothVideoProgressBar>
@@ -1512,14 +1603,12 @@ class _PromoteSearchDropdown extends StatelessWidget {
                       final item = results[index];
                       final id = _toId(
                           item['id'] ?? item['_id'] ?? item['promote_reel_id']);
-                      final username = (item['username'] ?? 'User')
-                          .toString()
-                          .trim();
-                      final caption = (item['caption'] ??
-                              item['description'] ??
-                              '')
-                          .toString()
-                          .trim();
+                      final username =
+                          (item['username'] ?? 'User').toString().trim();
+                      final caption =
+                          (item['caption'] ?? item['description'] ?? '')
+                              .toString()
+                              .trim();
                       final avatar =
                           (item['avatarUrl'] ?? item['avatar_url'] ?? '')
                               .toString()
@@ -1584,8 +1673,8 @@ class _SearchAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initials = (fallback.trim().isEmpty ? '?' : fallback.trim()[0])
-        .toUpperCase();
+    final initials =
+        (fallback.trim().isEmpty ? '?' : fallback.trim()[0]).toUpperCase();
     final trimmed = (url ?? '').trim();
     if (trimmed.isEmpty) {
       return CircleAvatar(

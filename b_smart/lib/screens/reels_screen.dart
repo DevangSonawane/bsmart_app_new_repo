@@ -18,6 +18,7 @@ import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
+import '../routes.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
 
 class ReelsScreen extends StatefulWidget {
@@ -30,7 +31,7 @@ class ReelsScreen extends StatefulWidget {
 }
 
 class _ReelsScreenState extends State<ReelsScreen>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, RouteAware {
   final ReelsService _reelsService = ReelsService();
   final SupabaseService _supabase = SupabaseService();
   final PageController _pageController = PageController();
@@ -71,6 +72,10 @@ class _ReelsScreenState extends State<ReelsScreen>
   bool _autoplayKickScheduled = false;
   static const double _audioOnScreenThreshold = 0.10;
   bool _audioGateOpen = true;
+  PageRoute<dynamic>? _subscribedRoute;
+  bool _isRouteActive = true;
+
+  bool get _playbackAllowed => widget.isActive && _isRouteActive;
 
   bool _isControllerUsable(VideoPlayerController? controller) {
     if (controller == null) return false;
@@ -125,7 +130,7 @@ class _ReelsScreenState extends State<ReelsScreen>
         }
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _reels.isEmpty || !widget.isActive) return;
+        if (!mounted || _reels.isEmpty || !_playbackAllowed) return;
         unawaited(_initializePoolAt(_currentIndex));
         _poolOps = _poolOps.then<void>((_) async {
           if (!mounted) return;
@@ -135,6 +140,19 @@ class _ReelsScreenState extends State<ReelsScreen>
       });
     }
     _loadReels();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
   }
 
   Future<void> _loadCurrentUserId() async {
@@ -157,6 +175,10 @@ class _ReelsScreenState extends State<ReelsScreen>
     _pageController.removeListener(_onPageScrollForAudioGate);
     _pageController.dispose();
     _disposeAllControllers();
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+      _subscribedRoute = null;
+    }
     super.dispose();
   }
 
@@ -171,7 +193,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   void _applyAudioGate() {
     if (!mounted) return;
-    final open = widget.isActive && _isCurrentReelFullyOnScreen();
+    final open = _playbackAllowed && _isCurrentReelFullyOnScreen();
     if (open == _audioGateOpen) return;
     _audioGateOpen = open;
     final controller = _controllerForIndex(_currentIndex);
@@ -184,7 +206,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     // Only flip volume when we cross the threshold (prevents spam).
     _applyAudioGate();
 
-    if (!widget.isActive) return;
+    if (!_playbackAllowed) return;
     if (!_pageController.hasClients) return;
     final page = _pageController.page;
     if (page == null) return;
@@ -218,7 +240,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (_reels.isEmpty || _currentIndex < 0 || _currentIndex >= _reels.length) {
       return;
     }
-    if (widget.isActive) {
+    if (_playbackAllowed) {
       if (_controllerForIndex(_currentIndex) == null) {
         unawaited(_initializePoolAt(_currentIndex));
       }
@@ -232,6 +254,31 @@ class _ReelsScreenState extends State<ReelsScreen>
       }
       _audioGateOpen = false;
       _disposeAllControllers();
+    }
+  }
+
+  @override
+  void didPushNext() {
+    if (!_isRouteActive) return;
+    _isRouteActive = false;
+    _audioGateOpen = false;
+    for (final controller in _videoControllers.values) {
+      unawaited(_setControllerVolumeSafely(controller, 0));
+      unawaited(controller.pause());
+    }
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didPopNext() {
+    if (_isRouteActive) return;
+    _isRouteActive = true;
+    if (mounted) setState(() {});
+    if (_playbackAllowed) {
+      _applyAudioGate();
+      _poolOps = _poolOps.then<void>((_) async {
+        await _activateCurrentReelPlayback();
+      }).catchError((_) {});
     }
   }
 
@@ -264,7 +311,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
       if (_reels.isNotEmpty) {
         unawaited(_reelsService.incrementViews(_reels[_currentIndex].id));
-        if (!widget.isActive) return;
+        if (!_playbackAllowed) return;
         unawaited(_initializePoolAt(_currentIndex));
         _poolOps = _poolOps.then<void>((_) async {
           if (!mounted) return;
@@ -455,7 +502,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Future<void> _initializePoolAt(int index) async {
     if (index < 0 || index >= _reels.length) return;
-    if (!widget.isActive) return;
+    if (!_playbackAllowed) return;
     final generation = ++_poolGeneration;
     _currentIndex = index;
     _prewarmRequested
@@ -493,7 +540,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Future<void> _rotatePoolToIndex(int newIndex) async {
     if (newIndex < 0 || newIndex >= _reels.length) return;
-    if (!widget.isActive) return;
+    if (!_playbackAllowed) return;
     await _initializePoolAt(newIndex);
     if (!mounted) return;
     await _activateCurrentReelPlayback();
@@ -532,10 +579,10 @@ class _ReelsScreenState extends State<ReelsScreen>
         await controller.seekTo(Duration.zero);
       }
       await controller.setVolume(
-        (widget.isActive && _audioGateOpen && !_isMuted) ? 1 : 0,
+        (_playbackAllowed && _audioGateOpen && !_isMuted) ? 1 : 0,
       );
       if (!mounted || _controllerForIndex(index) != controller) return;
-      if (widget.isActive) {
+      if (_playbackAllowed) {
         await controller.play();
         _lastStartedIndex = index;
         debugPrint(
@@ -550,7 +597,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   }
 
   Future<void> _activateCurrentReelPlayback() async {
-    if (!widget.isActive) return;
+    if (!_playbackAllowed) return;
     _applyAudioGate();
     final index = _currentIndex;
     if (_controllerForIndex(index) == null) {
@@ -568,7 +615,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Future<void> _togglePlayPause() async {
     if (_reels.isEmpty) return;
-    if (!widget.isActive) return;
+    if (!_playbackAllowed) return;
     if (_isCommentsOpen) return;
     if (_isScrubbing) return;
     final index = _currentIndex;
@@ -582,7 +629,7 @@ class _ReelsScreenState extends State<ReelsScreen>
       } else {
         _userPaused = false;
         await controller.setVolume(
-          (widget.isActive && _audioGateOpen && !_isMuted) ? 1 : 0,
+          (_playbackAllowed && _audioGateOpen && !_isMuted) ? 1 : 0,
         );
         await controller.play();
         _lastStartedIndex = index;
@@ -866,7 +913,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     _autoplayKickScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoplayKickScheduled = false;
-      if (!mounted || !widget.isActive || _reels.isEmpty) return;
+      if (!mounted || !_playbackAllowed || _reels.isEmpty) return;
       final controller = _controllerForIndex(_currentIndex);
       if (!_isControllerInitialized(controller)) {
         if (_controllerSetupInProgress.contains(_currentIndex)) return;
@@ -1103,7 +1150,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                 );
               },
             ),
-            if (_userPaused && widget.isActive)
+            if (_userPaused && _playbackAllowed)
               Positioned(
                 left: 0,
                 right: 0,
@@ -1239,7 +1286,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   Future<void> _beginScrub(double dx, double width) async {
     if (!mounted) return;
     if (_reels.isEmpty) return;
-    if (!widget.isActive) return;
+    if (!_playbackAllowed) return;
     if (_isCommentsOpen) return;
     final controller = _controllerForIndex(_currentIndex);
     if (controller == null) return;
@@ -1305,10 +1352,10 @@ class _ReelsScreenState extends State<ReelsScreen>
     setState(() {});
     if (controller == null) return;
     if (!_isControllerInitialized(controller)) return;
-    if (_resumeAfterScrub && widget.isActive) {
+    if (_resumeAfterScrub && _playbackAllowed) {
       try {
         await controller.setVolume(
-          (widget.isActive && _audioGateOpen && !_isMuted) ? 1 : 0,
+          (_playbackAllowed && _audioGateOpen && !_isMuted) ? 1 : 0,
         );
         await controller.play();
         _lastStartedIndex = _currentIndex;
@@ -1548,7 +1595,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     final thumb = reel.thumbnailUrl == null
         ? null
         : UrlHelper.absoluteUrl(reel.thumbnailUrl!);
-    final isActive = widget.isActive && index == _currentIndex;
+    final isActive = _playbackAllowed && index == _currentIndex;
 
     return RepaintBoundary(
       key: ValueKey('reel-rb-${reel.id}'),
@@ -1793,11 +1840,13 @@ class _ReelsScreenState extends State<ReelsScreen>
                       SizedBox(
                         height: followHeight,
                         child: OutlinedButton(
-                          onPressed:
-                              _isFollowLoading ? null : () => unawaited(_toggleFollow()),
+                          onPressed: _isFollowLoading
+                              ? null
+                              : () => unawaited(_toggleFollow()),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.65)),
+                            side: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.65)),
                             padding: const EdgeInsets.symmetric(
                               horizontal: followPadH,
                               vertical: followPadV,
@@ -1902,8 +1951,9 @@ class _ReelsScreenState extends State<ReelsScreen>
                     SizedBox(
                       height: followHeight,
                       child: OutlinedButton(
-                        onPressed:
-                            _isFollowLoading ? null : () => unawaited(_toggleFollow()),
+                        onPressed: _isFollowLoading
+                            ? null
+                            : () => unawaited(_toggleFollow()),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white,
                           side: BorderSide(
