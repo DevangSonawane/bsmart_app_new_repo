@@ -41,6 +41,16 @@ class AuthService {
 
   AuthService._internal();
 
+  Future<void> _resetGoogleSessionForInteractiveSignIn() async {
+    try {
+      await _googleSignIn.disconnect();
+    } catch (_) {
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
+    }
+  }
+
   // ==================== SIGNUP METHODS ====================
 
   // Signup with email - Step 1
@@ -92,6 +102,10 @@ class AuthService {
 
   Future<String?> loginWithGoogle() async {
     try {
+      // Force the interactive flow to show the Google account chooser instead
+      // of reusing the previously selected account.
+      await _resetGoogleSessionForInteractiveSignIn();
+
       final googleUser = await _googleSignIn.signIn();
       if (googleUser == null) return null;
 

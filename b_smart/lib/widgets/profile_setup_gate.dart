@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 
 import '../api/api.dart';
 import '../state/app_state.dart';
 import '../state/profile_actions.dart';
+import '../widgets/app_popups/app_modal_popup.dart';
+import '../utils/app_navigator.dart';
 import '../theme/design_tokens.dart';
 
 class ProfileSetupGate extends StatefulWidget {
@@ -28,6 +32,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
 
   final TextEditingController _addressLine1Controller = TextEditingController();
   final TextEditingController _addressLine2Controller = TextEditingController();
+  final TextEditingController _ageController = TextEditingController();
   final TextEditingController _pincodeController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _stateController = TextEditingController();
@@ -37,6 +42,8 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
   String _currentUserId = '';
 
   bool _showProfileSetup = false;
+  bool _profileSetupDialogOpen = false;
+  VoidCallback? _closeProfileSetupDialog;
   bool _savingProfileSetup = false;
   bool _checkingProfileSetup = false;
   bool _saveSuccess = false;
@@ -71,6 +78,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     WidgetsBinding.instance.removeObserver(this);
     _addressLine1Controller.dispose();
     _addressLine2Controller.dispose();
+    _ageController.dispose();
     _pincodeController.dispose();
     _cityController.dispose();
     _stateController.dispose();
@@ -114,6 +122,17 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     return const <String, dynamic>{};
   }
 
+  void _resetForm() {
+    _gender = '';
+    _addressLine1Controller.clear();
+    _addressLine2Controller.clear();
+    _ageController.clear();
+    _pincodeController.clear();
+    _cityController.clear();
+    _stateController.clear();
+    _countryController.clear();
+  }
+
   String _normalizeGender(dynamic rawGender) {
     final lower = (rawGender ?? '').toString().trim().toLowerCase();
     if (lower == 'male' || lower == 'female' || lower == 'other') return lower;
@@ -123,6 +142,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
   bool _needsProfileSetup(Map<String, dynamic>? profile) {
     if (profile == null) return false;
     final gender = _normalizeGender(profile['gender'] ?? profile['sex']);
+    final age = (profile['age'] ?? '').toString().trim();
     final address = _extractAddress(profile);
     final addressLine1 =
         (address['address_line1'] ?? address['addressLine1'] ?? '')
@@ -133,6 +153,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     final state = (address['state'] ?? '').toString().trim();
     final country = (address['country'] ?? '').toString().trim();
     return gender.isEmpty ||
+        age.isEmpty ||
         addressLine1.isEmpty ||
         pincode.isEmpty ||
         city.isEmpty ||
@@ -141,8 +162,11 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
   }
 
   void _fillFormFromProfile(Map<String, dynamic>? profile) {
+    _resetForm();
+    if (profile == null || profile.isEmpty) return;
     final address = _extractAddress(profile);
-    _gender = _normalizeGender(profile?['gender'] ?? profile?['sex']);
+    _gender = _normalizeGender(profile['gender'] ?? profile['sex']);
+    _ageController.text = (profile['age'] ?? '').toString();
     _addressLine1Controller.text =
         (address['address_line1'] ?? address['addressLine1'] ?? '').toString();
     _addressLine2Controller.text =
@@ -151,6 +175,46 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     _cityController.text = (address['city'] ?? '').toString();
     _stateController.text = (address['state'] ?? '').toString();
     _countryController.text = (address['country'] ?? '').toString();
+  }
+
+  Map<String, dynamic> _mergeProfileWithPayload(
+    Map<String, dynamic>? profile,
+    Map<String, dynamic> payload,
+  ) {
+    final merged = <String, dynamic>{
+      ...?profile,
+      ...payload,
+    };
+
+    final mergedAddress = <String, dynamic>{
+      ..._extractAddress(profile),
+      if (payload['address'] is Map)
+        ...Map<String, dynamic>.from(payload['address'] as Map),
+    };
+    if (mergedAddress.isNotEmpty) {
+      merged['address'] = mergedAddress;
+    }
+
+    final gender = (payload['gender'] ?? payload['sex'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (gender.isNotEmpty) {
+      merged['gender'] = gender;
+      merged['sex'] = gender;
+    }
+
+    final age = payload['age'];
+    if (age != null) {
+      merged['age'] = age;
+    }
+
+    final location = (payload['location'] ?? '').toString().trim();
+    if (location.isNotEmpty) {
+      merged['location'] = location;
+    }
+
+    return merged;
   }
 
   Future<void> _refreshProfileSetupState() async {
@@ -198,10 +262,20 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
           _showProfileSetup = false;
           _error = '';
           _saveSuccess = false;
+          _savingProfileSetup = false;
           return;
         }
         _showProfileSetup = !_dismissedSession.contains(dismissKey);
       });
+
+      if (!needsSetup) {
+        _closeProfileSetupDialog?.call();
+        return;
+      }
+
+      if (_showProfileSetup) {
+        unawaited(_presentProfileSetupDialog());
+      }
     } finally {
       _checkingProfileSetup = false;
     }
@@ -216,8 +290,12 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     });
   }
 
-  Future<void> _saveProfileSetup() async {
+  Future<void> _saveProfileSetup(
+    StateSetter setDialogState,
+    VoidCallback closeDialog,
+  ) async {
     final gender = _gender.trim().toLowerCase();
+    final age = int.tryParse(_ageController.text.trim());
     final addressLine1 = _addressLine1Controller.text.trim();
     final addressLine2 = _addressLine2Controller.text.trim();
     final pincode = _pincodeController.text.trim();
@@ -226,7 +304,11 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     final country = _countryController.text.trim();
 
     if (gender.isEmpty) {
-      setState(() => _error = 'Please select your gender.');
+      setDialogState(() => _error = 'Please select your gender.');
+      return;
+    }
+    if (age == null || age < 13 || age > 100) {
+      setDialogState(() => _error = 'Please enter a valid age (13-100).');
       return;
     }
     if (addressLine1.isEmpty ||
@@ -234,7 +316,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
         city.isEmpty ||
         state.isEmpty ||
         country.isEmpty) {
-      setState(() {
+      setDialogState(() {
         _error =
             'Please fill all required address fields (Address Line 1, Pincode, City, State, Country).';
       });
@@ -242,13 +324,13 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     }
 
     if (_currentUserId.isEmpty) {
-      setState(() {
+      setDialogState(() {
         _error = 'User session not found. Please log in again.';
       });
       return;
     }
 
-    setState(() {
+    setDialogState(() {
       _savingProfileSetup = true;
       _error = '';
       _saveSuccess = false;
@@ -256,6 +338,7 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
 
     final payload = <String, dynamic>{
       'gender': gender,
+      'age': age,
       'address': {
         'address_line1': addressLine1,
         'address_line2': addressLine2,
@@ -275,25 +358,42 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
       }
     } catch (_) {
       if (!mounted) return;
-      setState(() {
+      setDialogState(() {
         _savingProfileSetup = false;
         _error = 'Failed to save profile. Please try again.';
       });
       return;
     }
 
-    await _refreshProfileSetupState();
+    Map<String, dynamic>? freshRaw;
+    try {
+      freshRaw = await AuthApi().me();
+    } catch (_) {
+      freshRaw = null;
+    }
+
+    final freshProfile = _normalizeProfile(freshRaw);
+    final updatedProfile = _mergeProfileWithPayload(freshProfile, payload);
+
+    if (mounted && updatedProfile.isNotEmpty) {
+      final store = StoreProvider.of<AppState>(context);
+      store.dispatch(SetProfile(updatedProfile));
+    }
+
     if (!mounted) return;
-    setState(() {
+    setDialogState(() {
+      _fillFormFromProfile(updatedProfile);
       _savingProfileSetup = false;
       _saveSuccess = true;
+      _error = '';
     });
     await Future<void>.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
-    setState(() {
+    setDialogState(() {
       _showProfileSetup = false;
       _saveSuccess = false;
     });
+    closeDialog();
   }
 
   Widget _field({
@@ -331,17 +431,20 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
             hintText: hint,
             isDense: true,
             filled: true,
-            fillColor: isDark ? const Color(0xFF061633) : const Color(0xFFF5F5F5),
+            fillColor:
+                isDark ? const Color(0xFF061633) : const Color(0xFFF5F5F5),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: isDark ? const Color(0xFF16305E) : const Color(0xFFE5E7EB),
+                color:
+                    isDark ? const Color(0xFF16305E) : const Color(0xFFE5E7EB),
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: isDark ? const Color(0xFF16305E) : const Color(0xFFE5E7EB),
+                color:
+                    isDark ? const Color(0xFF16305E) : const Color(0xFFE5E7EB),
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -372,7 +475,8 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
             : (isDark ? Colors.white70 : Colors.black87),
         fontWeight: FontWeight.w600,
       ),
-      backgroundColor: isDark ? const Color(0xFF061633) : const Color(0xFFF5F5F5),
+      backgroundColor:
+          isDark ? const Color(0xFF061633) : const Color(0xFFF5F5F5),
       selectedColor: DesignTokens.instaPink,
       side: BorderSide(
         color: selected
@@ -385,297 +489,332 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     );
   }
 
-  Widget _buildModal() {
+  Widget _buildModal(StateSetter setDialogState, VoidCallback closeDialog) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Positioned.fill(
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.60),
-        alignment: Alignment.center,
-        padding: const EdgeInsets.all(16),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 520,
-            maxHeight: MediaQuery.of(context).size.height * 0.90,
-          ),
-          child: Material(
-            color: isDark ? const Color(0xFF1C1C1C) : Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
-                  child: Row(
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 520,
+          maxHeight: MediaQuery.of(context).size.height * 0.90,
+        ),
+        child: Material(
+          color: isDark ? const Color(0xFF1C1C1C) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Complete your profile',
+                            style: TextStyle(
+                              color: isDark ? Colors.white : Colors.black87,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          RichText(
+                            text: TextSpan(
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                              children: const [
+                                TextSpan(
+                                  text: 'Add gender and address to continue. ',
+                                ),
+                                TextSpan(
+                                  text: '* required',
+                                  style: TextStyle(color: Colors.redAccent),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _savingProfileSetup
+                          ? null
+                          : () {
+                              _closeForSession();
+                              closeDialog();
+                            },
+                      icon: Icon(
+                        Icons.close,
+                        color: isDark ? Colors.white70 : Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(
+                height: 1,
+                color:
+                    isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE5E7EB),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Complete your profile',
-                              style: TextStyle(
-                                color: isDark ? Colors.white : Colors.black87,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
+                      if (_error.isNotEmpty) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF3A1D1F)
+                                : const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _error,
+                            style: TextStyle(
+                              color: isDark
+                                  ? const Color(0xFFFCA5A5)
+                                  : const Color(0xFFB91C1C),
+                              fontSize: 13,
                             ),
-                            const SizedBox(height: 4),
-                            RichText(
-                              text: TextSpan(
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isDark ? Colors.white70 : Colors.black54,
-                                ),
-                                children: const [
-                                  TextSpan(
-                                    text: 'Add gender and address to continue. ',
-                                  ),
-                                  TextSpan(
-                                    text: '* required',
-                                    style: TextStyle(color: Colors.redAccent),
-                                  ),
-                                ],
-                              ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (_saveSuccess) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1A3A2A)
+                                : const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Profile saved successfully!',
+                            style: TextStyle(
+                              color: isDark
+                                  ? const Color(0xFF86EFAC)
+                                  : const Color(0xFF166534),
+                              fontSize: 13,
                             ),
-                          ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      Text(
+                        'Gender *',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87,
                         ),
                       ),
-                      IconButton(
-                        onPressed: _savingProfileSetup ? null : _closeForSession,
-                        icon: Icon(
-                          Icons.close,
-                          color: isDark ? Colors.white70 : Colors.black54,
-                        ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _genderOption('male', 'Male'),
+                          _genderOption('female', 'Female'),
+                          _genderOption('other', 'Other'),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      _field(
+                        label: 'Age',
+                        hint: '18',
+                        controller: _ageController,
+                        requiredField: true,
+                      ),
+                      const SizedBox(height: 14),
+                      _field(
+                        label: 'Address Line 1',
+                        hint: 'Flat / House No., Building, Street',
+                        controller: _addressLine1Controller,
+                        requiredField: true,
+                      ),
+                      const SizedBox(height: 14),
+                      _field(
+                        label: 'Address Line 2 (optional)',
+                        hint: 'Area, Landmark',
+                        controller: _addressLine2Controller,
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _field(
+                              label: 'Pincode',
+                              hint: '560001',
+                              controller: _pincodeController,
+                              requiredField: true,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _field(
+                              label: 'City',
+                              hint: 'Bengaluru',
+                              controller: _cityController,
+                              requiredField: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _field(
+                              label: 'State',
+                              hint: 'Karnataka',
+                              controller: _stateController,
+                              requiredField: true,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _field(
+                              label: 'Country',
+                              hint: 'India',
+                              controller: _countryController,
+                              requiredField: true,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                Divider(
-                  height: 1,
-                  color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE5E7EB),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_error.isNotEmpty) ...[
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF3A1D1F)
-                                  : const Color(0xFFFEE2E2),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              _error,
-                              style: TextStyle(
-                                color: isDark
-                                    ? const Color(0xFFFCA5A5)
-                                    : const Color(0xFFB91C1C),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        if (_saveSuccess) ...[
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF1A3A2A)
-                                  : const Color(0xFFDCFCE7),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              'Profile saved successfully!',
-                              style: TextStyle(
-                                color: isDark
-                                    ? const Color(0xFF86EFAC)
-                                    : const Color(0xFF166534),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        Text(
-                          'Gender *',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
+              ),
+              Divider(
+                height: 1,
+                color:
+                    isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE5E7EB),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: isDark
+                            ? const Color(0xFF3A3A3A)
+                            : const Color(0xFFE5E7EB),
+                        foregroundColor: isDark ? Colors.white : Colors.black87,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 10,
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _genderOption('male', 'Male'),
-                            _genderOption('female', 'Female'),
-                            _genderOption('other', 'Other'),
-                          ],
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        const SizedBox(height: 14),
-                        _field(
-                          label: 'Address Line 1',
-                          hint: 'Flat / House No., Building, Street',
-                          controller: _addressLine1Controller,
-                          requiredField: true,
-                        ),
-                        const SizedBox(height: 14),
-                        _field(
-                          label: 'Address Line 2 (optional)',
-                          hint: 'Area, Landmark',
-                          controller: _addressLine2Controller,
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _field(
-                                label: 'Pincode',
-                                hint: '560001',
-                                controller: _pincodeController,
-                                requiredField: true,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _field(
-                                label: 'City',
-                                hint: 'Bengaluru',
-                                controller: _cityController,
-                                requiredField: true,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _field(
-                                label: 'State',
-                                hint: 'Karnataka',
-                                controller: _stateController,
-                                requiredField: true,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _field(
-                                label: 'Country',
-                                hint: 'India',
-                                controller: _countryController,
-                                requiredField: true,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                      ),
+                      onPressed: _savingProfileSetup
+                          ? null
+                          : () {
+                              _closeForSession();
+                              closeDialog();
+                            },
+                      child: const Text('Later'),
                     ),
-                  ),
-                ),
-                Divider(
-                  height: 1,
-                  color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE5E7EB),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          backgroundColor: isDark
-                              ? const Color(0xFF3A3A3A)
-                              : const Color(0xFFE5E7EB),
-                          foregroundColor: isDark ? Colors.white : Colors.black87,
+                    const SizedBox(width: 8),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        gradient: const LinearGradient(
+                          colors: [
+                            DesignTokens.instaPurple,
+                            DesignTokens.instaPink,
+                            DesignTokens.instaOrange,
+                          ],
+                        ),
+                      ),
+                      child: ElevatedButton(
+                        onPressed: _savingProfileSetup
+                            ? null
+                            : () => _saveProfileSetup(
+                                  setDialogState,
+                                  closeDialog,
+                                ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          shadowColor: Colors.transparent,
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
+                            horizontal: 20,
                             vertical: 10,
                           ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        onPressed: _savingProfileSetup ? null : _closeForSession,
-                        child: const Text('Later'),
-                      ),
-                      const SizedBox(width: 8),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          gradient: const LinearGradient(
-                            colors: [
-                              DesignTokens.instaPurple,
-                              DesignTokens.instaPink,
-                              DesignTokens.instaOrange,
-                            ],
-                          ),
-                        ),
-                        child: ElevatedButton(
-                          onPressed:
-                              _savingProfileSetup ? null : _saveProfileSetup,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            foregroundColor: Colors.white,
-                            shadowColor: Colors.transparent,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 10,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: _savingProfileSetup
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text(
-                                  'Save',
-                                  style: TextStyle(fontWeight: FontWeight.w700),
+                        child: _savingProfileSetup
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
                                 ),
-                        ),
+                              )
+                            : const Text(
+                                'Save',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
+  Future<void> _presentProfileSetupDialog() async {
+    if (_profileSetupDialogOpen || !mounted) return;
+    _profileSetupDialogOpen = true;
+    try {
+      await AppModalPopup.show<void>(
+        context: AppNavigator.state?.overlay?.context ?? AppNavigator.context,
+        barrierDismissible: false,
+        builder: (dialogContext, close) {
+          _closeProfileSetupDialog = close;
+          return StatefulBuilder(
+            builder: (dialogContext, setDialogState) {
+              return _buildModal(setDialogState, close);
+            },
+          );
+        },
+      );
+    } finally {
+      _profileSetupDialogOpen = false;
+      _closeProfileSetupDialog = null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        widget.child,
-        if (_showProfileSetup) _buildModal(),
-      ],
-    );
+    return widget.child;
   }
 }
