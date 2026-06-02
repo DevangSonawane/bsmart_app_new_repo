@@ -14,6 +14,11 @@ class MediaAspectCache {
 
   double? get(String url) => _cache[url];
 
+  void clear() {
+    _cache.clear();
+    _authHeaders = const {};
+  }
+
   void setAuthHeaders(Map<String, String> headers) {
     _authHeaders = headers;
   }

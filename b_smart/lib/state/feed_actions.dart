@@ -5,6 +5,8 @@ class SetFeedLoading {
   SetFeedLoading(this.isLoading);
 }
 
+class ClearFeed {}
+
 class SetFeedPosts {
   final List<FeedPost> posts;
   SetFeedPosts(this.posts);

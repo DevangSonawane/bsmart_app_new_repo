@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:flutter_redux/flutter_redux.dart';
 import '../../../theme/instagram_theme.dart';
 import '../../../widgets/clay_container.dart';
 import '../../../services/auth/auth_service.dart';
+import '../../../services/session_reset_service.dart';
+import '../../../state/app_state.dart';
+import '../../../state/auth_actions.dart';
 import '../../home_dashboard.dart';
 import '../google_sign_in_button.dart';
 // Using native GoogleSignIn / secure browser flows; no embedded WebView
@@ -73,6 +77,11 @@ class _LoginScreenState extends State<LoginScreen>
           message: outcome.message,
         );
       } else {
+        await SessionResetService.instance.clearUserSessionState();
+        final userId = outcome.user?.id ?? '';
+        if (userId.isNotEmpty && mounted) {
+          StoreProvider.of<AppState>(context).dispatch(SetAuthenticated(userId));
+        }
         _navigateToHome();
       }
     } catch (e) {
@@ -120,6 +129,12 @@ class _LoginScreenState extends State<LoginScreen>
                 }
                 if (!ctx.mounted) return;
                 Navigator.of(ctx).pop();
+                await SessionResetService.instance.clearUserSessionState();
+                final userId = result.user?.id ?? '';
+                if (userId.isNotEmpty && mounted) {
+                  StoreProvider.of<AppState>(context)
+                      .dispatch(SetAuthenticated(userId));
+                }
                 _navigateToHome();
               } catch (e) {
                 setLocalState(() {

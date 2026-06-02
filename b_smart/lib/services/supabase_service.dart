@@ -26,6 +26,12 @@ class SupabaseService {
   final Map<String, bool> _commentLikeOverrides = {};
   String _commentLikeOverridesLoadedForUserId = '';
 
+  void clearSessionCache() {
+    _commentLikeOverrides.clear();
+    _commentLikeOverridesLoadedForUserId = '';
+    _repliesCache.clear();
+  }
+
   Future<void> _ensureCommentLikeOverridesLoaded() async {
     final uid = (await CurrentUser.id)?.trim() ?? '';
     if (uid.isEmpty) return;

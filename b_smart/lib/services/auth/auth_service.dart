@@ -9,6 +9,7 @@ import '../../models/auth/signup_session_model.dart';
 import '../../utils/validators.dart';
 import '../../utils/constants.dart';
 import '../push_service.dart';
+import '../session_reset_service.dart';
 
 class AuthLoginOutcome {
   final bool requires2fa;
@@ -392,9 +393,19 @@ class AuthService {
 
   /// Logout – clears stored JWT.
   Future<void> logout() async {
-    await PushService().unregisterFromBackend();
-    await _googleSignIn.signOut();
-    await _authApi.logout();
+    try {
+      try {
+        await PushService().unregisterFromBackend();
+      } catch (_) {}
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
+      try {
+        await _authApi.logout();
+      } catch (_) {}
+    } finally {
+      await SessionResetService.instance.clearUserSessionState();
+    }
   }
 
   /// Returns the current Google profile photo URL if the user is signed in

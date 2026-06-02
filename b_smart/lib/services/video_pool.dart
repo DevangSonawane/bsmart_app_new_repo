@@ -22,6 +22,13 @@ class VideoPool extends ChangeNotifier {
   bool contains(String id) =>
       _pool.containsKey(id) || _inFlight.containsKey(id);
 
+  Future<void> clearSessionCache() async {
+    _cachedToken = null;
+    _tokenFetchedAt = null;
+    await disposeAll();
+    _muted = true;
+  }
+
   VideoPlayerController? peek(String id) {
     return _usableController(id);
   }

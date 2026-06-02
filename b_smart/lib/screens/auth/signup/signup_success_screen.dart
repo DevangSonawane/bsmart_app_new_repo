@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:flutter_redux/flutter_redux.dart';
 import '../../../theme/instagram_theme.dart';
 import '../../../widgets/clay_container.dart';
 import '../../../models/auth/auth_user_model.dart';
+import '../../../services/session_reset_service.dart';
+import '../../../state/app_state.dart';
+import '../../../state/auth_actions.dart';
 import '../../home_dashboard.dart';
 
 class SignupSuccessScreen extends StatelessWidget {
@@ -62,7 +66,12 @@ class SignupSuccessScreen extends StatelessWidget {
                   height: 56,
                   width: double.infinity,
                   child: ClayButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      await SessionResetService.instance.clearUserSessionState();
+                      if (user.id.isNotEmpty) {
+                        StoreProvider.of<AppState>(context)
+                            .dispatch(SetAuthenticated(user.id));
+                      }
                       Navigator.of(context).pushAndRemoveUntil(
                         MaterialPageRoute(
                           builder: (context) => const HomeDashboard(),

@@ -5,6 +5,7 @@ import '../models/feed_post_model.dart';
 
 final feedReducer = combineReducers<FeedState>([
   TypedReducer<FeedState, SetFeedLoading>(_setLoading).call,
+  TypedReducer<FeedState, ClearFeed>(_clearFeed).call,
   TypedReducer<FeedState, SetFeedPosts>(_setPosts).call,
   TypedReducer<FeedState, UpdatePostLiked>(_updatePostLiked).call,
   TypedReducer<FeedState, UpdatePostLikedWithCount>(_updatePostLikedWithCount).call,
@@ -43,6 +44,10 @@ FeedState _prependPost(FeedState state, PrependFeedPost action) {
 
 FeedState _setLoading(FeedState state, SetFeedLoading action) {
   return state.copyWith(isLoading: action.isLoading);
+}
+
+FeedState _clearFeed(FeedState state, ClearFeed action) {
+  return FeedState.initialLoading();
 }
 
 FeedState _setPosts(FeedState state, SetFeedPosts action) {

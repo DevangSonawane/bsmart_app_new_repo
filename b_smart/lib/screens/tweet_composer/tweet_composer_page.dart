@@ -21,6 +21,10 @@ class TweetComposerPage extends StatefulWidget {
 class _TweetComposerPageState extends State<TweetComposerPage> {
   static Map<String, dynamic>? _cachedMe;
 
+  static void clearCachedMe() {
+    _cachedMe = null;
+  }
+
   late final TextEditingController _controller;
   Map<String, dynamic>? _me;
   final ImagePicker _picker = ImagePicker();
@@ -376,6 +380,10 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
       ),
     );
   }
+}
+
+void clearTweetComposerCache() {
+  _TweetComposerPageState.clearCachedMe();
 }
 
 class _TweetDraftMedia {

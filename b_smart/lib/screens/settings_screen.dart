@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../../api/auth_api.dart';
 import '../theme/design_tokens.dart';
 import '../theme/theme_scope.dart';
 import 'auth/login/login_screen.dart';
 import '../services/ui_prefs.dart';
+import '../services/auth/auth_service.dart';
 import '../services/push_service.dart';
 
 /// Settings: Preferences, Account, About sections + Log out.
@@ -23,8 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _logout() async {
     setState(() => _loggingOut = true);
     try {
-      await PushService().unregisterFromBackend();
-      await AuthApi().logout();
+      await AuthService().logout();
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const LoginScreen()),

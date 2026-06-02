@@ -13,7 +13,7 @@ import 'theme/theme_notifier.dart';
 import 'theme/theme_scope.dart';
 import 'state/store.dart';
 import 'state/app_state.dart';
-import 'state/feed_actions.dart';
+import 'state/auth_actions.dart';
 import 'config/api_config.dart';
 import 'api/api.dart';
 import 'package:flutter_redux/flutter_redux.dart';
@@ -29,6 +29,7 @@ import 'utils/system_ui.dart';
 import 'widgets/profile_setup_gate.dart';
 import 'utils/app_navigator.dart';
 import 'services/push_service.dart';
+import 'services/session_reset_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -235,20 +236,25 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
     final client = ApiClient();
     final hasToken = await client.hasToken;
     bool authed = false;
+    Map<String, dynamic>? currentUser;
     if (hasToken) {
       try {
-        await AuthApi().me();
+        currentUser = await AuthApi().me();
         authed = true;
       } catch (_) {
         await client.clearToken();
+        await SessionResetService.instance.clearUserSessionState();
         authed = false;
       }
     }
     if (mounted) {
-      // ✅ Clear stale feed from previous session before rendering home
       if (authed) {
-        final store = StoreProvider.of<AppState>(context);
-        store.dispatch(SetFeedPosts(const []));
+        await SessionResetService.instance.clearUserSessionState();
+        final userId = (currentUser?['id'] ?? currentUser?['_id'])?.toString().trim() ?? '';
+        if (userId.isNotEmpty) {
+          final store = StoreProvider.of<AppState>(context);
+          store.dispatch(SetAuthenticated(userId));
+        }
       }
       setState(() {
         _isAuthenticated = authed;

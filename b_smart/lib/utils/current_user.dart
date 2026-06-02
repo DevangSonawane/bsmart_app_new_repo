@@ -13,6 +13,10 @@ class CurrentUser {
 
   static String? _cachedId;
 
+  static void clearCache() {
+    _cachedId = null;
+  }
+
   static String? _asString(dynamic value) {
     if (value == null) return null;
     final s = value.toString().trim();

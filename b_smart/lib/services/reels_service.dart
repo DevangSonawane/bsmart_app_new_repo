@@ -21,6 +21,10 @@ class ReelsService {
 
   List<Reel> getReels() => List.unmodifiable(_applyFeedOverrides(_cache));
 
+  void clearCache() {
+    _cache.clear();
+  }
+
   Future<List<Reel>> fetchReels({int limit = 20, int offset = 0}) async {
     final page = (offset ~/ limit) + 1;
     final res = await _reelsApi.listReels(page: page, limit: limit);

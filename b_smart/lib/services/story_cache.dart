@@ -2,6 +2,11 @@ class StoryCache {
   static final Map<String, Map<String, dynamic>> _byMediaUrl = {};
   static final Map<String, Map<String, dynamic>> _byItemId = {};
 
+  static void clear() {
+    _byMediaUrl.clear();
+    _byItemId.clear();
+  }
+
   static void put(String mediaUrl, Map<String, dynamic> payload) {
     if (mediaUrl.isEmpty) return;
     _byMediaUrl[mediaUrl] = payload;

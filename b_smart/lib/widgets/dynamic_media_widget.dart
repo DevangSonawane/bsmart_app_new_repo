@@ -633,3 +633,11 @@ class _VideoPlaceholder extends StatelessWidget {
 Future<void> primeMediaAuthHeaders() async {
   await _DynamicMediaWidgetState.ensureAuthHeaders();
 }
+
+/// Reset media auth header cache after logout/login so the next session
+/// rebinds to the currently active JWT.
+void resetMediaAuthHeaders() {
+  _DynamicMediaWidgetState._cachedAuthHeaders = const {};
+  _DynamicMediaWidgetState._authHeadersLoaded = false;
+  MediaAspectCache.instance.clear();
+}

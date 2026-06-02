@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_redux/flutter_redux.dart';
 import '../../api/auth_api.dart';
 import '../../services/auth/auth_service.dart';
+import '../../services/session_reset_service.dart';
+import '../../state/app_state.dart';
+import '../../state/auth_actions.dart';
 import './home_dashboard.dart';
 
 class AuthCallbackScreen extends StatefulWidget {
@@ -48,6 +52,10 @@ class _AuthCallbackScreenState extends State<AuthCallbackScreen> {
       final user = await _authService.fetchCurrentUser();
       if (!mounted) return;
       if (user != null) {
+        await SessionResetService.instance.clearUserSessionState();
+        if (user.id.isNotEmpty) {
+          StoreProvider.of<AppState>(context).dispatch(SetAuthenticated(user.id));
+        }
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const HomeDashboard()),
           (route) => false,
