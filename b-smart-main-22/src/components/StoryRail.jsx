@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import StoryViewer from './StoryViewer';
 import api from '../lib/api';
 import { useSelector } from 'react-redux';
-import { Plus } from 'lucide-react';
 
 const StoryRail = () => {
   const [stories, setStories] = useState([]);
@@ -69,28 +68,14 @@ const StoryRail = () => {
         let finalStories = storiesWithItems;
         if (userObject) {
           const currentUserId = userObject.id || userObject._id;
-          const ownIndex = storiesWithItems.findIndex(
-            (s) => (s.userId && s.userId === currentUserId) || (s.username && s.username === userObject.username)
+          finalStories = storiesWithItems.filter(
+            (s) => s.userId !== currentUserId && s.username !== userObject.username
           );
-          if (ownIndex !== -1) {
-            finalStories = [{ ...storiesWithItems[ownIndex], isUser: true }, ...storiesWithItems.filter((_, i) => i !== ownIndex)];
-          } else {
-            finalStories = [
-              { id: 'your_story', username: userObject.username || 'Your Story', isUser: true, avatarUrl: userObject.avatar_url || '', imageUrl: userObject.avatar_url || '', previewDurationSec: 5, itemsCount: 0, seen: false },
-              ...storiesWithItems,
-            ];
-          }
-        } else {
-          finalStories = [
-            { id: 'your_story', username: 'Your Story', isUser: true, avatarUrl: '', imageUrl: '', previewDurationSec: 5, itemsCount: 0, seen: false },
-            ...storiesWithItems,
-          ];
         }
         setStories(finalStories);
       } catch (error) {
         console.error('Error fetching stories:', error);
-        const avatarUrl = userObject?.avatar_url?.trim() || '';
-        setStories([{ id: 'your_story', username: userObject?.username || 'Your Story', isUser: true, avatarUrl, imageUrl: avatarUrl, previewDurationSec: 5, itemsCount: 0, seen: false }]);
+        setStories([]);
       }
     };
     fetchStories();
@@ -98,8 +83,7 @@ const StoryRail = () => {
 
   const handleStoryClick = (index) => {
     const story = stories[index];
-    if (!story) return;
-    if (story.isUser && (!story.itemsCount || story.itemsCount === 0)) return;
+    if (!story || story.itemsCount === 0) return;
     setSelectedStoryIndex(index);
   };
 
@@ -109,11 +93,10 @@ const StoryRail = () => {
       <div className="bg-white dark:bg-black py-3">
         <div className="flex gap-3 overflow-x-auto px-4 no-scrollbar pb-1 xl:px-0">
           {stories.map((story, index) => {
-            const isYourStory  = story.isUser && (!story.itemsCount || story.itemsCount === 0);
-            const hasSeen      = story.seen;
-            const hasStory     = story.itemsCount > 0;
-            const username     = story.isUser ? (story.username || 'Your Story') : story.username;
-            const displayName  = username.length > 10 ? username.slice(0, 9) + '…' : username;
+            const hasSeen     = story.seen;
+            const hasStory    = story.itemsCount > 0;
+            const username    = story.username || 'User';
+            const displayName = username.length > 10 ? username.slice(0, 9) + '…' : username;
 
             return (
               <button
@@ -123,15 +106,9 @@ const StoryRail = () => {
               >
                 {/* Avatar ring */}
                 <div className="relative">
-                  {/* Gradient ring: orange-pink for unseen, gray for seen / no story */}
                   <div className={`
                     w-[66px] h-[66px] rounded-full p-[2.5px] flex items-center justify-center
-                    ${isYourStory
-                      ? 'border-2 border-dashed border-gray-300 dark:border-gray-600 p-[2px]'
-                      : hasStory && !hasSeen
-                        ? 'bg-orange-500'
-                        : 'bg-gray-200 dark:bg-gray-800'
-                    }
+                    ${hasStory && !hasSeen ? 'bg-orange-500' : 'bg-gray-200 dark:bg-gray-800'}
                   `}>
                     <div className="w-full h-full rounded-full bg-white dark:bg-black p-[2px]">
                       {story.avatarUrl ? (
@@ -147,18 +124,11 @@ const StoryRail = () => {
                       )}
                     </div>
                   </div>
-
-                  {/* + badge for your story with no items */}
-                  {isYourStory && (
-                    <div className="absolute bottom-0 right-0 w-5 h-5 bg-blue-500 rounded-full border-2 border-white dark:border-black flex items-center justify-center shadow-sm">
-                      <Plus size={11} strokeWidth={3} className="text-white" />
-                    </div>
-                  )}
                 </div>
 
                 {/* Username */}
-                <span className={`text-[11px] leading-tight text-center w-[72px] truncate ${story.isUser ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>
-                  {story.isUser ? 'Your Story' : displayName}
+                <span className="text-[11px] leading-tight text-center w-[72px] truncate text-gray-700 dark:text-gray-300">
+                  {displayName}
                 </span>
               </button>
             );

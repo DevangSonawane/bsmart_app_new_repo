@@ -33,15 +33,17 @@ class CreatePostDetailsScreen extends StatefulWidget {
   });
 
   @override
-  State<CreatePostDetailsScreen> createState() => _CreatePostDetailsScreenState();
+  State<CreatePostDetailsScreen> createState() =>
+      _CreatePostDetailsScreenState();
 }
 
 class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
   final CreateService _createService = CreateService();
-  final ContentModerationService _moderationService = ContentModerationService();
+  final ContentModerationService _moderationService =
+      ContentModerationService();
   final _captionController = TextEditingController();
   final _hashtagController = TextEditingController();
-  
+
   PrivacyLevel _privacy = PrivacyLevel.public;
   bool _commentsEnabled = true;
   String? _location;
@@ -68,7 +70,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
     // Get AI suggestions
     _suggestedCaption = _createService.suggestCaption(widget.media);
     _suggestedHashtags = _createService.suggestHashtags(widget.media);
-    
+
     if (_suggestedCaption != null) {
       _captionController.text = _suggestedCaption!;
     }
@@ -178,7 +180,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
       if (moderationResult.isBlocked) {
         // Add strike
         _moderationService.addStrike(userId, 'sexual_content');
-        
+
         // Show block dialog
         showDialog(
           context: context,
@@ -186,7 +188,9 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
             result: moderationResult,
             onAppeal: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Appeal submitted. We will review your case.')),
+                const SnackBar(
+                    content:
+                        Text('Appeal submitted. We will review your case.')),
               );
             },
           ),
@@ -227,7 +231,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
       // 1. Upload media
       final filePath = widget.media.filePath;
       if (filePath == null) {
-         throw Exception('File path is missing');
+        throw Exception('File path is missing');
       }
 
       Map<String, dynamic> uploadRes;
@@ -245,9 +249,11 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
             format: CompressFormat.jpeg,
           );
         }
-        uploadRes = await UploadApi().uploadFileBytes(bytes: jpg, filename: 'post_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        uploadRes = await UploadApi().uploadPostBytes(
+            bytes: jpg,
+            filename: 'post_${DateTime.now().millisecondsSinceEpoch}.jpg');
       } else {
-        uploadRes = await UploadApi().uploadFile(filePath);
+        uploadRes = await UploadApi().uploadPostFile(filePath);
       }
       final fileName = uploadRes['fileName'] as String;
       final fileUrl = uploadRes['fileUrl'] as String?;
@@ -261,8 +267,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
         'type': widget.media.type == MediaType.video ? 'video' : 'image',
         if (widget.trimStart != null)
           'trimStartMs': widget.trimStart!.inMilliseconds,
-        if (widget.trimEnd != null)
-          'trimEndMs': widget.trimEnd!.inMilliseconds,
+        if (widget.trimEnd != null) 'trimEndMs': widget.trimEnd!.inMilliseconds,
       };
 
       final created = await PostsApi().createPost(
@@ -290,7 +295,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
       if (mounted) {
         Navigator.of(context).pop(); // Close loading
         Navigator.of(context).pop(true);
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Post shared successfully!'),
@@ -317,11 +322,14 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) {
         return;
       }
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
-      final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium);
+      final placemarks =
+          await placemarkFromCoordinates(pos.latitude, pos.longitude);
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
         final parts = <String>[
@@ -332,11 +340,13 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
           if ((p.country ?? '').isNotEmpty) p.country!,
         ];
         setState(() {
-          _location = parts.where((e) => e.trim().isNotEmpty).toList().join(', ');
+          _location =
+              parts.where((e) => e.trim().isNotEmpty).toList().join(', ');
         });
       } else {
         setState(() {
-          _location = '${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}';
+          _location =
+              '${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}';
         });
       }
     } catch (_) {}
@@ -352,13 +362,17 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text('Post Details', style: TextStyle(color: Colors.black)),
+        title:
+            const Text('Post Details', style: TextStyle(color: Colors.black)),
         actions: [
           TextButton(
             onPressed: _handlePost,
             child: const Text(
               'Post',
-              style: TextStyle(color: Colors.blue, fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                  color: Colors.blue,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -371,7 +385,8 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
               width: double.infinity,
               color: Colors.grey[300],
               child: widget.media.type == MediaType.video
-                  ? const Icon(Icons.play_circle_outline, size: 80, color: Colors.grey)
+                  ? const Icon(Icons.play_circle_outline,
+                      size: 80, color: Colors.grey)
                   : const Icon(Icons.image, size: 80, color: Colors.grey),
             ),
             Padding(
@@ -478,7 +493,9 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
             ListTile(
               leading: const Icon(Icons.person_add),
               title: const Text('Tag Friends'),
-              subtitle: Text(_taggedUsers.isEmpty ? 'No one tagged' : _taggedUsers.join(', ')),
+              subtitle: Text(_taggedUsers.isEmpty
+                  ? 'No one tagged'
+                  : _taggedUsers.join(', ')),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _showTagFriendsDialog(),
             ),

@@ -42,12 +42,19 @@ class _CreatePostMediaItem {
     this.aspect = 1.0, // ignore: unused_element_parameter
     this.filter = 'Original', // ignore: unused_element_parameter
     Map<String, int>? adjustments,
-  }) : adjustments = adjustments ?? {
-    'brightness': 0, 'contrast': 0, 'saturate': 0, 'lux': 0,
-    'sepia': 0, 'opacity': 0, 'vignette': 0,
-  };
+  }) : adjustments = adjustments ??
+            {
+              'brightness': 0,
+              'contrast': 0,
+              'saturate': 0,
+              'lux': 0,
+              'sepia': 0,
+              'opacity': 0,
+              'vignette': 0,
+            };
 
-  String get displayPath => (isVideo ? sourcePath : (croppedPath ?? sourcePath));
+  String get displayPath =>
+      (isVideo ? sourcePath : (croppedPath ?? sourcePath));
 }
 
 class _MoreOptionsScreen extends StatefulWidget {
@@ -155,64 +162,64 @@ class _MoreOptionsScreenState extends State<_MoreOptionsScreen> {
   }
 }
 
-  Widget _buildMoreOptionToggle(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    String? subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    final theme = Theme.of(context);
-    final fg = theme.colorScheme.onSurface;
-    final muted = theme.colorScheme.onSurfaceVariant;
-    final primary = _shareBlue;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Icon(icon, color: fg, size: 22),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+Widget _buildMoreOptionToggle(
+  BuildContext context, {
+  required IconData icon,
+  required String title,
+  String? subtitle,
+  required bool value,
+  required ValueChanged<bool> onChanged,
+}) {
+  final theme = Theme.of(context);
+  final fg = theme.colorScheme.onSurface;
+  final muted = theme.colorScheme.onSurfaceVariant;
+  final primary = _shareBlue;
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Icon(icon, color: fg, size: 22),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: fg,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
               Text(
-                title,
+                subtitle,
                 style: TextStyle(
-                  color: fg,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
+                  color: muted,
+                  fontSize: 12,
+                  height: 1.35,
                 ),
               ),
-              if (subtitle != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: muted,
-                    fontSize: 12,
-                    height: 1.35,
-                  ),
-                ),
-              ],
             ],
-          ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-          activeThumbColor: Colors.black,
-          activeTrackColor: Colors.black.withValues(alpha: 0.25),
-          inactiveThumbColor: fg.withValues(alpha: 0.7),
-          inactiveTrackColor: fg.withValues(alpha: 0.12),
-        ),
-      ],
-    );
-  }
+      ),
+      const SizedBox(width: 10),
+      Switch(
+        value: value,
+        onChanged: onChanged,
+        activeThumbColor: Colors.black,
+        activeTrackColor: Colors.black.withValues(alpha: 0.25),
+        inactiveThumbColor: fg.withValues(alpha: 0.7),
+        inactiveTrackColor: fg.withValues(alpha: 0.12),
+      ),
+    ],
+  );
+}
 
 /// Tag on the post (x, y as percentage; user map from Supabase).
 class _PostTag {
@@ -220,18 +227,30 @@ class _PostTag {
   double x, y;
   final Map<String, dynamic> user;
 
-  _PostTag({required this.id, required this.x, required this.y, required this.user});
+  _PostTag(
+      {required this.id, required this.x, required this.y, required this.user});
 }
 
 // Filter names matching React CreatePostModal
 const _filterNames = [
-  'Original', 'Clarendon', 'Gingham', 'Moon', 'Lark', 'Reyes', 'Juno',
-  'Slumber', 'Crema', 'Ludwig', 'Aden', 'Perpetua',
+  'Original',
+  'Clarendon',
+  'Gingham',
+  'Moon',
+  'Lark',
+  'Reyes',
+  'Juno',
+  'Slumber',
+  'Crema',
+  'Ludwig',
+  'Aden',
+  'Perpetua',
 ];
 
 // Top-level 4x5 color matrix. When brightness=1, contrast=1, saturation=1 returns IDENTITY (no change).
 // Saturation: s=1 = full color (identity), s=0 = grayscale. Uses luminance weights.
-List<double> _buildFilterMatrixBase({double brightness = 1, double contrast = 1, double saturation = 1}) {
+List<double> _buildFilterMatrixBase(
+    {double brightness = 1, double contrast = 1, double saturation = 1}) {
   final b = brightness;
   final c = contrast;
   final s = saturation;
@@ -240,10 +259,26 @@ List<double> _buildFilterMatrixBase({double brightness = 1, double contrast = 1,
   final scale = c * b;
   // Saturation matrix: (1-s)*luminance + s*channel → identity when s=1
   return [
-    (invSat * lr + s) * scale, invSat * lg * scale, invSat * lb * scale, 0, 0,
-    invSat * lr * scale, (invSat * lg + s) * scale, invSat * lb * scale, 0, 0,
-    invSat * lr * scale, invSat * lg * scale, (invSat * lb + s) * scale, 0, 0,
-    0, 0, 0, 1, 0,
+    (invSat * lr + s) * scale,
+    invSat * lg * scale,
+    invSat * lb * scale,
+    0,
+    0,
+    invSat * lr * scale,
+    (invSat * lg + s) * scale,
+    invSat * lb * scale,
+    0,
+    0,
+    invSat * lr * scale,
+    invSat * lg * scale,
+    (invSat * lb + s) * scale,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ];
 }
 
@@ -253,69 +288,110 @@ List<double> _filterMatrixFor(String name) {
   final key = lower.replaceAll('&', 'and').replaceAll(' ', '_');
   switch (name) {
     case 'Clarendon':
-      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.2, saturation: 1.25);
+      return _buildFilterMatrixBase(
+          brightness: 1.0, contrast: 1.2, saturation: 1.25);
     case 'Gingham':
-      return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.0, saturation: 1.0);
+      return _buildFilterMatrixBase(
+          brightness: 1.05, contrast: 1.0, saturation: 1.0);
     case 'Moon':
       return _buildGrayscaleMatrix(contrast: 1.1, brightness: 1.1);
     case 'Lark':
-      return _buildFilterMatrixBase(brightness: 1.0, contrast: 0.9, saturation: 1.0);
+      return _buildFilterMatrixBase(
+          brightness: 1.0, contrast: 0.9, saturation: 1.0);
     case 'Reyes':
-      return _buildSepiaMatrix(amount: 0.22, brightness: 1.1, contrast: 0.85, saturation: 0.75);
+      return _buildSepiaMatrix(
+          amount: 0.22, brightness: 1.1, contrast: 0.85, saturation: 0.75);
     case 'Juno':
-      return _buildSepiaMatrix(amount: 0.2, brightness: 1.1, contrast: 1.2, saturation: 1.4);
+      return _buildSepiaMatrix(
+          amount: 0.2, brightness: 1.1, contrast: 1.2, saturation: 1.4);
     case 'Slumber':
-      return _buildSepiaMatrix(amount: 0.2, brightness: 1.05, contrast: 1.0, saturation: 0.66);
+      return _buildSepiaMatrix(
+          amount: 0.2, brightness: 1.05, contrast: 1.0, saturation: 0.66);
     case 'Crema':
-      return _buildSepiaMatrix(amount: 0.2, brightness: 1.0, contrast: 0.9, saturation: 0.9);
+      return _buildSepiaMatrix(
+          amount: 0.2, brightness: 1.0, contrast: 0.9, saturation: 0.9);
     case 'Ludwig':
-      return _buildFilterMatrixBase(brightness: 1.1, contrast: 0.9, saturation: 0.9);
+      return _buildFilterMatrixBase(
+          brightness: 1.1, contrast: 0.9, saturation: 0.9);
     case 'Aden':
-      return _buildFilterMatrixBase(brightness: 1.2, contrast: 0.9, saturation: 0.85);
+      return _buildFilterMatrixBase(
+          brightness: 1.2, contrast: 0.9, saturation: 0.85);
     case 'Perpetua':
-      return _buildFilterMatrixBase(brightness: 1.1, contrast: 1.1, saturation: 1.1);
+      return _buildFilterMatrixBase(
+          brightness: 1.1, contrast: 1.1, saturation: 1.1);
     case 'Original':
-      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+      return _buildFilterMatrixBase(
+          brightness: 1.0, contrast: 1.0, saturation: 1.0);
     default:
       break;
   }
   switch (key) {
     case 'none':
     case 'original':
-      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+      return _buildFilterMatrixBase(
+          brightness: 1.0, contrast: 1.0, saturation: 1.0);
     case 'vintage':
-      return _buildSepiaMatrix(amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
+      return _buildSepiaMatrix(
+          amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
     case 'black_white':
     case 'black_and_white':
       return _buildGrayscaleMatrix(contrast: 1.1, brightness: 1.0);
     case 'warm':
-      return _buildSepiaMatrix(amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
+      return _buildSepiaMatrix(
+          amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
     case 'cool':
-      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 0.85);
+      return _buildFilterMatrixBase(
+          brightness: 1.0, contrast: 1.0, saturation: 0.85);
     case 'dramatic':
-      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.3, saturation: 1.2);
+      return _buildFilterMatrixBase(
+          brightness: 1.0, contrast: 1.3, saturation: 1.2);
     case 'beauty':
-      return _buildSepiaMatrix(amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
+      return _buildSepiaMatrix(
+          amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
     case 'ar_effect_1':
-      return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.05, saturation: 1.2);
+      return _buildFilterMatrixBase(
+          brightness: 1.05, contrast: 1.05, saturation: 1.2);
     case 'ar_effect_2':
-      return _buildFilterMatrixBase(brightness: 0.95, contrast: 1.1, saturation: 0.9);
+      return _buildFilterMatrixBase(
+          brightness: 0.95, contrast: 1.1, saturation: 0.9);
     default:
-      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+      return _buildFilterMatrixBase(
+          brightness: 1.0, contrast: 1.0, saturation: 1.0);
   }
 }
 
-List<double> _buildGrayscaleMatrix({double contrast = 1.0, double brightness = 1.0}) {
+List<double> _buildGrayscaleMatrix(
+    {double contrast = 1.0, double brightness = 1.0}) {
   const r = 0.2126, g = 0.7152, b = 0.0722;
   return [
-    r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
-    r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
-    r * contrast * brightness, g * contrast * brightness, b * contrast * brightness, 0, 0,
-    0, 0, 0, 1, 0,
+    r * contrast * brightness,
+    g * contrast * brightness,
+    b * contrast * brightness,
+    0,
+    0,
+    r * contrast * brightness,
+    g * contrast * brightness,
+    b * contrast * brightness,
+    0,
+    0,
+    r * contrast * brightness,
+    g * contrast * brightness,
+    b * contrast * brightness,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ];
 }
 
-List<double> _buildSepiaMatrix({double amount = 0.2, double brightness = 1.0, double contrast = 1.0, double saturation = 1.0}) {
+List<double> _buildSepiaMatrix(
+    {double amount = 0.2,
+    double brightness = 1.0,
+    double contrast = 1.0,
+    double saturation = 1.0}) {
   final t = 1 - amount;
   final r = 0.393 + 0.607 * t;
   final g = 0.769 - 0.769 * amount;
@@ -324,10 +400,26 @@ List<double> _buildSepiaMatrix({double amount = 0.2, double brightness = 1.0, do
   const lr = 0.2126, lg = 0.7152, lb = 0.0722;
   final c = contrast * brightness;
   return [
-    (r * saturation + lr * invSat) * c, (g * saturation + lg * invSat) * c, (b * saturation + lb * invSat) * c, 0, 0,
-    (0.349 * t + 0.349 * amount) * saturation * c + lr * invSat * c, (0.686 + 0.314 * t) * saturation * c + lg * invSat * c, (0.168 * t) * saturation * c + lb * invSat * c, 0, 0,
-    (0.272 * t) * saturation * c + lr * invSat * c, (0.534 * t - 0.534 * amount) * saturation * c + lg * invSat * c, (0.131 + 0.869 * t) * saturation * c + lb * invSat * c, 0, 0,
-    0, 0, 0, 1, 0,
+    (r * saturation + lr * invSat) * c,
+    (g * saturation + lg * invSat) * c,
+    (b * saturation + lb * invSat) * c,
+    0,
+    0,
+    (0.349 * t + 0.349 * amount) * saturation * c + lr * invSat * c,
+    (0.686 + 0.314 * t) * saturation * c + lg * invSat * c,
+    (0.168 * t) * saturation * c + lb * invSat * c,
+    0,
+    0,
+    (0.272 * t) * saturation * c + lr * invSat * c,
+    (0.534 * t - 0.534 * amount) * saturation * c + lg * invSat * c,
+    (0.131 + 0.869 * t) * saturation * c + lb * invSat * c,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ];
 }
 
@@ -430,7 +522,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       debugPrint('[CreatePostScreen] using cover for video preview: $cover');
       return _applyFilterToImage(File(cover), item);
     }
-    debugPrint('[CreatePostScreen] using generated thumbnail for video preview');
+    debugPrint(
+        '[CreatePostScreen] using generated thumbnail for video preview');
     return _buildVideoThumbnailFiltered(item);
   }
 
@@ -499,43 +592,40 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final globalName = widget.initialFilterName;
       final perTrims = widget.initialMediaTrims ?? const {};
       final perAdjustments = widget.initialMediaAdjustments ?? const {};
-      _media = list
-          .where((m) => m.filePath != null)
-          .map((m) {
-            final baseName = m.filePath!.split('/').last;
-            final alreadyCropped = baseName.startsWith('bsmart_crop_') || baseName.startsWith('bsmart_post_');
-            final alreadyProcessed = baseName.startsWith('bsmart_post_');
-            final item = _CreatePostMediaItem(
-              sourcePath: m.filePath!,
-              thumbnailPath: m.thumbnailPath,
-              isVideo: m.type == MediaType.video,
-              alreadyCropped: alreadyCropped,
-              alreadyProcessed: alreadyProcessed,
-              aspect: widget.initialAspect ?? 1.0,
-              adjustments: widget.initialAdjustments,
-            );
-            final perAdj = perAdjustments[m.id];
-            if (perAdj != null && perAdj.isNotEmpty) {
-              item.adjustments = Map<String, int>.from(perAdj);
-            }
-            final trim = perTrims[m.id];
-            if (trim != null) {
-              final startMs = trim['start_ms'];
-              final endMs = trim['end_ms'];
-              item.trimStart =
-                  startMs != null ? Duration(milliseconds: startMs) : null;
-              item.trimEnd =
-                  endMs != null ? Duration(milliseconds: endMs) : null;
-            }
-            final perName = perFilters[m.id];
-            if (perName != null && perName.isNotEmpty) {
-              item.filter = perName;
-            } else if (globalName != null && globalName.isNotEmpty) {
-              item.filter = globalName;
-            }
-            return item;
-          })
-          .toList();
+      _media = list.where((m) => m.filePath != null).map((m) {
+        final baseName = m.filePath!.split('/').last;
+        final alreadyCropped = baseName.startsWith('bsmart_crop_') ||
+            baseName.startsWith('bsmart_post_');
+        final alreadyProcessed = baseName.startsWith('bsmart_post_');
+        final item = _CreatePostMediaItem(
+          sourcePath: m.filePath!,
+          thumbnailPath: m.thumbnailPath,
+          isVideo: m.type == MediaType.video,
+          alreadyCropped: alreadyCropped,
+          alreadyProcessed: alreadyProcessed,
+          aspect: widget.initialAspect ?? 1.0,
+          adjustments: widget.initialAdjustments,
+        );
+        final perAdj = perAdjustments[m.id];
+        if (perAdj != null && perAdj.isNotEmpty) {
+          item.adjustments = Map<String, int>.from(perAdj);
+        }
+        final trim = perTrims[m.id];
+        if (trim != null) {
+          final startMs = trim['start_ms'];
+          final endMs = trim['end_ms'];
+          item.trimStart =
+              startMs != null ? Duration(milliseconds: startMs) : null;
+          item.trimEnd = endMs != null ? Duration(milliseconds: endMs) : null;
+        }
+        final perName = perFilters[m.id];
+        if (perName != null && perName.isNotEmpty) {
+          item.filter = perName;
+        } else if (globalName != null && globalName.isNotEmpty) {
+          item.filter = globalName;
+        }
+        return item;
+      }).toList();
       _currentIndex = 0;
       _ensurePreviewControllers();
       _step = 'share';
@@ -545,7 +635,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final m = widget.initialMedia;
     if (m != null && m.filePath != null) {
       final baseName = m.filePath!.split('/').last;
-      final alreadyCropped = baseName.startsWith('bsmart_crop_') || baseName.startsWith('bsmart_post_');
+      final alreadyCropped = baseName.startsWith('bsmart_crop_') ||
+          baseName.startsWith('bsmart_post_');
       final alreadyProcessed = baseName.startsWith('bsmart_post_');
       final item = _CreatePostMediaItem(
         sourcePath: m.filePath!,
@@ -568,8 +659,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         final endMs = trim['end_ms'];
         item.trimStart =
             startMs != null ? Duration(milliseconds: startMs) : null;
-        item.trimEnd =
-            endMs != null ? Duration(milliseconds: endMs) : null;
+        item.trimEnd = endMs != null ? Duration(milliseconds: endMs) : null;
       }
       if (widget.initialFilterName != null &&
           widget.initialFilterName!.isNotEmpty) {
@@ -665,7 +755,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<void> _recordVideo() async {
     try {
-      final x = await _picker.pickVideo(source: ImageSource.camera, maxDuration: const Duration(seconds: 60));
+      final x = await _picker.pickVideo(
+          source: ImageSource.camera, maxDuration: const Duration(seconds: 60));
       if (x == null) return;
       final item = _CreatePostMediaItem(sourcePath: x.path, isVideo: true);
       if (mounted) {
@@ -728,7 +819,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final brightness = 'brightness(${100 + (adj['brightness'] ?? 0)}%)';
     final contrast = 'contrast(${100 + (adj['contrast'] ?? 0)}%)';
     final saturate = 'saturate(${100 + (adj['saturate'] ?? 0)}%)';
-    final sepia = ((adj['sepia'] ?? 0) != 0) ? 'sepia(${(adj['sepia'] ?? 0).abs()}%)' : '';
+    final sepia = ((adj['sepia'] ?? 0) != 0)
+        ? 'sepia(${(adj['sepia'] ?? 0).abs()}%)'
+        : '';
     String hue = '';
     final s = adj['sepia'] ?? 0;
     if (s < 0) {
@@ -736,7 +829,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     } else if (s > 0) {
       hue = 'hue-rotate(${s}deg)';
     }
-    final parts = [base, brightness, contrast, saturate, sepia, hue].where((e) => e.isNotEmpty).toList();
+    final parts = [base, brightness, contrast, saturate, sepia, hue]
+        .where((e) => e.isNotEmpty)
+        .toList();
     return parts.join(' ');
   }
 
@@ -805,14 +900,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final userId = await CurrentUser.id;
     if (!mounted) return;
     if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please log in to share.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to share.')));
       return;
     }
     setState(() => _isSubmitting = true);
     try {
       final processedMedia = <Map<String, dynamic>>[];
       for (final item in _media) {
-        final path = item.isVideo ? item.sourcePath : (item.croppedPath ?? item.sourcePath);
+        final path = item.isVideo
+            ? item.sourcePath
+            : (item.croppedPath ?? item.sourcePath);
         final file = File(path);
         if (!await file.exists()) continue;
         final bytes = await file.readAsBytes();
@@ -824,7 +922,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             toUpload = Uint8List.fromList(bytes);
             ext = path.split('.').last;
           } else {
-            final processed = await _processImageBytes(Uint8List.fromList(bytes), item);
+            final processed =
+                await _processImageBytes(Uint8List.fromList(bytes), item);
             var jpg = await FlutterImageCompress.compressWithList(
               processed,
               quality: 85,
@@ -844,17 +943,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           toUpload = Uint8List.fromList(bytes);
           ext = path.split('.').last;
         }
-        final filename = '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode % 100000}.$ext';
-        final uploaded = await UploadApi().uploadFileBytes(bytes: toUpload, filename: filename);
-        final serverFileName = (uploaded['fileName'] ?? uploaded['filename'] ?? filename).toString();
+        final filename =
+            '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode % 100000}.$ext';
+        final uploaded = await UploadApi()
+            .uploadPostBytes(bytes: toUpload, filename: filename);
+        final serverFileName =
+            (uploaded['fileName'] ?? uploaded['filename'] ?? filename)
+                .toString();
         String? fileUrl = uploaded['fileUrl']?.toString();
         if (fileUrl != null && fileUrl.isNotEmpty) {
           fileUrl = fileUrl.replaceAll('\\', '/');
-          final isAbs = fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
+          final isAbs =
+              fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
           if (!isAbs) {
             final base = ApiConfig.baseUrl;
             final baseUri = Uri.parse(base);
-            final origin = '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
+            final origin =
+                '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
             if (!fileUrl.startsWith('/')) {
               if (fileUrl.startsWith('uploads/') || fileUrl.contains('/')) {
                 fileUrl = '/$fileUrl';
@@ -889,7 +994,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             final thumbFilename =
                 '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode % 100000}_thumb.$thumbExt';
             final thumbUploaded = await UploadApi()
-                .uploadFileBytes(bytes: thumbBytes, filename: thumbFilename);
+                .uploadPostBytes(bytes: thumbBytes, filename: thumbFilename);
             thumbName = (thumbUploaded['fileName'] ??
                     thumbUploaded['filename'] ??
                     thumbFilename)
@@ -913,11 +1018,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             'y': 0,
             'aspect_ratio': aspectLabel,
           },
-          if (item.trimStart != null || item.trimEnd != null) 'trim': {
-            if (item.trimStart != null)
-              'start_ms': item.trimStart!.inMilliseconds,
-            if (item.trimEnd != null) 'end_ms': item.trimEnd!.inMilliseconds,
-          },
+          if (item.trimStart != null || item.trimEnd != null)
+            'trim': {
+              if (item.trimStart != null)
+                'start_ms': item.trimStart!.inMilliseconds,
+              if (item.trimEnd != null) 'end_ms': item.trimEnd!.inMilliseconds,
+            },
           'aspect_ratio': aspectLabel,
           'filter': {
             'name': item.filter,
@@ -935,14 +1041,20 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
       if (processedMedia.isEmpty) throw Exception('No media to upload');
 
-      final peopleTags = _tagsByIndex.values.expand((list) => list).map((t) => {
-            'user_id': t.user['id'] ?? t.user['_id'],
-            'username': t.user['username'],
-            'x': t.x,
-            'y': t.y,
-          }).toList();
+      final peopleTags = _tagsByIndex.values
+          .expand((list) => list)
+          .map((t) => {
+                'user_id': t.user['id'] ?? t.user['_id'],
+                'username': t.user['username'],
+                'x': t.x,
+                'y': t.y,
+              })
+          .toList();
 
-      final hashtagMatches = RegExp(r'#[a-zA-Z0-9_]+').allMatches(_captionCtl.text.trim()).map((m) => m.group(0)!).toList();
+      final hashtagMatches = RegExp(r'#[a-zA-Z0-9_]+')
+          .allMatches(_captionCtl.text.trim())
+          .map((m) => m.group(0)!)
+          .toList();
 
       final created = await PostsApi().createPost(
         media: processedMedia.cast<Map<String, dynamic>>(),
@@ -971,13 +1083,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
       if (created.isNotEmpty && mounted) {
         Navigator.of(context).pop(true);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post shared successfully!')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Post shared successfully!')));
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to create post.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to create post.')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -1039,7 +1154,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             const SizedBox(height: 16),
             Text(
               'Drag photos and videos here',
-              style: TextStyle(fontSize: 20, color: muted, fontWeight: FontWeight.w300),
+              style: TextStyle(
+                  fontSize: 20, color: muted, fontWeight: FontWeight.w300),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -1051,8 +1167,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primary,
                     foregroundColor: theme.colorScheme.onPrimary,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                   child: const Text('Take Photo'),
                 ),
@@ -1062,8 +1180,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primary,
                     foregroundColor: theme.colorScheme.onPrimary,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                   child: const Text('Record Video'),
                 ),
@@ -1075,8 +1195,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: primary,
                 foregroundColor: theme.colorScheme.onPrimary,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
               child: const Text('Select From Gallery'),
             ),
@@ -1100,7 +1222,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
     final opacity = 1.0 - (adj['opacity'] ?? 0) / 100.0;
     final presetMatrix = _filterMatrixFor(item.filter);
-    final adjustmentMatrix = _buildFilterMatrix(brightness: b, contrast: c, saturation: s);
+    final adjustmentMatrix =
+        _buildFilterMatrix(brightness: b, contrast: c, saturation: s);
     return Opacity(
       opacity: opacity.clamp(0.0, 1.0),
       child: ColorFiltered(
@@ -1121,7 +1244,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   /// Adjustment matrix (brightness/contrast/saturation). Identity when b=1, c=1, s=1.
-  List<double> _buildFilterMatrix({double brightness = 1, double contrast = 1, double saturation = 1}) {
+  List<double> _buildFilterMatrix(
+      {double brightness = 1, double contrast = 1, double saturation = 1}) {
     final b = brightness;
     final c = contrast;
     final s = saturation;
@@ -1129,15 +1253,31 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     const lr = 0.2126, lg = 0.7152, lb = 0.0722;
     final scale = c * b;
     return [
-      (invSat * lr + s) * scale, invSat * lg * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, (invSat * lg + s) * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, invSat * lg * scale, (invSat * lb + s) * scale, 0, 0,
-      0, 0, 0, 1, 0,
+      (invSat * lr + s) * scale,
+      invSat * lg * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      (invSat * lg + s) * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      invSat * lg * scale,
+      (invSat * lb + s) * scale,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
-
-  Future<Uint8List> _processImageBytes(Uint8List srcBytes, _CreatePostMediaItem item) async {
+  Future<Uint8List> _processImageBytes(
+      Uint8List srcBytes, _CreatePostMediaItem item) async {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromList(srcBytes, (img) => completer.complete(img));
     final srcImage = await completer.future;
@@ -1162,7 +1302,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final dstW = srcRect.width.round();
     final dstH = srcRect.height.round();
     final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder, ui.Rect.fromLTWH(0, 0, dstW.toDouble(), dstH.toDouble()));
+    final canvas = ui.Canvas(
+        recorder, ui.Rect.fromLTWH(0, 0, dstW.toDouble(), dstH.toDouble()));
     final adj = item.adjustments;
     final lux = ((adj['lux'] ?? 0).clamp(0, 100) / 100.0);
     final luxBC = 1.0 + (lux * 0.35);
@@ -1172,14 +1313,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
     final opacity = 1.0 - (adj['opacity'] ?? 0) / 100.0;
     final preset = _filterMatrixFor(item.filter);
-    final adjust = _buildFilterMatrix(brightness: b, contrast: c, saturation: s);
+    final adjust =
+        _buildFilterMatrix(brightness: b, contrast: c, saturation: s);
     final combined = _combineColorMatrices(adjust, preset);
     combined[18] = combined[18] * opacity;
     final paint = Paint()
       ..isAntiAlias = true
       ..filterQuality = FilterQuality.high
       ..colorFilter = ui.ColorFilter.matrix(combined);
-    final src = ui.Rect.fromLTWH(srcRect.left, srcRect.top, srcRect.width, srcRect.height);
+    final src = ui.Rect.fromLTWH(
+        srcRect.left, srcRect.top, srcRect.width, srcRect.height);
     final dst = ui.Rect.fromLTWH(0, 0, dstW.toDouble(), dstH.toDouble());
     canvas.drawImageRect(srcImage, src, dst, paint);
     final picture = recorder.endRecording();
@@ -1231,8 +1374,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               CurvedAnimation(
                 parent: animation,
                 curve: const Interval(0.05, 1.0, curve: Curves.easeOut),
-                reverseCurve:
-                    const Interval(0.0, 0.95, curve: Curves.easeIn),
+                reverseCurve: const Interval(0.0, 0.95, curve: Curves.easeIn),
               ),
             ),
             child: child,
@@ -1271,14 +1413,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   children: [
                     Text(
                       label,
-                      style: TextStyle(color: fg, fontSize: 16, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                          color: fg, fontSize: 16, fontWeight: FontWeight.w500),
                     ),
                     if (subtitle != null && subtitle.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
                           subtitle,
-                          style: TextStyle(color: muted, fontSize: 13, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                              color: muted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500),
                         ),
                       ),
                   ],
@@ -1313,7 +1459,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             children: [
               Icon(icon, color: fg, size: 18),
               const SizedBox(width: 8),
-              Text(label, style: TextStyle(color: fg, fontSize: 14, fontWeight: FontWeight.w600)),
+              Text(label,
+                  style: TextStyle(
+                      color: fg, fontSize: 14, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -1364,9 +1512,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                               File(item.displayPath), item),
                                     )
                                   : AspectRatio(
-                                      aspectRatio: (_media[_currentIndex].aspect == 0.0)
-                                          ? 1.0
-                                          : _media[_currentIndex].aspect,
+                                      aspectRatio:
+                                          (_media[_currentIndex].aspect == 0.0)
+                                              ? 1.0
+                                              : _media[_currentIndex].aspect,
                                       child: PageView.builder(
                                         controller: _previewPageController,
                                         itemCount: _media.length,
@@ -1379,7 +1528,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                             if (ctrl.hasClients) {
                                               ctrl.jumpToPage(i);
                                             } else {
-                                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                              WidgetsBinding.instance
+                                                  .addPostFrameCallback((_) {
                                                 if (ctrl.hasClients) {
                                                   ctrl.jumpToPage(i);
                                                 }
@@ -1389,7 +1539,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                         },
                                         itemBuilder: (context, i) {
                                           final m = _media[i];
-                                          final a = (m.aspect == 0.0) ? 1.0 : m.aspect;
+                                          final a = (m.aspect == 0.0)
+                                              ? 1.0
+                                              : m.aspect;
                                           return AspectRatio(
                                             aspectRatio: a,
                                             child: m.isVideo
@@ -1421,7 +1573,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     const SizedBox(height: 18),
                     Row(
                       children: [
-                        pillButton(icon: LucideIcons.listOrdered, label: 'Poll'),
+                        pillButton(
+                            icon: LucideIcons.listOrdered, label: 'Poll'),
                         const SizedBox(width: 12),
                         pillButton(icon: LucideIcons.search, label: 'Prompt'),
                       ],
@@ -1478,11 +1631,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       disabledBackgroundColor:
                           _shareBlue.withValues(alpha: 0.6),
                       disabledForegroundColor: Colors.white70,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
                     ),
                     child: Text(
                       _isSubmitting ? 'Sharing...' : 'Share',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -1491,7 +1646,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           ],
         ),
         if (_showPreviewOverlay) _buildPreviewOverlay(),
-        
       ],
     );
   }
@@ -1522,54 +1676,55 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 elevation: 16,
                 borderRadius: BorderRadius.circular(16),
                 clipBehavior: Clip.antiAlias,
-                  child: SizedBox(
-                    width: MediaQuery.of(context).size.width * 0.9,
-                    child: _media.length <= 1
-                        ? AspectRatio(
-                            aspectRatio: aspect,
-                            child: item.isVideo
-                                ? _buildVideoPreviewForItem(item)
-                                : _applyFilterToImage(
-                                    File(item.displayPath), item),
-                          )
-                        : AspectRatio(
-                            aspectRatio: (_media[_currentIndex].aspect == 0.0)
-                                ? 1.0
-                                : _media[_currentIndex].aspect,
-                            child: PageView.builder(
-                              controller: _overlayPageController,
-                              itemCount: _media.length,
-                              onPageChanged: (i) {
-                                setState(() {
-                                  _currentIndex = i;
-                                });
-                                final ctrl = _previewPageController;
-                                if (ctrl != null) {
-                                  if (ctrl.hasClients) {
-                                    ctrl.jumpToPage(i);
-                                  } else {
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      if (ctrl.hasClients) {
-                                        ctrl.jumpToPage(i);
-                                      }
-                                    });
-                                  }
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width * 0.9,
+                  child: _media.length <= 1
+                      ? AspectRatio(
+                          aspectRatio: aspect,
+                          child: item.isVideo
+                              ? _buildVideoPreviewForItem(item)
+                              : _applyFilterToImage(
+                                  File(item.displayPath), item),
+                        )
+                      : AspectRatio(
+                          aspectRatio: (_media[_currentIndex].aspect == 0.0)
+                              ? 1.0
+                              : _media[_currentIndex].aspect,
+                          child: PageView.builder(
+                            controller: _overlayPageController,
+                            itemCount: _media.length,
+                            onPageChanged: (i) {
+                              setState(() {
+                                _currentIndex = i;
+                              });
+                              final ctrl = _previewPageController;
+                              if (ctrl != null) {
+                                if (ctrl.hasClients) {
+                                  ctrl.jumpToPage(i);
+                                } else {
+                                  WidgetsBinding.instance
+                                      .addPostFrameCallback((_) {
+                                    if (ctrl.hasClients) {
+                                      ctrl.jumpToPage(i);
+                                    }
+                                  });
                                 }
-                              },
-                              itemBuilder: (context, i) {
-                                final m = _media[i];
-                                final a = (m.aspect == 0.0) ? 1.0 : m.aspect;
-                                return AspectRatio(
-                                  aspectRatio: a,
-                                  child: m.isVideo
-                                      ? _buildVideoPreviewForItem(m)
-                                      : _applyFilterToImage(
-                                          File(m.displayPath), m),
-                                );
-                              },
-                            ),
+                              }
+                            },
+                            itemBuilder: (context, i) {
+                              final m = _media[i];
+                              final a = (m.aspect == 0.0) ? 1.0 : m.aspect;
+                              return AspectRatio(
+                                aspectRatio: a,
+                                child: m.isVideo
+                                    ? _buildVideoPreviewForItem(m)
+                                    : _applyFilterToImage(
+                                        File(m.displayPath), m),
+                              );
+                            },
                           ),
-                  ),
+                        ),
+                ),
               ),
             ),
           ),

@@ -387,9 +387,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                             itemCount: group.stories.length,
                             itemBuilder: (context, storyIndex) {
                               final story = group.stories[storyIndex];
-                              final isActive = groupIndex == _currentGroupIndex &&
-                                  storyIndex == _currentStoryIndex;
-                              return _buildStoryContent(story, isActive: isActive);
+                              final isActive =
+                                  groupIndex == _currentGroupIndex &&
+                                      storyIndex == _currentStoryIndex;
+                              return _buildStoryContent(story,
+                                  isActive: isActive);
                             },
                           );
                         },
@@ -639,7 +641,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
           .showSnackBar(const SnackBar(content: Text('Uploading...')));
       final bytes = await xfile.readAsBytes();
       final upload = await UploadApi()
-          .uploadFileBytes(bytes: bytes.toList(), filename: 'story.jpg');
+          .uploadStoryBytes(bytes: bytes.toList(), filename: 'story.jpg');
       final url = (upload['fileUrl'] as String?) ??
           (upload['url'] as String?) ??
           (upload['file_url'] as String?) ??

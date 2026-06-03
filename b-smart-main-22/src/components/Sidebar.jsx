@@ -9,7 +9,6 @@ import {
   setUnreadCount,
   updateLastMessage,
   setConversations,
-  markConversationRead,
 } from '../store/chatSlice';
 import { useNotificationSocket } from '../hooks/useNotificationSocket';
 import { initChatSocket, removeChatSocketCallbacks } from '../socket/chatSocket';
@@ -526,7 +525,7 @@ const Sidebar = ({ onOpenCreateModal }) => {
   return (
     <>
       <div
-        className={`hidden md:flex flex-col fixed left-0 top-0 h-screen bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800 z-50 transition-all duration-300 ease-in-out ${isHovered ? 'w-64' : (isNarrowPage ? 'w-[72px]' : 'w-20')}`}
+        className={`hidden md:flex flex-col fixed left-0 top-0 h-screen bg-white dark:bg-black z-50 transition-all duration-300 ease-in-out ${isHovered ? 'w-64' : (isNarrowPage ? 'w-[72px]' : 'w-20')}`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >

@@ -1756,7 +1756,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       );
       final bytes = await xfile.readAsBytes();
       final upload = await UploadApi()
-          .uploadFileBytes(bytes: bytes.toList(), filename: 'story.jpg');
+          .uploadStoryBytes(bytes: bytes.toList(), filename: 'story.jpg');
       final url = (upload['fileUrl'] as String?) ??
           (upload['url'] as String?) ??
           (upload['file_url'] as String?) ??

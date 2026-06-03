@@ -1,11 +1,13 @@
 import 'api_client.dart';
 import '../config/api_config.dart';
+import 'upload_api.dart';
 
 class StoriesApi {
   final ApiClient _client = ApiClient();
 
   String get _basePath {
-    final base = ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
+    final base =
+        ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
     final endsWithApi = base.endsWith('/api');
     return endsWithApi ? '' : '/api';
   }
@@ -35,25 +37,18 @@ class StoriesApi {
   }
 
   Future<Map<String, dynamic>> upload(List<int> bytes) async {
-    final res = await _client.multipartPostBytes(
-      _path('/stories/upload'),
+    return UploadApi().uploadStoryBytes(
       bytes: bytes,
       filename: 'story_${DateTime.now().millisecondsSinceEpoch}.jpg',
-      fileField: 'file',
     );
-    return (res as Map).cast<String, dynamic>();
   }
 
   Future<Map<String, dynamic>> uploadFile(String filePath) async {
-    final res = await _client.multipartPost(
-      _path('/stories/upload'),
-      filePath: filePath,
-      fileField: 'file',
-    );
-    return (res as Map).cast<String, dynamic>();
+    return UploadApi().uploadStoryFile(filePath);
   }
 
-  Future<Map<String, dynamic>> create(List<Map<String, dynamic>> itemsPayload) async {
+  Future<Map<String, dynamic>> create(
+      List<Map<String, dynamic>> itemsPayload) async {
     final body = {'items': itemsPayload};
     final res = await _client.post(
       _path('/stories'),
@@ -62,7 +57,8 @@ class StoriesApi {
     return (res as Map).cast<String, dynamic>();
   }
 
-  Future<Map<String, dynamic>> createFlexible(List<Map<String, dynamic>> itemsPayload) async {
+  Future<Map<String, dynamic>> createFlexible(
+      List<Map<String, dynamic>> itemsPayload) async {
     try {
       return await create(itemsPayload);
     } catch (e) {

@@ -1,5 +1,6 @@
 import 'api_client.dart';
 import '../config/api_config.dart';
+import 'upload_api.dart';
 
 /// REST API wrapper for `/tweets` endpoints.
 ///
@@ -9,7 +10,7 @@ import '../config/api_config.dart';
 ///   DELETE /tweets/:id         – Delete tweet (protected)
 ///   POST   /tweets/:id/like    – Like tweet (protected)
 ///   POST   /tweets/:id/unlike  – Unlike tweet (protected)
-///   POST   /tweets/upload      – Upload tweet media (protected, multipart/form-data)
+///   POST   /upload/tweet       – Upload tweet media (protected, multipart/form-data)
 class TweetsApi {
   static final TweetsApi _instance = TweetsApi._internal();
   factory TweetsApi() => _instance;
@@ -63,13 +64,9 @@ class TweetsApi {
     required List<int> bytes,
     required String filename,
   }) async {
-    final res = await _client.multipartPostBytes(
-      '$_basePath/tweets/upload',
+    return UploadApi().uploadTweetBytes(
       bytes: bytes,
       filename: filename,
-      fileField: 'file',
     );
-    return res as Map<String, dynamic>;
   }
 }
-

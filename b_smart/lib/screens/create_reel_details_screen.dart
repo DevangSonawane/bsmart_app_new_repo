@@ -276,7 +276,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       final filename =
           '$userId/${DateTime.now().millisecondsSinceEpoch}_reel.$ext';
       final uploaded =
-          await UploadApi().uploadFileBytes(bytes: bytes, filename: filename);
+          await UploadApi().uploadReelBytes(bytes: bytes, filename: filename);
       final serverFileName =
           (uploaded['fileName'] ?? uploaded['filename'] ?? filename).toString();
       String? fileUrl = (uploaded['url'] ?? uploaded['fileUrl'])?.toString();

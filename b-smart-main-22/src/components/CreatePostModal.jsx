@@ -1053,7 +1053,13 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           const formData = new FormData();
           formData.append('file', file);
 
-          const uploadResponse = await api.post(postType === 'tweet' ? '/tweets/upload' : 'https://api.bebsmart.in/api/upload', formData, {
+          const uploadEndpoint =
+            postType === 'tweet'   ? '/upload/tweet'   :
+            postType === 'reel'    ? '/upload/reel'    :
+            postType === 'promote' ? '/upload/promote' :
+            postType === 'ad'      ? '/upload/ads'     :
+            '/upload/post';
+          const uploadResponse = await api.post(uploadEndpoint, formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
             onUploadProgress: (evt) => {
               if (evt.total) {
@@ -1276,7 +1282,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
               const ext = adFile.type === 'video' ? 'mp4' : 'jpg';
               const file = new File([blob], `ad_media_${Date.now()}.${ext}`, { type: blob.type });
               formData.append('file', file);
-              const uploadRes = await api.post('https://api.bebsmart.in/api/upload', formData, {
+              const uploadRes = await api.post('/upload/ads-gallery', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
               });
               const { fileName: fn, fileUrl: ffu } = uploadRes.data;
