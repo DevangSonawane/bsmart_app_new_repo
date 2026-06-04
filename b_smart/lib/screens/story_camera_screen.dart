@@ -3303,15 +3303,19 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF536DFE),
-                      shape: BoxShape.circle,
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _storyPostYourStory,
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF536DFE),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.arrow_forward_rounded,
+                          color: Colors.white),
                     ),
-                    child: const Icon(Icons.arrow_forward_rounded,
-                        color: Colors.white),
                   ),
                 ],
               ),
