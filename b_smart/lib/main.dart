@@ -197,6 +197,7 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
   bool _isAuthenticated = false;
   int _routeVersion = 0;
   bool _routeVersionUpdateQueued = false;
+  bool _skipFirstRouteObserverEvent = true;
   late final _RouteChangeObserver _routeObserver;
 
   @override
@@ -205,6 +206,10 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _routeObserver = _RouteChangeObserver(() {
       if (!mounted) return;
+      if (_skipFirstRouteObserverEvent) {
+        _skipFirstRouteObserverEvent = false;
+        return;
+      }
       if (_routeVersionUpdateQueued) return;
       _routeVersionUpdateQueued = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -250,10 +255,11 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
     if (mounted) {
       if (authed) {
         await SessionResetService.instance.clearUserSessionState();
-        final userId = (currentUser?['id'] ?? currentUser?['_id'])?.toString().trim() ?? '';
+        final userId =
+            (currentUser?['id'] ?? currentUser?['_id'])?.toString().trim() ??
+                '';
         if (userId.isNotEmpty) {
-          final store = StoreProvider.of<AppState>(context);
-          store.dispatch(SetAuthenticated(userId));
+          globalStore.dispatch(SetAuthenticated(userId));
         }
       }
       setState(() {

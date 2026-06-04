@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -18,6 +19,7 @@ import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
+import '../widgets/offline_retry_banner.dart';
 import '../routes.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
 
@@ -58,6 +60,9 @@ class _ReelsScreenState extends State<ReelsScreen>
   bool _hasMore = true;
   String? _currentUserId;
   bool _userPaused = false;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  bool _isOffline = false;
+  int _offlineRetryAttempts = 0;
   bool _isScrubbing = false;
   double _scrubFraction = 0.0;
   bool _resumeAfterScrub = false;
@@ -112,6 +117,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   void initState() {
     super.initState();
     _pageController.addListener(_onPageScrollForAudioGate);
+    _listenConnectivity();
     unawaited(_loadCurrentUserId());
     final cached = _reelsService.getReels();
     final initialId = widget.initialReelId?.trim();
@@ -140,6 +146,44 @@ class _ReelsScreenState extends State<ReelsScreen>
       });
     }
     _loadReels();
+  }
+
+  void _listenConnectivity() {
+    _connectivitySub =
+        Connectivity().onConnectivityChanged.listen((results) {
+      final offline = results.contains(ConnectivityResult.none);
+      if (!mounted) return;
+      if (_isOffline != offline) {
+        setState(() {
+          _isOffline = offline;
+          if (!offline) {
+            _offlineRetryAttempts = 0;
+          }
+        });
+      } else if (!offline && _offlineRetryAttempts != 0) {
+        setState(() {
+          _offlineRetryAttempts = 0;
+        });
+      }
+    });
+  }
+
+  Future<bool> _isCurrentlyOffline() async {
+    final results = await Connectivity().checkConnectivity();
+    return results.contains(ConnectivityResult.none);
+  }
+
+  Future<void> _recordOfflineRetry() async {
+    final offline = await _isCurrentlyOffline();
+    if (!mounted) return;
+    setState(() {
+      _isOffline = offline;
+      if (offline) {
+        _offlineRetryAttempts++;
+      } else {
+        _offlineRetryAttempts = 0;
+      }
+    });
   }
 
   @override
@@ -171,6 +215,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   @override
   void dispose() {
     _navigationUnlockTimer?.cancel();
+    _connectivitySub?.cancel();
     _keyboardFocusNode.dispose();
     _pageController.removeListener(_onPageScrollForAudioGate);
     _pageController.dispose();
@@ -304,6 +349,7 @@ class _ReelsScreenState extends State<ReelsScreen>
         _currentIndex = nextIndex;
         _isLoading = false;
         _hasMore = reels.length >= 20;
+        _offlineRetryAttempts = 0;
       });
       if (_pageController.hasClients && nextIndex != 0) {
         _pageController.jumpToPage(nextIndex);
@@ -321,7 +367,9 @@ class _ReelsScreenState extends State<ReelsScreen>
       }
     } catch (e) {
       if (!mounted) return;
+      final offline = await _isCurrentlyOffline();
       setState(() {
+        _isOffline = offline;
         _error = _reels.isEmpty ? e.toString() : null;
       });
     } finally {
@@ -712,6 +760,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   Future<void> _retryCurrentReel() async {
     if (_reels.isEmpty) return;
     final idx = _currentIndex;
+    await _recordOfflineRetry();
     _failedControllerIndexes.remove(idx);
     _controllerRetryAttempts.remove(idx);
     if (mounted && idx == _currentIndex) setState(() {});
@@ -1104,6 +1153,19 @@ class _ReelsScreenState extends State<ReelsScreen>
                           Navigator.of(context).pushNamed('/search'),
                     ),
                   ),
+                  if (_isOffline && _offlineRetryAttempts >= 2)
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      top: topSystemInset + 8,
+                      child: SafeArea(
+                        bottom: false,
+                        child: OfflineRetryBanner(
+                          message:
+                              "You're offline, please check your internet connection",
+                        ),
+                      ),
+                    ),
                   if (isDesktop) _buildDesktopArrows(),
                 ],
               ),
@@ -2363,11 +2425,14 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem> {
     final thumbnailUrl = widget.thumbnailUrl;
     final controller = widget.controller;
     bool isInitialized = false;
+    bool isBuffering = false;
     if (controller != null) {
       try {
         isInitialized = controller.value.isInitialized;
+        isBuffering = controller.value.isBuffering;
       } catch (_) {
         isInitialized = false;
+        isBuffering = false;
       }
     }
     Size? videoSize;
@@ -2438,6 +2503,23 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem> {
                           ),
                         );
                       }(),
+                    ),
+                  if (widget.isActive &&
+                      controller != null &&
+                      (!isInitialized || isBuffering))
+                    const Positioned.fill(
+                      child: IgnorePointer(
+                        child: Center(
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                 ],
               ),

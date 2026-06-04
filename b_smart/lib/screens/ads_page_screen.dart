@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
@@ -26,6 +27,7 @@ import '../widgets/app_popups/popup_visibility_controller.dart';
 import '../widgets/app_popups/view_recorded_popup_card.dart';
 import '../widgets/ad_image_gallery.dart';
 import '../widgets/share_content_modal.dart';
+import '../widgets/offline_retry_banner.dart';
 import '../routes.dart';
 import 'ad_company_detail_screen.dart';
 import 'external_link_screen.dart';
@@ -1479,6 +1481,9 @@ class _AdVideoItemState extends State<AdVideoItem>
   DateTime? _ctaCountdownStartedAt;
   Duration _ctaCountdownAccumulated = Duration.zero;
   bool _ctaVisible = false;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  bool _isOffline = false;
+  int _offlineRetryAttempts = 0;
 
   // Compatibility accessors for hot-reload safety (older kernels referenced these).
   Timer? get _watchTimer => _watchGateTimer;
@@ -1643,11 +1648,50 @@ class _AdVideoItemState extends State<AdVideoItem>
     _likesCount = widget.ad.likesCount;
     _lastPopupVisible = widget.popupVisibility.isVisible;
     widget.popupVisibility.addListener(_onPopupVisibilityChanged);
+    _listenConnectivity();
     _loadMediaHeaders();
     unawaited(_loadFollowState());
     _initializeVideo();
     _startOrStopProgress();
     _startOrStopCtaCountdown();
+  }
+
+  void _listenConnectivity() {
+    _connectivitySub =
+        Connectivity().onConnectivityChanged.listen((results) {
+      final offline = results.contains(ConnectivityResult.none);
+      if (!mounted) return;
+      if (_isOffline != offline) {
+        setState(() {
+          _isOffline = offline;
+          if (!offline) {
+            _offlineRetryAttempts = 0;
+          }
+        });
+      } else if (!offline && _offlineRetryAttempts != 0) {
+        setState(() {
+          _offlineRetryAttempts = 0;
+        });
+      }
+    });
+  }
+
+  Future<bool> _isCurrentlyOffline() async {
+    final results = await Connectivity().checkConnectivity();
+    return results.contains(ConnectivityResult.none);
+  }
+
+  Future<void> _recordOfflineRetry() async {
+    final offline = await _isCurrentlyOffline();
+    if (!mounted) return;
+    setState(() {
+      _isOffline = offline;
+      if (offline) {
+        _offlineRetryAttempts++;
+      } else {
+        _offlineRetryAttempts = 0;
+      }
+    });
   }
 
   @override
@@ -1665,6 +1709,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       _isInitialized = false;
       _userPaused = false;
       _viewMarked = false;
+      _offlineRetryAttempts = 0;
       _resetCtaCountdown();
       _watchProgressController.value = 0;
       _watchProgressRunning = false;
@@ -1709,6 +1754,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     _controller?.removeListener(_onVideoTick);
     _controller?.dispose();
     _watchGateTimer?.cancel();
+    _connectivitySub?.cancel();
     _watchProgressController.dispose();
     _ctaTimer?.cancel();
     widget.popupVisibility.removeListener(_onPopupVisibilityChanged);
@@ -1770,10 +1816,20 @@ class _AdVideoItemState extends State<AdVideoItem>
         if (mounted) {
           setState(() {
             _isInitialized = true;
+            _offlineRetryAttempts = 0;
           });
         }
       } catch (e) {
         debugPrint('Error initializing video: $e');
+        final offline = await _isCurrentlyOffline();
+        if (mounted) {
+          setState(() {
+            _isOffline = offline;
+            if (offline) {
+              _offlineRetryAttempts++;
+            }
+          });
+        }
       }
     }
   }
@@ -2459,6 +2515,14 @@ class _AdVideoItemState extends State<AdVideoItem>
   Widget build(BuildContext context) {
     const ctaBottomPadding = 24.0;
     final ctaBottom = widget.bottomInset + ctaBottomPadding;
+    bool isBuffering = false;
+    if (_controller != null) {
+      try {
+        isBuffering = _controller!.value.isBuffering;
+      } catch (_) {
+        isBuffering = false;
+      }
+    }
 
     // Slightly higher so the column doesn't sit too low.
     final actionsBottom = 132.0 + widget.bottomInset;
@@ -2553,6 +2617,19 @@ class _AdVideoItemState extends State<AdVideoItem>
               height: widget.bottomInset,
               child: const ColoredBox(color: Colors.black),
             ),
+          if (_isOffline && _offlineRetryAttempts >= 2)
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 12,
+              child: SafeArea(
+                bottom: false,
+                child: OfflineRetryBanner(
+                  message:
+                      "You're offline, please check your internet connection",
+                ),
+              ),
+            ),
 
           // 1. Media — constrained to stop at bottomInset.
           // Gesture is attached ONLY to media so overlay taps (username, CTA, etc.)
@@ -2568,6 +2645,21 @@ class _AdVideoItemState extends State<AdVideoItem>
               child: media,
             ),
           ),
+          if (_isVideoAd && _controller != null && (!_isInitialized || isBuffering))
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // Gradient Overlay (ignore pointers so it doesn't swallow taps).
           Positioned(
@@ -3192,6 +3284,7 @@ class _SearchAdThumbState extends State<_SearchAdThumb> {
   VideoPlayerController? _controller;
   bool _ready = false;
   bool _failed = false;
+  bool _buffering = false;
 
   @override
   void initState() {
@@ -3207,6 +3300,7 @@ class _SearchAdThumbState extends State<_SearchAdThumb> {
       _disposeController();
       _ready = false;
       _failed = false;
+      _buffering = false;
       _init();
     }
   }
@@ -3252,11 +3346,13 @@ class _SearchAdThumbState extends State<_SearchAdThumb> {
       if (!mounted) return;
       setState(() {
         _ready = true;
+        _buffering = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _failed = true;
+        _buffering = false;
       });
     }
   }
@@ -3264,59 +3360,65 @@ class _SearchAdThumbState extends State<_SearchAdThumb> {
   @override
   Widget build(BuildContext context) {
     final thumbUrl = widget.ad.imageUrl?.trim();
-    if (_ready && _controller != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _controller!.value.size.width,
-              height: _controller!.value.size.height,
-              child: VideoPlayer(_controller!),
-            ),
-          ),
-        ),
-      );
+    if (_controller != null) {
+      try {
+        _buffering = _controller!.value.isBuffering;
+      } catch (_) {}
     }
-    if (!_failed && thumbUrl != null && thumbUrl.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: CachedNetworkImage(
-          imageUrl: thumbUrl,
-          httpHeaders: UrlHelper.shouldAttachAuthHeader(thumbUrl)
-              ? (widget.mediaHeaders ?? const {})
-              : null,
-          width: 44,
-          height: 44,
-          fit: BoxFit.cover,
-          placeholder: (context, _) => Container(
-            color: Colors.white.withValues(alpha: 0.08),
-            alignment: Alignment.center,
-            child: const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-          errorWidget: (context, _, __) => Container(
-            color: Colors.white.withValues(alpha: 0.08),
-            alignment: Alignment.center,
-            child: const Icon(Icons.image, color: Colors.white54, size: 16),
-          ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (thumbUrl != null && thumbUrl.isNotEmpty && !_failed)
+              CachedNetworkImage(
+                imageUrl: thumbUrl,
+                httpHeaders: UrlHelper.shouldAttachAuthHeader(thumbUrl)
+                    ? (widget.mediaHeaders ?? const {})
+                    : null,
+                fit: BoxFit.cover,
+                placeholder: (context, _) => Container(
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+                errorWidget: (context, _, __) => Container(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  alignment: Alignment.center,
+                  child:
+                      const Icon(Icons.image, color: Colors.white54, size: 16),
+                ),
+              )
+            else
+              Container(
+                color: Colors.white.withValues(alpha: 0.08),
+                alignment: Alignment.center,
+                child: const Icon(Icons.shopping_bag,
+                    color: Colors.white54, size: 18),
+              ),
+            if (!_failed && (!_ready || _buffering))
+              Container(
+                color: Colors.black.withValues(alpha: 0.12),
+                alignment: Alignment.center,
+                child: const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            if (_ready && _controller != null)
+              FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _controller!.value.size.width,
+                  height: _controller!.value.size.height,
+                  child: VideoPlayer(_controller!),
+                ),
+              ),
+          ],
         ),
-      );
-    }
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
       ),
-      child: const Icon(Icons.shopping_bag, color: Colors.white54, size: 18),
     );
   }
 }

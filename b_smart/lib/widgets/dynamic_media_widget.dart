@@ -542,6 +542,14 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     final thumb = _applyFilterToWidget(_buildVideoPlaceholder());
     final ctl = _videoCtl;
     final canShowVideo = _isControllerUsable(ctl);
+    bool isBuffering = false;
+    if (canShowVideo && ctl != null) {
+      try {
+        isBuffering = ctl.value.isBuffering;
+      } catch (_) {
+        isBuffering = false;
+      }
+    }
     try {
       return Stack(
         fit: StackFit.expand,
@@ -575,6 +583,21 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: Colors.white54,
+                  ),
+                  ),
+                ),
+              ),
+          if (widget.isActive && (isBuffering || (_loadingVideo && !_videoFailed)))
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white54,
+                    ),
                   ),
                 ),
               ),

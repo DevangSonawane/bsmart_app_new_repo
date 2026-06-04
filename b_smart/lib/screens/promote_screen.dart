@@ -4,6 +4,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../api/api_client.dart';
 import '../theme/design_tokens.dart';
 import '../services/promote_service.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
@@ -13,6 +14,7 @@ import '../widgets/promote_comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
 import '../api/follows_api.dart';
 import '../utils/current_user.dart';
+import '../utils/url_helper.dart';
 import '../services/supabase_service.dart';
 import '../routes.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -35,6 +37,7 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
   final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
   final FollowsApi _followsApi = FollowsApi();
   final SupabaseService _supabaseService = SupabaseService();
+  Map<String, String>? _mediaHeaders;
   int _currentIndex = 0;
   bool _isMuted = true;
   bool _loading = true;
@@ -73,6 +76,7 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
       if (mounted) setState(() {});
     }());
     _loadPromotes();
+    _loadMediaHeaders();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final view = View.of(context);
@@ -143,12 +147,33 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
     }
   }
 
+  Future<void> _loadMediaHeaders() async {
+    if (_mediaHeaders != null) return;
+    final token = await ApiClient().getToken();
+    if (!mounted) return;
+    if (token != null && token.isNotEmpty) {
+      setState(() {
+        _mediaHeaders = {'Authorization': 'Bearer $token'};
+      });
+    }
+  }
+
   Future<void> _initControllerForIndex(int index) async {
     if (index < 0 || index >= _promotes.length) return;
     if (_controllers.containsKey(index)) return;
     final url = _promotes[index]['videoUrl'] as String?;
     if (url == null || url.isEmpty) return;
-    final controller = VideoPlayerController.network(url);
+    if (UrlHelper.shouldAttachAuthHeader(url) && _mediaHeaders == null) {
+      await _loadMediaHeaders();
+    }
+    final headers = UrlHelper.shouldAttachAuthHeader(url)
+        ? (_mediaHeaders ?? const <String, String>{})
+        : const <String, String>{};
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(url),
+      httpHeaders: headers,
+      formatHint: _videoFormatHintForUrl(url),
+    );
     _controllers[index] = controller;
     await controller.initialize();
     controller.setLooping(true);
@@ -164,6 +189,13 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
       await controller.pause();
     }
     setState(() {});
+  }
+
+  VideoFormat? _videoFormatHintForUrl(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('.m3u8')) return VideoFormat.hls;
+    if (lower.contains('.mpd')) return VideoFormat.dash;
+    return null;
   }
 
   void _disposeFarControllers(int keepIndex) {
@@ -657,6 +689,7 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
               final item = _promotes[index];
               final products = (item['products'] as List<dynamic>?) ?? [];
               final controller = _controllers[index];
+              final thumbSrc = (item['thumbnailUrl'] ?? '').toString().trim();
               final actionsBottom = 96.0 + bottomSystemInset;
               final likesCount = _toInt(
                   item['likesCount'] ?? item['likes_count'] ?? item['likes']);
@@ -705,8 +738,29 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
                     left: 0,
                     right: 0,
                     bottom: bottomSystemInset,
-                    child: controller != null && controller.value.isInitialized
-                        ? () {
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (thumbSrc.isNotEmpty)
+                          CachedNetworkImage(
+                            imageUrl: thumbSrc,
+                            fit: BoxFit.cover,
+                            httpHeaders:
+                                UrlHelper.shouldAttachAuthHeader(thumbSrc)
+                                    ? _mediaHeaders
+                                    : null,
+                            placeholder: (_, __) => const ColoredBox(
+                              color: Colors.black,
+                            ),
+                            errorWidget: (_, __, ___) => const ColoredBox(
+                              color: Colors.black,
+                            ),
+                          )
+                        else
+                          const ColoredBox(color: Colors.black),
+                        if (controller != null &&
+                            controller.value.isInitialized)
+                          () {
                             final ar = controller.value.aspectRatio;
                             final target = 9 / 16;
                             final isNineSixteen = ar.isFinite &&
@@ -733,12 +787,24 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
                                 ),
                               ),
                             );
-                          }()
-                        : Container(
-                            color: Colors.black,
-                            child: const Center(
+                          }(),
+                        if (controller == null ||
+                            !controller.value.isInitialized)
+                          const ColoredBox(
+                            color: Colors.transparent,
+                            child: Center(
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
                                 child: CircularProgressIndicator(
-                                    color: Colors.white54))),
+                                  strokeWidth: 2.2,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                   // Gradient overlay
                   Positioned(

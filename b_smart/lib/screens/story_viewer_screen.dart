@@ -3,11 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:video_player/video_player.dart';
 import '../models/story_model.dart';
 import '../services/feed_service.dart';
 import '../services/story_cache.dart';
 import '../utils/url_helper.dart';
+import '../widgets/offline_retry_banner.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/api.dart';
 
@@ -46,6 +48,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   String? _endedStoryId;
   double _cachedBottomInset = 0;
   final Set<String> _fetchingStoryGroupIds = <String>{};
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  bool _isOffline = false;
+  int _offlineRetryAttempts = 0;
 
   @override
   void initState() {
@@ -53,6 +58,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     _currentGroupIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
     _storyController = PageController();
+    _listenConnectivity();
     // Cache the bottom inset from the window directly at init time.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -75,9 +81,48 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     _startAutoPlay();
   }
 
+  void _listenConnectivity() {
+    _connectivitySub =
+        Connectivity().onConnectivityChanged.listen((results) {
+      final offline = results.contains(ConnectivityResult.none);
+      if (!mounted) return;
+      if (_isOffline != offline) {
+        setState(() {
+          _isOffline = offline;
+          if (!offline) {
+            _offlineRetryAttempts = 0;
+          }
+        });
+      } else if (!offline && _offlineRetryAttempts != 0) {
+        setState(() {
+          _offlineRetryAttempts = 0;
+        });
+      }
+    });
+  }
+
+  Future<bool> _isCurrentlyOffline() async {
+    final results = await Connectivity().checkConnectivity();
+    return results.contains(ConnectivityResult.none);
+  }
+
+  Future<void> _recordOfflineRetry() async {
+    final offline = await _isCurrentlyOffline();
+    if (!mounted) return;
+    setState(() {
+      _isOffline = offline;
+      if (offline) {
+        _offlineRetryAttempts++;
+      } else {
+        _offlineRetryAttempts = 0;
+      }
+    });
+  }
+
   @override
   void dispose() {
     _autoPlayTimer?.cancel();
+    _connectivitySub?.cancel();
     _pageController.dispose();
     _storyController.dispose();
     _videoCtl?.dispose();
@@ -402,11 +447,19 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                         top: 10,
                         left: 10,
                         right: 10,
-                        child: Column(
-                          children: [
-                            Row(
-                              children: List.generate(
-                                currentGroup.stories.length,
+                    child: Column(
+                      children: [
+                        if (_isOffline && _offlineRetryAttempts >= 2)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 8),
+                            child: OfflineRetryBanner(
+                              message:
+                                  "You're offline, please check your internet connection",
+                            ),
+                          ),
+                        Row(
+                          children: List.generate(
+                            currentGroup.stories.length,
                                 (index) => Expanded(
                                   child: Container(
                                     height: 2,
@@ -690,10 +743,18 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         );
         _currentStoryIndex = 0;
         _progress = 0.0;
+        _offlineRetryAttempts = 0;
       });
       _startAutoPlay();
     } catch (_) {
-      // ignore
+      final offline = await _isCurrentlyOffline();
+      if (!mounted) return;
+      setState(() {
+        _isOffline = offline;
+        if (offline) {
+          _offlineRetryAttempts++;
+        }
+      });
     } finally {
       _fetchingStoryGroupIds.remove(sid);
     }
@@ -739,19 +800,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                 size: 100, color: Colors.white54)),
                       )
                     : (story.mediaType == StoryMediaType.video && hasUrl)
-                        ? (isActive &&
-                                _videoCtl != null &&
-                                _videoCtl!.value.isInitialized &&
-                                _videoStoryId == story.id)
-                            ? FittedBox(
-                                fit: BoxFit.cover,
-                                child: SizedBox(
-                                  width: _videoCtl!.value.size.width,
-                                  height: _videoCtl!.value.size.height,
-                                  child: VideoPlayer(_videoCtl!),
-                                ),
-                              )
-                            : CachedNetworkImage(
+                        ? Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              CachedNetworkImage(
                                 imageUrl: story.mediaUrl,
                                 httpHeaders: _videoHeaders,
                                 fit: BoxFit.cover,
@@ -759,7 +811,34 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                     Container(color: Colors.black),
                                 errorWidget: (_, __, ___) =>
                                     Container(color: Colors.black),
-                              )
+                              ),
+                              if (isActive &&
+                                  _videoCtl != null &&
+                                  _videoCtl!.value.isInitialized &&
+                                  _videoStoryId == story.id)
+                                FittedBox(
+                                  fit: BoxFit.cover,
+                                  child: SizedBox(
+                                    width: _videoCtl!.value.size.width,
+                                    height: _videoCtl!.value.size.height,
+                                    child: VideoPlayer(_videoCtl!),
+                                  ),
+                                ),
+                              if (isActive &&
+                                  (_videoCtl == null ||
+                                      _videoStoryId != story.id ||
+                                      !_videoCtl!.value.isInitialized ||
+                                      _videoCtl!.value.isBuffering))
+                                const Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                        color: Colors.white, strokeWidth: 2),
+                                  ),
+                                ),
+                            ],
+                          )
                         : const SizedBox.shrink(),
               ),
             ),
@@ -942,14 +1021,24 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
               _nextStory();
             }
           });
-          setState(() {});
+          setState(() {
+            _offlineRetryAttempts = 0;
+          });
           if (_waitingForMedia && _pendingStoryId == story.id) {
             _waitingForMedia = false;
             _startAutoPlayTimer(story);
           }
         });
       } catch (_) {
-        if (mounted) setState(() {});
+        final offline = await _isCurrentlyOffline();
+        if (mounted) {
+          setState(() {
+            _isOffline = offline;
+            if (offline) {
+              _offlineRetryAttempts++;
+            }
+          });
+        }
       }
     } else {
       _waitingForMedia = false;

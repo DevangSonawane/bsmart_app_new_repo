@@ -49,6 +49,7 @@ class PromoteService {
     if (media is List) mediaList = media;
 
     Object? videoUrlObj;
+    String? thumbnailUrl;
     if (mediaList.isNotEmpty) {
       final first = mediaList.first;
       if (first is String) {
@@ -57,6 +58,28 @@ class PromoteService {
         final fm = Map<String, dynamic>.from(first);
         videoUrlObj =
             fm['url'] ?? fm['fileUrl'] ?? fm['video_url'] ?? fm['link'];
+        final thumb =
+            fm['thumbnail_url'] ?? fm['thumbnailUrl'] ?? fm['thumbnail'];
+        if (thumb is String && thumb.trim().isNotEmpty) {
+          thumbnailUrl = thumb.trim();
+        } else if (thumb is Map) {
+          final tm = Map<String, dynamic>.from(thumb);
+          thumbnailUrl =
+              (tm['url'] ?? tm['fileUrl'] ?? tm['file_url'])?.toString().trim();
+        } else if (thumb is List && thumb.isNotEmpty) {
+          thumbnailUrl = thumb.first?.toString().trim();
+        }
+        thumbnailUrl ??= (fm['thumbnails'] is List &&
+                (fm['thumbnails'] as List).isNotEmpty)
+            ? ((fm['thumbnails'] as List).first is Map
+                ? (Map<String, dynamic>.from((fm['thumbnails'] as List).first
+                            as Map)['fileUrl'] ??
+                        Map<String, dynamic>.from(
+                            (fm['thumbnails'] as List).first as Map)['url'])
+                    ?.toString()
+                    .trim()
+                : (fm['thumbnails'] as List).first?.toString().trim())
+            : thumbnailUrl;
       }
     }
     final videoUrl = (videoUrlObj ?? '').toString().trim();
@@ -103,12 +126,16 @@ class PromoteService {
         final name = (pm['product_name'] ?? pm['name'] ?? pm['title'] ?? '')
             .toString()
             .trim();
-        final desc =
-            (pm['product_description'] ?? pm['description'] ?? '').toString().trim();
-        final img =
-            (pm['promote_img'] ?? pm['image'] ?? pm['img'] ?? pm['imageUrl'] ?? '')
-                .toString()
-                .trim();
+        final desc = (pm['product_description'] ?? pm['description'] ?? '')
+            .toString()
+            .trim();
+        final img = (pm['promote_img'] ??
+                pm['image'] ??
+                pm['img'] ??
+                pm['imageUrl'] ??
+                '')
+            .toString()
+            .trim();
         final link = (pm['visit_link'] ??
                 pm['website_url'] ??
                 pm['websiteUrl'] ??
@@ -154,6 +181,7 @@ class PromoteService {
       'videoUrl': videoUrl.isEmpty
           ? 'https://assets.mixkit.co/videos/preview/mixkit-working-on-a-new-project-4240-large.mp4'
           : videoUrl,
+      'thumbnailUrl': (thumbnailUrl ?? '').trim(),
       'likesCount': likesCount,
       'commentsCount': commentsCount,
       'viewsCount': viewsCount,
@@ -164,9 +192,11 @@ class PromoteService {
       'description': (item['caption'] ?? item['description'] ?? '').toString(),
       'caption': (item['caption'] ?? item['description'] ?? '').toString(),
       'tags': tags,
-      'brandName':
-          (item['brandName'] ?? item['ad_company_name'] ?? item['company_name'] ?? '')
-              .toString(),
+      'brandName': (item['brandName'] ??
+              item['ad_company_name'] ??
+              item['company_name'] ??
+              '')
+          .toString(),
       'rating': 4.0,
       'products': products,
     };
@@ -179,21 +209,25 @@ class PromoteService {
         'userId': '',
         'username': 'business_growth',
         'avatarUrl': '',
-        'videoUrl': 'https://assets.mixkit.co/videos/preview/mixkit-working-on-a-new-project-4240-large.mp4',
+        'videoUrl':
+            'https://assets.mixkit.co/videos/preview/mixkit-working-on-a-new-project-4240-large.mp4',
         'likes': '1.2k',
         'comments': '34',
         'likesCount': 1200,
         'commentsCount': 34,
         'isLikedByMe': false,
-        'description': 'Boost your business with our new tools! 🚀 #growth #business',
-        'caption': 'Boost your business with our new tools! 🚀 #growth #business',
+        'description':
+            'Boost your business with our new tools! 🚀 #growth #business',
+        'caption':
+            'Boost your business with our new tools! 🚀 #growth #business',
         'tags': ['#growth', '#business'],
         'brandName': 'Growth Tools Inc.',
         'rating': 4.5,
         'products': [
           {
             'id': 1,
-            'image': 'https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?w=400&h=300&fit=crop',
+            'image':
+                'https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?w=400&h=300&fit=crop',
             'title': 'Product A',
             'description': 'Featured product',
             'price': 999,
@@ -203,7 +237,8 @@ class PromoteService {
           },
           {
             'id': 2,
-            'image': 'https://images.unsplash.com/photo-1556740758-90de374c12ad?w=400&h=300&fit=crop',
+            'image':
+                'https://images.unsplash.com/photo-1556740758-90de374c12ad?w=400&h=300&fit=crop',
             'title': 'Product B',
             'description': 'Featured product',
             'price': 799,
@@ -218,7 +253,8 @@ class PromoteService {
         'userId': '',
         'username': 'marketing_pro',
         'avatarUrl': '',
-        'videoUrl': 'https://assets.mixkit.co/videos/preview/mixkit-discussion-of-a-marketing-project-4248-large.mp4',
+        'videoUrl':
+            'https://assets.mixkit.co/videos/preview/mixkit-discussion-of-a-marketing-project-4248-large.mp4',
         'likes': '850',
         'comments': '22',
         'likesCount': 850,
@@ -232,7 +268,8 @@ class PromoteService {
         'products': [
           {
             'id': 1,
-            'image': 'https://images.unsplash.com/photo-1533750516457-a7f992034fec?w=400&h=300&fit=crop',
+            'image':
+                'https://images.unsplash.com/photo-1533750516457-a7f992034fec?w=400&h=300&fit=crop',
             'title': 'Tool X',
             'description': 'Featured product',
             'price': 499,
@@ -251,7 +288,8 @@ class PromoteService {
     try {
       // Prefer the dedicated PromoteReels API. React uses:
       //   GET /api/promote-reels?page=1&limit=10
-      final res = await _promoteReelsApi.listPromoteReels(page: 1, limit: limit);
+      final res =
+          await _promoteReelsApi.listPromoteReels(page: 1, limit: limit);
       List<dynamic> items = const [];
       if (res is Map) {
         final data = res['data'];
@@ -264,7 +302,9 @@ class PromoteService {
         // Backward-compatible fallback: derive from feed if promote-reels
         // endpoint isn't deployed in this environment.
         final feedRes = await _postsApi.getFeed(limit: limit);
-        final allPosts = feedRes is Map ? (feedRes['posts'] as List<dynamic>? ?? []) : const [];
+        final allPosts = feedRes is Map
+            ? (feedRes['posts'] as List<dynamic>? ?? [])
+            : const [];
         items = allPosts.where((p) {
           if (p is! Map) return false;
           final type = (p['type'] ?? p['media_type'] ?? 'post').toString();

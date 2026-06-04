@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
 import '../models/story_model.dart';
@@ -12,6 +13,7 @@ import '../services/feed_service.dart';
 import '../utils/current_user.dart';
 import 'package:http/http.dart' as http;
 import 'package:photo_manager/photo_manager.dart';
+import '../widgets/offline_retry_banner.dart';
 
 class OwnStoryViewerScreen extends StatefulWidget {
   final List<Story> stories;
@@ -38,16 +40,58 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   bool _commentingEnabled = true;
   late List<Story> _stories;
   final FeedService _feedService = FeedService();
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  bool _isOffline = false;
+  int _offlineRetryAttempts = 0;
 
   @override
   void initState() {
     super.initState();
     _controller = PageController();
     _stories = List<Story>.from(widget.stories);
+    _listenConnectivity();
     _start();
     _loadVideoForCurrent();
     _loadItemsIfNeeded();
     _loadAnalyticsIfNeeded();
+  }
+
+  void _listenConnectivity() {
+    _connectivitySub =
+        Connectivity().onConnectivityChanged.listen((results) {
+      final offline = results.contains(ConnectivityResult.none);
+      if (!mounted) return;
+      if (_isOffline != offline) {
+        setState(() {
+          _isOffline = offline;
+          if (!offline) {
+            _offlineRetryAttempts = 0;
+          }
+        });
+      } else if (!offline && _offlineRetryAttempts != 0) {
+        setState(() {
+          _offlineRetryAttempts = 0;
+        });
+      }
+    });
+  }
+
+  Future<bool> _isCurrentlyOffline() async {
+    final results = await Connectivity().checkConnectivity();
+    return results.contains(ConnectivityResult.none);
+  }
+
+  Future<void> _recordOfflineRetry() async {
+    final offline = await _isCurrentlyOffline();
+    if (!mounted) return;
+    setState(() {
+      _isOffline = offline;
+      if (offline) {
+        _offlineRetryAttempts++;
+      } else {
+        _offlineRetryAttempts = 0;
+      }
+    });
   }
 
   Future<void> _loadItemsIfNeeded() async {
@@ -64,11 +108,19 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         _stories = items;
         _index = 0;
         _progress = 0.0;
+        _offlineRetryAttempts = 0;
       });
       _loadVideoForCurrent();
       _start();
     } catch (_) {
-      // ignore
+      final offline = await _isCurrentlyOffline();
+      if (!mounted) return;
+      setState(() {
+        _isOffline = offline;
+        if (offline) {
+          _offlineRetryAttempts++;
+        }
+      });
     }
   }
 
@@ -98,7 +150,14 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
           _start();
         }
       } catch (_) {
-        // ignore
+        final offline = await _isCurrentlyOffline();
+        if (!mounted) return;
+        setState(() {
+          _isOffline = offline;
+          if (offline) {
+            _offlineRetryAttempts++;
+          }
+        });
       }
     } else {
       _videoCtl?.dispose();
@@ -124,6 +183,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _connectivitySub?.cancel();
     _controller.dispose();
     _videoCtl?.dispose();
     super.dispose();
@@ -1924,23 +1984,42 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
           children: [
             Positioned.fill(
               child: story.mediaType == StoryMediaType.video
-                  ? (_videoCtl != null && _videoCtl!.value.isInitialized)
-                      ? FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: _videoCtl!.value.size.width,
-                            height: _videoCtl!.value.size.height,
-                            child: VideoPlayer(_videoCtl!),
+                  ? Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (mediaUrl.isNotEmpty)
+                          Image.network(
+                            mediaUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                Container(color: Colors.black),
+                          )
+                        else
+                          Container(color: Colors.black),
+                        if (_videoCtl != null && _videoCtl!.value.isInitialized)
+                          FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: _videoCtl!.value.size.width,
+                              height: _videoCtl!.value.size.height,
+                              child: VideoPlayer(_videoCtl!),
+                            ),
                           ),
-                        )
-                      : (mediaUrl.isNotEmpty
-                          ? Image.network(
-                              mediaUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  Container(color: Colors.black),
-                            )
-                          : Container(color: Colors.black))
+                        if (_videoCtl == null ||
+                            !_videoCtl!.value.isInitialized ||
+                            _videoCtl!.value.isBuffering)
+                          const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ),
+                      ],
+                    )
                   : (mediaUrl.isNotEmpty
                       ? Image.network(
                           mediaUrl,
@@ -2015,6 +2094,14 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
               right: 12,
               child: Column(
                 children: [
+                  if (_isOffline && _offlineRetryAttempts >= 2)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: OfflineRetryBanner(
+                        message:
+                            "You're offline, please check your internet connection",
+                      ),
+                    ),
                   Row(
                     children: List.generate(
                       _stories.length,
