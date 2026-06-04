@@ -2774,62 +2774,66 @@ class _AdVideoItemState extends State<AdVideoItem>
           Positioned(
             right: 4,
             bottom: actionsBottom,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildGlassAction(
-                  icon: LucideIcons.eye,
-                  label: _formatCount(widget.ad.currentViews),
-                  onTap: () {},
-                ),
-                const SizedBox(height: 16),
-                _buildGlassAction(
-                  icon: _isLiked ? Icons.favorite : LucideIcons.heart,
-                  label: _formatCount(_likesCount),
-                  iconColor: _isLiked ? Colors.red : Colors.white,
-                  fillColor: _isLiked ? Colors.red : null,
-                  onTap: _toggleLike,
-                ),
-                const SizedBox(height: 16),
-                _buildGlassAction(
-                  icon: LucideIcons.messageCircle,
-                  label: _formatCount(widget.ad.commentsCount),
-                  onTap: () => unawaited(widget.onOpenComments()),
-                ),
-                const SizedBox(height: 16),
-                _buildGlassAction(
-                  icon: LucideIcons.send,
-                  label: '',
-                  onTap: () {
-                    ShareContentModal.show(
-                      context,
-                      contentType: 'ad',
-                      contentId: widget.ad.id,
-                    );
-                  },
-                  rotate: -0.2, // ~12 degrees
-                ),
-                const SizedBox(height: 16),
-                _buildGlassAction(
-                  icon: _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                  label: '',
-                  iconColor: Colors.white,
-                  onTap: _toggleSaveAd,
-                ),
-                if (_isVideoAd) ...[
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {},
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildGlassAction(
+                    icon: LucideIcons.eye,
+                    label: _formatCount(widget.ad.currentViews),
+                    onTap: () {},
+                  ),
                   const SizedBox(height: 16),
                   _buildGlassAction(
-                    icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                    icon: _isLiked ? Icons.favorite : LucideIcons.heart,
+                    label: _formatCount(_likesCount),
+                    iconColor: _isLiked ? Colors.red : Colors.white,
+                    fillColor: _isLiked ? Colors.red : null,
+                    onTap: _toggleLike,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildGlassAction(
+                    icon: LucideIcons.messageCircle,
+                    label: _formatCount(widget.ad.commentsCount),
+                    onTap: () => unawaited(widget.onOpenComments()),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildGlassAction(
+                    icon: LucideIcons.send,
                     label: '',
                     onTap: () {
-                      setState(() {
-                        _isMuted = !_isMuted;
-                        unawaited(_safeSetVolume(_isMuted ? 0 : 1));
-                      });
+                      ShareContentModal.show(
+                        context,
+                        contentType: 'ad',
+                        contentId: widget.ad.id,
+                      );
                     },
+                    rotate: -0.2, // ~12 degrees
                   ),
+                  const SizedBox(height: 16),
+                  _buildGlassAction(
+                    icon: _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                    label: '',
+                    iconColor: Colors.white,
+                    onTap: _toggleSaveAd,
+                  ),
+                  if (_isVideoAd) ...[
+                    const SizedBox(height: 16),
+                    _buildGlassAction(
+                      icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                      label: '',
+                      onTap: () {
+                        setState(() {
+                          _isMuted = !_isMuted;
+                          unawaited(_safeSetVolume(_isMuted ? 0 : 1));
+                        });
+                      },
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
 

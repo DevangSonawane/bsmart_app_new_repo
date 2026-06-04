@@ -828,66 +828,70 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
                   Positioned(
                     right: 4,
                     bottom: actionsBottom,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        GlassActionButton(
-                          icon: LucideIcons.eye,
-                          label: _fmt(_toInt(item['viewsCount'] ??
-                              item['views_count'] ??
-                              item['views'] ??
-                              item['currentViews'] ??
-                              item['current_views'])),
-                          onTap: () {},
-                        ),
-                        const SizedBox(height: 16),
-                        GlassActionButton(
-                          icon: isLiked ? Icons.favorite : LucideIcons.heart,
-                          label: _fmt(likesCount),
-                          iconColor: isLiked ? Colors.red : Colors.white,
-                          onTap: () => _toggleLike(index),
-                        ),
-                        const SizedBox(height: 16),
-                        GlassActionButton(
-                          icon: LucideIcons.messageCircle,
-                          label: _fmt(commentsCount),
-                          onTap: () => _openComments(index),
-                        ),
-                        const SizedBox(height: 16),
-                        GlassActionButton(
-                          icon: LucideIcons.send,
-                          label: '',
-                          rotate: -0.2,
-                          onTap: () => _openShare(index),
-                        ),
-                        const SizedBox(height: 16),
-                        GlassActionButton(
-                          icon: (item['isSavedByMe'] == true ||
-                                  item['is_saved_by_me'] == true)
-                              ? Icons.bookmark
-                              : Icons.bookmark_border,
-                          label: '',
-                          onTap: () => _toggleSave(index),
-                        ),
-                        const SizedBox(height: 16),
-                        GlassActionButton(
-                          icon: _isMuted
-                              ? LucideIcons.volumeX
-                              : LucideIcons.volume2,
-                          label: '',
-                          onTap: () {
-                            setState(() {
-                              _isMuted = !_isMuted;
-                              final c = _controllers[_currentIndex];
-                              if (c != null && _canPlay) {
-                                c.setVolume(_isMuted ? 0.0 : 1.0);
-                              } else if (c != null) {
-                                c.setVolume(0.0);
-                              }
-                            });
-                          },
-                        ),
-                      ],
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {},
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GlassActionButton(
+                            icon: LucideIcons.eye,
+                            label: _fmt(_toInt(item['viewsCount'] ??
+                                item['views_count'] ??
+                                item['views'] ??
+                                item['currentViews'] ??
+                                item['current_views'])),
+                            onTap: () {},
+                          ),
+                          const SizedBox(height: 16),
+                          GlassActionButton(
+                            icon: isLiked ? Icons.favorite : LucideIcons.heart,
+                            label: _fmt(likesCount),
+                            iconColor: isLiked ? Colors.red : Colors.white,
+                            onTap: () => _toggleLike(index),
+                          ),
+                          const SizedBox(height: 16),
+                          GlassActionButton(
+                            icon: LucideIcons.messageCircle,
+                            label: _fmt(commentsCount),
+                            onTap: () => _openComments(index),
+                          ),
+                          const SizedBox(height: 16),
+                          GlassActionButton(
+                            icon: LucideIcons.send,
+                            label: '',
+                            rotate: -0.2,
+                            onTap: () => _openShare(index),
+                          ),
+                          const SizedBox(height: 16),
+                          GlassActionButton(
+                            icon: (item['isSavedByMe'] == true ||
+                                    item['is_saved_by_me'] == true)
+                                ? Icons.bookmark
+                                : Icons.bookmark_border,
+                            label: '',
+                            onTap: () => _toggleSave(index),
+                          ),
+                          const SizedBox(height: 16),
+                          GlassActionButton(
+                            icon: _isMuted
+                                ? LucideIcons.volumeX
+                                : LucideIcons.volume2,
+                            label: '',
+                            onTap: () {
+                              setState(() {
+                                _isMuted = !_isMuted;
+                                final c = _controllers[_currentIndex];
+                                if (c != null && _canPlay) {
+                                  c.setVolume(_isMuted ? 0.0 : 1.0);
+                                } else if (c != null) {
+                                  c.setVolume(0.0);
+                                }
+                              });
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   // Bottom: user + caption + tags (bounded within the page height)

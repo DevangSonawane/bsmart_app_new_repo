@@ -1265,7 +1265,11 @@ class _ReelsScreenState extends State<ReelsScreen>
                 // `bottomSystemInset` is already accounted for by the outer Padding
                 // in `build()`, so don't add it again here.
                 bottom: actionsBottomMobile,
-                child: _buildMobileActions(current),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {},
+                  child: _buildMobileActions(current),
+                ),
               ),
             AnimatedPositioned(
               duration: const Duration(milliseconds: 240),

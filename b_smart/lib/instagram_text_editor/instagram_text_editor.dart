@@ -721,33 +721,36 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
                                 _buildTextWithBackground(),
                                 Opacity(
                                   opacity: 0.02,
-                                  child: SizedBox(
-                                    width: double.infinity,
-                                    child: TextField(
-                                      controller: _controller,
-                                      focusNode: _focusNode,
-                                      autofocus: true,
-                                      textAlign: _alignment,
-                                      style: _baseTextStyle().copyWith(
-                                        color: Colors.transparent,
+                                  child: IgnorePointer(
+                                    ignoring: true,
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: TextField(
+                                        controller: _controller,
+                                        focusNode: _focusNode,
+                                        autofocus: true,
+                                        textAlign: _alignment,
+                                        style: _baseTextStyle().copyWith(
+                                          color: Colors.transparent,
+                                        ),
+                                        cursorColor: _textColor,
+                                        maxLines: null,
+                                        keyboardType: TextInputType.multiline,
+                                        enableInteractiveSelection: false,
+                                        scrollPhysics:
+                                            const NeverScrollableScrollPhysics(),
+                                        decoration: const InputDecoration(
+                                          border: InputBorder.none,
+                                          hintText: '',
+                                        ),
+                                        onChanged: (_) {
+                                          _handleTextChange();
+                                          setState(() {
+                                            _textPosition = _clampToImageRect(
+                                                _textPosition, _scale);
+                                          });
+                                        },
                                       ),
-                                      cursorColor: _textColor,
-                                      maxLines: null,
-                                      keyboardType: TextInputType.multiline,
-                                      enableInteractiveSelection: false,
-                                      scrollPhysics:
-                                          const NeverScrollableScrollPhysics(),
-                                      decoration: const InputDecoration(
-                                        border: InputBorder.none,
-                                        hintText: '',
-                                      ),
-                                      onChanged: (_) {
-                                        _handleTextChange();
-                                        setState(() {
-                                          _textPosition = _clampToImageRect(
-                                              _textPosition, _scale);
-                                        });
-                                      },
                                     ),
                                   ),
                                 ),
