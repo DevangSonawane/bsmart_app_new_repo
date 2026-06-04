@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-class DraggableTextOverlay extends StatelessWidget {
+class DraggableTextOverlay extends StatefulWidget {
   final Widget child;
   final Offset position;
   final double scale;
@@ -29,115 +32,118 @@ class DraggableTextOverlay extends StatelessWidget {
   });
 
   @override
+  State<DraggableTextOverlay> createState() => _DraggableTextOverlayState();
+}
+
+class _DraggableTextOverlayState extends State<DraggableTextOverlay> {
+  late Offset _displayPosition;
+  late double _displayScale;
+  late double _displayRotation;
+  bool _dragging = false;
+  bool _gestureActive = false;
+  double _scaleStart = 1.0;
+  double _rotationStart = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _displayPosition = widget.position;
+    _displayScale = widget.scale;
+    _displayRotation = widget.rotation;
+  }
+
+  @override
+  void didUpdateWidget(covariant DraggableTextOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_gestureActive || _dragging) return;
+    _displayPosition = widget.position;
+    _displayScale = widget.scale;
+    _displayRotation = widget.rotation;
+  }
+
+  double _normalizeRotation(double radians) {
+    final degrees = radians * 180 / math.pi;
+    final normalized = ((degrees + 180) % 360) - 180;
+    return normalized * math.pi / 180;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isMoving = _gestureActive || _dragging || widget.isDragging;
     return AnimatedPositioned(
-      duration: isNearTrash ? const Duration(milliseconds: 200) : Duration.zero,
+      duration: isMoving || widget.isNearTrash
+          ? Duration.zero
+          : const Duration(milliseconds: 180),
       curve: Curves.easeOutCubic,
-      left: position.dx,
-      top: position.dy,
-      child: _OverlayGestureSurface(
-        onScaleStart: onScaleStart,
-        onScaleUpdate: onScaleUpdate,
-        isDragging: isDragging,
-        onDragStart: onDragStart,
-        onDragUpdate: onDragUpdate,
-        onDragEnd: onDragEnd,
+      left: _displayPosition.dx,
+      top: _displayPosition.dy,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        dragStartBehavior: DragStartBehavior.down,
+        onScaleStart: (details) {
+          _gestureActive = true;
+          _scaleStart = _displayScale;
+          _rotationStart = _displayRotation;
+          widget.onScaleStart(details);
+        },
+        onScaleUpdate: (details) {
+          setState(() {
+            _displayPosition += details.focalPointDelta;
+            if (details.pointerCount > 1) {
+              _displayScale = (_scaleStart * details.scale).clamp(0.5, 4.0);
+              _displayRotation =
+                  _normalizeRotation(_rotationStart + details.rotation);
+            }
+          });
+
+          widget.onScaleUpdate(details);
+
+          if (details.pointerCount == 1) {
+            if (!_dragging) {
+              _dragging = true;
+              widget.onDragStart();
+            }
+
+            widget.onDragUpdate(
+              DragUpdateDetails(
+                globalPosition: details.focalPoint,
+                localPosition: details.localFocalPoint,
+                delta: details.focalPointDelta,
+                sourceTimeStamp: details.sourceTimeStamp,
+              ),
+            );
+          }
+        },
+        onScaleEnd: (_) {
+          _gestureActive = false;
+          _dragging = false;
+          widget.onDragEnd();
+        },
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: widget.isNearTrash
+              ? const Duration(milliseconds: 200)
+              : Duration.zero,
           curve: Curves.easeOutCubic,
           decoration: BoxDecoration(
-            color: isNearTrash ? Colors.red.withValues(alpha: 0.08) : null,
+            color: widget.isNearTrash ? Colors.red.withValues(alpha: 0.08) : null,
             borderRadius: BorderRadius.circular(10),
           ),
           child: AnimatedScale(
-            duration: const Duration(milliseconds: 200),
+            duration: widget.isNearTrash
+                ? const Duration(milliseconds: 200)
+                : Duration.zero,
             curve: Curves.easeOutCubic,
-            scale: isNearTrash ? 0.85 : 1.0,
+            scale: widget.isNearTrash ? 0.85 : 1.0,
             child: Transform.rotate(
-              angle: rotation,
-              child: Transform.scale(scale: scale, child: child),
+              angle: _displayRotation,
+              child: Transform.scale(
+                scale: _displayScale,
+                child: widget.child,
+              ),
             ),
           ),
         ),
       ),
-    );
-  }
-}
-
-class _OverlayGestureSurface extends StatefulWidget {
-  final Widget child;
-  final GestureScaleUpdateCallback onScaleUpdate;
-  final GestureScaleStartCallback onScaleStart;
-  final bool isDragging;
-  final VoidCallback onDragStart;
-  final ValueChanged<DragUpdateDetails> onDragUpdate;
-  final VoidCallback onDragEnd;
-
-  const _OverlayGestureSurface({
-    required this.child,
-    required this.onScaleUpdate,
-    required this.onScaleStart,
-    required this.isDragging,
-    required this.onDragStart,
-    required this.onDragUpdate,
-    required this.onDragEnd,
-  });
-
-  @override
-  State<_OverlayGestureSurface> createState() => _OverlayGestureSurfaceState();
-}
-
-class _OverlayGestureSurfaceState extends State<_OverlayGestureSurface> {
-  bool _draggingFromScale = false;
-
-  void _endDragIfNeeded() {
-    if (!_draggingFromScale) return;
-    _draggingFromScale = false;
-    widget.onDragEnd();
-  }
-
-  @override
-  void didUpdateWidget(covariant _OverlayGestureSurface oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!widget.isDragging && _draggingFromScale) {
-      _draggingFromScale = false;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onScaleStart: (details) {
-        widget.onScaleStart(details);
-      },
-      onScaleUpdate: (details) {
-        widget.onScaleUpdate(details);
-
-        if (details.pointerCount != 1) {
-          if (_draggingFromScale) {
-            _endDragIfNeeded();
-          }
-          return;
-        }
-
-        if (!_draggingFromScale && !widget.isDragging) {
-          _draggingFromScale = true;
-          widget.onDragStart();
-        }
-
-        if (_draggingFromScale || widget.isDragging) {
-          widget.onDragUpdate(
-            DragUpdateDetails(
-              globalPosition: details.focalPoint,
-              localPosition: details.localFocalPoint,
-              delta: details.focalPointDelta,
-              sourceTimeStamp: details.sourceTimeStamp,
-            ),
-          );
-        }
-      },
-      onScaleEnd: (_) => _endDragIfNeeded(),
-      child: widget.child,
     );
   }
 }
