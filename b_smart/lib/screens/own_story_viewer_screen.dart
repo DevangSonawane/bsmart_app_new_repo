@@ -2332,86 +2332,93 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                 ],
               ),
             ),
-            Positioned(
-              bottom: 20,
-              left: 16,
-              right: 16,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown: (_) => _controlsTap = true,
-                onTapCancel: () => _controlsTap = false,
-                onTapUp: (_) => _controlsTap = false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 12),
-                    if (_commentingEnabled) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: Row(
-                          children: [
-                            Text('Say something...',
-                                style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.6),
-                                    fontSize: 13)),
-                            const Spacer(),
+            Positioned.fill(
+              child: SafeArea(
+                top: false,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (_) => _controlsTap = true,
+                      onTapCancel: () => _controlsTap = false,
+                      onTapUp: (_) => _controlsTap = false,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(height: 12),
+                          if (_commentingEnabled) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.35),
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              child: Row(
+                                children: [
+                                  Text('Say something...',
+                                      style: TextStyle(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.6),
+                                          fontSize: 13)),
+                                  const Spacer(),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
                           ],
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                    Row(
-                      children: [
-                        GestureDetector(
-                          onTap: _openViewers,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                          Row(
                             children: [
+                              GestureDetector(
+                                onTap: _openViewers,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(LucideIcons.eye,
+                                            color: Colors.white, size: 18),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          _viewerStatusText(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Spacer(),
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(LucideIcons.eye,
-                                      color: Colors.white, size: 18),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    _viewerStatusText(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                    ),
+                                  _ActionItem(
+                                    icon: LucideIcons.atSign,
+                                    label: 'Mention',
+                                    onTap: _openMentionPicker,
                                   ),
+                                  const SizedBox(width: 12),
+                                  const _ActionItem(
+                                      icon: LucideIcons.send, label: 'Send'),
                                 ],
                               ),
+                              const SizedBox(width: 12),
+                              _ActionItem(
+                                  icon: Icons.more_horiz,
+                                  label: 'More',
+                                  onTap: _openMoreMenu),
                             ],
                           ),
-                        ),
-                        const Spacer(),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _ActionItem(
-                              icon: LucideIcons.atSign,
-                              label: 'Mention',
-                              onTap: _openMentionPicker,
-                            ),
-                            const SizedBox(width: 12),
-                            const _ActionItem(
-                                icon: LucideIcons.send, label: 'Send'),
-                          ],
-                        ),
-                        const SizedBox(width: 12),
-                        _ActionItem(
-                            icon: Icons.more_horiz,
-                            label: 'More',
-                            onTap: _openMoreMenu),
-                      ],
+                        ],
+                      ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
