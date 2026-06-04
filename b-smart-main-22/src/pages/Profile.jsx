@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import StoryViewer from '../components/StoryViewer';
 import { Settings, Video, Menu, Grid, Plus, Heart, MessageCircle, Wallet, ArrowLeft, MoreHorizontal, Megaphone, Loader2, Eye, Building2, FileText, Hash, Calendar, Briefcase, Share2, Star, Lock, Twitter, Play, Image, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
@@ -13,6 +14,7 @@ import TweetDetailModal from '../components/TweetDetailModal';
 import PromoteDetailModal from '../components/PromoteDetailModal';
 import TweetImageGallery from '../components/TweetImageGallery';
 import { setUser } from '../store/authSlice';
+import { fetchUserStory } from '../store/storySlice';
 import { createOrGetConversation } from '../services/chatService';
 import bSmartBanner1 from '../assets/B-smart-banners/1.png';
 import bSmartBanner2 from '../assets/B-smart-banners/2.png';
@@ -109,6 +111,8 @@ const AddImageModal = ({ isOpen, onClose }) => {
         if (file) handleFile(file);
     };
 
+    const handlePickFile = React.useCallback(() => { fileInputRef.current?.click(); }, []);
+
     if (!isOpen) return null;
 
     return (
@@ -179,11 +183,11 @@ const AddImageModal = ({ isOpen, onClose }) => {
                     {!preview && (
                         <div className="grid grid-cols-3 gap-2">
                             {[
-                                { icon: '📁', label: 'Library', action: () => fileInputRef.current?.click() },
-                                { icon: '📷', label: 'Camera',  action: () => fileInputRef.current?.click() },
-                                { icon: '🔗', label: 'URL',     action: () => {} },
-                            ].map(({ icon, label, action }) => (
-                                <button key={label} type="button" onClick={action}
+                                { icon: '📁', label: 'Library', onFile: true },
+                                { icon: '📷', label: 'Camera',  onFile: true },
+                                { icon: '🔗', label: 'URL',     onFile: false },
+                            ].map(({ icon, label, onFile }) => (
+                                <button key={label} type="button" onClick={onFile ? handlePickFile : undefined}
                                     className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                                     <span className="text-xl">{icon}</span>
                                     <span className="text-[11px] font-medium text-gray-600 dark:text-gray-400">{label}</span>
@@ -423,6 +427,8 @@ const Profile = () => {
     const [followersModalOpen, setFollowersModalOpen] = useState(false);
     const [followingModalOpen, setFollowingModalOpen] = useState(false);
     const [showUserOptionsMenu, setShowUserOptionsMenu] = useState(false);
+    const [showStoryViewer, setShowStoryViewer] = useState(false);
+    const profileStory = useSelector((state) => state.story?.storyMap?.[profileUser?._id || profileUser?.id]);
     const [notificationEnabled, setNotificationEnabled] = useState(false);
     const [notifLoading, setNotifLoading] = useState(false);
     const [isBioExpanded, setIsBioExpanded] = useState(false);
@@ -480,6 +486,17 @@ const Profile = () => {
         };
         fetchProfileUser();
     }, [userId, currentUser, isOwnProfile]);
+
+    // ── Fetch story for this profile ────────────────────────────────────────
+    useEffect(() => {
+        if (!profileUser) return;
+        const uid = profileUser._id || profileUser.id;
+        if (!uid) return;
+        dispatch(fetchUserStory(uid, {
+            avatarUrl: profileUser.avatar_url || '',
+            username: profileUser.username || profileUser.full_name || '',
+        }));
+    }, [profileUser, dispatch]);
 
     // ── Fetch notification preference status ────────────────────────────────
     useEffect(() => {
@@ -1397,14 +1414,23 @@ const Profile = () => {
                         {/* Avatar + Stats row */}
                         <div className="mb-3 flex items-center gap-4">
                             <div className="relative flex-shrink-0">
-                                <div className="h-[86px] w-[86px] overflow-hidden rounded-full border-[3px] border-white dark:border-gray-900" style={{boxShadow:'0 4px 20px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.10)'}}>
-                                    {profileUser.avatar_url ? (
-                                        <img src={profileUser.avatar_url} alt={profileUser.username} className="h-full w-full rounded-full object-cover" />
-                                    ) : (
-                                        <div className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-gray-200 to-gray-300 text-xl font-bold text-gray-600 dark:from-gray-700 dark:to-gray-800 dark:text-gray-300">
-                                            {getInitials(profileUser.full_name || profileUser.username)}
+                                {/* Orange gradient ring when user has a story */}
+                                <div
+                                    className={`rounded-full p-[2.5px] ${profileStory ? 'bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-600' : 'bg-transparent'}`}
+                                    onClick={profileStory ? () => setShowStoryViewer(true) : undefined}
+                                    style={{ cursor: profileStory ? 'pointer' : 'default' }}
+                                >
+                                    <div className={`rounded-full p-[2px] ${profileStory ? 'bg-white dark:bg-black' : ''}`}>
+                                        <div className="h-[82px] w-[82px] overflow-hidden rounded-full" style={{boxShadow:'0 4px 20px rgba(0,0,0,0.18)'}}>
+                                            {profileUser.avatar_url ? (
+                                                <img src={profileUser.avatar_url} alt={profileUser.username} className="h-full w-full rounded-full object-cover" />
+                                            ) : (
+                                                <div className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-gray-200 to-gray-300 text-xl font-bold text-gray-600 dark:from-gray-700 dark:to-gray-800 dark:text-gray-300">
+                                                    {getInitials(profileUser.full_name || profileUser.username)}
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
+                                    </div>
                                 </div>
                                 {isOwnProfile && (
                                     <button
@@ -1599,17 +1625,25 @@ const Profile = () => {
                     {/* Avatar */}
                     <div className="flex justify-center mb-5">
                         <div className="relative">
+                            {/* Orange gradient ring when user has a story */}
                             <div
-                                onClick={() => isOwnProfile && setShowAvatarModal(true)}
-                                className={`w-[140px] h-[140px] rounded-full overflow-hidden border-4 border-white dark:border-gray-900 ${isOwnProfile ? 'cursor-pointer hover:opacity-90' : ''}`}
-                                style={{boxShadow:'0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)'}}>
-                                {profileUser.avatar_url ? (
-                                    <img src={profileUser.avatar_url} className="w-full h-full rounded-full object-cover" alt="Profile" />
-                                ) : (
-                                    <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center text-4xl font-bold text-gray-600 dark:text-gray-300 rounded-full">
-                                        {getInitials(profileUser.full_name || profileUser.username)}
+                                className={`rounded-full p-[3px] ${profileStory ? 'bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-600 cursor-pointer' : 'bg-transparent'}`}
+                                onClick={profileStory ? () => setShowStoryViewer(true) : isOwnProfile ? () => setShowAvatarModal(true) : undefined}
+                            >
+                                <div className={`rounded-full p-[2.5px] ${profileStory ? 'bg-white dark:bg-black' : ''}`}>
+                                    <div
+                                        className={`w-[134px] h-[134px] rounded-full overflow-hidden ${!profileStory && isOwnProfile ? 'cursor-pointer hover:opacity-90' : ''}`}
+                                        style={{boxShadow:'0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)'}}
+                                    >
+                                        {profileUser.avatar_url ? (
+                                            <img src={profileUser.avatar_url} className="w-full h-full rounded-full object-cover" alt="Profile" />
+                                        ) : (
+                                            <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center text-4xl font-bold text-gray-600 dark:text-gray-300 rounded-full">
+                                                {getInitials(profileUser.full_name || profileUser.username)}
+                                            </div>
+                                        )}
                                     </div>
-                                )}
+                                </div>
                             </div>
                             {isOwnProfile && (
                                 <button type="button" onClick={() => setShowAvatarModal(true)}
@@ -1837,6 +1871,15 @@ const Profile = () => {
                 userId={profileTargetUserId}
                 isOwnProfile={isOwnProfile}
             />
+
+            {/* Story viewer */}
+            {showStoryViewer && profileStory && (
+                <StoryViewer
+                    initialStoryIndex={0}
+                    stories={[profileStory]}
+                    onClose={() => setShowStoryViewer(false)}
+                />
+            )}
         </div>
     );
 };

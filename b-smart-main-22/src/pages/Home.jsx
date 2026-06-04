@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
+import { fetchUserStory } from '../store/storySlice';
 import { ChevronDown, MapPin, X, MoreHorizontal, Search } from 'lucide-react';
 import PostCard from '../components/PostCard';
 import PostDetailModal from '../components/PostDetailModal';
@@ -8,6 +9,7 @@ import TweetDetailModal from '../components/TweetDetailModal';
 import PromoteCard from '../components/PromoteCard';
 import PromoteDetailModal from '../components/PromoteDetailModal';
 import StoryRail from '../components/StoryRail';
+import StoryViewer from '../components/StoryViewer';
 import api from '../lib/api';
 import {
   checkFollowStatus,
@@ -415,13 +417,39 @@ const MobileSuggestedReelsCard = ({ reels }) => {
 };
 
 const DesktopSuggestionsRail = ({ currentUser, suggestedUsers }) => {
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
+  const dispatch  = useDispatch();
+  const storyMap  = useSelector((state) => state.story?.storyMap ?? {});
   const currentUserId = currentUser?._id || currentUser?.id;
+  const [viewerStory, setViewerStory] = useState(null);
+
   const visibleUsers = (suggestedUsers || []).filter((user) => {
     const candidate = user.user || user;
     const candidateId = candidate?._id || candidate?.id;
     return candidateId && String(candidateId) !== String(currentUserId);
   }).slice(0, 5);
+
+  // Fetch stories for current user + all visible suggested users via Redux thunk
+  useEffect(() => {
+    // Current user's own story
+    if (currentUserId) {
+      dispatch(fetchUserStory(currentUserId, {
+        avatarUrl: normalizeAssetUrl(currentUser?.avatar_url || currentUser?.avatar) || '',
+        username: currentUser?.username || '',
+      }));
+    }
+    // Suggested users
+    visibleUsers.forEach((entry) => {
+      const user = entry.user || entry;
+      const userId = user._id || user.id;
+      if (!userId) return;
+      dispatch(fetchUserStory(userId, {
+        avatarUrl: normalizeAssetUrl(user.avatar_url || user.avatar || user.profile_picture) || '',
+        username: user.username || user.full_name || '',
+      }));
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestedUsers, currentUserId]);
 
   if (!currentUser || visibleUsers.length === 0) return null;
 
@@ -429,77 +457,113 @@ const DesktopSuggestionsRail = ({ currentUser, suggestedUsers }) => {
   const currentName = currentUser.full_name || currentUser.username || 'User';
 
   return (
-    <aside className="hidden xl:block w-[350px] shrink-0 z-0">
-      <div className="sticky top-20 max-h-[calc(100vh-5rem)] overflow-y-auto pb-20 scrollbar-hide">
-        <div className="mb-6">
-          <button
-            type="button"
-            onClick={() => navigate(`/profile/${currentUserId}`)}
-            className="flex items-center gap-3 min-w-0 text-left"
-          >
-            {currentAvatar ? (
-              <img src={currentAvatar} alt={currentName} className="w-11 h-11 rounded-full object-cover" />
-            ) : (
-              <div className="w-11 h-11 rounded-full bg-gradient-to-br from-orange-400 to-pink-600 flex items-center justify-center text-white font-bold">
-                {currentName[0]?.toUpperCase() || 'U'}
-              </div>
-            )}
-            <div className="min-w-0 leading-tight">
-              <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{currentUser.username || currentName}</p>
-              <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400 truncate">{currentName}</p>
-            </div>
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Suggested for you</p>
-          <button 
-            type="button" 
-            onClick={() => navigate('/suggestions')}
-            className="text-xs font-semibold text-gray-900 dark:text-white hover:opacity-80 transition-opacity"
-          >
-            See all
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          {visibleUsers.map((entry, idx) => {
-            const user = entry.user || entry;
-            const userId = user._id || user.id;
-            const username = user.username || user.full_name || `user-${idx}`;
-            const avatar = normalizeAssetUrl(user.avatar_url || user.avatar || user.profile_picture);
-            const reason = user.mutual_friends_count
-              ? `${user.mutual_friends_count} mutual connections`
-              : user.followed_by
-                ? `Followed by ${user.followed_by}`
-                : 'Suggested for you';
-
-            return (
-              <div key={userId || idx} className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => navigate(`/profile/${userId}`)}
-                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                >
-                  {avatar ? (
-                    <img src={avatar} alt={username} className="w-11 h-11 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white font-bold">
-                      {username[0]?.toUpperCase() || 'U'}
+    <>
+      <aside className="hidden xl:block w-[350px] shrink-0 z-0">
+        <div className="sticky top-20 max-h-[calc(100vh-5rem)] overflow-y-auto pb-20 scrollbar-hide">
+          <div className="mb-6">
+            <div className="flex items-center gap-3 min-w-0">
+              {/* Avatar — orange ring if current user has a story */}
+              {(() => {
+                const ownStory = storyMap[currentUserId];
+                const hasStory = !!ownStory;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => hasStory ? setViewerStory(ownStory) : navigate(`/profile/${currentUserId}`)}
+                    className="shrink-0"
+                  >
+                    <div className={`rounded-full p-[2px] ${hasStory ? 'bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-600' : 'bg-transparent'}`}>
+                      <div className={`rounded-full p-[1.5px] ${hasStory ? 'bg-white dark:bg-black' : ''}`}>
+                        {currentAvatar ? (
+                          <img src={currentAvatar} alt={currentName} className="w-10 h-10 rounded-full object-cover block" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-pink-600 flex items-center justify-center text-white font-bold">
+                            {currentName[0]?.toUpperCase() || 'U'}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                  <div className="min-w-0 leading-tight">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{username}</p>
-                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 truncate">{reason}</p>
-                  </div>
-                </button>
-                <DesktopFollowButton targetUserId={String(userId)} />
-              </div>
-            );
-          })}
+                  </button>
+                );
+              })()}
+              <button
+                type="button"
+                onClick={() => navigate(`/profile/${currentUserId}`)}
+                className="min-w-0 text-left"
+              >
+                <div className="min-w-0 leading-tight">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{currentUser.username || currentName}</p>
+                  <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400 truncate">{currentName}</p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Suggested for you</p>
+            <button
+              type="button"
+              onClick={() => navigate('/suggestions')}
+              className="text-xs font-semibold text-gray-900 dark:text-white hover:opacity-80 transition-opacity"
+            >
+              See all
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {visibleUsers.map((entry, idx) => {
+              const user = entry.user || entry;
+              const userId = user._id || user.id;
+              const username = user.username || user.full_name || `user-${idx}`;
+              const avatar = normalizeAssetUrl(user.avatar_url || user.avatar || user.profile_picture);
+              const reason = user.mutual_friends_count
+                ? `${user.mutual_friends_count} mutual connections`
+                : user.followed_by
+                  ? `Followed by ${user.followed_by}`
+                  : 'Suggested for you';
+              const story = storyMap[userId];
+              const hasStory = !!story;
+
+              return (
+                <div key={userId || idx} className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => hasStory ? setViewerStory(story) : navigate(`/profile/${userId}`)}
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                  >
+                    {/* Avatar — orange gradient ring when user has a story */}
+                    <div className={`shrink-0 rounded-full p-[2px] ${hasStory ? 'bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-500' : 'bg-transparent'}`}>
+                      <div className="rounded-full p-[1.5px] bg-white dark:bg-black">
+                        {avatar ? (
+                          <img src={avatar} alt={username} className="w-9 h-9 rounded-full object-cover block" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
+                            {username[0]?.toUpperCase() || 'U'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="min-w-0 leading-tight">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{username}</p>
+                      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 truncate">{reason}</p>
+                    </div>
+                  </button>
+                  <DesktopFollowButton targetUserId={String(userId)} />
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+
+      {viewerStory && (
+        <StoryViewer
+          initialStoryIndex={0}
+          stories={[viewerStory]}
+          onClose={() => setViewerStory(null)}
+        />
+      )}
+    </>
   );
 };
 

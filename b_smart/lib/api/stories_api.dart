@@ -92,11 +92,28 @@ class StoriesApi {
     await _client.post(_path('/stories/items/$itemId/view'));
   }
 
-  Future<List<Map<String, dynamic>>> viewers(String storyId) async {
-    final res = await _client.get(_path('/stories/$storyId/views'));
-    if (res is List) return List<Map<String, dynamic>>.from(res);
-    if (res is Map && res['views'] is List) {
-      return List<Map<String, dynamic>>.from(res['views'] as List);
+  /// GET /api/stories/items/{itemId}/views
+  /// Returns the owner-only viewers summary for a single story item.
+  Future<Map<String, dynamic>> viewSummary(String itemId) async {
+    final res = await _client.get(_path('/stories/items/$itemId/views'));
+    if (res is Map) {
+      return res.cast<String, dynamic>();
+    }
+    if (res is List) {
+      return <String, dynamic>{'viewers': res};
+    }
+    return const <String, dynamic>{};
+  }
+
+  /// Compatibility helper that returns only the viewer list for a story item.
+  Future<List<Map<String, dynamic>>> viewers(String itemId) async {
+    final summary = await viewSummary(itemId);
+    final dynamic list = summary['viewers'];
+    if (list is List) {
+      return list
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
     }
     return const <Map<String, dynamic>>[];
   }

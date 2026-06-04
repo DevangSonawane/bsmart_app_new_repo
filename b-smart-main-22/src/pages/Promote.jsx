@@ -8,6 +8,8 @@ import {
   RefreshCw, Search
 } from 'lucide-react';
 import promoteReelService from '../services/promoteReelService';
+import Hls from 'hls.js';
+import socketService from '../services/socketService';
 import Avatar from '../components/Avatar';
 
 const BASE_URL = 'https://api.bebsmart.in';
@@ -289,11 +291,13 @@ const Caption = ({ text }) => {
   );
 };
 
-// ─── HLS Video Player (handles .m3u8 streams via hls.js) ─────────────────────
-const HlsVideo = ({ src, thumb, isCurrent, isPaused, onTimeUpdate, onEnded, onClick, onRef }) => {
-  const videoRef = useRef(null);
-  const hlsRef = useRef(null);
-  const [ready, setReady] = useState(false);
+// ─── HlsVideo — rewritten to use npm hls.js with optimised buffer config ────
+const HlsVideo = ({ src, thumb, isCurrent, isPaused, processing, onTimeUpdate, onEnded, onClick, onRef }) => {
+  const videoRef  = useRef(null);
+  const hlsRef    = useRef(null);
+  const readyRef  = useRef(false);          // guards effect logic without causing cascades
+  const [ready, setReady]         = useState(false);
+  const [buffering, setBuffering] = useState(true);
 
   useEffect(() => {
     if (videoRef.current) onRef?.(videoRef.current);
@@ -301,45 +305,43 @@ const HlsVideo = ({ src, thumb, isCurrent, isPaused, onTimeUpdate, onEnded, onCl
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !src) return;
+    if (!video || !src || processing) return;
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    // Reset via ref — avoids synchronous setState inside effect body
+    readyRef.current = false;
 
-    const setupHls = () => {
-      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-      if (window.Hls?.isSupported()) {
-        const hls = new window.Hls({ enableWorker: false, startLevel: -1 });
-        hlsRef.current = hls;
-        hls.loadSource(src);
-        hls.attachMedia(video);
-        hls.on(window.Hls.Events.MANIFEST_PARSED, () => setReady(true));
-        hls.on(window.Hls.Events.ERROR, (_, d) => { if (d?.fatal) console.error('[HLS] fatal', d); });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = src;
-        setTimeout(() => setReady(true), 0);
-      } else {
-        video.src = src;
-        setTimeout(() => setReady(true), 0);
-      }
-    };
+    const markReady = () => { readyRef.current = true; setReady(true); };
 
-    if (src.includes('.m3u8')) {
-      if (window.Hls) { setupHls(); }
-      else {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js';
-        s.onload = setupHls;
-        document.head.appendChild(s);
-      }
+    const isM3u8 = src.includes('.m3u8');
+    if (isM3u8 && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true, lowLatencyMode: false,
+        maxBufferLength: 10, maxBufferSize: 20 * 1000 * 1000,
+        backBufferLength: 5, maxMaxBufferLength: 15,
+        startLevel: 0, maxStarvationDelay: 2,
+        fragLoadingMaxRetry: 3, fragLoadingRetryDelay: 500,
+      });
+      hls.loadSource(src);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        markReady();
+        if (isCurrent && !isPaused) video.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_, d) => { if (d?.fatal) hls.destroy(); });
+      hlsRef.current = hls;
     } else {
       video.src = src;
-      setTimeout(() => setReady(true), 0);
+      video.addEventListener('loadedmetadata', () => {
+        markReady();
+        if (isCurrent && !isPaused) video.play().catch(() => {});
+      }, { once: true });
     }
-
     return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
-  }, [src]);
+  }, [src, processing]);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !ready) return;
+    if (!video || !readyRef.current) return;
     if (isCurrent && !isPaused) {
       video.play().catch(() => {});
     } else {
@@ -348,14 +350,40 @@ const HlsVideo = ({ src, thumb, isCurrent, isPaused, onTimeUpdate, onEnded, onCl
     }
   }, [isCurrent, isPaused, ready]);
 
+  if (processing) {
+    return (
+      <div className="w-full h-full relative">
+        {thumb && <img src={thumb} className="absolute inset-0 w-full h-full object-cover" alt="" />}
+        <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
+          <div className="relative w-14 h-14">
+            <div className="absolute inset-0 rounded-full border-4 border-white/20" />
+            <div className="absolute inset-0 rounded-full border-4 border-t-white border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+          </div>
+          <p className="text-white text-sm font-medium">Processing video...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-full relative" onClick={onClick}>
-      {thumb && !ready && (
-        <img src={thumb} alt="thumbnail" className="absolute inset-0 w-full h-full object-cover" />
+      {/* Thumbnail shown while buffering */}
+      {thumb && buffering && (
+        <img src={thumb} alt="thumbnail" className="absolute inset-0 w-full h-full object-cover z-10" />
+      )}
+      {/* Buffering spinner over thumbnail */}
+      {buffering && isCurrent && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center">
+          <div className="relative w-14 h-14">
+            <div className="absolute inset-0 rounded-full bg-black/40 backdrop-blur-sm" />
+            <div className="absolute inset-0 rounded-full border-4 border-white/25" />
+            <div className="absolute inset-0 rounded-full border-4 border-t-white border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+          </div>
+        </div>
       )}
       <video
         ref={videoRef}
-        className="w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-contain"
         muted={false}
         playsInline
         preload="metadata"
@@ -365,9 +393,12 @@ const HlsVideo = ({ src, thumb, isCurrent, isPaused, onTimeUpdate, onEnded, onCl
           if (v.duration > 0) onTimeUpdate?.((v.currentTime / v.duration) * 100);
         }}
         onEnded={onEnded}
+        onWaiting={() => setBuffering(true)}
+        onPlaying={() => setBuffering(false)}
+        onCanPlay={() => setBuffering(false)}
       />
       {isCurrent && isPaused && ready && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
           <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
           </div>
@@ -617,6 +648,25 @@ const Promote = () => {
 
   const isAnimatingRef = useRef(false);
   const videoRefs = useRef({});
+
+  // socket: promote_reel_ready — swap spinner when HLS conversion finishes
+  useEffect(() => {
+    const handler = ({ postId, m3u8Url }) => {
+      setPromotes(prev => prev.map(p => {
+        const id = p._id || p.promote_reel_id;
+        if (String(id) !== String(postId)) return p;
+        return {
+          ...p,
+          media: p.media?.map((m, i) =>
+            i === 0 ? { ...m, fileUrl: m3u8Url, hls: true, processing: false } : m
+          ) ?? p.media,
+        };
+      }));
+    };
+    socketService.on('promote_reel_ready', handler);
+    return () => socketService.off('promote_reel_ready', handler);
+  }, []);
+
   const progressIntervalRef = useRef(null);
   const actionPanelRef = useRef(null);
   const [actionPanelRight, setActionPanelRight] = useState(100);
@@ -1009,7 +1059,7 @@ const Promote = () => {
 
           {/* Carousel */}
           {!loading && !error && promotes.length > 0 && (
-            <div className="relative overflow-hidden bg-black w-full max-w-[430px] h-full md:w-[360px] md:h-[90vh] md:rounded-2xl md:shadow-2xl">
+            <div className="relative overflow-hidden bg-black w-full max-w-[430px] h-full md:max-w-none md:h-[min(90vh,693px)] md:w-auto md:aspect-[9/16] md:rounded-2xl md:shadow-2xl">
 
               {/* Progress bar — white track, white fill, red dot on hover; click/drag to scrub */}
               <div className="absolute bottom-0 left-0 right-0 z-40 px-1.5 pb-1 group/progress select-none">
@@ -1054,9 +1104,18 @@ const Promote = () => {
                   const src = normalizeAssetUrl(mediaItem?.fileUrl || mediaItem?.url || mediaItem?.fileName);
                   const isVideo = mediaItem?.type === 'video' || src?.includes('.m3u8') || src?.includes('.mp4');
                   
-                  // thumbnail normalization
-                  const thumbItem = mediaItem?.thumbnails?.[0] || (Array.isArray(mediaItem?.thumbnail) ? mediaItem.thumbnail[0] : mediaItem?.thumbnail);
-                  const thumbSrc = normalizeAssetUrl(thumbItem?.fileUrl || thumbItem?.fileName || mediaItem?.thumbnail_url);
+                  // thumbnail — path is data[0].media[0].thumbnail (string | object | array)
+                  const rawThumb = mediaItem?.thumbnail;
+                  const thumbSrc = normalizeAssetUrl(
+                    typeof rawThumb === 'string'
+                      ? rawThumb
+                      : Array.isArray(rawThumb)
+                        ? (rawThumb[0]?.fileUrl || rawThumb[0]?.fileName || (typeof rawThumb[0] === 'string' ? rawThumb[0] : null))
+                        : (rawThumb?.fileUrl || rawThumb?.fileName) ||
+                          mediaItem?.thumbnail_url ||
+                          mediaItem?.thumbnails?.[0]?.fileUrl ||
+                          mediaItem?.thumbnails?.[0]?.fileName
+                  );
                   
                   const isCurrent = index === currentIndex;
                   const user = p.user_id || {};

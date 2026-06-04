@@ -34,15 +34,26 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   Timer? _timer;
   VideoPlayerController? _videoCtl;
   List<Map<String, dynamic>> _viewers = const [];
+  Map<String, dynamic> _viewerSummary = const {};
+  bool _loadingViewers = false;
   double _dragStartX = 0;
   bool _controlsTap = false;
   bool _sheetOpen = false;
   bool _commentingEnabled = true;
   late List<Story> _stories;
   final FeedService _feedService = FeedService();
+  int _analyticsRequestSerial = 0;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   bool _isOffline = false;
   int _offlineRetryAttempts = 0;
+
+  String? _currentStoryItemId() {
+    if (_stories.isEmpty || _index < 0 || _index >= _stories.length) {
+      return null;
+    }
+    final id = _stories[_index].id.trim();
+    return id.isEmpty ? null : id;
+  }
 
   @override
   void initState() {
@@ -110,6 +121,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         _offlineRetryAttempts = 0;
       });
       _loadVideoForCurrent();
+      _loadAnalyticsIfNeeded();
       _start();
     } catch (_) {
       final offline = await _isCurrentlyOffline();
@@ -166,17 +178,66 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   }
 
   Future<void> _loadAnalyticsIfNeeded() async {
-    final sid = widget.storyId;
-    if (sid == null || sid.isEmpty) return;
+    final itemId = _currentStoryItemId();
+    final requestId = ++_analyticsRequestSerial;
+    if (itemId == null) {
+      if (mounted) {
+        setState(() {
+          _viewerSummary = const {};
+          _viewers = const [];
+          _loadingViewers = false;
+        });
+      }
+      return;
+    }
     try {
-      final viewers = await StoriesApi().viewers(sid);
+      if (mounted) {
+        setState(() {
+          _loadingViewers = true;
+        });
+      }
+      final summary = await StoriesApi().viewSummary(itemId);
       if (!mounted) return;
+      if (requestId != _analyticsRequestSerial) return;
+      if (_currentStoryItemId() != itemId) return;
       setState(() {
-        _viewers = viewers;
+        _viewerSummary = summary;
+        final dynamic viewers = summary['viewers'];
+        _viewers = viewers is List
+            ? viewers
+                .whereType<Map>()
+                .map((e) => e.cast<String, dynamic>())
+                .toList()
+            : const [];
+        _loadingViewers = false;
       });
     } catch (_) {
       // ignore analytics errors for UI
+      if (mounted) {
+        setState(() {
+          if (requestId == _analyticsRequestSerial) {
+            _loadingViewers = false;
+          }
+        });
+      }
     }
+  }
+
+  int? _viewerCountForCurrentItem() {
+    final total = _viewerSummary['total_views'];
+    final unique = _viewerSummary['unique_viewers'];
+    final fallback = _viewers.length;
+    final dynamic raw = total ?? unique ?? fallback;
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  String _viewerStatusText() {
+    if (_loadingViewers) return 'Loading...';
+    final count = _viewerCountForCurrentItem();
+    if (count == null || count <= 0) return 'No views yet';
+    return 'Seen by $count';
   }
 
   @override
@@ -228,6 +289,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         _progress = 0.0;
       });
       _loadVideoForCurrent();
+      _loadAnalyticsIfNeeded();
       if (_controller.hasClients) {
         _controller.nextPage(
             duration: const Duration(milliseconds: 300),
@@ -246,6 +308,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         _progress = 0.0;
       });
       _loadVideoForCurrent();
+      _loadAnalyticsIfNeeded();
       if (_controller.hasClients) {
         _controller.previousPage(
             duration: const Duration(milliseconds: 300),
@@ -261,20 +324,25 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     if (_sheetOpen) return;
     _sheetOpen = true;
     _timer?.cancel();
+    final itemId = _currentStoryItemId();
+    if (mounted) {
+      setState(() {
+        _loadingViewers = true;
+      });
+    }
     final result = await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) {
-        if (_viewers.isNotEmpty) {
-          return _buildViewersSheet(_viewers);
-        }
-        final sid = widget.storyId;
-        if (sid == null || sid.isEmpty) {
+        if (itemId == null) {
           return _buildEmptyViewers();
         }
-        return FutureBuilder<List<Map<String, dynamic>>>(
-          future: StoriesApi().viewers(sid),
+        if (_viewers.isNotEmpty && _viewerSummary['item_id'] == itemId) {
+          return _buildViewersSheet(_viewers);
+        }
+        return FutureBuilder<Map<String, dynamic>>(
+          future: StoriesApi().viewSummary(itemId),
           builder: (ctx, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const SafeArea(
@@ -288,16 +356,31 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
             if (snapshot.hasError) {
               return _buildEmptyViewers();
             }
-            final viewers = snapshot.data ?? const [];
+            final summary = snapshot.data ?? const <String, dynamic>{};
+            final dynamic rawViewers = summary['viewers'];
+            final viewers = rawViewers is List
+                ? rawViewers
+                    .whereType<Map>()
+                    .map((e) => e.cast<String, dynamic>())
+                    .toList()
+                : const <Map<String, dynamic>>[];
             if (viewers.isEmpty) {
               return _buildEmptyViewers();
             }
+            _viewers = viewers;
+            _viewerSummary = <String, dynamic>{
+              ...summary,
+              'item_id': itemId,
+            };
             return _buildViewersSheet(viewers);
           },
         );
       },
     );
     if (!mounted) return;
+    setState(() {
+      _loadingViewers = false;
+    });
     _sheetOpen = false;
     if (result is int) {
       _jumpToIndex(result);
@@ -1306,7 +1389,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     final nextPreviewUrl = nextStory?.mediaUrl ?? '';
     final isNextPreviewVideo = nextStory?.mediaType == StoryMediaType.video ||
         _isVideoUrl(nextPreviewUrl);
-    final countText = viewers.isEmpty ? '0' : '${viewers.length}';
+    final countText = '${_viewerCountForCurrentItem() ?? viewers.length}';
     const previewW = 64.0;
     const previewH = 92.0;
     final previewScale = (previewW / 360.0).clamp(0.14, 0.22);
@@ -1659,7 +1742,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
 
   // ignore: unused_element
   void _openInsights() {
-    if (widget.storyId == null || widget.storyId!.isEmpty) {
+    final itemId = _currentStoryItemId();
+    if (itemId == null) {
       return;
     }
     showModalBottomSheet(
@@ -1670,7 +1754,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         minChildSize: 0.4,
         maxChildSize: 0.95,
         builder: (ctx, scroll) => FutureBuilder<List<Map<String, dynamic>>>(
-          future: StoriesApi().viewers(widget.storyId!),
+          future: StoriesApi().viewers(itemId),
           builder: (ctx, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
@@ -2283,10 +2367,28 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                     ],
                     Row(
                       children: [
-                        _ActionItem(
-                          icon: LucideIcons.activity,
-                          label: 'Activity',
+                        GestureDetector(
                           onTap: _openViewers,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(LucideIcons.eye,
+                                      color: Colors.white, size: 18),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _viewerStatusText(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                         const Spacer(),
                         Row(

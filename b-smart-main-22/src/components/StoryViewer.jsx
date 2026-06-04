@@ -1,9 +1,25 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { X, ChevronRight, Heart, Volume2, VolumeX, Pause, Play, MoreHorizontal, ChevronLeft } from 'lucide-react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { X, ChevronRight, Heart, Volume2, VolumeX, Pause, Play, MoreHorizontal, ChevronLeft, Eye } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import ContentReportModal from './ContentReportModal';
+
+const getTimeAgo = (dateStr) => {
+  if (!dateStr) return '';
+  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
+};
+
+const fmtRemaining = (secs) => {
+  if (!secs || secs < 0) return '';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `0:${String(s).padStart(2, '0')}`;
+};
 
 const DeleteStoryModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
   if (!isOpen) return null;
@@ -30,48 +46,21 @@ const DeleteStoryModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
   );
 };
 
-// ── Small preview card used for side stories ───────────────────────────────────
-const SideStoryCard = ({ story, onClick }) => {
+const PeekCard = ({ story, onNavigate, side }) => {
   if (!story) return null;
   return (
     <div
-      className="relative cursor-pointer select-none flex-shrink-0 rounded-2xl overflow-hidden bg-gray-900"
-      style={{ width: 'clamp(90px, 10vw, 130px)', aspectRatio: '9/16', opacity: 0.65 }}
-      onClick={onClick}
-    >
-      {story.imageUrl ? (
-        <img src={story.imageUrl} alt={story.username} className="w-full h-full object-cover" />
-      ) : (
-        <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-2xl font-bold text-white">
-          {story.username?.charAt(0).toUpperCase()}
-        </div>
-      )}
-      <div className="absolute bottom-0 left-0 right-0 p-2.5 bg-gradient-to-t from-black/80 to-transparent">
-        <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded-full bg-gray-700 overflow-hidden flex-shrink-0">
-            {story.avatarUrl
-              ? <img src={story.avatarUrl} alt={story.username} className="w-full h-full object-cover" />
-              : <div className="w-full h-full flex items-center justify-center text-[7px] font-bold text-white bg-gray-600">{story.username?.charAt(0).toUpperCase()}</div>
-            }
-          </div>
-          <span className="text-white text-[10px] font-semibold truncate">{story.username}</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const PeekCard = ({ story, onNavigate }) => {
-  if (!story) return null;
-  return (
-    <div
-      className="w-[90px] h-[160px] rounded-2xl overflow-hidden cursor-pointer flex-shrink-0"
+      className="w-[90px] h-[160px] rounded-2xl overflow-hidden cursor-pointer flex-shrink-0 opacity-60 hover:opacity-80 transition-opacity"
       onClick={onNavigate}
+      style={{ transform: side === 'left' ? 'perspective(600px) rotateY(10deg)' : 'perspective(600px) rotateY(-10deg)' }}
     >
       {story.imageUrl
         ? <img src={story.imageUrl} alt={story.username} className="w-full h-full object-cover" />
         : <div className="w-full h-full bg-gray-800 flex items-center justify-center text-xl font-bold text-white">{story.username?.charAt(0).toUpperCase()}</div>
       }
+      <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 to-transparent">
+        <p className="text-white text-[9px] font-semibold truncate text-center">{story.username}</p>
+      </div>
     </div>
   );
 };
@@ -88,6 +77,11 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
   const [isDeletingStory, setIsDeletingStory]     = useState(false);
   const [likedItems, setLikedItems]               = useState(new Set());
   const [showReportModal, setShowReportModal]     = useState(false);
+  const [timeRemaining, setTimeRemaining]         = useState(null);
+  const [showViewers, setShowViewers]             = useState(false);
+  const [viewersData, setViewersData]             = useState(null); // { viewers, total_views, unique_viewers }
+  const [loadingViewers, setLoadingViewers]       = useState(false);
+  const [mediaLoaded, setMediaLoaded]             = useState(false);
   const viewedItems                               = useRef(new Set());
   const progressRef                               = useRef(0);
 
@@ -100,7 +94,10 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
 
   const currentStory  = stories[currentIndex];
   const storyId       = currentStory?.id;
-  const storyItems    = storyId && itemsByStoryId[storyId] ? itemsByStoryId[storyId] : [];
+  const storyItems    = useMemo(
+    () => (storyId && itemsByStoryId[storyId] ? itemsByStoryId[storyId] : []),
+    [storyId, itemsByStoryId]
+  );
   const currentItem   = storyItems[currentItemIndex] || null;
   const totalSegments = storyItems.length > 0 ? storyItems.length : 1;
   const currentUserId = userObject?.id || userObject?._id;
@@ -122,25 +119,47 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
   const imageSrc = (!isVideo && (media?.url || media?.fileUrl || currentStory?.imageUrl))
     || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=500&auto=format&fit=crop&q=60';
 
-  // ── Fetch story items ─────────────────────────────────────────────────────
+  const currentItemId = currentItem?._id ?? null;
+  const viewsCount    = viewersData?.total_views ?? viewersData?.unique_viewers ?? currentItem?.views_count ?? currentItem?.viewsCount ?? null;
+  const storyTime     = currentItem?.createdAt || currentStory?.createdAt || null;
+  const isRealStory   = !!storyId && storyId !== 'your_story';
+  const showLoader    = isRealStory && (storyItems.length === 0 || !mediaLoaded);
+
+  // ── Fetch view count per item so the bottom bar shows the correct count ───
+  useEffect(() => {
+    if (!isOwner || !currentItemId) return;
+    api.get(`/stories/items/${currentItemId}/views`)
+      .then(r => { setViewersData(r.data || null); })
+      .catch(() => {});
+  }, [isOwner, currentItemId]);
+
+  // ── Refresh viewer list when the panel opens ──────────────────────────────
+  useEffect(() => {
+    if (!showViewers || !isOwner || !currentItemId) return;
+    queueMicrotask(() => setLoadingViewers(true));
+    api.get(`/stories/items/${currentItemId}/views`)
+      .then(r => { setViewersData(r.data || null); })
+      .catch(() => {})
+      .finally(() => { setLoadingViewers(false); });
+  }, [showViewers, isOwner, currentItemId]);
+
+  // ── Fetch story items ──────────────────────────────────────────────────────
   useEffect(() => {
     const story = stories[currentIndex];
-    if (!story?.id || story.id === 'your_story') {
-      setCurrentItemIndex(0);
-      return;
-    }
-    if (itemsByStoryId[story.id]) {
-      setCurrentItemIndex(0);
-      return;
-    }
-    api.get(`/stories/${story.id}/items`)
-      .then(r => {
-        const items = Array.isArray(r.data) ? r.data : [];
-        setItemsByStoryId(p => ({ ...p, [story.id]: items }));
-        setCurrentItemIndex(0);
-      })
-      .catch(err => console.error('Error fetching story items:', err));
-  }, [currentIndex, stories]);
+    // Defer all setCurrentItemIndex calls into a microtask to satisfy
+    // the react-hooks/set-state-in-effect rule (no sync setState in effect body)
+    Promise.resolve().then(() => {
+      if (!story?.id || story.id === 'your_story') { setCurrentItemIndex(0); return; }
+      if (itemsByStoryId[story.id]) { setCurrentItemIndex(0); return; }
+      api.get(`/stories/${story.id}/items`)
+        .then(r => {
+          const items = Array.isArray(r.data) ? r.data : [];
+          setItemsByStoryId(p => ({ ...p, [story.id]: items }));
+          setCurrentItemIndex(0);
+        })
+        .catch(() => {});
+    });
+  }, [currentIndex, stories, itemsByStoryId]);
 
   // ── Advance helper ────────────────────────────────────────────────────────
   const advanceItem = useCallback(() => {
@@ -154,7 +173,7 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
     }
   }, [storyItems.length, currentItemIndex, currentIndex, stories.length, onClose]);
 
-  // ── Sync video play/pause/mute ────────────────────────────────────────────
+  // ── Sync video ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const vid = videoRef.current;
     if (!vid) return;
@@ -163,41 +182,44 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
     else vid.play().catch(() => {});
   }, [isPaused, isMuted, currentItemIndex, currentIndex]);
 
-  // ── Reset progress when item changes (not on pause/unpause) ─────────────
+  // ── Reset progress when item changes ─────────────────────────────────────
+  // queueMicrotask defers setState out of the synchronous effect body,
+  // satisfying react-hooks/set-state-in-effect while still running before paint.
   useEffect(() => {
-    progressRef.current = 0;
-    setProgress(0);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    queueMicrotask(() => {
+      progressRef.current = 0;
+      setProgress(0);
+      setTimeRemaining(null);
+      setMediaLoaded(false);
+      setViewersData(null);
+    });
   }, [currentIndex, currentItemIndex]);
 
-  // ── Progress bar: image = rAF timer, video = driven by onTimeUpdate ───────
+  // ── Progress bar: image rAF, video driven by onTimeUpdate ─────────────────
   useEffect(() => {
-    if (!currentStory || isVideo || isPaused) return;
-
+    if (!currentStory || isVideo || isPaused || !mediaLoaded) return;
     const item      = storyItems[currentItemIndex] || null;
     const itemMedia = getItemMedia(item);
     let dur = itemMedia?.durationSec || currentStory.previewDurationSec || 5;
     if (dur <= 0) dur = 5;
-
     let cancelled = false;
     let start = null;
     const ms = dur * 1000;
-
     const step = (now) => {
       if (cancelled) return;
-      // offset start so animation resumes from saved position
       if (!start) start = now - (progressRef.current / 100) * ms;
       const pct = Math.min(100, ((now - start) / ms) * 100);
       progressRef.current = pct;
       setProgress(pct);
+      setTimeRemaining(Math.max(0, dur - (pct / 100) * dur));
       if (pct >= 100) { progressRef.current = 0; advanceItem(); }
       else requestAnimationFrame(step);
     };
     const id = requestAnimationFrame(step);
     return () => { cancelled = true; cancelAnimationFrame(id); };
-  }, [currentStory, storyItems, currentItemIndex, isPaused, isVideo, advanceItem]);
+  }, [currentStory, storyItems, currentItemIndex, isPaused, isVideo, advanceItem, mediaLoaded]);
 
-  // ── Navigation ────────────────────────────────────────────────────────────
+  // ── Navigation ─────────────────────────────────────────────────────────────
   const goNext = useCallback((e) => {
     e?.stopPropagation();
     setShowOptions(false);
@@ -219,34 +241,29 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
     }
   }, [storyItems.length, currentItemIndex, currentIndex, stories, itemsByStoryId]);
 
-  // ── Keyboard ──────────────────────────────────────────────────────────────
+  // ── Keyboard ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
       else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrev();
-      else if (e.key === 'Escape') onClose();
+      else if (e.key === 'Escape') { if (showViewers) setShowViewers(false); else onClose(); }
       else if (e.key === ' ') { e.preventDefault(); setIsPaused(v => !v); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [goNext, goPrev, onClose]);
+  }, [goNext, goPrev, onClose, showViewers]);
 
-  // ── Touch swipe (mobile) ──────────────────────────────────────────────────
-  const onTouchStart = (e) => {
-    touchX.current = e.touches[0].clientX;
-    touchY.current = e.touches[0].clientY;
-  };
+  // ── Touch swipe ────────────────────────────────────────────────────────────
+  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; touchY.current = e.touches[0].clientY; };
   const onTouchEnd = (e) => {
     if (touchX.current === null) return;
     const dx = e.changedTouches[0].clientX - touchX.current;
     const dy = e.changedTouches[0].clientY - touchY.current;
     touchX.current = null;
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
-      dx < 0 ? goNext() : goPrev();
-    }
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) { dx < 0 ? goNext() : goPrev(); }
   };
 
-  // ── Mark item as viewed ───────────────────────────────────────────────────
+  // ── Mark viewed ────────────────────────────────────────────────────────────
   useEffect(() => {
     const itemId = currentItem?._id;
     if (!itemId || viewedItems.current.has(itemId)) return;
@@ -254,7 +271,7 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
     api.post(`/stories/items/${itemId}/view`).catch(() => {});
   }, [currentItem]);
 
-  // ── Like / unlike item ────────────────────────────────────────────────────
+  // ── Like ───────────────────────────────────────────────────────────────────
   const handleLike = (e) => {
     e.stopPropagation();
     const itemId = currentItem?._id;
@@ -267,7 +284,7 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
     });
   };
 
-  // ── Tap left/right halves of card ─────────────────────────────────────────
+  // ── Tap left/right halves ──────────────────────────────────────────────────
   const handleCardTap = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -280,121 +297,96 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
+      className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* Bsmart branding — top left */}
+      {/* b_smart brand — top left */}
       <div className="absolute top-5 left-6 z-50 select-none pointer-events-none">
-        <span className="text-3xl font-normal italic text-[#bc1888]" style={{ fontFamily: 'cursive' }}>b_smart</span>
+        <span className="text-2xl font-normal italic text-[#bc1888]" style={{ fontFamily: 'cursive' }}>b_smart</span>
       </div>
 
       {/* X close — top right */}
-      <button
-        className="absolute top-5 right-5 z-50 text-white hover:opacity-70 transition-opacity"
-        onClick={onClose}
-      >
-        <X size={28} strokeWidth={2} />
+      <button className="absolute top-5 right-5 z-50 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors" onClick={onClose}>
+        <X size={20} strokeWidth={2.5} />
       </button>
 
-      {/* Wrapper matches card size — nav buttons hang outside via absolute */}
+      {/* Centered wrapper */}
       <div className="relative" style={{ width: cardW, height: cardH }}>
 
-        {/* Left nav — only shown when a previous story exists */}
+        {/* Left nav */}
         {prevStory && (
-          <div
-            className="hidden md:flex group items-center absolute top-1/2 -translate-y-1/2 z-20"
-            style={{ right: 'calc(100% + 14px)' }}
-          >
-            <div className="overflow-hidden transition-all duration-300 max-w-0 opacity-0 group-hover:max-w-[90px] group-hover:opacity-65">
-              <PeekCard
-                story={prevStory}
-                onNavigate={() => { setCurrentIndex(p => p - 1); setCurrentItemIndex(0); }}
-              />
-            </div>
-            <button
-              onClick={goPrev}
-              className="ml-2 w-10 h-10 rounded-full bg-white/15 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-200 shadow-lg flex-shrink-0"
-            >
-              <ChevronLeft size={20} />
+          <div className="hidden md:flex items-center gap-2 absolute top-1/2 -translate-y-1/2 z-20" style={{ right: 'calc(100% + 12px)' }}>
+            <PeekCard story={prevStory} side="left" onNavigate={() => { setCurrentIndex(p => p - 1); setCurrentItemIndex(0); }} />
+            <button onClick={goPrev} className="w-9 h-9 rounded-full bg-white/15 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all shadow-lg">
+              <ChevronLeft size={18} />
             </button>
           </div>
         )}
 
-        {/* Right nav — only shown when a next story exists */}
+        {/* Right nav */}
         {currentIndex < stories.length - 1 && (
-          <div
-            className="hidden md:flex group items-center absolute top-1/2 -translate-y-1/2 z-20"
-            style={{ left: 'calc(100% + 14px)' }}
-          >
-            <button
-              onClick={goNext}
-              className="mr-2 w-10 h-10 rounded-full bg-white/15 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-200 shadow-lg flex-shrink-0"
-            >
-              <ChevronRight size={20} />
+          <div className="hidden md:flex items-center gap-2 absolute top-1/2 -translate-y-1/2 z-20" style={{ left: 'calc(100% + 12px)' }}>
+            <button onClick={goNext} className="w-9 h-9 rounded-full bg-white/15 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all shadow-lg">
+              <ChevronRight size={18} />
             </button>
-            <div className="overflow-hidden transition-all duration-300 max-w-0 opacity-0 group-hover:max-w-[90px] group-hover:opacity-65">
-              <PeekCard
-                story={nextStory}
-                onNavigate={() => { setCurrentIndex(p => p + 1); setCurrentItemIndex(0); }}
-              />
-            </div>
+            <PeekCard story={nextStory} side="right" onNavigate={() => { setCurrentIndex(p => p + 1); setCurrentItemIndex(0); }} />
           </div>
         )}
 
-        {/* Story card — fills the wrapper */}
+        {/* ── Story card ── */}
         <div
           className="relative w-full h-full bg-black overflow-hidden select-none"
-          style={{ borderRadius: window.innerWidth >= 768 ? '18px' : '0' }}
+          style={{ borderRadius: window.innerWidth >= 768 ? '20px' : '0' }}
           onClick={handleCardTap}
         >
-          {/* Progress bars */}
+          {/* ── Progress bars ── */}
           <div className="absolute top-3 left-3 right-3 flex gap-[3px] z-30 pointer-events-none">
             {Array.from({ length: totalSegments }).map((_, i) => (
-              <div key={i} className="flex-1 h-[2.5px] rounded-full bg-white/30 overflow-hidden">
+              <div key={i} className="flex-1 h-[2px] rounded-full bg-white/30 overflow-hidden">
                 <div
                   className="h-full bg-white rounded-full"
-                  style={{
-                    width: i < currentItemIndex ? '100%' : i === currentItemIndex ? `${progress}%` : '0%',
-                    transition: i === currentItemIndex ? 'none' : undefined,
-                  }}
+                  style={{ width: i < currentItemIndex ? '100%' : i === currentItemIndex ? `${progress}%` : '0%', transition: 'none' }}
                 />
               </div>
             ))}
           </div>
 
-          {/* Top bar */}
-          <div className="absolute top-7 left-3 right-3 flex items-center justify-between z-30 pointer-events-none">
+          {/* ── Header bar ── */}
+          <div className="absolute top-6 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
+            {/* Left: avatar + info */}
             <button
-              className="flex items-center gap-2.5 pointer-events-auto"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose();
-                navigate(currentStory?.userId ? `/profile/${currentStory.userId}` : '/profile');
-              }}
+              className="flex items-center gap-2.5 min-w-0 pointer-events-auto"
+              onClick={(e) => { e.stopPropagation(); onClose(); navigate(currentStory?.userId ? `/profile/${currentStory.userId}` : '/profile'); }}
             >
-              <div className="w-9 h-9 rounded-full ring-2 ring-white/30 overflow-hidden flex-shrink-0">
+              {/* Avatar — no ring */}
+              <div className="w-9 h-9 rounded-full overflow-hidden bg-[#3a3a3c] flex-shrink-0 flex items-center justify-center">
                 {currentStory?.avatarUrl
                   ? <img src={currentStory.avatarUrl} alt={currentStory.username} className="w-full h-full object-cover" />
-                  : <div className="w-full h-full flex items-center justify-center text-xs font-bold text-white bg-gradient-to-tr from-orange-400 to-pink-500">{currentStory?.username?.charAt(0).toUpperCase()}</div>
+                  : <span className="text-xs font-bold text-white">{currentStory?.username?.charAt(0).toUpperCase()}</span>
                 }
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-white font-semibold text-sm drop-shadow">{currentStory?.username}</span>
-                <span className="text-white/55 text-xs">2h</span>
+              <div className="flex flex-col leading-tight min-w-0">
+                <span className="text-white font-semibold text-[13px] drop-shadow truncate">{currentStory?.username}</span>
+                {storyTime && (
+                  <span className="text-white/55 text-[11px]">{getTimeAgo(storyTime)}</span>
+                )}
               </div>
             </button>
 
-            <div className="flex items-center gap-3 pointer-events-auto">
+            {/* Right: time remaining + controls */}
+            <div className="flex items-center gap-2.5 pointer-events-auto">
+              {/* Time remaining badge */}
+              {timeRemaining !== null && timeRemaining > 0 && (
+                <span className="text-white/70 text-[11px] font-medium tabular-nums">{fmtRemaining(timeRemaining)}</span>
+              )}
               {isVideo && (
-                <button onClick={(e) => { e.stopPropagation(); setIsMuted(v => !v); }}
-                  className="text-white hover:opacity-75 transition-opacity drop-shadow">
-                  {isMuted ? <VolumeX size={19} /> : <Volume2 size={19} />}
+                <button onClick={(e) => { e.stopPropagation(); setIsMuted(v => !v); }} className="text-white hover:opacity-75 transition-opacity drop-shadow">
+                  {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
                 </button>
               )}
-              <button onClick={(e) => { e.stopPropagation(); setIsPaused(v => !v); }}
-                className="text-white hover:opacity-75 transition-opacity drop-shadow">
-                {isPaused ? <Play size={19} /> : <Pause size={19} />}
+              <button onClick={(e) => { e.stopPropagation(); setIsPaused(v => !v); }} className="text-white hover:opacity-75 transition-opacity drop-shadow">
+                {isPaused ? <Play size={18} /> : <Pause size={18} />}
               </button>
               <div className="relative">
                 <button
@@ -405,14 +397,14 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
                   }}
                   className="text-white hover:opacity-75 transition-opacity drop-shadow"
                 >
-                  <MoreHorizontal size={21} />
+                  <MoreHorizontal size={20} />
                 </button>
                 {showOptions && isOwner && storyItems.length > 0 && (
-                  <div className="absolute right-0 mt-2 w-32 bg-white dark:bg-gray-900 rounded-xl shadow-xl py-1 z-50">
+                  <div className="absolute right-0 mt-2 w-36 bg-white dark:bg-gray-900 rounded-xl shadow-xl py-1 z-50 overflow-hidden">
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowOptions(false); setShowDeleteModal(true); }}
                       disabled={isDeletingStory}
-                      className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60"
+                      className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium"
                     >
                       {isDeletingStory ? 'Deleting…' : 'Delete story'}
                     </button>
@@ -422,27 +414,48 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
             </div>
           </div>
 
-          {/* Media */}
+          {/* ── Media ── */}
           {isVideo && videoSrc ? (
             <video
               ref={videoRef}
               key={videoSrc}
               src={videoSrc}
               className="absolute inset-0 w-full h-full object-cover"
-              playsInline
-              muted={isMuted}
-              autoPlay
+              playsInline muted={isMuted} autoPlay
               poster={thumbSrc || undefined}
               onTimeUpdate={(e) => {
                 const vid = e.currentTarget;
                 if (!vid.duration) return;
-                setProgress((vid.currentTime / vid.duration) * 100);
+                const pct = (vid.currentTime / vid.duration) * 100;
+                setProgress(pct);
+                setTimeRemaining(vid.duration - vid.currentTime);
               }}
+              onCanPlay={() => setMediaLoaded(true)}
+              onError={() => setMediaLoaded(true)}
               onEnded={advanceItem}
               onClick={(e) => { e.stopPropagation(); setIsPaused(v => !v); }}
             />
           ) : (
-            <img src={imageSrc} alt="Story" className="absolute inset-0 w-full h-full object-cover" />
+            <img
+              src={imageSrc}
+              alt="Story"
+              className="absolute inset-0 w-full h-full object-cover"
+              onLoad={() => setMediaLoaded(true)}
+              onError={() => setMediaLoaded(true)}
+            />
+          )}
+
+          {/* Top gradient overlay */}
+          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-10" />
+
+          {/* Bottom gradient overlay */}
+          <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/70 to-transparent pointer-events-none z-10" />
+
+          {/* Loading overlay — shown until items fetched + media ready */}
+          {showLoader && (
+            <div className="absolute inset-0 z-40 bg-black flex items-center justify-center">
+              <div className="w-9 h-9 rounded-full border-[3px] border-white/15 border-t-white/80 animate-spin" />
+            </div>
           )}
 
           {/* Paused overlay */}
@@ -454,22 +467,117 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
             </div>
           )}
 
-          {/* Like button */}
-          {!isOwner && (
-            <div
-              className="absolute bottom-0 left-0 right-0 pb-7 pr-4 flex items-end justify-end z-30"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button onClick={handleLike} className="p-1 hover:scale-110 active:scale-95 transition-transform">
-                <Heart
-                  size={26}
-                  className={likedItems.has(currentItem?._id) ? 'fill-red-500 stroke-red-500' : 'text-white'}
-                />
+          {/* ── Bottom bar ── */}
+          <div className="absolute bottom-0 left-0 right-0 z-30 px-4 pb-5" onClick={(e) => e.stopPropagation()}>
+            {isOwner ? (
+              /* Owner: clickable "Seen by X" → opens viewers panel */
+              <button
+                className="flex items-center gap-2 hover:opacity-80 active:scale-95 transition-all"
+                onClick={() => setShowViewers(true)}
+              >
+                <Eye size={16} className="text-white/70" />
+                {loadingViewers ? (
+                  <span className="text-white/50 text-xs">Loading…</span>
+                ) : viewsCount !== null && viewsCount > 0 ? (
+                  <span className="text-white text-sm font-medium">Seen by {viewsCount}</span>
+                ) : (
+                  <span className="text-white/50 text-xs">No views yet</span>
+                )}
               </button>
-            </div>
-          )}
+            ) : (
+              /* Viewer: like button */
+              <div className="flex justify-end">
+                <button onClick={handleLike} className="p-1.5 hover:scale-110 active:scale-95 transition-transform">
+                  <Heart
+                    size={26}
+                    className={likedItems.has(currentItem?._id) ? 'fill-red-500 stroke-red-500' : 'text-white drop-shadow'}
+                  />
+                </button>
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
+
+      {/* ── Viewers centered modal ── */}
+      {showViewers && (
+        <div
+          className="absolute inset-0 z-[110] flex items-center justify-center"
+          onClick={() => setShowViewers(false)}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        >
+          {/* scrim */}
+          <div className="absolute inset-0 bg-black/60" />
+
+          {/* Modal */}
+          <div
+            className="relative z-10 bg-[#1c1c1e] rounded-2xl w-[90%] max-w-sm flex flex-col shadow-2xl overflow-hidden"
+            style={{ maxHeight: '70vh', animation: 'fadeScaleIn 0.22s cubic-bezier(0.32,0.72,0,1) forwards' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center px-4 pt-4 pb-3 shrink-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowViewers(false); }}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-white hover:bg-white/10 transition-colors shrink-0"
+              >
+                <X size={20} strokeWidth={2.5} />
+              </button>
+              <span className="flex-1 text-center text-white font-semibold text-base" style={{ marginLeft: '-32px' }}>Viewers</span>
+            </div>
+
+            {/* Divider */}
+            <div className="h-px bg-white/10 shrink-0" />
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto py-1">
+              {loadingViewers && !viewersData?.viewers?.length && (
+                <div className="flex justify-center py-12">
+                  <div className="w-7 h-7 rounded-full border-[3px] border-white/20 border-t-white animate-spin" />
+                </div>
+              )}
+
+              {!loadingViewers && !viewersData?.viewers?.length && (
+                <div className="flex flex-col items-center justify-center py-12 gap-2 text-white/40">
+                  <Eye size={30} />
+                  <span className="text-sm">No viewers yet</span>
+                </div>
+              )}
+
+              {!loadingViewers && viewersData?.viewers?.map((entry, i) => {
+                const v        = entry.viewer || {};
+                const username = v.username  || 'User';
+                const fullName = v.full_name || v.fullName || null;
+                const avatar   = v.avatar_url || null;
+                return (
+                  <div
+                    key={v._id || i}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors"
+                  >
+                    {/* Avatar — no ring, solid fallback */}
+                    <div className="w-11 h-11 rounded-full overflow-hidden bg-[#3a3a3c] shrink-0 flex items-center justify-center">
+                      {avatar
+                        ? <img src={avatar} alt={username} className="w-full h-full object-cover" />
+                        : <span className="text-white font-bold text-base">{username[0]?.toUpperCase()}</span>
+                      }
+                    </div>
+
+                    {/* Text */}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white text-[15px] font-semibold leading-tight truncate">{username}</p>
+                      {fullName && (
+                        <p className="text-white/55 text-[13px] leading-tight truncate mt-0.5">{fullName}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <DeleteStoryModal
         isOpen={showDeleteModal}
@@ -483,10 +591,7 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
             setShowDeleteModal(false);
             onClose();
             window.location.reload();
-          } catch (err) {
-            console.error('Error deleting story:', err);
-            setIsDeletingStory(false);
-          }
+          } catch { setIsDeletingStory(false); }
         }}
         isDeleting={isDeletingStory}
       />
@@ -498,6 +603,13 @@ const StoryViewer = ({ initialStoryIndex, stories, onClose }) => {
         ownerUsername={currentStory?.username || ''}
         contentUrl={window.location.href}
       />
+
+      <style>{`
+        @keyframes fadeScaleIn {
+          from { opacity: 0; transform: scale(0.93); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
     </div>
   );
 };

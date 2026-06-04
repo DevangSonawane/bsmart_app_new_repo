@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Navigate, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import commentService from '../services/commentServiceJS';
+import Hls from 'hls.js';
+import socketService from '../services/socketService';
 import {
   Heart, MessageCircle, Send, MoreHorizontal,
   Volume2, VolumeX, Bookmark, ChevronLeft, Search,
@@ -512,6 +514,103 @@ const Caption = ({ text }) => {
   );
 };
 
+// ─── AdVideo — HLS-aware video player for ads ────────────────────────────────
+const AdVideo = ({ src, isHls, processing, poster, isCurrent, isPaused, isMuted,
+                   onTimeUpdate, onEnded, onClick, setRef, index }) => {
+  const videoRef  = React.useRef(null);
+  const hlsRef    = React.useRef(null);
+  const [buffering, setBuffering] = React.useState(true);
+
+  React.useEffect(() => {
+    if (setRef) setRef(index, videoRef.current);
+    return () => { if (setRef) setRef(index, null); };
+  }, [index, setRef]);
+
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src || processing) return;
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    setBuffering(true);
+    const isM3u8 = isHls || src.endsWith('.m3u8');
+    if (isM3u8 && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true, lowLatencyMode: false,
+        maxBufferLength: 10, maxBufferSize: 20 * 1000 * 1000,
+        backBufferLength: 5, maxMaxBufferLength: 15,
+        startLevel: 0, maxStarvationDelay: 2,
+        fragLoadingMaxRetry: 3, fragLoadingRetryDelay: 500,
+      });
+      hls.loadSource(src);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (isCurrent && !isPaused) video.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) hls.destroy(); });
+      hlsRef.current = hls;
+    } else {
+      video.src = src;
+      if (isCurrent && !isPaused) video.play().catch(() => {});
+    }
+    return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
+  }, [src, isHls, processing]);
+
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (isCurrent && !isPaused) { video.play().catch(() => {}); }
+    else { video.pause(); }
+  }, [isCurrent, isPaused]);
+
+  // Processing state — HLS converting in background
+  if (processing) {
+    return (
+      <div className="absolute inset-0">
+        {poster && <img src={poster} className="absolute inset-0 w-full h-full object-cover" alt="" />}
+        <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
+          <div className="relative w-14 h-14">
+            <div className="absolute inset-0 rounded-full border-4 border-white/20" />
+            <div className="absolute inset-0 rounded-full border-4 border-t-white border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+          </div>
+          <p className="text-white text-sm font-medium">Processing video...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="absolute inset-0 w-full h-full">
+      {/* Thumbnail shown while buffering */}
+      {poster && buffering && (
+        <img src={poster} className="absolute inset-0 w-full h-full object-cover z-10" alt="" />
+      )}
+      {/* Buffering spinner over thumbnail */}
+      {buffering && isCurrent && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center">
+          <div className="relative w-14 h-14">
+            <div className="absolute inset-0 rounded-full bg-black/40 backdrop-blur-sm" />
+            <div className="absolute inset-0 rounded-full border-4 border-white/25" />
+            <div className="absolute inset-0 rounded-full border-4 border-t-white border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+          </div>
+        </div>
+      )}
+      <video
+        ref={videoRef}
+        className="absolute inset-0 w-full h-full object-contain"
+        muted={isMuted}
+        playsInline
+        loop={false}
+        preload={isCurrent ? 'auto' : 'metadata'}
+        onTimeUpdate={onTimeUpdate}
+        onEnded={onEnded}
+        onClick={onClick}
+        onWaiting={() => setBuffering(true)}
+        onPlaying={() => setBuffering(false)}
+        onCanPlay={() => setBuffering(false)}
+      />
+    </div>
+  );
+};
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 const Ads = ({ feedMode = 'user' }) => {
   const { userObject } = useSelector((state) => state.auth);
@@ -593,6 +692,22 @@ const Ads = ({ feedMode = 'user' }) => {
 
   const isAnimatingRef = useRef(false);
   const videoRefs = useRef({});
+
+  // socket: ad_ready — swap spinner for player when HLS conversion finishes
+  useEffect(() => {
+    const handler = ({ adId, mediaIndex, m3u8Url }) => {
+      setAds(prev => prev.map(a => {
+        if (String(a._id) !== String(adId)) return a;
+        const newMedia = (a.media || []).map((m, i) =>
+          i === mediaIndex ? { ...m, fileUrl: m3u8Url, hls: true, processing: false } : m
+        );
+        return { ...a, media: newMedia };
+      }));
+    };
+    socketService.on('ad_ready', handler);
+    return () => socketService.off('ad_ready', handler);
+  }, []);
+
   const progressIntervalRef = useRef(null);
   const imageTimerRef = useRef(null);
   // Track how many times the current video has fully played (resets on index change)
@@ -769,7 +884,15 @@ const Ads = ({ feedMode = 'user' }) => {
         if (!res.ok) continue;
 
         const data = await res.json();
-        const list = Array.isArray(data) ? data : (data.data || data.ads || []);
+        const raw = Array.isArray(data) ? data : (data.data || data.ads || []);
+        // Client-side category guard — ensures only the selected category is shown
+        // even if the server returns unfiltered results.
+        const list = category === 'All'
+          ? raw
+          : raw.filter(ad => {
+              const cat = (ad.category || ad.ad_category || '').toLowerCase().trim();
+              return cat === category.toLowerCase().trim();
+            });
         // Fetch fresh likes/comments counts for each ad from the API
         const enriched = await Promise.all(
           list.map(async (ad) => {
@@ -1671,18 +1794,30 @@ const Ads = ({ feedMode = 'user' }) => {
 
           {/* Empty */}
           {!loading && !error && ads.length === 0 && (
-            <p className="text-gray-400 text-sm">No ads found for this category.</p>
+            <div className="flex flex-col items-center justify-center gap-4 px-8 text-center">
+              <ShoppingBag size={48} className="text-gray-200 dark:text-white/10" />
+              <div>
+                <p className="text-base font-bold text-gray-900 dark:text-white mb-1">No ads found</p>
+                <p className="text-sm text-gray-400">
+                  {activeCategory !== 'All'
+                    ? `No ads in "${activeCategory}" yet.`
+                    : 'No ads available right now.'}
+                </p>
+              </div>
+              {activeCategory !== 'All' && (
+                <button
+                  onClick={() => setActiveCategory('All')}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-full text-sm font-semibold hover:opacity-80 transition-opacity active:scale-95"
+                >
+                  View All Ads
+                </button>
+              )}
+            </div>
           )}
 
           {/* Carousel */}
           {!loading && !error && ads.length > 0 && (
-            <div className="
-              relative overflow-hidden bg-black
-              /* Mobile: full height, capped at 430px wide, centred — Instagram style */
-              w-full max-w-[430px] h-full
-              /* Desktop: fixed phone card — centered between sidebar and right nav */
-              md:w-[360px] md:h-[90vh] md:rounded-2xl md:shadow-2xl
-            ">
+            <div className="relative overflow-hidden bg-black w-full max-w-[430px] h-full md:max-w-none md:h-[min(90vh,693px)] md:w-auto md:aspect-[9/16] md:rounded-2xl md:shadow-2xl">
 
               {/* Progress bar — read-only, no dot, no scrubbing */}
               <div className="absolute bottom-0 left-0 right-0 z-40 px-1.5 pb-1 select-none">
@@ -1709,36 +1844,21 @@ const Ads = ({ feedMode = 'user' }) => {
                       style={{ height: '100%', minHeight: '100%' }}>
 
                       {/* Media */}
-                      {isVideo ? (
+                      {isVideo || a.media?.[0]?.processing ? (
                         <div className="w-full h-full relative" onClick={() => isCurrent && handleVideoTap(index)}>
-                          <video
-                            ref={el => { videoRefs.current[index] = el; }}
+                          <AdVideo
                             src={src}
-                            className="w-full h-full object-cover"
-                            muted={isMuted}
-                            playsInline
-                            preload={isCurrent ? 'auto' : 'metadata'}
-                            loop={false}
-                            onCanPlay={e => {
-                              // As soon as video can play and it's current, start immediately
-                              if (isCurrent && !isPausedByUser && e.target.paused) {
-                                e.target.play().catch(() => {});
-                              }
-                            }}
-                            onLoadedMetadata={e => {
-                              const m = a.media?.[0];
-                              const start = m?.timing_window?.start ?? m?.video_meta?.selected_start ?? 0;
-                              if (start > 0) {
-                                try { e.target.currentTime = start; } catch { /* ignore */ }
-                              }
-                              if (isCurrent && !isPausedByUser) {
-                                e.target.play().catch(() => {});
-                              }
-                            }}
+                            isHls={a.media?.[0]?.hls ?? false}
+                            processing={a.media?.[0]?.processing ?? false}
+                            poster={a.media?.[0]?.thumbnails?.[0]?.fileUrl || undefined}
+                            isCurrent={isCurrent}
+                            isPaused={isPausedByUser}
+                            isMuted={isMuted}
+                            index={index}
+                            setRef={(i, el) => { videoRefs.current[i] = el; }}
                             onTimeUpdate={e => {
                               if (!isCurrent) return;
                               const vid = e.target;
-                              // Only update progress when video is actually playing
                               if (vid.paused || vid.readyState < 2) return;
                               const dur = vid.duration;
                               const ct  = vid.currentTime;
@@ -1749,11 +1869,7 @@ const Ads = ({ feedMode = 'user' }) => {
                               if (!isCurrent) return;
                               setProgress(100);
                               setIsPausedByUser(false);
-
-                              // Record only the first complete watch for this ad
                               trackView(a._id);
-
-                              // Count this play; after 3 full plays auto-advance to next ad
                               playCountRef.current += 1;
                               if (playCountRef.current >= 3) {
                                 playCountRef.current = 0;
@@ -1761,15 +1877,10 @@ const Ads = ({ feedMode = 'user' }) => {
                                 setCurrentIndex(prev => (prev + 1 < adsRef.current.length ? prev + 1 : 0));
                                 return;
                               }
-
-                              // Replay from the beginning
                               const vid = videoRefs.current[index];
-                              if (vid) {
-                                vid.currentTime = 0;
-                                setProgress(0);
-                                vid.play().catch(() => {});
-                              }
+                              if (vid) { vid.currentTime = 0; setProgress(0); vid.play().catch(() => {}); }
                             }}
+                            onClick={() => isCurrent && handleVideoTap(index)}
                           />
                           {/* Pause/Play overlay — shows briefly on tap */}
                           {isCurrent && isPausedByUser && (

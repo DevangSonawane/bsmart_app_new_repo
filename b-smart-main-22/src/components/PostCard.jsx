@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useSelector } from 'react-redux';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import {
   checkFollowStatus,
@@ -80,16 +80,45 @@ const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting }) => {
   );
 };
 
+// ─── Tag user navigation — resolves username → profile via API ────────────────
+const goToTaggedUser = async (username, navigate) => {
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch(
+      `${BASE_URL}/api/users/username/${encodeURIComponent(username)}`,
+      { headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) } }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const user = data?.user || data?.data || data;
+      const userId = user?._id || user?.id;
+      if (userId) {
+        navigate(user?.role === 'vendor' ? `/vendor/${userId}/public` : `/profile/${userId}`);
+        return;
+      }
+    }
+  } catch { /* fall through */ }
+};
+
 // ─── People Tag Overlay ────────────────────────────────────────────────────────
-const PeopleTagsOverlay = ({ tags, visible }) => {
+const PeopleTagsOverlay = ({ tags }) => {
   const [showTags, setShowTags] = useState(false);
-
-  // Reset showTags whenever the parent hides the overlay
-  const showTagsPanel = visible && showTags;
-
+  const [loadingTag, setLoadingTag] = useState(null);
+  const navigate = useNavigate();
   if (!tags?.length) return null;
+
+  const handleTagClick = async (e, tag) => {
+    e.stopPropagation();
+    const username = tag.username;
+    if (!username) return;
+    setLoadingTag(tag._id);
+    await goToTaggedUser(username, navigate);
+    setLoadingTag(null);
+  };
+
   return (
     <>
+      {/* Toggle button — bottom-left of the media */}
       <button
         className="absolute bottom-3 left-3 z-10 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 active:scale-90 transition-all"
         onClick={(e) => { e.stopPropagation(); setShowTags(s => !s); }}
@@ -98,57 +127,29 @@ const PeopleTagsOverlay = ({ tags, visible }) => {
           <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
         </svg>
       </button>
-      {showTagsPanel ? (
-        <>
-          <div className="absolute inset-0 z-20 bg-black/35" onClick={(e) => { e.stopPropagation(); setShowTags(false); }} />
-          <div
-            className="absolute left-1/2 top-4 z-30 w-[calc(100%-24px)] max-w-[620px] -translate-x-1/2 overflow-hidden rounded-[22px] border border-white/10 bg-[#1f222b]/95 text-white shadow-2xl backdrop-blur-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="relative border-b border-white/10 px-5 py-3 text-center">
-              <p className="text-lg font-semibold">Tagged</p>
-              <button
-                type="button"
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-3xl leading-none text-white/90 hover:text-white"
-                onClick={() => setShowTags(false)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="max-h-[48vh] overflow-y-auto">
-              {tags.map((tag, idx) => {
-                const profilePath = tag.role === 'vendor'
-                  ? `/vendor/${tag.user_id || ''}/public`
-                  : `/profile/${tag.user_id || ''}`;
-                const username = tag.username || 'user';
-                const fullName = tag.full_name || username;
-                const avatar = tag.avatar_url || tag.profile_picture || tag.avatar || '';
 
-                return (
-                  <Link
-                    key={tag._id || tag.user_id || idx}
-                    to={profilePath}
-                    onClick={() => setShowTags(false)}
-                    className="flex items-center gap-3 px-5 py-3 hover:bg-white/5"
-                  >
-                    {avatar ? (
-                      <img src={avatar} alt={username} className="h-11 w-11 rounded-full object-cover" />
-                    ) : (
-                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-sm font-bold">
-                        {(username || 'U').charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold leading-tight">{username}</p>
-                      <p className="truncate text-sm text-white/70 leading-tight">{fullName}</p>
-                    </div>
-                  </Link>
-                );
-              })}
+      {/* Positioned tag labels — each pinned at x/y on the media */}
+      {showTags && tags.map((tag, idx) => {
+        const x = (typeof tag.x === 'number' ? tag.x : 0.5) * 100;
+        const y = (typeof tag.y === 'number' ? tag.y : 0.5) * 100;
+        const isLoading = loadingTag === tag._id;
+
+        return (
+          <button
+            key={tag._id || idx}
+            onClick={(e) => handleTagClick(e, tag)}
+            disabled={isLoading}
+            className="absolute z-20 -translate-x-1/2 flex flex-col items-center pointer-events-auto disabled:opacity-70"
+            style={{ left: `${x}%`, top: `${y}%` }}
+          >
+            <div className="bg-black/70 backdrop-blur-sm text-white text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap shadow-lg border border-white/20 hover:bg-white hover:text-black transition-colors flex items-center gap-1">
+              {isLoading && <Loader2 size={10} className="animate-spin" />}
+              @{tag.username}
             </div>
-          </div>
-        </>
-      ) : null}
+            <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-black/70" />
+          </button>
+        );
+      })}
     </>
   );
 };
@@ -493,7 +494,7 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
             className="absolute bottom-3 right-3 z-20 bg-black/55 hover:bg-black/75 text-white p-2 rounded-full transition-all opacity-0 group-hover:opacity-100">
             {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
           </button>
-          <PeopleTagsOverlay tags={peopleTags} visible={videoReady || !!thumbnailUrl} />
+          <PeopleTagsOverlay tags={peopleTags} />
         </div>
       ) : (
         <div className="relative w-full">
@@ -503,7 +504,7 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
             className="w-full h-auto max-h-[600px] object-contain"
             style={currentItem.image_editing?.filter?.css ? { filter: currentItem.image_editing.filter.css } : {}}
           />
-          <PeopleTagsOverlay tags={peopleTags} visible={true} />
+          <PeopleTagsOverlay tags={peopleTags} />
         </div>
       )}
 
@@ -653,6 +654,36 @@ const TweetImagePreviewModal = ({ images, initialIndex, isOpen, onClose }) => {
           ))}
         </div>
       )}
+    </div>
+  );
+};
+
+// ─── Tag Mentions (below post) ────────────────────────────────────────────────
+const TagMentions = ({ tags }) => {
+  const [loadingTag, setLoadingTag] = useState(null);
+  const navigate = useNavigate();
+
+  const handleClick = async (e, tag) => {
+    e.preventDefault();
+    if (!tag.username) return;
+    setLoadingTag(tag._id);
+    await goToTaggedUser(tag.username, navigate);
+    setLoadingTag(null);
+  };
+
+  return (
+    <div className="flex flex-wrap gap-x-2 gap-y-0.5 mb-1">
+      {tags.map((tag, i) => (
+        <button
+          key={tag._id || i}
+          onClick={(e) => handleClick(e, tag)}
+          disabled={loadingTag === tag._id}
+          className="text-sm text-[#0095f6] hover:underline font-semibold disabled:opacity-60 flex items-center gap-1"
+        >
+          {loadingTag === tag._id && <Loader2 size={11} className="animate-spin" />}
+          @{tag.username}
+        </button>
+      ))}
     </div>
   );
 };
@@ -1135,17 +1166,7 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
 
         {/* People tag mentions — posts only */}
         {!isAd && !isTweet && peopleTags.length > 0 && (
-          <div className="flex flex-wrap gap-x-2 gap-y-0.5 mb-1">
-            {peopleTags.map((tag, i) => {
-              const profilePath = tag.role === 'vendor' 
-                ? `/vendor/${tag.user_id || ''}/public` 
-                : `/profile/${tag.user_id || ''}`;
-              return (
-                <Link key={tag._id || i} to={profilePath}
-                  className="text-sm text-[#0095f6] hover:underline font-semibold">@{tag.username}</Link>
-              );
-            })}
-          </div>
+          <TagMentions tags={peopleTags} />
         )}
 
         {/* Ad: shop CTA */}

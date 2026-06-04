@@ -83,7 +83,7 @@ const StoryRail = () => {
 
   const handleStoryClick = (index) => {
     const story = stories[index];
-    if (!story || story.itemsCount === 0) return;
+    if (!story?.id) return;
     setSelectedStoryIndex(index);
   };
 
@@ -92,6 +92,16 @@ const StoryRail = () => {
       {/* ── Story Rail ── */}
       <div className="bg-white dark:bg-black py-3">
         <div className="flex gap-3 overflow-x-auto px-4 no-scrollbar pb-1 xl:px-0">
+          {stories.length === 0 && (
+            <div className="flex items-center gap-2 text-gray-400 dark:text-gray-600 py-1 px-1">
+              <div className="w-[50px] h-[50px] rounded-full border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center shrink-0">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+                </svg>
+              </div>
+              <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">No stories yet</span>
+            </div>
+          )}
           {stories.map((story, index) => {
             const hasSeen     = story.seen;
             const hasStory    = story.itemsCount > 0;
@@ -106,10 +116,12 @@ const StoryRail = () => {
               >
                 {/* Avatar ring */}
                 <div className="relative">
-                  <div className={`
-                    w-[66px] h-[66px] rounded-full p-[2.5px] flex items-center justify-center
-                    ${hasStory && !hasSeen ? 'bg-orange-500' : 'bg-gray-200 dark:bg-gray-800'}
-                  `}>
+                  <div className={`w-[66px] h-[66px] rounded-full p-[2.5px] flex items-center justify-center
+                    ${hasStory && !hasSeen
+                      ? 'bg-gradient-to-tr from-yellow-400 via-orange-500 to-pink-600'
+                      : hasSeen
+                        ? 'bg-gray-400 dark:bg-gray-600'
+                        : 'bg-transparent'}`}>
                     <div className="w-full h-full rounded-full bg-white dark:bg-black p-[2px]">
                       {story.avatarUrl ? (
                         <img

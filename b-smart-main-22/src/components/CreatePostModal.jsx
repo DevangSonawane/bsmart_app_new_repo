@@ -246,6 +246,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
     }
   }, [isOpen, initialType]);
 
+
   useEffect(() => {
     let active = true;
 
@@ -1071,7 +1072,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             }
           });
 
-          const { fileName: serverFileName, url: serverUrl, fileUrl: serverFileUrl, media: uploadedTweetMedia } = uploadResponse.data;
+          const { fileName: serverFileName, url: serverUrl, fileUrl: serverFileUrl, media: uploadedTweetMedia, hls: uploadedHls, processing: uploadedProcessing } = uploadResponse.data;
           const finalUrl = uploadedTweetMedia?.url || serverFileUrl || serverUrl;
 
           // Generate Filter CSS
@@ -1135,6 +1136,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                 fileUrl: finalUrl,
                 url: finalUrl,
                 media_type: item.type === 'video' ? 'video' : 'image',
+                hls: uploadedHls ?? false,
+                processing: uploadedProcessing ?? false,
               };
 
           if (postType !== 'tweet' && item.type === 'video') {
@@ -1511,7 +1514,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
     };
   }, [showEmojiPicker]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setStep('select');
     setMedia([]);
     setCurrentIndex(0);
@@ -1519,16 +1522,14 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
     setAdMedia([]);
     setPromoteProducts([]);
     setProductDraft(null);
-    
-    setSelectedCategory("");
+    setSelectedCategory('');
     setSelectedLanguages([]);
     setSelectedCountries([]);
     setSelectedStates([]);
     setTotalBudgetCoins('');
-    
     setTags([]);
     onClose();
-  };
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
