@@ -80,7 +80,8 @@ class _LoginScreenState extends State<LoginScreen>
         await SessionResetService.instance.clearUserSessionState();
         final userId = outcome.user?.id ?? '';
         if (userId.isNotEmpty && mounted) {
-          StoreProvider.of<AppState>(context).dispatch(SetAuthenticated(userId));
+          StoreProvider.of<AppState>(context)
+              .dispatch(SetAuthenticated(userId));
         }
         _navigateToHome();
       }
@@ -185,7 +186,8 @@ class _LoginScreenState extends State<LoginScreen>
               ),
               actions: [
                 TextButton(
-                  onPressed: _isVerifyingOtp ? null : () => Navigator.of(ctx).pop(),
+                  onPressed:
+                      _isVerifyingOtp ? null : () => Navigator.of(ctx).pop(),
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
@@ -234,7 +236,8 @@ class _LoginScreenState extends State<LoginScreen>
     final size = MediaQuery.of(context).size;
     final isTablet = size.width > 600;
     final maxWidth = isTablet ? 500.0 : size.width;
-    final successMessage = ModalRoute.of(context)?.settings.arguments as String?;
+    final successMessage =
+        ModalRoute.of(context)?.settings.arguments as String?;
 
     return Scaffold(
       body: SafeArea(
@@ -264,20 +267,27 @@ class _LoginScreenState extends State<LoginScreen>
                             ),
                             child: Row(
                               children: [
-                                Icon(LucideIcons.circleCheck, color: Colors.green.shade700, size: 20),
+                                Icon(LucideIcons.circleCheck,
+                                    color: Colors.green.shade700, size: 20),
                                 const SizedBox(width: 8),
-                                Expanded(child: Text(successMessage, style: TextStyle(color: Colors.green.shade800, fontSize: 13))),
+                                Expanded(
+                                    child: Text(successMessage,
+                                        style: TextStyle(
+                                            color: Colors.green.shade800,
+                                            fontSize: 13))),
                               ],
                             ),
                           ),
                         ),
-                      const SizedBox(height: 32),
-                      Text(
-                        'Log In',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.displayLarge,
+                      const SizedBox(height: 24),
+                      Center(
+                        child: Image.asset(
+                          'assets/images/bsmart_logo.png',
+                          width: isTablet ? 220 : 180,
+                          fit: BoxFit.contain,
+                        ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 18),
                       Text(
                         'Enter your credentials to access your account.',
                         textAlign: TextAlign.center,
@@ -376,10 +386,13 @@ class _LoginScreenState extends State<LoginScreen>
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Text(
                               'OR',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontSize: 12,
-                                letterSpacing: 1.5,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    fontSize: 12,
+                                    letterSpacing: 1.5,
+                                  ),
                             ),
                           ),
                           const Expanded(
@@ -402,7 +415,8 @@ class _LoginScreenState extends State<LoginScreen>
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           TextButton(
-                            onPressed: () => Navigator.of(context).pushNamed('/signup'),
+                            onPressed: () =>
+                                Navigator.of(context).pushNamed('/signup'),
                             child: const Text('Sign Up'),
                           ),
                         ],
@@ -418,5 +432,4 @@ class _LoginScreenState extends State<LoginScreen>
       ),
     );
   }
-
 }
