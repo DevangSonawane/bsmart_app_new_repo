@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
 import '../services/supabase_service.dart';
+import '../services/comment_sync_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../api/api_exceptions.dart';
@@ -35,6 +36,7 @@ class PostDetailScreen extends StatefulWidget {
 
 class _PostDetailScreenState extends State<PostDetailScreen> {
   final SupabaseService _svc = SupabaseService();
+  final CommentSyncService _commentSync = CommentSyncService();
   Map<String, dynamic>? _post;
   Map<String, dynamic>? _postUser;
   List<Map<String, dynamic>> _comments = [];
@@ -61,6 +63,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final Map<String, double> _resolvedImageAspectRatios = <String, double>{};
   final Set<String> _resolvingImageAspectRatioUrls = <String>{};
   bool _isTweet = false;
+  StreamSubscription<CommentChangeEvent>? _commentSyncSub;
 
   bool _isReelPost() {
     final post = _post;
@@ -224,11 +227,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void initState() {
     super.initState();
     _isTweet = widget.isTweet || (widget.initialPost?.isTweet ?? false);
+    _commentSyncSub = _commentSync.changes.listen((event) {
+      if (!mounted) return;
+      if (event.postId != widget.postId || event.isTweet != _isTweet) return;
+      unawaited(_load());
+    });
     _load();
   }
 
   @override
   void dispose() {
+    _commentSyncSub?.cancel();
     _commentController.dispose();
     _mediaPageController.dispose();
     _videoController?.dispose();
@@ -509,8 +518,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     StoreProvider.of<AppState>(context, listen: false)
         .dispatch(UpdatePostSaved(widget.postId, desired));
 
-    final saved =
-        await _svc.setPostSaved(widget.postId, save: desired, isTweet: _isTweet);
+    final saved = await _svc.setPostSaved(widget.postId,
+        save: desired, isTweet: _isTweet);
     if (!mounted) return;
     try {
       final p = await _svc.getPostById(widget.postId, isTweet: _isTweet);
@@ -1248,10 +1257,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             _postUser?['name'])
         ?.toString()
         .trim();
-    final username =
-        (usernameCandidate != null && usernameCandidate.isNotEmpty)
-            ? usernameCandidate
-            : 'User';
+    final username = (usernameCandidate != null && usernameCandidate.isNotEmpty)
+        ? usernameCandidate
+        : 'User';
     final avatarUrl = (_postUser?['avatar_url'] ??
             _postUser?['avatar'] ??
             _postUser?['profile_picture'] ??
@@ -1264,8 +1272,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final createdAtLabel = createdAt == null
         ? ''
         : _formatRelativeTime(createdAt.toIso8601String()).toUpperCase();
-    final ownerId =
-        _extractId(_postUser?['id']) ?? (_post == null ? null : _extractPostUserId(_post!));
+    final ownerId = _extractId(_postUser?['id']) ??
+        (_post == null ? null : _extractPostUserId(_post!));
     final isOwner = ownerId != null &&
         _currentUserId != null &&
         ownerId.toString() == _currentUserId.toString();

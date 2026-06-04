@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/current_user.dart';
 import '../utils/value_parsers.dart';
+import 'comment_sync_service.dart';
 
 /// Service layer that was previously calling Supabase directly.
 ///
@@ -944,6 +945,11 @@ class SupabaseService {
               text: content,
               parentId: parentId,
             );
+      CommentSyncService().notifyChanged(
+        postId: postId,
+        isTweet: isTweet == true,
+        delta: (parentId == null || parentId.isEmpty) ? 1 : 0,
+      );
       return created;
     } catch (_) {
       if (isTweet == true) return null;
@@ -952,6 +958,11 @@ class SupabaseService {
           postId,
           text: content,
           parentId: parentId,
+        );
+        CommentSyncService().notifyChanged(
+          postId: postId,
+          isTweet: true,
+          delta: (parentId == null || parentId.isEmpty) ? 1 : 0,
         );
         return created;
       } catch (_) {}

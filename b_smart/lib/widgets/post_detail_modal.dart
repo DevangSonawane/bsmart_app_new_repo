@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
 import '../services/supabase_service.dart';
+import '../services/comment_sync_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../api/api_exceptions.dart';
@@ -34,6 +35,7 @@ class PostDetailModal extends StatefulWidget {
 
 class _PostDetailModalState extends State<PostDetailModal> {
   final SupabaseService _svc = SupabaseService();
+  final CommentSyncService _commentSync = CommentSyncService();
   Map<String, dynamic>? _post;
   Map<String, dynamic>? _postUser;
   List<Map<String, dynamic>> _comments = [];
@@ -54,6 +56,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
   final Map<String, double> _resolvedImageAspectRatios = <String, double>{};
   final Set<String> _resolvingImageAspectRatioUrls = <String>{};
   late bool _isTweet;
+  StreamSubscription<CommentChangeEvent>? _commentSyncSub;
 
   String? _extractId(dynamic value) {
     if (value is String && value.isNotEmpty) return value;
@@ -316,11 +319,17 @@ class _PostDetailModalState extends State<PostDetailModal> {
   void initState() {
     super.initState();
     _isTweet = widget.isTweet;
+    _commentSyncSub = _commentSync.changes.listen((event) {
+      if (!mounted) return;
+      if (event.postId != widget.postId || event.isTweet != _isTweet) return;
+      unawaited(_load());
+    });
     _load();
   }
 
   @override
   void dispose() {
+    _commentSyncSub?.cancel();
     _commentController.dispose();
     _mediaPageController.dispose();
     _videoController?.dispose();
@@ -422,6 +431,9 @@ class _PostDetailModalState extends State<PostDetailModal> {
     setState(() => _postingComment = true);
     try {
       await _svc.addComment(widget.postId, userId, content, isTweet: _isTweet);
+      StoreProvider.of<AppState>(context, listen: false).dispatch(
+        UpdatePostCommentsCount(widget.postId, _comments.length + 1),
+      );
       _commentController.clear();
       await _load();
     } finally {

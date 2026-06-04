@@ -1491,6 +1491,93 @@ class FeedService {
         path.endsWith('.webm');
   }
 
+  String _extractStoryMediaUrl(dynamic rawMedia) {
+    dynamic raw = rawMedia;
+    if (raw is List && raw.isNotEmpty) {
+      raw = raw.first;
+    }
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      final candidates = [
+        map['url'],
+        map['fileUrl'],
+        map['file_url'],
+        map['imageUrl'],
+        map['image_url'],
+        map['path'],
+        map['link'],
+      ];
+      for (final candidate in candidates) {
+        final resolved = UrlHelper.normalizeUrl(candidate?.toString());
+        if (resolved.isNotEmpty) return resolved;
+      }
+    } else if (raw is String) {
+      return UrlHelper.normalizeUrl(raw);
+    }
+    return '';
+  }
+
+  String _extractStoryThumbnailUrl(dynamic rawMedia) {
+    dynamic raw = rawMedia;
+    if (raw is List && raw.isNotEmpty) {
+      raw = raw.first;
+    }
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      final candidates = [
+        map['thumbnailUrl'],
+        map['thumbnail_url'],
+        map['thumbnail'],
+        map['thumb'],
+        map['poster'],
+        map['image'],
+        map['imageUrl'],
+        map['image_url'],
+      ];
+      for (final candidate in candidates) {
+        if (candidate is Map) {
+          final nested = Map<String, dynamic>.from(candidate);
+          final nestedCandidates = [
+            nested['url'],
+            nested['fileUrl'],
+            nested['file_url'],
+            nested['path'],
+          ];
+          for (final nestedCandidate in nestedCandidates) {
+            final resolved =
+                UrlHelper.normalizeUrl(nestedCandidate?.toString());
+            if (resolved.isNotEmpty) return resolved;
+          }
+        } else {
+          final resolved = UrlHelper.normalizeUrl(candidate?.toString());
+          if (resolved.isNotEmpty) return resolved;
+        }
+      }
+      final thumbs = map['thumbnails'];
+      if (thumbs is List && thumbs.isNotEmpty) {
+        final first = thumbs.first;
+        if (first is Map) {
+          final firstMap = Map<String, dynamic>.from(first);
+          final nestedCandidates = [
+            firstMap['url'],
+            firstMap['fileUrl'],
+            firstMap['file_url'],
+            firstMap['path'],
+          ];
+          for (final nestedCandidate in nestedCandidates) {
+            final resolved =
+                UrlHelper.normalizeUrl(nestedCandidate?.toString());
+            if (resolved.isNotEmpty) return resolved;
+          }
+        } else {
+          final resolved = UrlHelper.normalizeUrl(first?.toString());
+          if (resolved.isNotEmpty) return resolved;
+        }
+      }
+    }
+    return '';
+  }
+
   StoryMediaType _storyMediaType(Map<String, dynamic>? media, String mediaUrl) {
     final raw = (media?['type'] as String?)?.toLowerCase();
     final isVideo = raw == 'video' ||
@@ -1526,8 +1613,13 @@ class FeedService {
       } else if (rawMedia is Map) {
         media = Map<String, dynamic>.from(rawMedia);
       }
-      final mediaUrl = UrlHelper.normalizeUrl((media?['url'] as String?) ?? '');
+      final mediaUrl = _extractStoryMediaUrl(rawMedia);
+      final thumbnailUrl = _extractStoryThumbnailUrl(rawMedia);
       final mediaType = _storyMediaType(media, mediaUrl);
+      debugPrint(
+        '[FeedService] story feed preview storyId=$storyId itemId=${preview['_id'] ?? preview['id'] ?? ''} '
+        'mediaType=${mediaType.name} mediaUrl=$mediaUrl thumbnailUrl=$thumbnailUrl rawMediaType=${rawMedia.runtimeType}',
+      );
       return StoryGroup(
         userId: previewUserId.isNotEmpty
             ? previewUserId
@@ -1538,7 +1630,7 @@ class FeedService {
         isCloseFriend: false,
         isSubscribedCreator: false,
         storyId: storyId,
-        stories: preview.isEmpty || media == null
+        stories: preview.isEmpty || mediaUrl.isEmpty
             ? <Story>[]
             : <Story>[
                 Story(
@@ -1551,6 +1643,7 @@ class FeedService {
                   userName: (user['username'] as String?) ?? 'User',
                   userAvatar: user['avatar_url'] as String?,
                   mediaUrl: mediaUrl,
+                  thumbnailUrl: thumbnailUrl.isEmpty ? null : thumbnailUrl,
                   mediaType: mediaType,
                   createdAt: DateTime.tryParse(
                           preview['createdAt'] as String? ?? '') ??
@@ -1612,7 +1705,8 @@ class FeedService {
       } else if (rawMedia is Map) {
         media = Map<String, dynamic>.from(rawMedia);
       }
-      final mediaUrl = UrlHelper.normalizeUrl(media?['url'] as String? ?? '');
+      final mediaUrl = _extractStoryMediaUrl(rawMedia);
+      final thumbnailUrl = _extractStoryThumbnailUrl(rawMedia);
       final mediaType = _storyMediaType(media, mediaUrl);
       final texts = (m['texts'] is List)
           ? (m['texts'] as List)
@@ -1637,12 +1731,18 @@ class FeedService {
           : (m['durationSec'] as int?);
       final rawId = m['_id'] ?? m['id'];
       final id = rawId == null ? '' : rawId.toString();
+      debugPrint(
+        '[FeedService] story item storyId=$storyId itemId=$id '
+        'mediaType=${mediaType.name} mediaUrl=$mediaUrl thumbnailUrl=$thumbnailUrl rawMediaType=${rawMedia.runtimeType} '
+        'texts=${texts?.length ?? 0} mentions=${mentions?.length ?? 0}',
+      );
       return Story(
         id: id.isNotEmpty ? id : 'item',
         userId: (m['user_id'] as String?) ?? '',
         userName: ownerUserName ?? '',
         userAvatar: ownerAvatar,
         mediaUrl: mediaUrl,
+        thumbnailUrl: thumbnailUrl.isEmpty ? null : thumbnailUrl,
         mediaType: mediaType,
         createdAt: DateTime.tryParse(m['createdAt'] as String? ?? '') ??
             DateTime.now(),

@@ -5,6 +5,7 @@ import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
+import '../services/comment_sync_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
 import '../theme/design_tokens.dart';
@@ -39,6 +40,7 @@ class CommentsSheet extends StatefulWidget {
 
 class _CommentsSheetState extends State<CommentsSheet> {
   final SupabaseService _svc = SupabaseService();
+  final CommentSyncService _commentSync = CommentSyncService();
   final TextEditingController _controller = TextEditingController();
   List<Map<String, dynamic>> _comments = [];
   bool _loading = true;
@@ -54,6 +56,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Map<String, dynamic>? _me;
   Map<String, dynamic>? _post;
   late bool _isTweet;
+  StreamSubscription<CommentChangeEvent>? _commentSyncSub;
 
   String _toId(dynamic v) => (v ?? '').toString().trim();
 
@@ -92,6 +95,11 @@ class _CommentsSheetState extends State<CommentsSheet> {
   void initState() {
     super.initState();
     _isTweet = widget.isTweet;
+    _commentSyncSub = _commentSync.changes.listen((event) {
+      if (!mounted) return;
+      if (event.postId != widget.postId || event.isTweet != _isTweet) return;
+      unawaited(_load());
+    });
     _load();
     _initMe();
     _loadPost();
@@ -99,6 +107,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   @override
   void dispose() {
+    _commentSyncSub?.cancel();
     _controller.dispose();
     _inputFocus.dispose();
     super.dispose();

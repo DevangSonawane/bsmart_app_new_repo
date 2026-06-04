@@ -16,6 +16,7 @@ import '../models/user_account_model.dart';
 import '../theme/instagram_theme.dart';
 import '../widgets/clay_container.dart';
 import '../widgets/share_content_modal.dart';
+import '../utils/url_helper.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
 import '../utils/current_user.dart';
@@ -571,6 +572,17 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
   }
 
   Widget _buildStoryItem(List<StoryGroup> stories, StoryGroup storyGroup) {
+    final previewStory =
+        storyGroup.stories.isNotEmpty ? storyGroup.stories.first : null;
+    final previewUrl = (() {
+      final thumb = (previewStory?.thumbnailUrl ?? '').trim();
+      if (thumb.isNotEmpty) return UrlHelper.normalizeUrl(thumb);
+      final mediaUrl = (previewStory?.mediaUrl ?? '').trim();
+      if (mediaUrl.isEmpty) return '';
+      if (previewStory?.mediaType == StoryMediaType.video) return '';
+      return UrlHelper.normalizeUrl(mediaUrl);
+    })();
+    final hasPreviewImage = previewUrl.isNotEmpty;
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
@@ -597,17 +609,21 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                     child: Container(
                       width: 66,
                       height: 66,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        image: DecorationImage(
-                          image: NetworkImage(
-                              'https://via.placeholder.com/150'), // Replace with actual
-                          fit: BoxFit.cover,
-                        ),
+                        color: Colors.grey.shade400,
+                        image: hasPreviewImage
+                            ? DecorationImage(
+                                image: NetworkImage(previewUrl),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
                       ),
                       child: Center(
                         child: Text(
-                          storyGroup.userName[0].toUpperCase(),
+                          storyGroup.userName.isNotEmpty
+                              ? storyGroup.userName[0].toUpperCase()
+                              : '?',
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,

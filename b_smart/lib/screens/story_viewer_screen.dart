@@ -51,6 +51,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   bool _isOffline = false;
   int _offlineRetryAttempts = 0;
 
+  void _logStoryDebug(String message) {
+    debugPrint('[StoryViewer] $message');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -133,9 +137,16 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     _paused = false;
 
     final currentGroup = widget.storyGroups[_currentGroupIndex];
+    _logStoryDebug(
+      'startAutoPlay group=$_currentGroupIndex storyId=${currentGroup.storyId ?? ''} '
+      'stories=${currentGroup.stories.length} currentStoryIndex=$_currentStoryIndex',
+    );
     // Lazy-load all items for current group when only a preview story is present
     if (currentGroup.stories.length <= 1 &&
         (currentGroup.storyId ?? '').isNotEmpty) {
+      _logStoryDebug(
+        'startAutoPlay preview-only fetch scheduled storyId=${currentGroup.storyId}',
+      );
       // Fetch in the background, but still play the preview item immediately.
       // Only block playback if there is nothing to show yet.
       unawaited(_fetchGroupItems(_currentGroupIndex));
@@ -147,6 +158,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     }
 
     final currentStory = currentGroup.stories[_currentStoryIndex];
+    _logStoryDebug(
+      'startAutoPlay currentStory id=${currentStory.id} type=${currentStory.mediaType} '
+      'url=${currentStory.mediaUrl} texts=${currentStory.texts?.length ?? 0} '
+      'mentions=${currentStory.mentions?.length ?? 0}',
+    );
     _pendingStoryId = currentStory.id;
     _waitingForMedia = currentStory.mediaType == StoryMediaType.video;
     _setupCurrentStoryMedia(currentStory);
@@ -332,10 +348,23 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     final storyBottom = bottomBarHeight + bottomGap;
 
     final currentGroup = widget.storyGroups[_currentGroupIndex];
-    final currentStory = currentGroup.stories[_currentStoryIndex];
-    final isExpired = currentStory.expiresAt != null &&
-        DateTime.now().isAfter(currentStory.expiresAt!);
-    final isUnavailable = isExpired || currentStory.isDeleted;
+    final currentStory = currentGroup.stories.isNotEmpty
+        ? currentGroup.stories[
+            _currentStoryIndex.clamp(0, currentGroup.stories.length - 1)]
+        : null;
+    final groupStoryId = currentGroup.storyId ?? '';
+    _logStoryDebug(
+      'build group=$_currentGroupIndex storyId=$groupStoryId stories=${currentGroup.stories.length} '
+      'currentStoryIndex=$_currentStoryIndex currentStory=${currentStory?.id ?? 'null'}',
+    );
+    final isExpired = currentStory?.expiresAt != null &&
+        DateTime.now().isAfter(currentStory!.expiresAt!);
+    final isUnavailable =
+        currentStory == null || isExpired || currentStory.isDeleted;
+    final shouldShowInitialLoader = groupStoryId.isNotEmpty &&
+        (currentGroup.stories.isEmpty ||
+            (_fetchingStoryGroupIds.contains(groupStoryId) &&
+                currentGroup.stories.length <= 1));
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -373,11 +402,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
             Navigator.of(context).pop();
           } else {
             final s = currentStory;
-            if ((s.productUrl ?? '').isNotEmpty) {
+            if (s != null && (s.productUrl ?? '').isNotEmpty) {
               _openProductSheet(s.productUrl!);
-            } else if ((s.externalLink ?? '').isNotEmpty) {
+            } else if (s != null && (s.externalLink ?? '').isNotEmpty) {
               _openLinkSheet(s.externalLink!);
-            } else if (s.hasPollQuiz) {
+            } else if (s != null && s.hasPollQuiz) {
               _openPollSheet();
             }
           }
@@ -408,6 +437,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                       PageView.builder(
                         controller: _pageController,
                         onPageChanged: (index) {
+                          _logStoryDebug(
+                            'pageChanged from=$_currentGroupIndex to=$index',
+                          );
                           setState(() {
                             _currentGroupIndex = index;
                             _currentStoryIndex = 0;
@@ -439,6 +471,33 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                           );
                         },
                       ),
+
+                      if (shouldShowInitialLoader)
+                        Builder(
+                          builder: (_) {
+                            _logStoryDebug(
+                              'showInitialLoader group=$_currentGroupIndex storyId=$groupStoryId stories=${currentGroup.stories.length}',
+                            );
+                            return Positioned.fill(
+                              child: IgnorePointer(
+                                ignoring: true,
+                                child: Container(
+                                  color: Colors.black.withValues(alpha: 0.16),
+                                  child: const Center(
+                                    child: SizedBox(
+                                      width: 36,
+                                      height: 36,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2.5,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
 
                       // Progress Bar + header
                       Positioned(
@@ -503,8 +562,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                         radius: 18,
                                         backgroundColor: Colors.blue,
                                         child: Text(
-                                          currentGroup.userName[0]
-                                              .toUpperCase(),
+                                          currentGroup.userName.isNotEmpty
+                                              ? currentGroup.userName[0]
+                                                  .toUpperCase()
+                                              : '?',
                                           style: const TextStyle(
                                               color: Colors.white),
                                         ),
@@ -524,7 +585,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                           const SizedBox(height: 2),
                                           Text(
                                             _formatTimestamp(
-                                                currentStory.createdAt),
+                                                currentStory?.createdAt ??
+                                                    DateTime.now()),
                                             style: TextStyle(
                                               color: Colors.white
                                                   .withValues(alpha: 0.7),
@@ -725,9 +787,15 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     if (sid == null || sid.isEmpty) return;
     if (_fetchingStoryGroupIds.contains(sid)) return;
     _fetchingStoryGroupIds.add(sid);
+    _logStoryDebug(
+      'fetchGroupItems start group=$groupIndex storyId=$sid previewItems=${g.stories.length}',
+    );
     try {
       final items = await _feedService.fetchStoryItems(sid,
           ownerUserName: g.userName, ownerAvatar: g.userAvatar);
+      _logStoryDebug(
+        'fetchGroupItems success storyId=$sid items=${items.length}',
+      );
       setState(() {
         widget.storyGroups[groupIndex] = StoryGroup(
           userId: g.userId,
@@ -745,6 +813,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       });
       _startAutoPlay();
     } catch (_) {
+      _logStoryDebug('fetchGroupItems failed storyId=$sid');
       final offline = await _isCurrentlyOffline();
       if (!mounted) return;
       setState(() {
@@ -755,6 +824,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       });
     } finally {
       _fetchingStoryGroupIds.remove(sid);
+      _logStoryDebug('fetchGroupItems end storyId=$sid');
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
@@ -763,6 +836,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     final hasUrl = story.mediaUrl.isNotEmpty &&
         (story.mediaUrl.startsWith('http://') ||
             story.mediaUrl.startsWith('https://'));
+    final mediaHeaders =
+        UrlHelper.shouldAttachAuthHeader(story.mediaUrl) ? _videoHeaders : null;
+    final posterUrl = story.thumbnailUrl ?? '';
     final normalizedUrl = story.mediaUrl.isNotEmpty
         ? UrlHelper.normalizeUrl(story.mediaUrl)
         : story.mediaUrl;
@@ -770,6 +846,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         StoryCache.get(normalizedUrl) ?? StoryCache.getById(story.id);
     final cachedTexts = cached?['texts'] as List<dynamic>?;
     final cachedMentions = cached?['mentions'] as List<dynamic>?;
+    _logStoryDebug(
+      'buildStoryContent story=${story.id} active=$isActive type=${story.mediaType} '
+      'hasUrl=$hasUrl texts=${story.texts?.length ?? 0} mentions=${story.mentions?.length ?? 0} '
+      'cachedTexts=${cachedTexts?.length ?? 0} cachedMentions=${cachedMentions?.length ?? 0}',
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final cw = constraints.maxWidth;
@@ -788,7 +869,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                 child: isImage && hasUrl
                     ? CachedNetworkImage(
                         imageUrl: story.mediaUrl,
-                        httpHeaders: _videoHeaders,
+                        httpHeaders: mediaHeaders,
                         fit: BoxFit.cover,
                         placeholder: (_, __) => const Center(
                             child:
@@ -801,15 +882,18 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                         ? Stack(
                             fit: StackFit.expand,
                             children: [
-                              CachedNetworkImage(
-                                imageUrl: story.mediaUrl,
-                                httpHeaders: _videoHeaders,
-                                fit: BoxFit.cover,
-                                placeholder: (_, __) =>
-                                    Container(color: Colors.black),
-                                errorWidget: (_, __, ___) =>
-                                    Container(color: Colors.black),
-                              ),
+                              if (posterUrl.isNotEmpty)
+                                CachedNetworkImage(
+                                  imageUrl: posterUrl,
+                                  httpHeaders: mediaHeaders,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, __) =>
+                                      Container(color: Colors.black),
+                                  errorWidget: (_, __, ___) =>
+                                      Container(color: Colors.black),
+                                )
+                              else
+                                Container(color: Colors.black),
                               if (isActive &&
                                   _videoCtl != null &&
                                   _videoCtl!.value.isInitialized &&
@@ -847,6 +931,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
               final clampedLeft = left.clamp(0.0, cw - 8);
               final clampedTop = top.clamp(0.0, ch - 8);
               final content = (t['content'] as String?) ?? '';
+              final tappedMention = _mentionUsernameFromText(content);
               final fontSize = (t['fontSize'] as num?)?.toDouble() ?? 20.0;
               final color = _parseStoryColor(t['color']);
               final align = (t['align'] as String?) ?? 'center';
@@ -859,22 +944,29 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                 top: clampedTop,
                 child: Transform.rotate(
                   angle: rotation,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: cw - 24),
-                    child: Text(
-                      content,
-                      textAlign: textAlign,
-                      style: TextStyle(
-                        color: color ?? Colors.white,
-                        fontSize: fontSize,
-                        fontWeight: FontWeight.w600,
-                        shadows: const [
-                          Shadow(
-                            offset: Offset(0, 1),
-                            blurRadius: 3,
-                            color: Color(0xAA000000),
-                          ),
-                        ],
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: tappedMention == null
+                        ? null
+                        : () =>
+                            _openMentionProfile({'username': tappedMention}),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: cw - 24),
+                      child: Text(
+                        content,
+                        textAlign: textAlign,
+                        style: TextStyle(
+                          color: color ?? Colors.white,
+                          fontSize: fontSize,
+                          fontWeight: FontWeight.w600,
+                          shadows: const [
+                            Shadow(
+                              offset: Offset(0, 1),
+                              blurRadius: 3,
+                              color: Color(0xAA000000),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -888,6 +980,21 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     );
   }
 
+  String? _mentionUsernameFromText(String content) {
+    final match = RegExp(r'@([A-Za-z0-9_\.]+)').firstMatch(content);
+    final username = match?.group(1)?.trim();
+    return (username != null && username.isNotEmpty) ? username : null;
+  }
+
+  bool _storyTextContainsUsername(List<dynamic> textData, String username) {
+    if (username.trim().isEmpty) return false;
+    for (final t in textData) {
+      final content = (t['content'] as String?) ?? '';
+      if (content.contains('@$username')) return true;
+    }
+    return false;
+  }
+
   List<Widget> _buildMentionOverlays(
     List<dynamic> mentionData,
     List<dynamic> textData,
@@ -899,6 +1006,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         final left = ((m['x'] as num?) ?? 0) * cw;
         final top = ((m['y'] as num?) ?? 0) * ch;
         final username = (m['username'] as String?) ?? '';
+        if (_storyTextContainsUsername(textData, username)) {
+          return const SizedBox.shrink();
+        }
         final scale = _mentionScaleFor(username, textData);
         return Positioned(
           left: left.clamp(0, cw - 8),
@@ -1055,6 +1165,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     _videoCtl = null;
     _videoStoryId = null;
     _initVideo = null;
+    _logStoryDebug(
+      'setupMedia story=${story.id} type=${story.mediaType} url=${story.mediaUrl} request=$requestId',
+    );
     if (oldCtl != null) {
       // Ensure the widget tree can drop any VideoPlayer that references the
       // old controller before disposal.
@@ -1063,18 +1176,25 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       });
     }
     if (story.mediaType == StoryMediaType.video && story.mediaUrl.isNotEmpty) {
-      final headers = _videoHeaders ?? {};
+      final headers = UrlHelper.shouldAttachAuthHeader(story.mediaUrl)
+          ? (_videoHeaders ?? const <String, String>{})
+          : const <String, String>{};
       try {
         final uri = Uri.parse(story.mediaUrl);
         final ctl = VideoPlayerController.networkUrl(uri, httpHeaders: headers);
         _videoCtl = ctl;
         _videoStoryId = story.id;
+        _logStoryDebug('setupMedia initializing video story=${story.id}');
         _initVideo = ctl.initialize().then((_) {
           if (!mounted) return;
           if (requestId != _videoRequestSerial) {
+            _logStoryDebug(
+              'setupMedia stale init ignored story=${story.id} request=$requestId current=$_videoRequestSerial',
+            );
             ctl.dispose();
             return;
           }
+          _logStoryDebug('setupMedia initialized story=${story.id}');
           ctl.setLooping(false);
           ctl.setVolume(0);
           ctl.play();
@@ -1099,6 +1219,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
           }
         });
       } catch (_) {
+        _logStoryDebug('setupMedia failed story=${story.id}');
         final offline = await _isCurrentlyOffline();
         if (mounted) {
           setState(() {
