@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -82,8 +81,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   void _listenConnectivity() {
-    _connectivitySub =
-        Connectivity().onConnectivityChanged.listen((results) {
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       final offline = results.contains(ConnectivityResult.none);
       if (!mounted) return;
       if (_isOffline != offline) {
@@ -447,19 +445,19 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                         top: 10,
                         left: 10,
                         right: 10,
-                    child: Column(
-                      children: [
-                        if (_isOffline && _offlineRetryAttempts >= 2)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 8),
-                            child: OfflineRetryBanner(
-                              message:
-                                  "You're offline, please check your internet connection",
-                            ),
-                          ),
-                        Row(
-                          children: List.generate(
-                            currentGroup.stories.length,
+                        child: Column(
+                          children: [
+                            if (_isOffline && _offlineRetryAttempts >= 2)
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 8),
+                                child: OfflineRetryBanner(
+                                  message:
+                                      "You're offline, please check your internet connection",
+                                ),
+                              ),
+                            Row(
+                              children: List.generate(
+                                currentGroup.stories.length,
                                 (index) => Expanded(
                                   child: Container(
                                     height: 2,
@@ -905,7 +903,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         return Positioned(
           left: left.clamp(0, cw - 8),
           top: (top - (18 * scale) - 4).clamp(0, ch - 8),
-          child: _mentionChip(username, scale: scale),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openMentionProfile(Map<String, dynamic>.from(m)),
+            child: _mentionChip(username, scale: scale),
+          ),
         );
       }).toList();
     }
@@ -925,7 +927,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         Positioned(
           left: left.clamp(0, cw - 8),
           top: (top - (18 * 1.0) - 4).clamp(0, ch - 8),
-          child: _mentionChip(username, scale: 1.0),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openMentionProfile({'username': username}),
+            child: _mentionChip(username, scale: 1.0),
+          ),
         ),
       );
     }
@@ -942,6 +948,69 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       }
     }
     return 1.0;
+  }
+
+  String _mentionUserId(Map<String, dynamic> mention) {
+    final direct =
+        (mention['user_id'] ?? mention['userId'] ?? mention['id'])?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    final user = mention['user'];
+    if (user is Map) {
+      final u = Map<String, dynamic>.from(user);
+      final nested =
+          (u['user_id'] ?? u['userId'] ?? u['_id'] ?? u['id'])?.toString();
+      if (nested != null && nested.trim().isNotEmpty) return nested.trim();
+    }
+    return '';
+  }
+
+  String? _mentionUserRole(Map<String, dynamic> mention) {
+    final direct =
+        (mention['role'] ?? mention['user_role'] ?? mention['userRole'])
+            ?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    final user = mention['user'];
+    if (user is Map) {
+      final u = Map<String, dynamic>.from(user);
+      final nested = (u['role'] ?? u['user_role'] ?? u['userRole'])?.toString();
+      if (nested != null && nested.trim().isNotEmpty) return nested.trim();
+    }
+    return null;
+  }
+
+  Future<void> _openMentionProfile(Map<String, dynamic> mention) async {
+    final username = (mention['username'] as String?)?.trim() ?? '';
+    final userId = _mentionUserId(mention);
+    final role = _mentionUserRole(mention)?.toLowerCase();
+    String? route;
+    if (userId.isNotEmpty) {
+      route = role == 'vendor' ? '/vendor/$userId/public' : '/profile/$userId';
+    } else if (username.isNotEmpty) {
+      try {
+        final results = await UsersApi().search(username);
+        final match = results.firstWhere(
+          (u) =>
+              (u['username']?.toString().toLowerCase() ?? '') ==
+              username.toLowerCase(),
+          orElse: () => const {},
+        );
+        final resolvedId =
+            (match['id'] as String?) ?? (match['_id'] as String?) ?? '';
+        final resolvedRole =
+            (match['role'] ?? match['user_role'] ?? match['type'])
+                ?.toString()
+                .toLowerCase();
+        if (resolvedId.isNotEmpty) {
+          route = resolvedRole == 'vendor'
+              ? '/vendor/$resolvedId/public'
+              : '/profile/$resolvedId';
+        }
+      } catch (_) {
+        route = null;
+      }
+    }
+    if (route == null || !mounted) return;
+    await Navigator.of(context).pushNamed(route);
   }
 
   Widget _mentionChip(String username, {double scale = 1.0}) {

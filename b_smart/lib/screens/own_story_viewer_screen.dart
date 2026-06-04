@@ -57,8 +57,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   }
 
   void _listenConnectivity() {
-    _connectivitySub =
-        Connectivity().onConnectivityChanged.listen((results) {
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       final offline = results.contains(ConnectivityResult.none);
       if (!mounted) return;
       if (_isOffline != offline) {
@@ -1463,19 +1462,24 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                                     left: clampedLeft,
                                     top: (clampedTop - (10 * previewScale) - 2)
                                         .clamp(2.0, previewH - 2),
-                                    child: Text(
-                                      '@$username',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: fontSize,
-                                        fontWeight: FontWeight.w600,
-                                        shadows: const [
-                                          Shadow(
-                                            offset: Offset(0, 1),
-                                            blurRadius: 2,
-                                            color: Color(0xAA000000),
-                                          ),
-                                        ],
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () => _openMentionProfile(
+                                          Map<String, dynamic>.from(m)),
+                                      child: Text(
+                                        '@$username',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: fontSize,
+                                          fontWeight: FontWeight.w600,
+                                          shadows: const [
+                                            Shadow(
+                                              offset: Offset(0, 1),
+                                              blurRadius: 2,
+                                              color: Color(0xAA000000),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   );
@@ -1772,6 +1776,69 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       }
     }
     return 1.0;
+  }
+
+  String _mentionUserId(Map<String, dynamic> mention) {
+    final direct =
+        (mention['user_id'] ?? mention['userId'] ?? mention['id'])?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    final user = mention['user'];
+    if (user is Map) {
+      final u = Map<String, dynamic>.from(user);
+      final nested =
+          (u['user_id'] ?? u['userId'] ?? u['_id'] ?? u['id'])?.toString();
+      if (nested != null && nested.trim().isNotEmpty) return nested.trim();
+    }
+    return '';
+  }
+
+  String? _mentionUserRole(Map<String, dynamic> mention) {
+    final direct =
+        (mention['role'] ?? mention['user_role'] ?? mention['userRole'])
+            ?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    final user = mention['user'];
+    if (user is Map) {
+      final u = Map<String, dynamic>.from(user);
+      final nested = (u['role'] ?? u['user_role'] ?? u['userRole'])?.toString();
+      if (nested != null && nested.trim().isNotEmpty) return nested.trim();
+    }
+    return null;
+  }
+
+  Future<void> _openMentionProfile(Map<String, dynamic> mention) async {
+    final username = (mention['username'] as String?)?.trim() ?? '';
+    final userId = _mentionUserId(mention);
+    final role = _mentionUserRole(mention)?.toLowerCase();
+    String? route;
+    if (userId.isNotEmpty) {
+      route = role == 'vendor' ? '/vendor/$userId/public' : '/profile/$userId';
+    } else if (username.isNotEmpty) {
+      try {
+        final results = await UsersApi().search(username);
+        final match = results.firstWhere(
+          (u) =>
+              (u['username']?.toString().toLowerCase() ?? '') ==
+              username.toLowerCase(),
+          orElse: () => const {},
+        );
+        final resolvedId =
+            (match['id'] as String?) ?? (match['_id'] as String?) ?? '';
+        final resolvedRole =
+            (match['role'] ?? match['user_role'] ?? match['type'])
+                ?.toString()
+                .toLowerCase();
+        if (resolvedId.isNotEmpty) {
+          route = resolvedRole == 'vendor'
+              ? '/vendor/$resolvedId/public'
+              : '/profile/$resolvedId';
+        }
+      } catch (_) {
+        route = null;
+      }
+    }
+    if (route == null || !mounted) return;
+    await Navigator.of(context).pushNamed(route);
   }
 
   String _timeAgoShort(DateTime date) {
@@ -2071,19 +2138,24 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
               return Positioned(
                 left: clampedLeft,
                 top: (clampedTop - (18 * scale) - 4).clamp(8.0, h - 8),
-                child: Text(
-                  '@$username',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12 * scale,
-                    fontWeight: FontWeight.w600,
-                    shadows: const [
-                      Shadow(
-                        offset: Offset(0, 1),
-                        blurRadius: 3,
-                        color: Color(0xAA000000),
-                      ),
-                    ],
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () =>
+                      _openMentionProfile(Map<String, dynamic>.from(m)),
+                  child: Text(
+                    '@$username',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12 * scale,
+                      fontWeight: FontWeight.w600,
+                      shadows: const [
+                        Shadow(
+                          offset: Offset(0, 1),
+                          blurRadius: 3,
+                          color: Color(0xAA000000),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );

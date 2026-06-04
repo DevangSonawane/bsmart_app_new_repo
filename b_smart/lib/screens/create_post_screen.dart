@@ -871,6 +871,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           filterNames: _media.map((m) => m.filter).toList(),
           adjustments: _media.map((m) => m.adjustments).toList(),
           alreadyProcessed: _media.map((m) => m.alreadyProcessed).toList(),
+          aspectRatios: _media.map((m) => m.aspect).toList(),
           initialTagsByIndex: initialByIndex,
           initialIndex: _currentIndex,
         ),

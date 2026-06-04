@@ -194,6 +194,44 @@ class _PostCardState extends State<PostCard> {
     return '';
   }
 
+  String _tagUserId(Map<String, dynamic> t) {
+    final direct = (t['user_id'] ?? t['userId'] ?? t['id'])?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    final user = t['user'];
+    if (user is Map) {
+      final u = Map<String, dynamic>.from(user);
+      final nested =
+          (u['user_id'] ?? u['userId'] ?? u['_id'] ?? u['id'])?.toString();
+      if (nested != null && nested.trim().isNotEmpty) {
+        return nested.trim();
+      }
+    }
+    return '';
+  }
+
+  String? _tagUserRole(Map<String, dynamic> t) {
+    final direct = (t['role'] ?? t['user_role'] ?? t['userRole'])?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    final user = t['user'];
+    if (user is Map) {
+      final u = Map<String, dynamic>.from(user);
+      final nested = (u['role'] ?? u['user_role'] ?? u['userRole'])?.toString();
+      if (nested != null && nested.trim().isNotEmpty) {
+        return nested.trim();
+      }
+    }
+    return null;
+  }
+
+  Future<void> _openTaggedUserProfile(Map<String, dynamic> tag) async {
+    final userId = _tagUserId(tag);
+    if (userId.isEmpty || !mounted) return;
+    final role = _tagUserRole(tag)?.toLowerCase();
+    final route =
+        role == 'vendor' ? '/vendor/$userId/public' : '/profile/$userId';
+    await Navigator.of(context).pushNamed(route);
+  }
+
   String _formatTargetList(List<String> items) {
     final clean = items.where((e) => e.trim().isNotEmpty).toList();
     if (clean.isEmpty) return '';
@@ -424,51 +462,6 @@ class _PostCardState extends State<PostCard> {
                   ),
                 ),
               ),
-            if (_showPeopleTags && (post.peopleTags?.isNotEmpty ?? false))
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: true,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final size = constraints.biggest;
-                      final tags = _tagsForMediaIndex(_mediaIndex);
-                      return Stack(
-                        children: [
-                          for (final raw in tags)
-                            () {
-                              final t = Map<String, dynamic>.from(raw);
-                              final name = _tagUsername(t);
-                              final pos = _tagOffset(t, size);
-                              if (name.isEmpty || pos == null) {
-                                return const SizedBox.shrink();
-                              }
-                              return Positioned(
-                                left: pos.dx - 8,
-                                top: pos.dy - 34,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.65),
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Text(
-                                    name,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }(),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
             if (!isCarousel)
               Positioned.fill(
                 child: Material(
@@ -486,6 +479,59 @@ class _PostCardState extends State<PostCard> {
                           },
                     onLongPress: activeIsVideo ? null : _togglePeopleTags,
                   ),
+                ),
+              ),
+            if (_showPeopleTags && (post.peopleTags?.isNotEmpty ?? false))
+              Positioned.fill(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = constraints.biggest;
+                    final tags = _tagsForMediaIndex(_mediaIndex);
+                    return Stack(
+                      children: [
+                        for (final raw in tags)
+                          () {
+                            final t = Map<String, dynamic>.from(raw);
+                            final name = _tagUsername(t);
+                            final pos = _tagOffset(t, size);
+                            if (name.isEmpty || pos == null) {
+                              return const SizedBox.shrink();
+                            }
+                            return Positioned(
+                              left: pos.dx,
+                              top: pos.dy,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: FractionalTranslation(
+                                  translation: const Offset(-0.5, -0.5),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(14),
+                                    onTap: () => _openTaggedUserProfile(t),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.65),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      child: Text(
+                                        name,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }(),
+                      ],
+                    );
+                  },
                 ),
               ),
             if (post.peopleTags?.isNotEmpty ?? false)

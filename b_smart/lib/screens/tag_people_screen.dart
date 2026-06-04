@@ -17,6 +17,7 @@ class TagPeopleScreen extends StatefulWidget {
   final List<String> filterNames;
   final List<Map<String, int>> adjustments;
   final List<bool> alreadyProcessed;
+  final List<double>? aspectRatios;
   final Map<int, List<Map<String, dynamic>>> initialTagsByIndex;
   final int initialIndex;
 
@@ -28,6 +29,7 @@ class TagPeopleScreen extends StatefulWidget {
     required this.filterNames,
     required this.adjustments,
     required this.alreadyProcessed,
+    this.aspectRatios,
     required this.initialTagsByIndex,
     required this.initialIndex,
   });
@@ -74,7 +76,8 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
       _currentIndex = 0;
       _pageController = PageController();
     } else {
-      _currentIndex = widget.initialIndex.clamp(0, widget.mediaPaths.length - 1);
+      _currentIndex =
+          widget.initialIndex.clamp(0, widget.mediaPaths.length - 1);
       _pageController = PageController(initialPage: _currentIndex);
     }
   }
@@ -90,6 +93,15 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
 
   List<Map<String, dynamic>> _tagsForIndex(int index) {
     return _tagsByIndex[index] ?? <Map<String, dynamic>>[];
+  }
+
+  double _aspectForIndex(int index) {
+    final aspects = widget.aspectRatios;
+    if (aspects != null && index >= 0 && index < aspects.length) {
+      final aspect = aspects[index];
+      if (aspect.isFinite && aspect > 0) return aspect;
+    }
+    return 1.0;
   }
 
   void _setTagsForIndex(int index, List<Map<String, dynamic>> tags) {
@@ -166,9 +178,11 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
   }
 
   void _addTag(Map<String, dynamic> user) {
-    final id = '${DateTime.now().millisecondsSinceEpoch}_${user['id'] ?? user['_id'] ?? ''}';
+    final id =
+        '${DateTime.now().millisecondsSinceEpoch}_${user['id'] ?? user['_id'] ?? ''}';
     setState(() {
-      final list = List<Map<String, dynamic>>.from(_tagsForIndex(_currentIndex));
+      final list =
+          List<Map<String, dynamic>>.from(_tagsForIndex(_currentIndex));
       list.add({
         'id': id,
         'x': _pendingX,
@@ -185,7 +199,8 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
 
   void _removeTag(String id) {
     setState(() {
-      final list = List<Map<String, dynamic>>.from(_tagsForIndex(_currentIndex));
+      final list =
+          List<Map<String, dynamic>>.from(_tagsForIndex(_currentIndex));
       list.removeWhere((t) => t['id'] == id);
       _setTagsForIndex(_currentIndex, list);
       if (_selectedTagId == id) _selectedTagId = null;
@@ -225,18 +240,40 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
     const lr = 0.2126, lg = 0.7152, lb = 0.0722;
     final scale = c * b;
     return [
-      (invSat * lr + s) * scale, invSat * lg * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, (invSat * lg + s) * scale, invSat * lb * scale, 0, 0,
-      invSat * lr * scale, invSat * lg * scale, (invSat * lb + s) * scale, 0, 0,
-      0, 0, 0, 1, 0,
+      (invSat * lr + s) * scale,
+      invSat * lg * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      (invSat * lg + s) * scale,
+      invSat * lb * scale,
+      0,
+      0,
+      invSat * lr * scale,
+      invSat * lg * scale,
+      (invSat * lb + s) * scale,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
   }
 
-  List<double> _buildFilterMatrixBase({double brightness = 1, double contrast = 1, double saturation = 1}) {
-    return _buildAdjustmentMatrix(brightness: brightness, contrast: contrast, saturation: saturation);
+  List<double> _buildFilterMatrixBase(
+      {double brightness = 1, double contrast = 1, double saturation = 1}) {
+    return _buildAdjustmentMatrix(
+        brightness: brightness, contrast: contrast, saturation: saturation);
   }
 
-  List<double> _buildSepiaMatrix({double amount = 0.2, double brightness = 1.0, double contrast = 1.0, double saturation = 1.0}) {
+  List<double> _buildSepiaMatrix(
+      {double amount = 0.2,
+      double brightness = 1.0,
+      double contrast = 1.0,
+      double saturation = 1.0}) {
     final t = 1 - amount;
     final r = 0.393 + 0.607 * t;
     final g = 0.769 - 0.769 * amount;
@@ -247,12 +284,29 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
     final r3 = 0.272 - 0.272 * amount;
     final g3 = 0.534 - 0.534 * amount;
     final b3 = 0.131 + 0.869 * t;
-    final adj = _buildAdjustmentMatrix(brightness: brightness, contrast: contrast, saturation: saturation);
+    final adj = _buildAdjustmentMatrix(
+        brightness: brightness, contrast: contrast, saturation: saturation);
     final List<double> sepia = [
-      r, g, b, 0.0, 0.0,
-      r2, g2, b2, 0.0, 0.0,
-      r3, g3, b3, 0.0, 0.0,
-      0.0, 0.0, 0.0, 1.0, 0.0,
+      r,
+      g,
+      b,
+      0.0,
+      0.0,
+      r2,
+      g2,
+      b2,
+      0.0,
+      0.0,
+      r3,
+      g3,
+      b3,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
     ];
     return _combineColorMatrices(adj, sepia);
   }
@@ -262,27 +316,38 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
     final key = lower.replaceAll('&', 'and').replaceAll(' ', '_');
     switch (name) {
       case 'Clarendon':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.2, saturation: 1.25);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.2, saturation: 1.25);
       case 'Gingham':
-        return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.0, saturation: 1.0);
+        return _buildFilterMatrixBase(
+            brightness: 1.05, contrast: 1.0, saturation: 1.0);
       case 'Moon':
-        return _buildFilterMatrixBase(brightness: 1.1, contrast: 1.1, saturation: 0.0);
+        return _buildFilterMatrixBase(
+            brightness: 1.1, contrast: 1.1, saturation: 0.0);
       case 'Lark':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 0.9, saturation: 1.0);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 0.9, saturation: 1.0);
       case 'Reyes':
-        return _buildSepiaMatrix(amount: 0.22, brightness: 1.1, contrast: 0.85, saturation: 0.75);
+        return _buildSepiaMatrix(
+            amount: 0.22, brightness: 1.1, contrast: 0.85, saturation: 0.75);
       case 'Juno':
-        return _buildSepiaMatrix(amount: 0.2, brightness: 1.1, contrast: 1.2, saturation: 1.4);
+        return _buildSepiaMatrix(
+            amount: 0.2, brightness: 1.1, contrast: 1.2, saturation: 1.4);
       case 'Slumber':
-        return _buildSepiaMatrix(amount: 0.2, brightness: 1.05, contrast: 1.0, saturation: 0.66);
+        return _buildSepiaMatrix(
+            amount: 0.2, brightness: 1.05, contrast: 1.0, saturation: 0.66);
       case 'Crema':
-        return _buildSepiaMatrix(amount: 0.2, brightness: 1.0, contrast: 0.9, saturation: 0.9);
+        return _buildSepiaMatrix(
+            amount: 0.2, brightness: 1.0, contrast: 0.9, saturation: 0.9);
       case 'Ludwig':
-        return _buildFilterMatrixBase(brightness: 1.1, contrast: 0.9, saturation: 0.9);
+        return _buildFilterMatrixBase(
+            brightness: 1.1, contrast: 0.9, saturation: 0.9);
       case 'Aden':
-        return _buildFilterMatrixBase(brightness: 1.2, contrast: 0.9, saturation: 0.85);
+        return _buildFilterMatrixBase(
+            brightness: 1.2, contrast: 0.9, saturation: 0.85);
       case 'Perpetua':
-        return _buildFilterMatrixBase(brightness: 1.1, contrast: 1.1, saturation: 1.1);
+        return _buildFilterMatrixBase(
+            brightness: 1.1, contrast: 1.1, saturation: 1.1);
       case 'Original':
       default:
         break;
@@ -290,26 +355,36 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
     switch (key) {
       case 'none':
       case 'original':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.0, saturation: 1.0);
       case 'vintage':
-        return _buildSepiaMatrix(amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
+        return _buildSepiaMatrix(
+            amount: 0.35, brightness: 1.05, contrast: 0.95, saturation: 0.9);
       case 'black_white':
       case 'black_and_white':
-        return _buildFilterMatrixBase(brightness: 1.1, contrast: 1.1, saturation: 0.0);
+        return _buildFilterMatrixBase(
+            brightness: 1.1, contrast: 1.1, saturation: 0.0);
       case 'warm':
-        return _buildSepiaMatrix(amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
+        return _buildSepiaMatrix(
+            amount: 0.25, brightness: 1.05, contrast: 1.0, saturation: 1.1);
       case 'cool':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 0.85);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.0, saturation: 0.85);
       case 'dramatic':
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.3, saturation: 1.2);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.3, saturation: 1.2);
       case 'beauty':
-        return _buildSepiaMatrix(amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
+        return _buildSepiaMatrix(
+            amount: 0.15, brightness: 1.1, contrast: 1.05, saturation: 1.05);
       case 'ar_effect_1':
-        return _buildFilterMatrixBase(brightness: 1.05, contrast: 1.05, saturation: 1.2);
+        return _buildFilterMatrixBase(
+            brightness: 1.05, contrast: 1.05, saturation: 1.2);
       case 'ar_effect_2':
-        return _buildFilterMatrixBase(brightness: 0.95, contrast: 1.1, saturation: 0.9);
+        return _buildFilterMatrixBase(
+            brightness: 0.95, contrast: 1.1, saturation: 0.9);
       default:
-        return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+        return _buildFilterMatrixBase(
+            brightness: 1.0, contrast: 1.0, saturation: 1.0);
     }
   }
 
@@ -318,9 +393,16 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
     for (int r = 0; r < 4; r++) {
       final r0 = r * 5;
       for (int c = 0; c < 4; c++) {
-        out[r0 + c] = a[r0 + 0] * b[0 + c] + a[r0 + 1] * b[5 + c] + a[r0 + 2] * b[10 + c] + a[r0 + 3] * b[15 + c];
+        out[r0 + c] = a[r0 + 0] * b[0 + c] +
+            a[r0 + 1] * b[5 + c] +
+            a[r0 + 2] * b[10 + c] +
+            a[r0 + 3] * b[15 + c];
       }
-      out[r0 + 4] = a[r0 + 0] * b[4] + a[r0 + 1] * b[9] + a[r0 + 2] * b[14] + a[r0 + 3] * b[19] + a[r0 + 4];
+      out[r0 + 4] = a[r0 + 0] * b[4] +
+          a[r0 + 1] * b[9] +
+          a[r0 + 2] * b[14] +
+          a[r0 + 3] * b[19] +
+          a[r0 + 4];
     }
     out[15] = 0;
     out[16] = 0;
@@ -341,10 +423,10 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
       return const SizedBox();
     }
     if (widget.isVideos[index]) {
-      final coverPath = widget.coverPaths != null &&
-              index < (widget.coverPaths?.length ?? 0)
-          ? widget.coverPaths![index]
-          : null;
+      final coverPath =
+          widget.coverPaths != null && index < (widget.coverPaths?.length ?? 0)
+              ? widget.coverPaths![index]
+              : null;
       if (!_loggedPreviewIndexes.contains(index)) {
         _loggedPreviewIndexes.add(index);
         debugPrint(
@@ -355,7 +437,8 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
         );
       }
       if (coverPath != null && File(coverPath).existsSync()) {
-        debugPrint('[TagPeopleScreen] using cover for index=$index: $coverPath');
+        debugPrint(
+            '[TagPeopleScreen] using cover for index=$index: $coverPath');
         return _applyFilteredImage(
           Image.file(File(coverPath), fit: BoxFit.cover),
           index,
@@ -368,7 +451,8 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
           quality: 70,
         ),
         builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done || snap.data == null) {
+          if (snap.connectionState != ConnectionState.done ||
+              snap.data == null) {
             return Container(
               color: theme.colorScheme.surface,
               child: Center(
@@ -412,7 +496,8 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
     final s = ((adj['saturate'] ?? 0) / 100.0 + 1.0) * luxS;
     final opacity = 1.0 - (adj['opacity'] ?? 0) / 100.0;
     final presetMatrix = _filterMatrixFor(widget.filterNames[index]);
-    final adjustmentMatrix = _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
+    final adjustmentMatrix =
+        _buildAdjustmentMatrix(brightness: b, contrast: c, saturation: s);
     return Opacity(
       opacity: opacity.clamp(0.0, 1.0),
       child: ColorFiltered(
@@ -472,145 +557,217 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                   builder: (context) {
                     final screenW = MediaQuery.of(context).size.width;
                     final side = math.min(screenW * 0.78, 340.0);
+                    final aspect = _aspectForIndex(_currentIndex);
+                    final height = side / aspect;
                     return Padding(
                       padding: const EdgeInsets.only(top: 14, bottom: 14),
                       child: Center(
                         child: SizedBox(
                           width: side,
-                          height: side,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
-                          child: PageView.builder(
-                            controller: _pageController,
-                            itemCount: widget.mediaPaths.length,
-                            onPageChanged: (i) {
-                              setState(() {
-                                _currentIndex = i;
-                                _selectedTagId = null;
-                                _draggingTagId = null;
-                                _showSearch = false;
-                              });
-                            },
-                            itemBuilder: (context, index) {
-                              return LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final size = constraints.biggest;
-                                  final tags = _tagsForIndex(index);
-                                  return GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTapUp: (d) {
-                                      if (_currentIndex != index) return;
-                                      if (_tapStartedOnTag || _draggingTagId != null) {
-                                        _tapStartedOnTag = false;
-                                        return;
-                                      }
-                                      setState(() => _selectedTagId = null);
-                                      _openSearchAt(d.localPosition, size);
-                                    },
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        _buildMediaPreview(index),
-                                        for (final t in tags)
-                                          Positioned(
-                                            left: (((t['x'] as num?)?.toDouble() ?? 0.5) * size.width) - 8,
-                                            top: (((t['y'] as num?)?.toDouble() ?? 0.5) * size.height) - 34,
-                                            child: GestureDetector(
-                                              behavior: HitTestBehavior.opaque,
-                                              onTapDown: (_) => _tapStartedOnTag = true,
-                                              onTap: () {
-                                                if (_currentIndex != index) return;
-                                                setState(() {
-                                                  final id = (t['id'] ?? '').toString();
-                                                  _selectedTagId = (_selectedTagId == id) ? null : id;
-                                                });
-                                                _tapStartedOnTag = false;
-                                              },
-                                              onPanStart: (_) {
-                                                if (_currentIndex != index) return;
-                                                _tapStartedOnTag = true;
-                                                setState(() {
-                                                  final id = (t['id'] ?? '').toString();
-                                                  _draggingTagId = id;
-                                                  _selectedTagId = id;
-                                                });
-                                              },
-                                              onPanUpdate: (d) {
-                                                if (_currentIndex != index) return;
-                                                final id = (t['id'] ?? '').toString();
-                                                if (_draggingTagId != id) return;
-                                                _moveTagByDelta(id, d.delta, size);
-                                              },
-                                              onPanEnd: (_) {
-                                                if (_currentIndex != index) return;
-                                                _tapStartedOnTag = false;
-                                                setState(() => _draggingTagId = null);
-                                              },
-                                              onPanCancel: () {
-                                                if (_currentIndex != index) return;
-                                                _tapStartedOnTag = false;
-                                                setState(() => _draggingTagId = null);
-                                              },
-                                              child: Stack(
-                                                clipBehavior: Clip.none,
-                                                children: [
-                                                  Container(
-                                                    padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.black.withValues(
-                                                        alpha: isDark ? 0.65 : 0.5,
-                                                      ),
-                                                      borderRadius: BorderRadius.circular(14),
-                                                    ),
-                                                    child: Text(
-                                                      ((t['user'] as Map<String, dynamic>)['username'] as String?) ?? '',
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontWeight: FontWeight.w600,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  if (_selectedTagId == (t['id'] ?? '').toString())
-                                                    Positioned(
-                                                      top: -6,
-                                                      right: -6,
-                                                      child: GestureDetector(
-                                                        behavior: HitTestBehavior.opaque,
-                                                        onTapDown: (_) => _tapStartedOnTag = true,
-                                                        onTap: () {
-                                                          if (_currentIndex != index) return;
-                                                          _tapStartedOnTag = false;
-                                                          _removeTag((t['id'] ?? '').toString());
-                                                        },
-                                                        child: Container(
-                                                          width: 18,
-                                                          height: 18,
-                                                          decoration: BoxDecoration(
-                                                            color: Colors.black.withValues(
-                                                              alpha: isDark ? 0.75 : 0.6,
-                                                            ),
-                                                            shape: BoxShape.circle,
-                                                            border: Border.all(color: Colors.white24, width: 1),
+                          height: height,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: PageView.builder(
+                              controller: _pageController,
+                              itemCount: widget.mediaPaths.length,
+                              onPageChanged: (i) {
+                                setState(() {
+                                  _currentIndex = i;
+                                  _selectedTagId = null;
+                                  _draggingTagId = null;
+                                  _showSearch = false;
+                                });
+                              },
+                              itemBuilder: (context, index) {
+                                return LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final size = constraints.biggest;
+                                    final tags = _tagsForIndex(index);
+                                    return GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTapUp: (d) {
+                                        if (_currentIndex != index) return;
+                                        if (_tapStartedOnTag ||
+                                            _draggingTagId != null) {
+                                          _tapStartedOnTag = false;
+                                          return;
+                                        }
+                                        setState(() => _selectedTagId = null);
+                                        _openSearchAt(d.localPosition, size);
+                                      },
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          _buildMediaPreview(index),
+                                          for (final t in tags)
+                                            Positioned(
+                                              left: (((t['x'] as num?)
+                                                          ?.toDouble() ??
+                                                      0.5) *
+                                                  size.width),
+                                              top: (((t['y'] as num?)
+                                                          ?.toDouble() ??
+                                                      0.5) *
+                                                  size.height),
+                                              child: FractionalTranslation(
+                                                translation:
+                                                    const Offset(-0.5, -0.5),
+                                                child: GestureDetector(
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  onTapDown: (_) =>
+                                                      _tapStartedOnTag = true,
+                                                  onTap: () {
+                                                    if (_currentIndex != index)
+                                                      return;
+                                                    setState(() {
+                                                      final id = (t['id'] ?? '')
+                                                          .toString();
+                                                      _selectedTagId =
+                                                          (_selectedTagId == id)
+                                                              ? null
+                                                              : id;
+                                                    });
+                                                    _tapStartedOnTag = false;
+                                                  },
+                                                  onPanStart: (_) {
+                                                    if (_currentIndex != index)
+                                                      return;
+                                                    _tapStartedOnTag = true;
+                                                    setState(() {
+                                                      final id = (t['id'] ?? '')
+                                                          .toString();
+                                                      _draggingTagId = id;
+                                                      _selectedTagId = id;
+                                                    });
+                                                  },
+                                                  onPanUpdate: (d) {
+                                                    if (_currentIndex != index)
+                                                      return;
+                                                    final id = (t['id'] ?? '')
+                                                        .toString();
+                                                    if (_draggingTagId != id)
+                                                      return;
+                                                    _moveTagByDelta(
+                                                        id, d.delta, size);
+                                                  },
+                                                  onPanEnd: (_) {
+                                                    if (_currentIndex != index)
+                                                      return;
+                                                    _tapStartedOnTag = false;
+                                                    setState(() =>
+                                                        _draggingTagId = null);
+                                                  },
+                                                  onPanCancel: () {
+                                                    if (_currentIndex != index)
+                                                      return;
+                                                    _tapStartedOnTag = false;
+                                                    setState(() =>
+                                                        _draggingTagId = null);
+                                                  },
+                                                  child: Stack(
+                                                    clipBehavior: Clip.none,
+                                                    children: [
+                                                      Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .fromLTRB(
+                                                                10, 6, 10, 6),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: Colors.black
+                                                              .withValues(
+                                                            alpha: isDark
+                                                                ? 0.65
+                                                                : 0.5,
                                                           ),
-                                                          child: const Center(
-                                                            child: Icon(Icons.close, size: 12, color: Colors.white),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(14),
+                                                        ),
+                                                        child: Text(
+                                                          ((t['user'] as Map<
+                                                                          String,
+                                                                          dynamic>)[
+                                                                      'username']
+                                                                  as String?) ??
+                                                              '',
+                                                          style:
+                                                              const TextStyle(
+                                                            color: Colors.white,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            fontSize: 12,
                                                           ),
                                                         ),
                                                       ),
-                                                    ),
-                                                ],
+                                                      if (_selectedTagId ==
+                                                          (t['id'] ?? '')
+                                                              .toString())
+                                                        Positioned(
+                                                          top: -6,
+                                                          right: -6,
+                                                          child:
+                                                              GestureDetector(
+                                                            behavior:
+                                                                HitTestBehavior
+                                                                    .opaque,
+                                                            onTapDown: (_) =>
+                                                                _tapStartedOnTag =
+                                                                    true,
+                                                            onTap: () {
+                                                              if (_currentIndex !=
+                                                                  index) return;
+                                                              _tapStartedOnTag =
+                                                                  false;
+                                                              _removeTag((t[
+                                                                          'id'] ??
+                                                                      '')
+                                                                  .toString());
+                                                            },
+                                                            child: Container(
+                                                              width: 18,
+                                                              height: 18,
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                color: Colors
+                                                                    .black
+                                                                    .withValues(
+                                                                  alpha: isDark
+                                                                      ? 0.75
+                                                                      : 0.6,
+                                                                ),
+                                                                shape: BoxShape
+                                                                    .circle,
+                                                                border: Border.all(
+                                                                    color: Colors
+                                                                        .white24,
+                                                                    width: 1),
+                                                              ),
+                                                              child:
+                                                                  const Center(
+                                                                child: Icon(
+                                                                    Icons.close,
+                                                                    size: 12,
+                                                                    color: Colors
+                                                                        .white),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              );
-                            },
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                           ),
-                        ),
                         ),
                       ),
                     );
@@ -637,25 +794,40 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                             itemBuilder: (context, i) {
                               final t = currentTags[i];
                               final user = (t['user'] as Map<String, dynamic>);
-                              final username = (user['username'] as String?) ?? '';
-                              final fullName = (user['full_name'] as String?) ?? '';
-                              final avatar = (user['avatar_url'] as String?) ?? '';
+                              final username =
+                                  (user['username'] as String?) ?? '';
+                              final fullName =
+                                  (user['full_name'] as String?) ?? '';
+                              final avatar =
+                                  (user['avatar_url'] as String?) ?? '';
                               final id = (t['id'] ?? '').toString();
                               return ListTile(
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
                                 leading: CircleAvatar(
                                   radius: 16,
-                                  backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
-                                  child: avatar.isEmpty ? const Icon(LucideIcons.user, size: 16) : null,
+                                  backgroundImage: avatar.isNotEmpty
+                                      ? NetworkImage(avatar)
+                                      : null,
+                                  child: avatar.isEmpty
+                                      ? const Icon(LucideIcons.user, size: 16)
+                                      : null,
                                 ),
-                                title: Text(username, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 14)),
-                                subtitle: Text(fullName, style: TextStyle(color: muted, fontSize: 12)),
+                                title: Text(username,
+                                    style: TextStyle(
+                                        color: fg,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14)),
+                                subtitle: Text(fullName,
+                                    style:
+                                        TextStyle(color: muted, fontSize: 12)),
                                 trailing: IconButton(
                                   onPressed: () => _removeTag(id),
-                                  icon: Icon(Icons.close, color: muted, size: 18),
+                                  icon:
+                                      Icon(Icons.close, color: muted, size: 18),
                                 ),
-                                onTap: () => setState(() => _selectedTagId = id),
+                                onTap: () =>
+                                    setState(() => _selectedTagId = id),
                               );
                             },
                           ),
@@ -715,12 +887,16 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                         decoration: InputDecoration(
                           hintText: 'Search user',
                           hintStyle: TextStyle(color: muted),
-                          prefixIcon: Icon(LucideIcons.search, size: 18, color: muted),
+                          prefixIcon:
+                              Icon(LucideIcons.search, size: 18, color: muted),
                           filled: true,
                           fillColor: theme.colorScheme.surfaceContainerHighest
                               .withValues(alpha: 0.6),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
                         ),
                         onChanged: _search,
                       ),
@@ -728,31 +904,50 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                       SizedBox(
                         height: 260,
                         child: _isSearching
-                            ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                            ? const Center(
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2))
                             : _results.isEmpty
                                 ? Center(
                                     child: Text(
-                                      _lastQuery.isEmpty ? 'Type a name to search...' : 'No users found',
-                                      style: TextStyle(color: muted, fontSize: 12),
+                                      _lastQuery.isEmpty
+                                          ? 'Type a name to search...'
+                                          : 'No users found',
+                                      style:
+                                          TextStyle(color: muted, fontSize: 12),
                                     ),
                                   )
                                 : ListView.builder(
                                     itemCount: _results.length,
                                     itemBuilder: (_, i) {
                                       final u = _results[i];
-                                      final username = (u['username'] as String?) ?? '';
-                                      final fullName = (u['full_name'] as String?) ?? '';
-                                      final avatar = (u['avatar_url'] as String?) ?? '';
+                                      final username =
+                                          (u['username'] as String?) ?? '';
+                                      final fullName =
+                                          (u['full_name'] as String?) ?? '';
+                                      final avatar =
+                                          (u['avatar_url'] as String?) ?? '';
                                       return ListTile(
                                         dense: true,
                                         contentPadding: EdgeInsets.zero,
                                         leading: CircleAvatar(
                                           radius: 16,
-                                          backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
-                                          child: avatar.isEmpty ? const Icon(LucideIcons.user, size: 16) : null,
+                                          backgroundImage: avatar.isNotEmpty
+                                              ? NetworkImage(avatar)
+                                              : null,
+                                          child: avatar.isEmpty
+                                              ? const Icon(LucideIcons.user,
+                                                  size: 16)
+                                              : null,
                                         ),
-                                        title: Text(username, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 14)),
-                                        subtitle: Text(fullName, style: TextStyle(color: muted, fontSize: 12)),
+                                        title: Text(username,
+                                            style: TextStyle(
+                                                color: fg,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14)),
+                                        subtitle: Text(fullName,
+                                            style: TextStyle(
+                                                color: muted, fontSize: 12)),
                                         onTap: () => _addTag(u),
                                       );
                                     },
@@ -768,5 +963,4 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
       ),
     );
   }
-
 }
