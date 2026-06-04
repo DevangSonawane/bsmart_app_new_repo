@@ -1862,6 +1862,19 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     return 1.0;
   }
 
+  bool _shouldRenderMention(
+      Map<String, dynamic> mention, List<dynamic> textData) {
+    final username = (mention['username'] as String?)?.trim() ?? '';
+    if (username.isEmpty) return false;
+    for (final t in textData) {
+      final content = (t['content'] as String?) ?? '';
+      if (content.contains('@$username')) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   String _mentionUserId(Map<String, dynamic> mention) {
     final direct =
         (mention['user_id'] ?? mention['userId'] ?? mention['id'])?.toString();
@@ -2211,7 +2224,13 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                 ),
               );
             }).toList()),
-            ...((story.mentions ?? const []).asMap().entries.map((e) {
+            ...((story.mentions ?? const [])
+                .where((mention) =>
+                    _shouldRenderMention(mention, story.texts ?? const []))
+                .toList()
+                .asMap()
+                .entries
+                .map((e) {
               final m = e.value as Map? ?? const {};
               final left = ((m['x'] as num?) ?? 0) * w;
               final top = ((m['y'] as num?) ?? 0) * h;
