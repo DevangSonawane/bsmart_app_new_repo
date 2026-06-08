@@ -34,6 +34,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _loggingOut = false;
+  bool _deactivatingAccount = false;
   bool _deletingAccount = false;
   bool _clearingCache = false;
   bool _loadingContext = true;
@@ -158,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text('Delete Account'),
+          title: const Text('Delete Account Permanently'),
           content: const Text(
             'This build does not yet have a live delete-account API wired up. '
             'You can still review the flow here and we can connect the backend next.',
@@ -192,6 +193,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     } finally {
       if (mounted) setState(() => _deletingAccount = false);
+    }
+  }
+
+  Future<void> _showDeactivateAccountDialog() async {
+    if (_deactivatingAccount) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Deactivate Account'),
+          content: const Text(
+            'This build does not yet have a live deactivate-account API wired up. '
+            'We can connect it later, but for now this will only show the flow.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.orange.shade700,
+              ),
+              child: const Text('Continue'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+    setState(() => _deactivatingAccount = true);
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Deactivate account flow is not connected yet.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _deactivatingAccount = false);
     }
   }
 
@@ -295,7 +339,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: LucideIcons.wallet,
             label: 'Rewards & Wallet',
             subLabel: 'Coins, history, and balances',
-            onTap: () => _push(const WalletScreen()),
+            onTap: () => Navigator.of(context).pushNamed('/wallet'),
           ),
           if (_isCreator) ...[
             _settingTile(
@@ -352,7 +396,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => _push(_AboutScreen(packageInfo: _info)),
           ),
           const SizedBox(height: 20),
-          _sectionTitle('Actions'),
+          _sectionTitle('Account Actions'),
+          _sectionTitle('Session Controls'),
           _destructiveActionCard(
             icon: LucideIcons.logOut,
             title: _loggingOut ? 'Logging out...' : 'Logout',
@@ -360,10 +405,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             loading: _loggingOut,
             onTap: _loggingOut ? null : _logout,
           ),
+          const SizedBox(height: 20),
+          _sectionTitle('Account Controls'),
+          _destructiveActionCard(
+            icon: LucideIcons.userX,
+            title: _deactivatingAccount
+                ? 'Preparing deactivate flow...'
+                : 'Deactivate Account',
+            subtitle: 'Temporarily disable your account',
+            loading: _deactivatingAccount,
+            onTap: _deactivatingAccount ? null : _showDeactivateAccountDialog,
+            danger: false,
+          ),
           const SizedBox(height: 12),
           _destructiveActionCard(
             icon: LucideIcons.trash2,
-            title: _deletingAccount ? 'Preparing delete flow...' : 'Delete Account',
+            title: _deletingAccount
+                ? 'Preparing delete flow...'
+                : 'Delete Account Permanently',
             subtitle: 'Request permanent account removal',
             loading: _deletingAccount,
             onTap: _deletingAccount ? null : _showDeleteAccountDialog,
@@ -845,43 +904,402 @@ class _BlockedRestrictedScreen extends StatelessWidget {
   }
 }
 
-class _StorageDataScreen extends StatelessWidget {
+class _StorageDataScreen extends StatefulWidget {
   final Future<void> Function() onClearCache;
 
   const _StorageDataScreen({required this.onClearCache});
 
   @override
+  State<_StorageDataScreen> createState() => _StorageDataScreenState();
+}
+
+class _StorageDataScreenState extends State<_StorageDataScreen> {
+  bool _mobileDataSaver = false;
+  bool _wifiOnlyDownloads = true;
+  final int _cachedImagesMb = 184;
+  final int _cachedVideosMb = 512;
+  final int _cachedDocumentsMb = 48;
+
+  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final totalStorage = _cachedImagesMb + _cachedVideosMb + _cachedDocumentsMb;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Storage & Data')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _infoCard(
-            context,
-            title: 'Local storage',
-            subtitle: 'Clear cached media and review app data usage from this screen.',
-            icon: LucideIcons.databaseZap,
-          ),
-          const SizedBox(height: 12),
-          _centerTile(
-            context,
-            icon: LucideIcons.wandSparkles,
-            title: 'Clear cache',
-            subtitle: 'Remove cached images and downloaded assets',
-            onTap: () async {
-              await onClearCache();
-            },
-          ),
-          _centerTile(
-            context,
-            icon: LucideIcons.messageSquareMore,
-            title: 'Floating message bubble',
-            subtitle: 'Toggle the persistent message shortcut from the main app',
-            onTap: () => Navigator.of(context).maybePop(),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text('Storage & Data'),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        bottom: true,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            _storageHeader(isDark, totalStorage),
+            const SizedBox(height: 20),
+            _sectionTitle('Storage'),
+            _settingsCard(
+              children: [
+                _actionRow(
+                  icon: LucideIcons.wandSparkles,
+                  title: 'Clear Cache',
+                  subtitle: 'Remove cached images and downloaded assets.',
+                  onTap: _clearCache,
+                  trailing: const Text(
+                    'Recommended',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  icon: LucideIcons.download,
+                  title: 'Downloaded Media',
+                  subtitle: 'Manage files saved for offline access.',
+                  onTap: () => _showUnavailable('Downloaded Media'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Data Usage'),
+            _settingsCard(
+              children: [
+                SwitchListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  title: const Text('Mobile Data Saver'),
+                  subtitle: const Text('Reduce data usage when on cellular data.'),
+                  value: _mobileDataSaver,
+                  activeThumbColor: DesignTokens.instaPink,
+                  activeTrackColor:
+                      DesignTokens.instaPink.withValues(alpha: 0.35),
+                  inactiveThumbColor:
+                      isDark ? const Color(0xFFE5E7EB) : const Color(0xFF4B5563),
+                  inactiveTrackColor:
+                      isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB),
+                  onChanged: (value) {
+                    setState(() => _mobileDataSaver = value);
+                    _showUnavailable(
+                      'Mobile Data Saver is local-only in this build.',
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  title: const Text('Wi-Fi Only Downloads'),
+                  subtitle:
+                      const Text('Only download media when connected to Wi-Fi.'),
+                  value: _wifiOnlyDownloads,
+                  activeThumbColor: DesignTokens.instaPink,
+                  activeTrackColor:
+                      DesignTokens.instaPink.withValues(alpha: 0.35),
+                  inactiveThumbColor:
+                      isDark ? const Color(0xFFE5E7EB) : const Color(0xFF4B5563),
+                  inactiveTrackColor:
+                      isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB),
+                  onChanged: (value) {
+                    setState(() => _wifiOnlyDownloads = value);
+                    _showUnavailable(
+                      'Wi-Fi Only Downloads is local-only in this build.',
+                    );
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Storage Breakdown'),
+            _settingsCard(
+              children: [
+                _breakdownRow(
+                  label: 'Images',
+                  valueMb: _cachedImagesMb,
+                  color: DesignTokens.instaPink,
+                ),
+                const Divider(height: 1),
+                _breakdownRow(
+                  label: 'Videos',
+                  valueMb: _cachedVideosMb,
+                  color: DesignTokens.instaOrange,
+                ),
+                const Divider(height: 1),
+                _breakdownRow(
+                  label: 'Documents',
+                  valueMb: _cachedDocumentsMb,
+                  color: DesignTokens.instaPurple,
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _infoCard(isDark, totalStorage),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _storageHeader(bool isDark, int totalStorage) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: DesignTokens.instaGradient,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            child: const Icon(
+              Icons.storage_outlined,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Storage & data',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$totalStorage MB cached locally',
+                  style: const TextStyle(color: Colors.white, height: 1.3),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        title.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: DesignTokens.instaPink,
+          letterSpacing: 0.7,
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsCard({required List<Widget> children}) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.08)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(children: children),
+      ),
+    );
+  }
+
+  Widget _actionRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    Widget? trailing,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: DesignTokens.instaPink.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: DesignTokens.instaPink, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: labelColor,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: hintColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 12),
+              trailing,
+            ],
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: hintColor, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _breakdownRow({
+    required String label,
+    required int valueMb,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final total = (_cachedImagesMb + _cachedVideosMb + _cachedDocumentsMb).clamp(1, 999999);
+    final percent = valueMb / total;
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.circle, color: color, size: 14),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: labelColor,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    minHeight: 6,
+                    value: percent,
+                    backgroundColor: hintColor.withValues(alpha: 0.15),
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '$valueMb MB',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: hintColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCard(bool isDark, int totalStorage) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: isDark ? const Color(0xFF111827) : const Color(0xFFF8FAFC),
+        border: Border.all(
+          color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            LucideIcons.info,
+            color: DesignTokens.instaPink,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Clear cache is the only action that connects to a real local cleanup right now. '
+              'Downloaded Media, Data Usage, and the breakdown rows represent about $totalStorage MB of cached content right now, and can be connected later if a backend endpoint is added.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: Theme.of(context).textTheme.bodyMedium?.color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _clearCache() async {
+    await widget.onClearCache();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Cache cleared')),
+    );
+  }
+
+  void _showUnavailable(String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('No API exists yet for $label.')),
     );
   }
 }
@@ -893,51 +1311,288 @@ class _HelpSupportScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Help & Support')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _infoCard(
-            context,
-            title: 'Need help?',
-            subtitle: 'Start here for support requests, feedback, and troubleshooting guidance.',
-            icon: Icons.help_outline,
-          ),
-          const SizedBox(height: 12),
-          _centerTile(
-            context,
-            icon: Icons.mail_outline,
-            title: 'Contact support',
-            subtitle: 'Send a message to the support inbox',
-            onTap: () async {
-              await onContactSupport();
-            },
-          ),
-          _centerTile(
-            context,
-            icon: Icons.bug_report_outlined,
-            title: 'Report a problem',
-            subtitle: 'Share bugs, crashes, or unexpected behavior',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Report flow will be connected next.')),
-              );
-            },
-          ),
-          _centerTile(
-            context,
-            icon: Icons.quiz_outlined,
-            title: 'FAQ',
-            subtitle: 'Common questions and account guidance',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('FAQ page is coming soon.')),
-              );
-            },
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text('Help & Support'),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        bottom: true,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            _headerCard(isDark),
+            const SizedBox(height: 20),
+            _sectionTitle('Support'),
+            _settingsCard(
+              context,
+              children: [
+                _actionRow(
+                  context,
+                  icon: Icons.mail_outline,
+                  title: 'Contact Support',
+                  subtitle: 'Email the support inbox for account help and troubleshooting.',
+                  onTap: () async {
+                    await onContactSupport();
+                  },
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.confirmation_num_outlined,
+                  title: 'Raise a Ticket',
+                  subtitle: 'Create a support request for follow-up.',
+                  onTap: () => _showUnavailable(context, 'Raise a Ticket'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.chat_bubble_outline,
+                  title: 'Live Chat',
+                  subtitle: 'Chat with support in real time.',
+                  onTap: () => _showUnavailable(context, 'Live Chat'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Resources'),
+            _settingsCard(
+              context,
+              children: [
+                _actionRow(
+                  context,
+                  icon: Icons.quiz_outlined,
+                  title: 'FAQs',
+                  subtitle: 'Common questions and quick answers.',
+                  onTap: () => _showUnavailable(context, 'FAQs'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.video_library_outlined,
+                  title: 'Tutorials',
+                  subtitle: 'Step-by-step walkthroughs and how-to videos.',
+                  onTap: () => _showUnavailable(context, 'Tutorials'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.menu_book_outlined,
+                  title: 'User Guide',
+                  subtitle: 'Learn how to use bSmart features and tools.',
+                  onTap: () => _showUnavailable(context, 'User Guide'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Reports'),
+            _settingsCard(
+              context,
+              children: [
+                _actionRow(
+                  context,
+                  icon: Icons.bug_report_outlined,
+                  title: 'Report a Bug',
+                  subtitle: 'Flag crashes, layout issues, or broken flows.',
+                  onTap: () => _showUnavailable(context, 'Report a Bug'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.flag_outlined,
+                  title: 'Report Content',
+                  subtitle: 'Report posts, reels, or ads that violate rules.',
+                  onTap: () => _showUnavailable(context, 'Report Content'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.person_off_outlined,
+                  title: 'Report a User',
+                  subtitle: 'Report harassment, spam, or abuse.',
+                  onTap: () => _showUnavailable(context, 'Report a User'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _infoCard(
+              context,
+              title: 'Help hub',
+              subtitle:
+                  'Contact Support is wired to email right now. The rest of the help items are shown in the new hub layout and will show a snackbar until their flows are connected.',
+              icon: Icons.support_agent,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _headerCard(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: DesignTokens.instaGradient,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            child: const Icon(
+              Icons.help_outline,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Help & support',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Support, resources, and reporting tools in one place.',
+                  style: TextStyle(
+                    color: Colors.white,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        title.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: DesignTokens.instaPink,
+          letterSpacing: 0.7,
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsCard(
+    BuildContext context, {
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.08)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(children: children),
+      ),
+    );
+  }
+
+  Widget _actionRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
+    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: DesignTokens.instaPink.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: DesignTokens.instaPink, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: labelColor,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: hintColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: hintColor, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showUnavailable(BuildContext context, String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('No API exists yet for $label.')),
     );
   }
 }
@@ -947,53 +1602,305 @@ class _LegalComplianceScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Legal & Compliance')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _infoCard(
-            context,
-            title: 'Policies and rules',
-            subtitle: 'Keep your account aligned with bSmart privacy, terms, and moderation rules.',
-            icon: Icons.gavel,
-          ),
-          const SizedBox(height: 12),
-          _centerTile(
-            context,
-            icon: Icons.privacy_tip,
-            title: 'Privacy policy',
-            subtitle: 'How data is collected and used',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Privacy policy page is coming soon.')),
-              );
-            },
-          ),
-          _centerTile(
-            context,
-            icon: Icons.article_outlined,
-            title: 'Terms of service',
-            subtitle: 'Rules for using bSmart',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Terms page is coming soon.')),
-              );
-            },
-          ),
-          _centerTile(
-            context,
-            icon: Icons.rule_outlined,
-            title: 'Community guidelines',
-            subtitle: 'Content and behavior standards',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Guidelines page is coming soon.')),
-              );
-            },
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text('Legal & Compliance'),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        bottom: true,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            _legalHeader(isDark),
+            const SizedBox(height: 20),
+            _sectionTitle('Legal Documents'),
+            _settingsCard(
+              context,
+              children: [
+                _actionRow(
+                  context,
+                  icon: Icons.article_outlined,
+                  title: 'Terms & Conditions',
+                  subtitle: 'Rules for using bSmart.',
+                  onTap: () => _showUnavailable(context, 'Terms & Conditions'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.privacy_tip_outlined,
+                  title: 'Privacy Policy',
+                  subtitle: 'How your data is collected and used.',
+                  onTap: () => _showUnavailable(context, 'Privacy Policy'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.receipt_long_outlined,
+                  title: 'Refund Policy',
+                  subtitle: 'Refund rules for purchases and services.',
+                  onTap: () => _showUnavailable(context, 'Refund Policy'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.rule_outlined,
+                  title: 'Community Guidelines',
+                  subtitle: 'Content and behavior standards.',
+                  onTap: () => _showUnavailable(context, 'Community Guidelines'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Data Controls'),
+            _settingsCard(
+              context,
+              children: [
+                _actionRow(
+                  context,
+                  icon: Icons.download_outlined,
+                  title: 'Download My Data',
+                  subtitle: 'Export your account data.',
+                  onTap: () => _showUnavailable(context, 'Download My Data'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.delete_outline,
+                  title: 'Delete My Data',
+                  subtitle: 'Request permanent deletion of stored data.',
+                  onTap: () => _showUnavailable(context, 'Delete My Data'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Consent Management'),
+            _settingsCard(
+              context,
+              children: [
+                _actionRow(
+                  context,
+                  icon: Icons.tune_outlined,
+                  title: 'Manage Consent Preferences',
+                  subtitle: 'Control optional data and communication consent.',
+                  onTap: () => _showUnavailable(
+                    context,
+                    'Manage Consent Preferences',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('DPDP Compliance'),
+            _settingsCard(
+              context,
+              children: [
+                _actionRow(
+                  context,
+                  icon: Icons.manage_search_outlined,
+                  title: 'Data Access Request',
+                  subtitle: 'Request a copy of your personal data.',
+                  onTap: () => _showUnavailable(context, 'Data Access Request'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.edit_outlined,
+                  title: 'Data Correction Request',
+                  subtitle: 'Request a correction to inaccurate data.',
+                  onTap: () =>
+                      _showUnavailable(context, 'Data Correction Request'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: Icons.delete_sweep_outlined,
+                  title: 'Data Deletion Request',
+                  subtitle: 'Request deletion under applicable law.',
+                  onTap: () =>
+                      _showUnavailable(context, 'Data Deletion Request'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _infoCard(
+              context,
+              title: 'Legal hub',
+              subtitle:
+                  'This page is organized to match the rest of settings. The listed legal/data requests are visible here, but they will show a snackbar until a dedicated backend flow is added.',
+              icon: Icons.gavel,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legalHeader(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: DesignTokens.instaGradient,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            child: const Icon(
+              Icons.gavel_outlined,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Legal & compliance',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Documents, data controls, consent, and DPDP request tools.',
+                  style: TextStyle(
+                    color: Colors.white,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        title.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: DesignTokens.instaPink,
+          letterSpacing: 0.7,
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsCard(
+    BuildContext context, {
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.08)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(children: children),
+      ),
+    );
+  }
+
+  Widget _actionRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
+    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: DesignTokens.instaPink.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: DesignTokens.instaPink, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: labelColor,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: hintColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: hintColor, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showUnavailable(BuildContext context, String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('No API exists yet for $label.')),
     );
   }
 }
@@ -1005,37 +1912,324 @@ class _AboutScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final versionText = packageInfo == null
         ? 'Version information loading...'
-        : 'Version ${packageInfo!.version} (${packageInfo!.buildNumber})';
+        : 'Version ${packageInfo!.version}';
+    final buildText = packageInfo == null
+        ? 'Build information loading...'
+        : 'Build ${packageInfo!.buildNumber}';
+
     return Scaffold(
-      appBar: AppBar(title: const Text('About bSmart')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _infoCard(
-            context,
-            title: 'bSmart',
-            subtitle: 'Social, creator, and vendor experiences in one app.',
-            icon: Icons.apps_outlined,
-          ),
-          const SizedBox(height: 12),
-          _centerTile(
-            context,
-            icon: LucideIcons.info,
-            title: 'App version',
-            subtitle: versionText,
-            onTap: () {},
-          ),
-          _centerTile(
-            context,
-            icon: LucideIcons.sparkles,
-            title: 'What is bSmart?',
-            subtitle: 'A short product overview and roadmap can live here.',
-            onTap: () {},
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text('About bSmart'),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        bottom: true,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            _aboutHeader(isDark),
+            const SizedBox(height: 20),
+            _sectionTitle('Application Information'),
+            _settingsCard(
+              context,
+              children: [
+                _detailRow(
+                  context,
+                  icon: Icons.apps_outlined,
+                  title: 'App Version',
+                  subtitle: versionText,
+                ),
+                const Divider(height: 1),
+                _detailRow(
+                  context,
+                  icon: Icons.tag_outlined,
+                  title: 'Build Number',
+                  subtitle: buildText,
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Company Information'),
+            _settingsCard(
+              context,
+              children: [
+                _detailRow(
+                  context,
+                  icon: Icons.business_outlined,
+                  title: 'RuVees IT Solution Pvt Ltd',
+                  subtitle: 'Built and maintained by the bSmart team.',
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Links'),
+            _settingsCard(
+              context,
+              children: [
+                _actionRow(
+                  context,
+                  icon: LucideIcons.globe,
+                  title: 'Website',
+                  subtitle: 'Visit the official website.',
+                  onTap: () => _showUnavailable(context, 'Website'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: LucideIcons.linkedin,
+                  title: 'LinkedIn',
+                  subtitle: 'Follow company updates and hiring news.',
+                  onTap: () => _showUnavailable(context, 'LinkedIn'),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  context,
+                  icon: LucideIcons.youtube,
+                  title: 'YouTube',
+                  subtitle: 'Watch tutorials, updates, and announcements.',
+                  onTap: () => _showUnavailable(context, 'YouTube'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _infoCard(
+              context,
+              title: 'About bSmart',
+              subtitle:
+                  'bSmart brings social, creator, and vendor experiences together in one app. The layout here now matches the rest of the settings flow.',
+              icon: Icons.info_outline,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _aboutHeader(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: DesignTokens.instaGradient,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            child: const Icon(
+              Icons.apps_outlined,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'About bSmart',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Application details, company info, and official links.',
+                  style: TextStyle(
+                    color: Colors.white,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        title.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: DesignTokens.instaPink,
+          letterSpacing: 0.7,
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsCard(
+    BuildContext context, {
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.08)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(children: children),
+      ),
+    );
+  }
+
+  Widget _detailRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
+    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: DesignTokens.instaPink.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: DesignTokens.instaPink, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: labelColor,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: hintColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
+    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: DesignTokens.instaPink.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: DesignTokens.instaPink, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: labelColor,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: hintColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: hintColor, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showUnavailable(BuildContext context, String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('No API exists yet for $label.')),
     );
   }
 }
