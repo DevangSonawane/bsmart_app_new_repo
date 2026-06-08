@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -39,6 +40,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    await EasyLocalization.ensureInitialized();
     await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform);
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -168,9 +170,26 @@ void main() async {
 
     runApp(StoreProvider<AppState>(
       store: store,
-      child: ThemeScope(
-        notifier: themeNotifier,
-        child: const BSmartApp(),
+      child: EasyLocalization(
+        supportedLocales: const [
+          Locale('en'),
+          Locale('hi'),
+          Locale('ta'),
+          Locale('te'),
+          Locale('kn'),
+          Locale('pa'),
+          Locale('bn'),
+          Locale('gu'),
+          Locale('mr'),
+        ],
+        path: 'assets/translations',
+        fallbackLocale: const Locale('en'),
+        saveLocale: true,
+        useOnlyLangCode: true,
+        child: ThemeScope(
+          notifier: themeNotifier,
+          child: const BSmartApp(),
+        ),
       ),
     ));
   }, (error, stack) {
@@ -303,6 +322,9 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
       title: 'b Smart',
       debugShowCheckedModeBanner: false,
       scrollBehavior: const _NoGlowScrollBehavior(),
+      locale: context.locale,
+      supportedLocales: context.supportedLocales,
+      localizationsDelegates: context.localizationDelegates,
       theme: AppTheme.theme,
       darkTheme: AppTheme.darkTheme,
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,

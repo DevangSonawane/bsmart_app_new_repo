@@ -39,6 +39,7 @@ dependencies:
   firebase_core: ^3.13.1
   firebase_messaging: ^15.2.5
   flutter_local_notifications: ^18.0.1
+  easy_localization: ^3.0.7
   image_picker: ^1.1.2
   flutter_chat_ui: ^1.6.15
   flutter_chat_types: ^3.6.2
@@ -101,3 +102,4 @@ flutter:
     - assets/images/logo.svg
     - assets/images/google_logo.svg
     - assets/banners/
+    - assets/translations/

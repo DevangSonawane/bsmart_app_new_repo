@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/design_tokens.dart';
 
@@ -11,6 +15,10 @@ class ContentSettingsScreen extends StatefulWidget {
 }
 
 class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
+  static const String _defaultLanguagePrefsKey = 'content_default_language';
+  static const String _optionalLanguagesPrefsKey =
+      'content_optional_languages';
+
   final Set<String> _selectedInterests = <String>{'Tech', 'Travel'};
   final Set<String> _followTopics = <String>{'Creativity', 'Business'};
 
@@ -21,21 +29,39 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
   bool _autoPlayVideos = true;
   bool _autoPlayPulse = false;
 
-  String _appLanguage = 'English';
   String _defaultLanguage = 'English';
-  final List<String> _optionalLanguages = <String>['Hindi', 'Spanish'];
+  final List<String> _optionalLanguages = <String>['Hindi', 'Tamil'];
   bool _autoTranslation = false;
+
+  static const List<String> _availableLanguages = <String>[
+    'English',
+    'Hindi',
+    'Tamil',
+    'Telugu',
+    'Kannada',
+    'Punjabi',
+    'Bengali',
+    'Gujarati',
+    'Marathi',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPreferences());
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bottomInset = MediaQuery.of(context).padding.bottom;
+    final appLanguage = _languageLabelForLocale(context.locale);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Content Preferences'),
+        title: Text('content_preferences_title'.tr()),
         centerTitle: true,
         elevation: 0,
       ),
@@ -46,16 +72,15 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
           children: [
             _headerCard(isDark),
             const SizedBox(height: 20),
-            _sectionTitle('Feed Preferences'),
+            _sectionTitle('content_preferences_feed_preferences'.tr()),
             _settingsCard(
               children: [
                 _actionRow(
                   icon: LucideIcons.sparkles,
-                  title: 'Select Interests',
-                  subtitle:
-                      _selectedInterests.isEmpty
-                          ? 'Choose topics you want more of'
-                          : _selectedInterests.join(' • '),
+                  title: 'content_preferences_select_interests'.tr(),
+                  subtitle: _selectedInterests.isEmpty
+                      ? 'content_preferences_select_interests_subtitle'.tr()
+                      : _selectedInterests.join(' • '),
                   trailing: Text(
                     '${_selectedInterests.length} selected',
                     style: TextStyle(
@@ -65,7 +90,7 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                     ),
                   ),
                   onTap: () => _editSelection(
-                    title: 'Select Interests',
+                    title: 'content_preferences_select_interests'.tr(),
                     options: const [
                       'Tech',
                       'Travel',
@@ -89,9 +114,9 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                 const Divider(height: 1),
                 _actionRow(
                   icon: LucideIcons.hash,
-                  title: 'Follow Topics',
+                  title: 'content_preferences_follow_topics'.tr(),
                   subtitle: _followTopics.isEmpty
-                      ? 'Choose topics and creators to follow'
+                      ? 'content_preferences_follow_topics_subtitle'.tr()
                       : _followTopics.join(' • '),
                   trailing: Text(
                     '${_followTopics.length} followed',
@@ -102,7 +127,7 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                     ),
                   ),
                   onTap: () => _editSelection(
-                    title: 'Follow Topics',
+                    title: 'content_preferences_follow_topics'.tr(),
                     options: const [
                       'Creativity',
                       'Business',
@@ -126,13 +151,15 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Content Controls'),
+            _sectionTitle('content_preferences_content_controls'.tr()),
             _settingsCard(
               children: [
                 _toggleRow(
                   icon: LucideIcons.shieldAlert,
-                  title: 'Sensitive Content Filter',
-                  subtitle: 'Reduce posts flagged as sensitive.',
+                  title: 'content_preferences_sensitive_content_filter'.tr(),
+                  subtitle:
+                      'content_preferences_sensitive_content_filter_subtitle'
+                          .tr(),
                   value: _sensitiveContentFilter,
                   onChanged: (value) =>
                       setState(() => _sensitiveContentFilter = value),
@@ -140,8 +167,9 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                 const Divider(height: 1),
                 _toggleRow(
                   icon: LucideIcons.badgeAlert,
-                  title: 'Adult Content Filter',
-                  subtitle: 'Block 18+ content from your feed.',
+                  title: 'content_preferences_adult_content_filter'.tr(),
+                  subtitle:
+                      'content_preferences_adult_content_filter_subtitle'.tr(),
                   value: _adultContentFilter,
                   onChanged: (value) =>
                       setState(() => _adultContentFilter = value),
@@ -149,8 +177,10 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                 const Divider(height: 1),
                 _toggleRow(
                   icon: LucideIcons.gavel,
-                  title: 'Political Content Filter',
-                  subtitle: 'Limit political content in recommendations.',
+                  title: 'content_preferences_political_content_filter'.tr(),
+                  subtitle:
+                      'content_preferences_political_content_filter_subtitle'
+                          .tr(),
                   value: _politicalContentFilter,
                   onChanged: (value) =>
                       setState(() => _politicalContentFilter = value),
@@ -158,36 +188,38 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Video Preferences'),
+            _sectionTitle('content_preferences_video_preferences'.tr()),
             _settingsCard(
               children: [
                 _toggleRow(
                   icon: LucideIcons.play,
-                  title: 'Auto Play Videos',
-                  subtitle: 'Play videos automatically while scrolling.',
+                  title: 'content_preferences_auto_play_videos'.tr(),
+                  subtitle:
+                      'content_preferences_auto_play_videos_subtitle'.tr(),
                   value: _autoPlayVideos,
                   onChanged: (value) => setState(() => _autoPlayVideos = value),
                 ),
                 const Divider(height: 1),
                 _toggleRow(
                   icon: LucideIcons.circleDot,
-                  title: 'Auto Play Pulse',
-                  subtitle: 'Auto-play short pulse previews in the feed.',
+                  title: 'content_preferences_auto_play_pulse'.tr(),
+                  subtitle:
+                      'content_preferences_auto_play_pulse_subtitle'.tr(),
                   value: _autoPlayPulse,
                   onChanged: (value) => setState(() => _autoPlayPulse = value),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Language Preferences'),
+            _sectionTitle('content_preferences_language_preferences'.tr()),
             _settingsCard(
               children: [
                 _actionRow(
                   icon: LucideIcons.languages,
-                  title: 'App Language',
-                  subtitle: 'Select the language used throughout the app',
+                  title: 'content_preferences_app_language'.tr(),
+                  subtitle: 'content_preferences_app_language_subtitle'.tr(),
                   trailing: Text(
-                    _appLanguage,
+                    appLanguage,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -195,24 +227,28 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                     ),
                   ),
                   onTap: () => _pickFromList(
-                    title: 'Select Language',
+                    title: 'content_preferences_select_language'.tr(),
                     options: const [
                       'English',
                       'Hindi',
-                      'Spanish',
-                      'French',
-                      'Portuguese',
-                      'German',
+                      'Tamil',
+                      'Telugu',
+                      'Kannada',
+                      'Punjabi',
+                      'Bengali',
+                      'Gujarati',
+                      'Marathi',
                     ],
-                    current: _appLanguage,
-                    onSelected: (value) => setState(() => _appLanguage = value),
+                    current: appLanguage,
+                    onSelected: (value) => unawaited(_setAppLanguage(value)),
                   ),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   icon: LucideIcons.bookOpen,
-                  title: 'Default Language',
-                  subtitle: 'Primary language for content and labels',
+                  title: 'content_preferences_default_language'.tr(),
+                  subtitle:
+                      '$_defaultLanguage • ${"content_preferences_default_language_subtitle".tr()}',
                   trailing: Text(
                     _defaultLanguage,
                     style: TextStyle(
@@ -222,28 +258,20 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                     ),
                   ),
                   onTap: () => _pickFromList(
-                    title: 'Default Language',
-                    options: const [
-                      'English',
-                      'Hindi',
-                      'Spanish',
-                      'French',
-                      'Portuguese',
-                      'German',
-                    ],
+                    title: 'content_preferences_default_language'.tr(),
+                    options: _availableLanguages,
                     current: _defaultLanguage,
-                    onSelected: (value) =>
-                        setState(() => _defaultLanguage = value),
+                    onSelected: (value) => unawaited(_setDefaultLanguage(value)),
                   ),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   icon: LucideIcons.listChecks,
-                  title: 'Optional Languages',
+                  title: 'content_preferences_optional_languages'.tr(),
                   subtitle:
-                      '${_optionalLanguages.length} saved extra languages',
+                      '${_optionalLanguages.length} ${"content_preferences_optional_languages_saved".tr()} • ${_optionalLanguages.join(", ")}',
                   trailing: Text(
-                    'Edit',
+                    'content_preferences_edit'.tr(),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -251,31 +279,20 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                     ),
                   ),
                   onTap: () => _editSelection(
-                    title: 'Optional Languages',
-                    options: const [
-                      'English',
-                      'Hindi',
-                      'Spanish',
-                      'French',
-                      'Portuguese',
-                      'German',
-                      'Arabic',
-                      'Bengali',
-                    ],
+                    title: 'content_preferences_optional_languages'.tr(),
+                    options: _availableLanguages
+                        .where((language) => language != _defaultLanguage)
+                        .toList(),
                     initial: _optionalLanguages.toSet(),
-                    onSaved: (next) => setState(() {
-                      _optionalLanguages
-                        ..clear()
-                        ..addAll(next);
-                    }),
+                    onSaved: (next) => _setOptionalLanguages(next),
                   ),
                 ),
                 const Divider(height: 1),
                 _toggleRow(
                   icon: LucideIcons.languages,
-                  title: 'Auto Translation',
+                  title: 'content_preferences_auto_translation'.tr(),
                   subtitle:
-                      'Translate content into your selected language automatically.',
+                      'content_preferences_auto_translation_subtitle'.tr(),
                   value: _autoTranslation,
                   onChanged: (value) => setState(() => _autoTranslation = value),
                 ),
@@ -320,22 +337,22 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
             ),
           ),
           const SizedBox(width: 14),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Content preferences',
-                  style: TextStyle(
+                  'content_preferences_header_title'.tr(),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
-                  'Tune your feed, content filters, video playback, and languages in one place.',
-                  style: TextStyle(
+                  'content_preferences_header_subtitle'.tr(),
+                  style: const TextStyle(
                     color: Colors.white,
                     height: 1.3,
                   ),
@@ -533,7 +550,7 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'This page now follows the same card and spacing style as Messaging. The filters here are kept local for now, but the UI is ready for backend wiring later.',
+              _languagePreferenceSummary(),
               style: TextStyle(
                 fontSize: 13,
                 height: 1.4,
@@ -670,5 +687,128 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
 
     if (!mounted || saved != true) return;
     onSaved(next);
+  }
+
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedDefaultLanguage =
+        prefs.getString(_defaultLanguagePrefsKey) ?? _defaultLanguage;
+    final storedOptionalLanguages =
+        prefs.getStringList(_optionalLanguagesPrefsKey) ?? const <String>[];
+    final normalizedOptionalLanguages =
+        _normalizeLanguages(storedOptionalLanguages.toSet(), exclude: storedDefaultLanguage);
+
+    if (!mounted) return;
+    setState(() {
+      _defaultLanguage = storedDefaultLanguage;
+      _optionalLanguages
+        ..clear()
+        ..addAll(normalizedOptionalLanguages);
+    });
+    await _saveOptionalLanguages(_optionalLanguages.toSet());
+  }
+
+  Future<void> _setAppLanguage(String language) async {
+    final locale = _localeForLanguage(language);
+    await context.setLocale(locale);
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _setDefaultLanguage(String language) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_defaultLanguagePrefsKey, language);
+    if (!mounted) return;
+    final updatedOptionalLanguages =
+        _normalizeLanguages(_optionalLanguages.toSet(), exclude: language);
+    setState(() {
+      _defaultLanguage = language;
+      _optionalLanguages
+        ..clear()
+        ..addAll(updatedOptionalLanguages);
+    });
+    await _saveOptionalLanguages(_optionalLanguages.toSet());
+  }
+
+  Future<void> _setOptionalLanguages(Set<String> languages) async {
+    final normalized = _normalizeLanguages(languages, exclude: _defaultLanguage);
+    if (!mounted) return;
+    setState(() {
+      _optionalLanguages
+        ..clear()
+        ..addAll(normalized);
+    });
+    await _saveOptionalLanguages(_optionalLanguages.toSet());
+  }
+
+  Future<void> _saveOptionalLanguages(Set<String> languages) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_optionalLanguagesPrefsKey, languages.toList());
+  }
+
+  List<String> _normalizeLanguages(
+    Set<String> languages, {
+    required String exclude,
+  }) {
+    final normalized = <String>[];
+    for (final language in languages) {
+      if (language == exclude) continue;
+      if (normalized.contains(language)) continue;
+      normalized.add(language);
+    }
+    return normalized;
+  }
+
+  Locale _localeForLanguage(String language) {
+    switch (language) {
+      case 'Hindi':
+        return const Locale('hi');
+      case 'Tamil':
+        return const Locale('ta');
+      case 'Telugu':
+        return const Locale('te');
+      case 'Kannada':
+        return const Locale('kn');
+      case 'Punjabi':
+        return const Locale('pa');
+      case 'Bengali':
+        return const Locale('bn');
+      case 'Gujarati':
+        return const Locale('gu');
+      case 'Marathi':
+        return const Locale('mr');
+      default:
+        return const Locale('en');
+    }
+  }
+
+  String _languageLabelForLocale(Locale locale) {
+    switch (locale.languageCode) {
+      case 'hi':
+        return 'Hindi';
+      case 'ta':
+        return 'Tamil';
+      case 'te':
+        return 'Telugu';
+      case 'kn':
+        return 'Kannada';
+      case 'pa':
+        return 'Punjabi';
+      case 'bn':
+        return 'Bengali';
+      case 'gu':
+        return 'Gujarati';
+      case 'mr':
+        return 'Marathi';
+      default:
+        return 'English';
+    }
+  }
+
+  String _languagePreferenceSummary() {
+    final optionalSummary =
+        _optionalLanguages.isEmpty ? 'none' : _optionalLanguages.join(', ');
+    return 'Default language: $_defaultLanguage. Optional languages: $optionalSummary. Auto translation will prefer the default language.';
   }
 }
