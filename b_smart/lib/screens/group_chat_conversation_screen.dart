@@ -10,12 +10,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
 import 'package:flutter_chat_ui/flutter_chat_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
 import '../api/users_api.dart';
 import '../services/chat_unread_service.dart';
 import '../services/ads_service.dart';
+import '../services/chat_media_auto_save_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
@@ -24,9 +26,11 @@ import '../widgets/post_detail_modal.dart';
 import '../widgets/voice_recorder_sheet.dart';
 import '../widgets/chat_bubble/chat_bubble_shell.dart';
 import '../widgets/chat_bubble/models.dart';
+import '../widgets/chat_bubble/content/document_message_content.dart';
 import '../widgets/chat_bubble/content/text_message_content.dart';
 import '../widgets/chat_bubble/content/image_message_content.dart';
 import '../widgets/chat_bubble/content/voice_message_content.dart';
+import '../widgets/chat_bubble/content/tap_to_load_media_preview.dart';
 import 'group_chat_info_screen.dart';
 
 class GroupChatConversationScreen extends StatefulWidget {
@@ -53,6 +57,7 @@ class _GroupChatConversationScreenState
   final _inputFocusNode = FocusNode();
   final _picker = ImagePicker();
   final _adsService = AdsService();
+  final _autoSaveService = ChatMediaAutoSaveService.instance;
 
   static const bool _showCallButtons = false;
 
@@ -72,6 +77,7 @@ class _GroupChatConversationScreenState
   Map<String, dynamic>? _replyToMessage;
   bool _unsending = false;
   bool _uploadingMedia = false;
+  bool _dataSaverMode = false;
   Timer? _pollTimer;
   bool _refreshingLatest = false;
   int _pendingNewCount = 0;
@@ -82,6 +88,7 @@ class _GroupChatConversationScreenState
   final Set<String> _resolvingSharedPreviewAspectRatioUrls = <String>{};
   final Map<String, String> _sharedAdPreviewById = <String, String>{};
   final Set<String> _loadingSharedAdIds = <String>{};
+  late final VoidCallback _mediaPrefsListener;
 
   static const int _pageLimit = 20;
 
@@ -464,12 +471,24 @@ class _GroupChatConversationScreenState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _mediaPrefsListener = () {
+      if (!mounted) return;
+      setState(() => _dataSaverMode = _autoSaveService.dataSaverModeNotifier.value);
+    };
+    _autoSaveService.dataSaverModeNotifier.addListener(_mediaPrefsListener);
     _conversation = widget.initialConversation;
     ChatUnreadService().markConversationRead(widget.conversationId);
     _init();
+    unawaited(_loadMediaPrefs());
     _scrollController.addListener(_handleScroll);
     _inputController.addListener(_handleComposerChanged);
     _startPolling();
+  }
+
+  Future<void> _loadMediaPrefs() async {
+    await _autoSaveService.load();
+    if (!mounted) return;
+    setState(() => _dataSaverMode = _autoSaveService.dataSaverMode);
   }
 
   @override
@@ -478,6 +497,7 @@ class _GroupChatConversationScreenState
     _stopPolling();
     _scrollPinTimer?.cancel();
     _inputController.removeListener(_handleComposerChanged);
+    _autoSaveService.dataSaverModeNotifier.removeListener(_mediaPrefsListener);
     _scrollController.dispose();
     _inputController.dispose();
     _inputFocusNode.dispose();
@@ -520,7 +540,9 @@ class _GroupChatConversationScreenState
     if (mediaTypeRaw == 'm4a' ||
         mediaTypeRaw == 'aac' ||
         mediaTypeRaw == 'mp3' ||
-        mediaTypeRaw == 'wav') return true;
+        mediaTypeRaw == 'wav') {
+      return true;
+    }
     return false;
   }
 
@@ -534,6 +556,57 @@ class _GroupChatConversationScreenState
         u.contains('.aac?') ||
         u.contains('.mp3?') ||
         u.contains('.wav?');
+  }
+
+  bool _looksLikeDocumentUrl(String url) {
+    final u = url.trim().toLowerCase();
+    return u.endsWith('.pdf') ||
+        u.endsWith('.doc') ||
+        u.endsWith('.docx') ||
+        u.endsWith('.xls') ||
+        u.endsWith('.xlsx') ||
+        u.endsWith('.ppt') ||
+        u.endsWith('.pptx') ||
+        u.endsWith('.txt') ||
+        u.contains('.pdf?') ||
+        u.contains('.doc?') ||
+        u.contains('.docx?') ||
+        u.contains('.xls?') ||
+        u.contains('.xlsx?') ||
+        u.contains('.ppt?') ||
+        u.contains('.pptx?') ||
+        u.contains('.txt?');
+  }
+
+  String _documentTitleFor(Map<String, dynamic> message) {
+    final candidates = [
+      message['fileName'],
+      message['file_name'],
+      message['name'],
+      message['title'],
+      message['mediaName'],
+      message['media_name'],
+      message['label'],
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    final url = _mediaUrlFor(message);
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.pathSegments.isEmpty) return 'Document';
+    final file = uri.pathSegments.last.trim();
+    return file.isNotEmpty ? file : 'Document';
+  }
+
+  String _documentSubtitleFor(Map<String, dynamic> message) {
+    final mime = (message['mimeType'] ?? message['mime_type'] ?? '')
+        .toString()
+        .trim();
+    if (mime.isNotEmpty) return mime;
+    final url = _mediaUrlFor(message).toLowerCase();
+    if (url.endsWith('.pdf') || url.contains('.pdf?')) return 'PDF document';
+    return 'Document';
   }
 
   types.User _authorFor(Map<String, dynamic> message) {
@@ -614,6 +687,25 @@ class _GroupChatConversationScreenState
             mimeType: mediaTypeLower.startsWith('audio/')
                 ? mediaTypeLower
                 : 'audio/m4a',
+            uri: UrlHelper.normalizeUrl(mediaUrl),
+          ),
+        );
+        continue;
+      }
+
+      final isDocument = mediaTypeLower.contains('document') ||
+          mediaTypeLower.contains('pdf') ||
+          mediaTypeLower.contains('file') ||
+          _looksLikeDocumentUrl(mediaUrl);
+      if (isDocument && mediaUrl.isNotEmpty) {
+        out.add(
+          types.FileMessage(
+            id: id,
+            author: author,
+            createdAt: createdAt == 0 ? null : createdAt,
+            mimeType: mediaTypeLower.isNotEmpty ? mediaTypeLower : null,
+            name: _documentTitleFor(m),
+            size: 0,
             uri: UrlHelper.normalizeUrl(mediaUrl),
           ),
         );
@@ -1620,6 +1712,10 @@ class _GroupChatConversationScreenState
                           final outgoing =
                               image.author.id == (_currentUserId ?? '').trim();
                           final label = _timeLabelFor(image);
+                          final loadedImage = ImageMessage(
+                            message: image,
+                            messageWidth: messageWidth,
+                          );
                           return Stack(
                             children: [
                               Padding(
@@ -1627,10 +1723,64 @@ class _GroupChatConversationScreenState
                                   right: 54,
                                   bottom: label.isEmpty ? 0 : 16,
                                 ),
-                                child: ImageMessage(
-                                  message: image,
-                                  messageWidth: messageWidth,
+                                child: _dataSaverMode
+                                    ? TapToLoadMediaPreview(
+                                        icon: LucideIcons.image,
+                                        title: 'Image preview hidden',
+                                        subtitle:
+                                            'Data saver is on. Tap to load this image.',
+                                        loadedChild: loadedImage,
+                                      )
+                                    : loadedImage,
+                              ),
+                              if (label.isNotEmpty)
+                                Positioned(
+                                  right: 8,
+                                  bottom: 6,
+                                  child: _bubbleTimestamp(
+                                    label: label,
+                                    outgoing: outgoing,
+                                  ),
                                 ),
+                            ],
+                          );
+                        },
+                        fileMessageBuilder: (file, {required messageWidth}) {
+                          final outgoing =
+                              file.author.id == (_currentUserId ?? '').trim();
+                          final label = _timeLabelFor(file);
+                          final loadedFile = DocumentMessageContent(
+                            title: file.name,
+                            subtitle: _documentSubtitleFor({
+                              'mimeType': file.mimeType,
+                              'mediaUrl': file.uri,
+                            }),
+                            isOutgoing: outgoing,
+                            onTap: () async {
+                              final uri = Uri.tryParse(file.uri);
+                              if (uri == null) return;
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            },
+                          );
+                          return Stack(
+                            children: [
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  right: 54,
+                                  bottom: label.isEmpty ? 0 : 16,
+                                ),
+                                child: _dataSaverMode
+                                    ? TapToLoadMediaPreview(
+                                        icon: LucideIcons.fileText,
+                                        title: 'Document hidden',
+                                        subtitle:
+                                            'Data saver is on. Tap to load this document.',
+                                        loadedChild: loadedFile,
+                                      )
+                                    : loadedFile,
                               ),
                               if (label.isNotEmpty)
                                 Positioned(

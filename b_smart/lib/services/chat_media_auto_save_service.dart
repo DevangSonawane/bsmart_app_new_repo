@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -27,6 +28,8 @@ class ChatMediaAutoSaveService {
   bool _autoDocs = false;
   bool _dataSaverMode = false;
   int _enabledAtMillis = 0;
+  final Connectivity _connectivity = Connectivity();
+  final ValueNotifier<bool> dataSaverModeNotifier = ValueNotifier<bool>(false);
 
   Future<SharedPreferences> _ensurePrefs() async {
     final prefs = _prefs ??= await SharedPreferences.getInstance();
@@ -39,6 +42,7 @@ class ChatMediaAutoSaveService {
     _autoVideos = prefs.getBool(_keyAutoVideos) ?? false;
     _autoDocs = prefs.getBool(_keyAutoDocs) ?? false;
     _dataSaverMode = prefs.getBool(_keyDataSaver) ?? false;
+    dataSaverModeNotifier.value = _dataSaverMode;
     _enabledAtMillis = prefs.getInt(_keyEnabledAt) ?? 0;
     await _syncEnabledAt(prefs);
   }
@@ -77,6 +81,7 @@ class ChatMediaAutoSaveService {
 
   Future<void> setDataSaverMode(bool value) async {
     _dataSaverMode = value;
+    dataSaverModeNotifier.value = value;
     final prefs = await _ensurePrefs();
     await prefs.setBool(_keyDataSaver, value);
   }
@@ -112,6 +117,7 @@ class ChatMediaAutoSaveService {
   }) async {
     await load();
     if (!hasAnyAutoDownloadEnabled) return;
+    if (!await _isAutoSaveAllowedOnCurrentNetwork()) return;
 
     final prefs = await _ensurePrefs();
     final savedIds = await _savedIds(prefs);
@@ -150,6 +156,17 @@ class ChatMediaAutoSaveService {
         debugPrint('Auto-save failed for $messageId: $e');
       }
     }
+  }
+
+  Future<bool> _isAutoSaveAllowedOnCurrentNetwork() async {
+    if (!_dataSaverMode) return true;
+    final results = await _connectivity.checkConnectivity();
+    if (results.contains(ConnectivityResult.none)) return false;
+    if (results.contains(ConnectivityResult.wifi) ||
+        results.contains(ConnectivityResult.ethernet)) {
+      return true;
+    }
+    return false;
   }
 
   String _messageId(Map<String, dynamic> message) {

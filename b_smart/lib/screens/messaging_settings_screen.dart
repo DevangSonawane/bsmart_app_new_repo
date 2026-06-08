@@ -162,7 +162,7 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> {
                         icon: LucideIcons.wifiOff,
                         title: 'Data Saver Mode',
                         subtitle:
-                            'Reduce media loading and limit heavy downloads.',
+                            'Limit media auto-downloads to Wi-Fi and hide previews until tapped.',
                         value: _dataSaverMode,
                         onChanged: _toggleDataSaver,
                       ),
@@ -375,7 +375,7 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> {
           Expanded(
             child: Text(
               'Messaging preferences are organized here so the floating message option stays with chat settings. '
-              'If backend support is added later, we can connect these toggles to saved preferences.',
+              'Data saver now blocks auto-saving on mobile data and keeps media previews hidden until tapped.',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.4,

@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
 import 'package:flutter_chat_ui/flutter_chat_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
@@ -25,9 +26,11 @@ import '../widgets/post_detail_modal.dart';
 import '../widgets/voice_recorder_sheet.dart';
 import '../widgets/chat_bubble/chat_bubble_shell.dart';
 import '../widgets/chat_bubble/models.dart';
+import '../widgets/chat_bubble/content/document_message_content.dart';
 import '../widgets/chat_bubble/content/text_message_content.dart';
 import '../widgets/chat_bubble/content/image_message_content.dart';
 import '../widgets/chat_bubble/content/voice_message_content.dart';
+import '../widgets/chat_bubble/content/tap_to_load_media_preview.dart';
 
 class ChatConversationScreen extends StatefulWidget {
   final String conversationId;
@@ -70,6 +73,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   Map<String, dynamic>? _replyToMessage;
   bool _unsending = false;
   bool _uploadingMedia = false;
+  bool _dataSaverMode = false;
   Timer? _pollTimer;
   bool _refreshingLatest = false;
   int _pendingNewCount = 0;
@@ -87,6 +91,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   final Set<String> _resolvingSharedPreviewAspectRatioUrls = <String>{};
   final Map<String, String> _sharedAdPreviewById = <String, String>{};
   final Set<String> _loadingSharedAdIds = <String>{};
+  late final VoidCallback _mediaPrefsListener;
 
   static const int _pageLimit = 20;
 
@@ -95,11 +100,23 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _conversation = widget.initialConversation;
+    _mediaPrefsListener = () {
+      if (!mounted) return;
+      setState(() => _dataSaverMode = _autoSaveService.dataSaverModeNotifier.value);
+    };
+    _autoSaveService.dataSaverModeNotifier.addListener(_mediaPrefsListener);
     _init();
+    unawaited(_loadMediaPrefs());
     _scrollController.addListener(_handleScroll);
     _inputController.addListener(_handleComposerChanged);
     _startPolling();
     _startPresencePolling();
+  }
+
+  Future<void> _loadMediaPrefs() async {
+    await _autoSaveService.load();
+    if (!mounted) return;
+    setState(() => _dataSaverMode = _autoSaveService.dataSaverMode);
   }
 
   @override
@@ -117,6 +134,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     if (_onSocketReactionUpdate != null) {
       _chatSocket.off('message-reaction-update', _onSocketReactionUpdate!);
     }
+    _autoSaveService.dataSaverModeNotifier.removeListener(_mediaPrefsListener);
     WidgetsBinding.instance.removeObserver(this);
     _stopPolling();
     _stopPresencePolling();
@@ -171,7 +189,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     if (mediaTypeRaw == 'm4a' ||
         mediaTypeRaw == 'aac' ||
         mediaTypeRaw == 'mp3' ||
-        mediaTypeRaw == 'wav') return true;
+        mediaTypeRaw == 'wav') {
+      return true;
+    }
     return false;
   }
 
@@ -185,6 +205,26 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         u.contains('.aac?') ||
         u.contains('.mp3?') ||
         u.contains('.wav?');
+  }
+
+  bool _looksLikeDocumentUrl(String url) {
+    final u = url.trim().toLowerCase();
+    return u.endsWith('.pdf') ||
+        u.endsWith('.doc') ||
+        u.endsWith('.docx') ||
+        u.endsWith('.xls') ||
+        u.endsWith('.xlsx') ||
+        u.endsWith('.ppt') ||
+        u.endsWith('.pptx') ||
+        u.endsWith('.txt') ||
+        u.contains('.pdf?') ||
+        u.contains('.doc?') ||
+        u.contains('.docx?') ||
+        u.contains('.xls?') ||
+        u.contains('.xlsx?') ||
+        u.contains('.ppt?') ||
+        u.contains('.pptx?') ||
+        u.contains('.txt?');
   }
 
   types.User _authorFor(Map<String, dynamic> message) {
@@ -251,6 +291,25 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             mimeType: mediaTypeLower.startsWith('audio/')
                 ? mediaTypeLower
                 : 'audio/m4a',
+            uri: UrlHelper.normalizeUrl(mediaUrl),
+          ),
+        );
+        continue;
+      }
+
+      final isDocument = mediaTypeLower.contains('document') ||
+          mediaTypeLower.contains('pdf') ||
+          mediaTypeLower.contains('file') ||
+          _looksLikeDocumentUrl(mediaUrl);
+      if (isDocument && mediaUrl.isNotEmpty) {
+        out.add(
+          types.FileMessage(
+            id: id,
+            author: author,
+            createdAt: createdAt == 0 ? null : createdAt,
+            mimeType: mediaTypeLower.isNotEmpty ? mediaTypeLower : null,
+            name: _documentTitleFor(m),
+            size: 0,
             uri: UrlHelper.normalizeUrl(mediaUrl),
           ),
         );
@@ -943,6 +1002,37 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     return t;
   }
 
+  String _documentTitleFor(Map<String, dynamic> message) {
+    final candidates = [
+      message['fileName'],
+      message['file_name'],
+      message['name'],
+      message['title'],
+      message['mediaName'],
+      message['media_name'],
+      message['label'],
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    final url = _mediaUrlFor(message);
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.pathSegments.isEmpty) return 'Document';
+    final file = uri.pathSegments.last.trim();
+    return file.isEmpty ? 'Document' : file;
+  }
+
+  String _documentSubtitleFor(Map<String, dynamic> message) {
+    final mime = (message['mimeType'] ?? message['mime_type'] ?? '')
+        .toString()
+        .trim();
+    if (mime.isNotEmpty) return mime;
+    final url = _mediaUrlFor(message).toLowerCase();
+    if (url.endsWith('.pdf') || url.contains('.pdf?')) return 'PDF document';
+    return 'Document';
+  }
+
   String _mediaUrlFor(Map<String, dynamic> message) {
     final raw =
         (message['mediaUrl'] ?? message['media_url'] ?? '').toString().trim();
@@ -1389,6 +1479,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                           final outgoing =
                               image.author.id == (_currentUserId ?? '').trim();
                           final label = _timeLabelFor(image);
+                          final loadedImage = ImageMessage(
+                            message: image,
+                            messageWidth: messageWidth,
+                          );
                           return Stack(
                             children: [
                               Padding(
@@ -1396,10 +1490,64 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                   right: 54,
                                   bottom: label.isEmpty ? 0 : 16,
                                 ),
-                                child: ImageMessage(
-                                  message: image,
-                                  messageWidth: messageWidth,
+                                child: _dataSaverMode
+                                    ? TapToLoadMediaPreview(
+                                        icon: LucideIcons.image,
+                                        title: 'Image preview hidden',
+                                        subtitle:
+                                            'Data saver is on. Tap to load this image.',
+                                        loadedChild: loadedImage,
+                                      )
+                                    : loadedImage,
+                              ),
+                              if (label.isNotEmpty)
+                                Positioned(
+                                  right: 8,
+                                  bottom: 6,
+                                  child: _bubbleTimestamp(
+                                    label: label,
+                                    outgoing: outgoing,
+                                  ),
                                 ),
+                            ],
+                          );
+                        },
+                        fileMessageBuilder: (file, {required messageWidth}) {
+                          final outgoing =
+                              file.author.id == (_currentUserId ?? '').trim();
+                          final label = _timeLabelFor(file);
+                          final loadedFile = DocumentMessageContent(
+                            title: file.name,
+                            subtitle: _documentSubtitleFor({
+                              'mimeType': file.mimeType,
+                              'mediaUrl': file.uri,
+                            }),
+                            isOutgoing: outgoing,
+                            onTap: () async {
+                              final uri = Uri.tryParse(file.uri);
+                              if (uri == null) return;
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            },
+                          );
+                          return Stack(
+                            children: [
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  right: 54,
+                                  bottom: label.isEmpty ? 0 : 16,
+                                ),
+                                child: _dataSaverMode
+                                    ? TapToLoadMediaPreview(
+                                        icon: LucideIcons.fileText,
+                                        title: 'Document hidden',
+                                        subtitle:
+                                            'Data saver is on. Tap to load this document.',
+                                        loadedChild: loadedFile,
+                                      )
+                                    : loadedFile,
                               ),
                               if (label.isNotEmpty)
                                 Positioned(
