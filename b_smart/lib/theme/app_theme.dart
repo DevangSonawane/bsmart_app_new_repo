@@ -32,6 +32,25 @@ class AppTheme {
     );
   }
 
+  static ThemeData highContrastTheme() {
+    return theme.copyWith(
+      colorScheme: theme.colorScheme.copyWith(
+        primary: Colors.black,
+        secondary: Colors.black,
+        surface: Colors.white,
+        onSurface: Colors.black,
+        onPrimary: Colors.white,
+      ),
+      appBarTheme: theme.appBarTheme.copyWith(
+        foregroundColor: Colors.black,
+      ),
+      textTheme: theme.textTheme.apply(
+        bodyColor: Colors.black,
+        displayColor: Colors.black,
+      ),
+    );
+  }
+
   /// Dark theme: softer dark greys, light text and icons.
   static ThemeData get darkTheme {
     const surfaceDark = Color(0xFF1E1E1E);
@@ -75,5 +94,19 @@ class AppTheme {
       ),
     );
   }
-}
 
+  static ThemeData highContrastDarkTheme() {
+    return darkTheme.copyWith(
+      colorScheme: darkTheme.colorScheme.copyWith(
+        primary: Colors.white,
+        secondary: Colors.white,
+        surface: Colors.black,
+        onSurface: Colors.white,
+        onPrimary: Colors.black,
+      ),
+      appBarTheme: darkTheme.appBarTheme.copyWith(
+        foregroundColor: Colors.white,
+      ),
+    );
+  }
+}

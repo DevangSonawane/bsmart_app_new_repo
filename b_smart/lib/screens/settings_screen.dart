@@ -13,6 +13,7 @@ import '../theme/design_tokens.dart';
 import '../theme/theme_scope.dart';
 import 'account_details_screen.dart';
 import 'account_upgrade_screen.dart';
+import 'appearance_settings_screen.dart';
 import 'advertiser_ads_list_screen.dart';
 import 'advertiser_dashboard_screen.dart';
 import 'advertiser_wallet_screen.dart';
@@ -313,14 +314,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _settingTile(
             icon: isDark ? LucideIcons.moon : LucideIcons.sunMedium,
             label: 'settings_appearance'.tr(),
-            subLabel: isDark
-                ? 'settings_appearance_dark'.tr()
-                : 'settings_appearance_light'.tr(),
-            trailing: Switch(
-              value: isDark,
-              onChanged: (_) => ThemeScope.of(context).toggle(),
+            subLabel: 'settings_appearance_subtitle'.tr(),
+            trailing: Text(
+              _appearanceModeLabel().tr(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: theme.textTheme.bodyMedium?.color,
+              ),
             ),
-            onTap: () => ThemeScope.of(context).toggle(),
+            onTap: () => _push(const AppearanceSettingsScreen()),
           ),
           _settingTile(
             icon: LucideIcons.slidersHorizontal,
@@ -391,37 +394,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => _push(_AboutScreen(packageInfo: _info)),
           ),
           const SizedBox(height: 20),
-          _sectionTitle('settings_section_account_actions'.tr()),
-          _sectionTitle('settings_section_session_controls'.tr()),
-          _destructiveActionCard(
+          _settingTile(
             icon: LucideIcons.logOut,
-            title: _loggingOut ? 'settings_logging_out'.tr() : 'settings_logout'.tr(),
-            subtitle: 'settings_logout_subtitle'.tr(),
-            loading: _loggingOut,
-            onTap: _loggingOut ? null : _logout,
-          ),
-          const SizedBox(height: 20),
-          _sectionTitle('settings_section_account_controls'.tr()),
-          _destructiveActionCard(
-            icon: LucideIcons.userX,
-            title: _deactivatingAccount
-                ? 'settings_preparing_deactivate'.tr()
-                : 'settings_deactivate_account'.tr(),
-            subtitle: 'settings_deactivate_account_subtitle'.tr(),
-            loading: _deactivatingAccount,
-            onTap: _deactivatingAccount ? null : _showDeactivateAccountDialog,
-            danger: false,
-          ),
-          const SizedBox(height: 12),
-          _destructiveActionCard(
-            icon: LucideIcons.trash2,
-            title: _deletingAccount
-                ? 'settings_preparing_delete'.tr()
-                : 'settings_delete_account_permanently'.tr(),
-            subtitle: 'settings_delete_account_subtitle'.tr(),
-            loading: _deletingAccount,
-            onTap: _deletingAccount ? null : _showDeleteAccountDialog,
-            danger: true,
+            label: 'settings_section_account_actions'.tr(),
+            subLabel: 'settings_account_actions_subtitle'.tr(),
+            onTap: () => _push(
+              _AccountActionsScreen(
+                loggingOut: _loggingOut,
+                deactivatingAccount: _deactivatingAccount,
+                deletingAccount: _deletingAccount,
+                onLogout: _logout,
+                onDeactivateAccount: _showDeactivateAccountDialog,
+                onDeleteAccount: _showDeleteAccountDialog,
+              ),
+            ),
           ),
           if (_loadingContext) ...[
             const SizedBox(height: 16),
@@ -441,6 +427,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final info = _packageInfo;
     if (info == null) return 'Version information loading...';
     return 'Version ${info.version} (${info.buildNumber})';
+  }
+
+  String _appearanceModeLabel() {
+    final mode = ThemeScope.of(context).themeMode;
+    switch (mode) {
+      case ThemeMode.light:
+        return 'appearance_light_mode';
+      case ThemeMode.dark:
+        return 'appearance_dark_mode';
+      case ThemeMode.system:
+        return 'appearance_system_default';
+    }
   }
 
   Widget _headerCard(ThemeData theme, bool isDark) {
@@ -622,73 +620,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _destructiveActionCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback? onTap,
-    bool loading = false,
-    bool danger = false,
-  }) {
-    final theme = Theme.of(context);
-    final color = danger ? Colors.red.shade700 : Colors.red.shade600;
-    return Material(
-      color: theme.cardColor,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: loading
-                    ? Padding(
-                        padding: const EdgeInsets.all(11),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: color,
-                        ),
-                      )
-                    : Icon(icon, color: color, size: 21),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: color,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: theme.textTheme.bodyMedium?.color ??
-                            Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _CreatorCenterScreen extends StatelessWidget {
@@ -852,6 +783,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     final totalStorage = _cachedImagesMb + _cachedVideosMb + _cachedDocumentsMb;
 
     return Scaffold(
@@ -864,7 +796,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
       body: SafeArea(
         bottom: true,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
             _storageHeader(isDark, totalStorage),
             const SizedBox(height: 20),
@@ -1235,6 +1167,7 @@ class _HelpSupportScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -1246,7 +1179,7 @@ class _HelpSupportScreen extends StatelessWidget {
       body: SafeArea(
         bottom: true,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
             _headerCard(isDark),
             const SizedBox(height: 20),
@@ -1455,57 +1388,54 @@ class _HelpSupportScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
     final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
     final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border.all(color: border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: DesignTokens.instaPink.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: DesignTokens.instaPink.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: DesignTokens.instaPink, size: 20),
               ),
-              child: Icon(icon, color: DesignTokens.instaPink, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: labelColor,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: labelColor,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.35,
-                      color: hintColor,
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: hintColor,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right, color: hintColor, size: 20),
-          ],
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right, color: hintColor, size: 20),
+            ],
+          ),
         ),
       ),
     );
@@ -1513,7 +1443,7 @@ class _HelpSupportScreen extends StatelessWidget {
 
   void _showUnavailable(BuildContext context, String label) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No API exists yet for $label.')),
+      SnackBar(content: Text('settings_no_api_exists_yet'.tr(args: [label]))),
     );
   }
 }
@@ -1525,6 +1455,7 @@ class _LegalComplianceScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -1536,7 +1467,7 @@ class _LegalComplianceScreen extends StatelessWidget {
       body: SafeArea(
         bottom: true,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
             _legalHeader(isDark),
             const SizedBox(height: 20),
@@ -1757,56 +1688,59 @@ class _LegalComplianceScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
     final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
     final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border.all(color: border),
-        ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: DesignTokens.instaPink.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: DesignTokens.instaPink.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: DesignTokens.instaPink, size: 20),
               ),
-              child: Icon(icon, color: DesignTokens.instaPink, size: 20),
             ),
-            const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: labelColor,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: labelColor,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.35,
-                      color: hintColor,
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: hintColor,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: 8),
-            Icon(Icons.chevron_right, color: hintColor, size: 20),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Icon(Icons.chevron_right, color: hintColor, size: 20),
+            ),
           ],
         ),
       ),
@@ -1815,7 +1749,7 @@ class _LegalComplianceScreen extends StatelessWidget {
 
   void _showUnavailable(BuildContext context, String label) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No API exists yet for $label.')),
+      SnackBar(content: Text('settings_no_api_exists_yet'.tr(args: [label]))),
     );
   }
 }
@@ -1829,6 +1763,7 @@ class _AboutScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     final versionText = packageInfo == null
         ? 'Version information loading...'
         : 'Version ${packageInfo!.version}';
@@ -1846,9 +1781,20 @@ class _AboutScreen extends StatelessWidget {
       body: SafeArea(
         bottom: true,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
             _aboutHeader(isDark),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _pill('App Info'),
+                _pill('Company'),
+                _pill('Links'),
+                _pill('Support'),
+              ],
+            ),
             const SizedBox(height: 20),
             _sectionTitle('Application Information'),
             _settingsCard(
@@ -1889,7 +1835,7 @@ class _AboutScreen extends StatelessWidget {
               children: [
                 _actionRow(
                   context,
-                  icon: LucideIcons.globe,
+                  icon: Icons.language_outlined,
                   title: 'Website',
                   subtitle: 'Visit the official website.',
                   onTap: () => _showUnavailable(context, 'Website'),
@@ -1897,7 +1843,7 @@ class _AboutScreen extends StatelessWidget {
                 const Divider(height: 1),
                 _actionRow(
                   context,
-                  icon: LucideIcons.linkedin,
+                  icon: Icons.work_outline,
                   title: 'LinkedIn',
                   subtitle: 'Follow company updates and hiring news.',
                   onTap: () => _showUnavailable(context, 'LinkedIn'),
@@ -1905,7 +1851,7 @@ class _AboutScreen extends StatelessWidget {
                 const Divider(height: 1),
                 _actionRow(
                   context,
-                  icon: LucideIcons.youtube,
+                  icon: Icons.play_circle_outline,
                   title: 'YouTube',
                   subtitle: 'Watch tutorials, updates, and announcements.',
                   onTap: () => _showUnavailable(context, 'YouTube'),
@@ -2026,79 +1972,13 @@ class _AboutScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
     final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
     final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: bg,
-        border: Border.all(color: border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: DesignTokens.instaPink.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: DesignTokens.instaPink, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: labelColor,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.35,
-                    color: hintColor,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionRow(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
-
-    return InkWell(
-      onTap: onTap,
-      child: Container(
+    return Material(
+      color: Colors.transparent,
+      child: Padding(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border.all(color: border),
-        ),
         child: Row(
           children: [
             Container(
@@ -2134,9 +2014,95 @@ class _AboutScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right, color: hintColor, size: 20),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _actionRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: DesignTokens.instaPink.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: DesignTokens.instaPink, size: 20),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: labelColor,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: hintColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Icon(Icons.chevron_right, color: hintColor, size: 20),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pill(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: DesignTokens.instaPink.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: DesignTokens.instaPink.withValues(alpha: 0.18)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: DesignTokens.instaPink,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
         ),
       ),
     );
@@ -2144,7 +2110,294 @@ class _AboutScreen extends StatelessWidget {
 
   void _showUnavailable(BuildContext context, String label) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No API exists yet for $label.')),
+      SnackBar(content: Text('settings_no_api_exists_yet'.tr(args: [label]))),
+    );
+  }
+}
+
+class _AccountActionsScreen extends StatelessWidget {
+  final bool loggingOut;
+  final bool deactivatingAccount;
+  final bool deletingAccount;
+  final Future<void> Function() onLogout;
+  final Future<void> Function() onDeactivateAccount;
+  final Future<void> Function() onDeleteAccount;
+
+  const _AccountActionsScreen({
+    required this.loggingOut,
+    required this.deactivatingAccount,
+    required this.deletingAccount,
+    required this.onLogout,
+    required this.onDeactivateAccount,
+    required this.onDeleteAccount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text('settings_section_account_actions'.tr()),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        bottom: true,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
+          children: [
+            _accountActionsHeader(isDark),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _pill('Support'),
+                _pill('Security'),
+                _pill('Policies'),
+                _pill('Account'),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('settings_section_session_controls'.tr()),
+            _settingsCard(
+              context,
+              children: [
+                _destructiveActionCard(
+                  context,
+                  icon: LucideIcons.logOut,
+                  title: loggingOut
+                      ? 'settings_logging_out'.tr()
+                      : 'settings_logout'.tr(),
+                  subtitle: 'settings_logout_subtitle'.tr(),
+                  loading: loggingOut,
+                  onTap: loggingOut ? null : () async => onLogout(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('settings_section_account_controls'.tr()),
+            _settingsCard(
+              context,
+              children: [
+                _destructiveActionCard(
+                  context,
+                  icon: LucideIcons.userX,
+                  title: deactivatingAccount
+                      ? 'settings_preparing_deactivate'.tr()
+                      : 'settings_deactivate_account'.tr(),
+                  subtitle: 'settings_deactivate_account_subtitle'.tr(),
+                  loading: deactivatingAccount,
+                  onTap:
+                      deactivatingAccount ? null : () async => onDeactivateAccount(),
+                  danger: false,
+                ),
+                const Divider(height: 1),
+                _destructiveActionCard(
+                  context,
+                  icon: LucideIcons.trash2,
+                  title: deletingAccount
+                      ? 'settings_preparing_delete'.tr()
+                      : 'settings_delete_account_permanently'.tr(),
+                  subtitle: 'settings_delete_account_subtitle'.tr(),
+                  loading: deletingAccount,
+                  onTap: deletingAccount ? null : () async => onDeleteAccount(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _infoCard(
+              context,
+              title: 'settings_section_account_actions'.tr(),
+              subtitle: 'settings_account_actions_screen_subtitle'.tr(),
+              icon: LucideIcons.shieldAlert,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _accountActionsHeader(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: DesignTokens.instaGradient,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            child: const Icon(
+              LucideIcons.shieldAlert,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'settings_section_account_actions'.tr(),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'settings_account_actions_screen_subtitle'.tr(),
+                  style: TextStyle(
+                    color: Colors.white,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pill(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        title.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: DesignTokens.instaPink,
+          letterSpacing: 0.7,
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsCard(
+    BuildContext context, {
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.08)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(children: children),
+      ),
+    );
+  }
+
+  Widget _destructiveActionCard(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+    bool loading = false,
+    bool danger = true,
+  }) {
+    final theme = Theme.of(context);
+    final color = danger ? Colors.red.shade700 : Colors.red.shade600;
+    return Material(
+      color: theme.cardColor,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: loading
+                    ? Padding(
+                        padding: const EdgeInsets.all(11),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: color,
+                        ),
+                      )
+                    : Icon(icon, color: color, size: 21),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.textTheme.bodyMedium?.color ??
+                            Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

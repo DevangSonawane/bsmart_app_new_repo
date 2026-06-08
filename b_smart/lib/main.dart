@@ -165,7 +165,7 @@ void main() async {
       themeNotifier = await ThemeNotifier.create();
     } catch (e) {
       debugPrint('Error initializing ThemeNotifier: $e');
-      themeNotifier = ThemeNotifier(initialDark: false);
+      themeNotifier = ThemeNotifier(initialThemeMode: ThemeMode.system);
     }
 
     runApp(StoreProvider<AppState>(
@@ -316,7 +316,13 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
       ..remove('/profile') // ← CRITICAL: must not be in static map
       ..remove('/post'); // ← CRITICAL: must not be in static map
 
-    final isDark = ThemeScope.of(context).isDark;
+    final themeNotifier = ThemeScope.of(context);
+    final themeMode = themeNotifier.themeMode;
+    final lightTheme =
+        themeNotifier.highContrastMode ? AppTheme.highContrastTheme() : AppTheme.theme;
+    final darkTheme = themeNotifier.highContrastMode
+        ? AppTheme.highContrastDarkTheme()
+        : AppTheme.darkTheme;
 
     return MaterialApp(
       title: 'app_name'.tr(),
@@ -325,17 +331,24 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
       locale: context.locale,
       supportedLocales: context.supportedLocales,
       localizationsDelegates: context.localizationDelegates,
-      theme: AppTheme.theme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+      theme: lightTheme,
+      darkTheme: darkTheme,
+      themeMode: themeMode,
       navigatorKey: AppNavigator.key,
       home: _isAuthenticated ? const HomeDashboard() : const LoginScreen(),
       routes: staticRoutes,
       navigatorObservers: [_routeObserver, appRouteObserver],
       builder: (context, child) {
-        return ProfileSetupGate(
-          routeVersion: _routeVersion,
-          child: child ?? const SizedBox.shrink(),
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            textScaler: TextScaler.linear(themeNotifier.fontScale),
+            accessibleNavigation: themeNotifier.reduceMotion,
+          ),
+          child: ProfileSetupGate(
+            routeVersion: _routeVersion,
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
       onGenerateRoute: (settings) {
