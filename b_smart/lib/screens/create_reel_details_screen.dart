@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'dart:async';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
@@ -60,6 +60,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       _selectedThumbnailTimeSec; // For API parity with React (video_meta.thumbnail_time)
 
   Future<Uint8List?>? _coverPreviewFuture;
+  bool _hasLoggedInit = false;
 
   static const _popularEmojis = [
     '😂',
@@ -83,6 +84,18 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
     super.initState();
     _loadCurrentUserProfile();
     final media = widget.media;
+    if (!_hasLoggedInit) {
+      _hasLoggedInit = true;
+      debugPrint(
+        '[ReelDetails] init mediaPath=${media.filePath} '
+        'mediaType=${media.type.name} '
+        'trimStartMs=${widget.trimStart?.inMilliseconds ?? 0} '
+        'trimEndMs=${widget.trimEnd?.inMilliseconds ?? 0} '
+        'selectedFilter=${widget.selectedFilter ?? 'none'} '
+        'selectedMusic=${widget.selectedMusic ?? 'none'} '
+        'musicVolume=${widget.musicVolume}',
+      );
+    }
     if (media.type == MediaType.video && media.filePath != null) {
       _coverPreviewFuture = _buildCoverPreviewBytes(media.filePath!);
     }
@@ -168,8 +181,13 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         timeMs: 0,
         quality: 85,
       );
+      debugPrint(
+        '[ReelDetails] cover preview generated videoPath=$videoPath '
+        'bytes=${bytes?.length ?? 0}',
+      );
       return bytes;
     } catch (_) {
+      debugPrint('[ReelDetails] cover preview failed for $videoPath');
       return null;
     }
   }
@@ -180,6 +198,12 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
     required int endMs,
   }) async {
     try {
+      debugPrint(
+        '[ReelDetails] upload thumbnail start videoPath=$videoPath '
+        'startMs=$startMs endMs=$endMs '
+        'selectedThumbPath=${_selectedThumbnailPath ?? 'none'} '
+        'hasBytes=${_selectedThumbnailBytes != null && _selectedThumbnailBytes!.isNotEmpty}',
+      );
       Uint8List? bytes = _selectedThumbnailBytes;
       double thumbnailTimeSec = (_selectedThumbnailTimeSec ?? 0).toDouble();
 
@@ -220,12 +244,17 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         thumbs = [Map<String, dynamic>.from(rawThumbs)];
       }
       if (thumbs == null || thumbs.isEmpty) return null;
+      debugPrint(
+        '[ReelDetails] upload thumbnail success thumbCount=${thumbs.length} '
+        'thumbnailTimeSec=$thumbnailTimeSec',
+      );
       return {
         // React web uses `thumbnails` on the media object and `video_meta.thumbnail_time`.
         'thumbnails': thumbs,
         'thumbnailTimeSec': thumbnailTimeSec,
       };
     } catch (_) {
+      debugPrint('[ReelDetails] upload thumbnail failed');
       return null;
     }
   }

@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -421,6 +421,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   bool _isPlaying = false;
   bool _autoPlayQueued = false;
   bool _isSeeking = false;
+  bool _hasLoggedVideoGeometry = false;
   Duration? _trimStart;
   Duration? _trimEnd;
   final Map<String, Duration?> _mediaTrimStart = {};
@@ -1106,6 +1107,19 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         if (!mounted) return;
         controller.setLooping(true);
         controller.addListener(_handlePreviewVideoTick);
+        if (!_hasLoggedVideoGeometry) {
+          _hasLoggedVideoGeometry = true;
+          debugPrint(
+            '[CreateEditPreview] video init path=${_currentMedia.filePath} '
+            'size=${controller.value.size.width}x${controller.value.size.height} '
+            'aspect=${controller.value.aspectRatio} '
+            'durationMs=${controller.value.duration.inMilliseconds} '
+            'trimStartMs=${_trimStart?.inMilliseconds ?? 0} '
+            'trimEndMs=${_trimEnd?.inMilliseconds ?? controller.value.duration.inMilliseconds} '
+            'isPostFlow=${widget.isPostFlow} '
+            'isReelFlow=${widget.isReelFlow}',
+          );
+        }
         if (widget.isPostFlow) {
           _maybeInitPostAspect(controller.value.aspectRatio);
         }
@@ -2297,6 +2311,23 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   // ── Proceed to post details, passing trim values along
   Future<void> _proceedToPostDetails() async {
     if (_isProceedingToNext) return;
+    final controller = _videoController;
+    final frameAspect = _postFrameAspect();
+    debugPrint(
+      '[CreateEditPreview] next tapped mediaId=${_currentMedia.id} '
+      'mediaPath=${_currentMedia.filePath} '
+      'mediaType=${_currentMedia.type.name} '
+      'isPostFlow=${widget.isPostFlow} '
+      'isReelFlow=${widget.isReelFlow} '
+      'controllerReady=${controller?.value.isInitialized == true} '
+      'controllerSize=${controller?.value.size.width ?? 0}x${controller?.value.size.height ?? 0} '
+      'controllerAspect=${controller?.value.aspectRatio ?? 0} '
+      'frameAspect=$frameAspect '
+      'trimStartMs=${_trimStart?.inMilliseconds ?? 0} '
+      'trimEndMs=${_trimEnd?.inMilliseconds ?? 0} '
+      'selectedFilter=${_selectedFilter ?? 'none'} '
+      'selectedMusic=${_selectedMusic ?? 'none'}',
+    );
     if (mounted) {
       setState(() {
         _isProceedingToNext = true;
@@ -2348,6 +2379,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
             createdAt: _currentMedia.createdAt,
           );
         }
+      }
+      if (isVideo && controller != null && controller.value.isInitialized) {
+        debugPrint(
+          '[CreateEditPreview] reel video geometry '
+          'size=${controller.value.size.width}x${controller.value.size.height} '
+          'aspect=${controller.value.aspectRatio} '
+          'frameAspect=$frameAspect '
+          'fit=${widget.isReelFlow ? _videoPreviewFit(controller.value.aspectRatio, frameAspect) : BoxFit.cover}',
+        );
       }
       if (!usedComposite && !isVideo && filePath != null) {
         final imagePx = _imagePixelSize ??

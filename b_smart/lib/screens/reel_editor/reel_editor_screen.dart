@@ -111,6 +111,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   bool _isTrimMode = false;
   double _timelineScrollOffset = 0.0;
   double? _lastSeekedMs;
+  bool _hasLoggedVideoGeometry = false;
 
   @override
   void initState() {
@@ -330,6 +331,19 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
     try {
       await controller.seekTo(clip.trimStart ?? Duration.zero);
     } catch (_) {}
+    if (!_hasLoggedVideoGeometry) {
+      _hasLoggedVideoGeometry = true;
+      debugPrint(
+        '[ReelEditor] video init path=${clip.path} '
+        'size=${controller.value.size.width}x${controller.value.size.height} '
+        'aspect=${controller.value.aspectRatio} '
+        'durationMs=${controller.value.duration.inMilliseconds} '
+        'trimStartMs=${(clip.trimStart ?? Duration.zero).inMilliseconds} '
+        'trimEndMs=${(clip.trimEnd ?? clip.duration).inMilliseconds} '
+        'speed=${clip.speed} '
+        'isReversed=${clip.isReversed}',
+      );
+    }
     _putCachedController(clip.path, controller);
     _lastSeekedMs = null;
     _updateClockNotifier();
@@ -1248,6 +1262,16 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
 
   Future<void> _onNext() async {
     if (_clips.isEmpty) return;
+    final activeClip = _clips.isNotEmpty ? _clips[_activeClipIndex] : null;
+    debugPrint(
+      '[ReelEditor] next tapped clipCount=${_clips.length} '
+      'activeIndex=$_activeClipIndex '
+      'activePath=${activeClip?.path ?? ''} '
+      'activeType=${activeClip?.type.name ?? 'none'} '
+      'previewSize=${_previewKey.currentContext?.size?.width ?? 0}x${_previewKey.currentContext?.size?.height ?? 0} '
+      'playheadMs=$_playheadMs '
+      'isPlaying=$_isPlaying',
+    );
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -1328,6 +1352,10 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
         );
         return;
       }
+      debugPrint(
+        '[ReelEditor] export complete stitchedPath=$stitchedPath '
+        'fileExists=${File(stitchedPath).existsSync()}',
+      );
       final media = app_models.MediaItem(
         id: 'reel_${DateTime.now().millisecondsSinceEpoch}',
         type: app_models.MediaType.video,
