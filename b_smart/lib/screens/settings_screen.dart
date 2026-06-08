@@ -25,6 +25,11 @@ import 'privacy_screen.dart';
 import 'security_screen.dart';
 import 'wallet_screen.dart';
 
+String _trFallback(String key, String fallback) {
+  final value = key.tr();
+  return value == key ? fallback : value;
+}
+
 /// Profile settings hub for account, privacy, security, notifications, and more.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -394,10 +399,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => _push(_AboutScreen(packageInfo: _info)),
           ),
           const SizedBox(height: 20),
+          _sectionTitle('settings_section_account_actions'.tr()),
           _settingTile(
             icon: LucideIcons.logOut,
-            label: 'settings_section_account_actions'.tr(),
-            subLabel: 'settings_account_actions_subtitle'.tr(),
+            label: _trFallback('settings_section_account_actions', 'Account Actions'),
+            subLabel: _trFallback(
+              'settings_account_actions_subtitle',
+              'Open logout, deactivate, and delete options',
+            ),
             onTap: () => _push(
               _AccountActionsScreen(
                 loggingOut: _loggingOut,
@@ -2138,10 +2147,10 @@ class _AccountActionsScreen extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
-    return Scaffold(
+      return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('settings_section_account_actions'.tr()),
+        title: Text(_trFallback('settings_section_account_actions', 'Account Actions')),
         centerTitle: true,
         elevation: 0,
       ),
@@ -2157,12 +2166,12 @@ class _AccountActionsScreen extends StatelessWidget {
               runSpacing: 8,
               children: [
                 _pill('Support'),
+                _pill('About'),
                 _pill('Security'),
                 _pill('Policies'),
-                _pill('Account'),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 5),
             _sectionTitle('settings_section_session_controls'.tr()),
             _settingsCard(
               context,
@@ -2209,13 +2218,6 @@ class _AccountActionsScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            _infoCard(
-              context,
-              title: 'settings_section_account_actions'.tr(),
-              subtitle: 'settings_account_actions_screen_subtitle'.tr(),
-              icon: LucideIcons.shieldAlert,
-            ),
           ],
         ),
       ),
@@ -2258,7 +2260,7 @@ class _AccountActionsScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'settings_section_account_actions'.tr(),
+                  _trFallback('settings_section_account_actions', 'Account Actions'),
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -2267,7 +2269,10 @@ class _AccountActionsScreen extends StatelessWidget {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'settings_account_actions_screen_subtitle'.tr(),
+                  _trFallback(
+                    'settings_account_actions_screen_subtitle',
+                    'Manage logout, deactivation, and permanent deletion from one dedicated screen.',
+                  ),
                   style: TextStyle(
                     color: Colors.white,
                     height: 1.3,
