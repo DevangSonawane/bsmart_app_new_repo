@@ -217,16 +217,11 @@ class AuthService {
 
   // Check username availability
   Future<bool> checkUsernameAvailability(String username) async {
-    // The new API doesn't have a dedicated username-check endpoint,
-    // but a 400 on register means the username/email is taken.
-    // For now, we keep the Supabase fallback or do a best-effort check
-    // using the users API.
     try {
-      // Try fetching user – if 404, username is available; if 200, taken.
-      // This is a workaround; a dedicated endpoint would be better.
-      return true; // Placeholder – server will reject duplicates on register.
+      final result = await UsersApi().checkUsernameAvailability(username);
+      return result.available;
     } catch (_) {
-      return true;
+      return false;
     }
   }
 

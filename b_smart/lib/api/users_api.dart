@@ -1,5 +1,19 @@
 import 'api_client.dart';
+import 'api_exceptions.dart';
 import 'search_api.dart';
+
+/// Result wrapper for username/email/phone availability checks.
+class AvailabilityCheckResult {
+  final bool available;
+  final String message;
+  final int? statusCode;
+
+  const AvailabilityCheckResult({
+    required this.available,
+    required this.message,
+    this.statusCode,
+  });
+}
 
 /// REST API wrapper for `/users` endpoints.
 ///
@@ -13,6 +27,36 @@ class UsersApi {
   UsersApi._internal();
 
   final ApiClient _client = ApiClient();
+
+  Future<AvailabilityCheckResult> _checkAvailability({
+    required String path,
+    required String fieldName,
+    required String value,
+  }) async {
+    try {
+      final res = await _client.post(
+        path,
+        body: <String, dynamic>{fieldName: value.trim()},
+      );
+      final data = res is Map<String, dynamic>
+          ? res
+          : <String, dynamic>{'available': true, 'message': 'Available'};
+      return AvailabilityCheckResult(
+        available: data['available'] == true,
+        message: (data['message'] ?? 'Available').toString(),
+        statusCode: 200,
+      );
+    } on ApiException catch (e) {
+      final body = e.body;
+      final available = body?['available'] == true;
+      final message = (body?['message'] ?? e.message).toString();
+      return AvailabilityCheckResult(
+        available: available,
+        message: message,
+        statusCode: e.statusCode,
+      );
+    }
+  }
 
   /// Get a user's profile along with their posts.
   ///
@@ -78,6 +122,33 @@ class UsersApi {
   Future<Map<String, dynamic>> deleteUser(String userId) async {
     final res = await _client.delete('/users/$userId');
     return res as Map<String, dynamic>;
+  }
+
+  /// Check whether an email is available for a new account.
+  Future<AvailabilityCheckResult> checkEmailAvailability(String email) {
+    return _checkAvailability(
+      path: '/users/check/email',
+      fieldName: 'email',
+      value: email,
+    );
+  }
+
+  /// Check whether a username is available for a new account.
+  Future<AvailabilityCheckResult> checkUsernameAvailability(String username) {
+    return _checkAvailability(
+      path: '/users/check/username',
+      fieldName: 'username',
+      value: username,
+    );
+  }
+
+  /// Check whether a phone number is available for a new account.
+  Future<AvailabilityCheckResult> checkPhoneAvailability(String phone) {
+    return _checkAvailability(
+      path: '/users/check/phone',
+      fieldName: 'phone',
+      value: phone,
+    );
   }
 
   /// Search users by query string.
