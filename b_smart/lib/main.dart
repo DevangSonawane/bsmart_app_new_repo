@@ -319,7 +319,7 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
     final isDark = ThemeScope.of(context).isDark;
 
     return MaterialApp(
-      title: 'b Smart',
+      title: 'app_name'.tr(),
       debugShowCheckedModeBanner: false,
       scrollBehavior: const _NoGlowScrollBehavior(),
       locale: context.locale,

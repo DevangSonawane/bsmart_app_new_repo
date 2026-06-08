@@ -722,6 +722,8 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
     if (!mounted) return;
     final updatedOptionalLanguages =
         _normalizeLanguages(_optionalLanguages.toSet(), exclude: language);
+    final locale = _localeForLanguage(language);
+    await context.setLocale(locale);
     setState(() {
       _defaultLanguage = language;
       _optionalLanguages

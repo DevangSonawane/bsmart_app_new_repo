@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:redux/redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -116,7 +117,7 @@ class _FeedHeader extends StatelessWidget {
                     TextSpan(
                       children: [
                         TextSpan(
-                          text: 'HOME ',
+                          text: '${'home_dashboard_home'.tr().toUpperCase()} ',
                           style: TextStyle(
                             color: isDark ? Colors.white : Colors.black87,
                             fontWeight: FontWeight.bold,
@@ -126,8 +127,8 @@ class _FeedHeader extends StatelessWidget {
                         TextSpan(
                           text: currentLocation == null
                               ? (locationLoading
-                                  ? 'Detecting current location...'
-                                  : 'Tap to detect location')
+                              ? 'home_dashboard_detecting_location'.tr()
+                                  : 'home_dashboard_tap_to_detect_location'.tr())
                               : currentLocation!,
                           style: TextStyle(
                             color: isDark ? Colors.white70 : Colors.black54,
@@ -2472,7 +2473,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                 TextSpan(
                   children: [
                     TextSpan(
-                      text: 'HOME ',
+                      text: '${'home_dashboard_home'.tr().toUpperCase()} ',
                       style: TextStyle(
                         color: isDark ? Colors.white : Colors.black87,
                         fontWeight: FontWeight.bold,
@@ -2482,8 +2483,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                     TextSpan(
                       text: _currentLocation == null
                           ? (_locationLoading
-                              ? 'Detecting current location...'
-                              : 'Tap to detect location')
+                              ? 'home_dashboard_detecting_location'.tr()
+                              : 'home_dashboard_tap_to_detect_location'.tr())
                           : _currentLocation!,
                       style: TextStyle(
                         color: isDark ? Colors.white70 : Colors.black54,
@@ -2764,7 +2765,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                   child: const Icon(LucideIcons.image,
                       color: Colors.white, size: 22),
                 ),
-                title: Text(_isVendor ? 'Create Ads' : 'Create Post'),
+                title: Text(_isVendor ? 'home_dashboard_create_ads'.tr() : 'home_dashboard_create_post'.tr()),
                 subtitle: Text(
                   _isVendor ? 'Upload ad campaign' : 'Photo or video',
                   style: TextStyle(

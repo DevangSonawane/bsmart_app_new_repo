@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/design_tokens.dart';
 import '../theme/theme_scope.dart';
@@ -98,8 +99,8 @@ class _SidebarState extends State<Sidebar> {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
-                  _NavItem(icon: LucideIcons.house, label: 'Home', index: 0, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(0), inactiveColor: inactiveColor),
-                  _NavItem(icon: LucideIcons.target, label: 'Ads', index: 1, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(1), inactiveColor: inactiveColor),
+                  _NavItem(icon: LucideIcons.house, label: 'nav_home'.tr(), index: 0, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(0), inactiveColor: inactiveColor),
+                  _NavItem(icon: LucideIcons.target, label: 'nav_ads'.tr(), index: 1, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(1), inactiveColor: inactiveColor),
                   _CreateItem(
                     currentIndex: widget.currentIndex,
                     isVendor: widget.isVendor,
@@ -120,11 +121,11 @@ class _SidebarState extends State<Sidebar> {
                       widget.onCreateAd?.call();
                     },
                   ),
-                  _NavItem(icon: LucideIcons.megaphone, label: 'Promote', index: 3, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(3), inactiveColor: inactiveColor),
-                  _NavItem(icon: LucideIcons.clapperboard, label: 'Reels', index: 4, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(4), inactiveColor: inactiveColor),
-                  _NavItem(icon: LucideIcons.user, label: 'Profile', index: 5, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(5), inactiveColor: inactiveColor),
+                  _NavItem(icon: LucideIcons.megaphone, label: 'nav_promote'.tr(), index: 3, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(3), inactiveColor: inactiveColor),
+                  _NavItem(icon: LucideIcons.clapperboard, label: 'nav_reels'.tr(), index: 4, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(4), inactiveColor: inactiveColor),
+                  _NavItem(icon: LucideIcons.user, label: 'nav_profile'.tr(), index: 5, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(5), inactiveColor: inactiveColor),
                   const SizedBox(height: 16),
-                  _NavItem(icon: LucideIcons.menu, label: 'More', index: -1, currentIndex: -2, hovered: _hovered, onTap: () {}, inactiveColor: inactiveColor),
+                  _NavItem(icon: LucideIcons.menu, label: 'nav_more'.tr(), index: -1, currentIndex: -2, hovered: _hovered, onTap: () {}, inactiveColor: inactiveColor),
                 ],
               ),
             ),
@@ -143,7 +144,7 @@ class _SidebarState extends State<Sidebar> {
                         Icon(isDark ? LucideIcons.moon : LucideIcons.sun, size: 22, color: inactiveColor),
                         if (_hovered) ...[
                           const SizedBox(width: 12),
-                          Text('Appearance', style: TextStyle(color: inactiveColor, fontWeight: FontWeight.w500)),
+                          Text('nav_appearance'.tr(), style: TextStyle(color: inactiveColor, fontWeight: FontWeight.w500)),
                           const Spacer(),
                           Switch(
                             value: isDark,
@@ -269,7 +270,7 @@ class _CreateItem extends StatelessWidget {
                       const SizedBox(width: 16),
                       Expanded(
                         child: Text(
-                          'Create',
+                          'nav_create'.tr(),
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: active ? FontWeight.bold : FontWeight.w500,
@@ -305,18 +306,18 @@ class _CreateItem extends StatelessWidget {
                       if (isVendor)
                         ListTile(
                           leading: const Icon(LucideIcons.megaphone, size: 20),
-                          title: const Text('Create Ads', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          title: Text('nav_create_ads'.tr(), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                           onTap: onCreateAd,
                         )
                       else ...[
                         ListTile(
                           leading: const Icon(LucideIcons.image, size: 20),
-                          title: const Text('Create Post', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          title: Text('nav_create_post'.tr(), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                           onTap: onCreatePost,
                         ),
                         ListTile(
                           leading: const Icon(LucideIcons.video, size: 20),
-                          title: const Text('Upload Reel', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          title: Text('nav_upload_reel'.tr(), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                           onTap: onUploadReel,
                         ),
                       ],

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -158,22 +159,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text('Delete Account Permanently'),
-          content: const Text(
-            'This build does not yet have a live delete-account API wired up. '
-            'You can still review the flow here and we can connect the backend next.',
-          ),
+          title: Text('settings_delete_account_permanently'.tr()),
+          content: Text('settings_delete_account_dialog_body'.tr()),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
+              child: Text('common_cancel'.tr()),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.red.shade600,
               ),
-              child: const Text('Continue'),
+              child: Text('common_continue'.tr()),
             ),
           ],
         );
@@ -201,22 +199,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text('Deactivate Account'),
-          content: const Text(
-            'This build does not yet have a live deactivate-account API wired up. '
-            'We can connect it later, but for now this will only show the flow.',
-          ),
+          title: Text('settings_deactivate_account'.tr()),
+          content: Text('settings_deactivate_account_dialog_body'.tr()),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
+              child: Text('common_cancel'.tr()),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.orange.shade700,
               ),
-              child: const Text('Continue'),
+              child: Text('common_continue'.tr()),
             ),
           ],
         );
@@ -266,7 +261,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          'Profile Settings',
+          'settings_profile_settings'.tr(),
           style: TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 18,
@@ -280,45 +275,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           _headerCard(theme, isDark),
           const SizedBox(height: 20),
-          _sectionTitle('Account'),
+          _sectionTitle('settings_section_account'.tr()),
           _settingTile(
             icon: Icons.account_circle_outlined,
-            label: 'Account',
-            subLabel: 'Profile, email, phone, and payment details',
+            label: 'settings_account'.tr(),
+            subLabel: 'settings_account_subtitle'.tr(),
             onTap: () => _push(const AccountDetailsScreen()),
           ),
           _settingTile(
             icon: LucideIcons.shield,
-            label: 'Privacy',
-            subLabel: 'Private account and follow requests',
+            label: 'settings_privacy'.tr(),
+            subLabel: 'settings_privacy_subtitle'.tr(),
             onTap: () => _push(const PrivacyScreen()),
           ),
           _settingTile(
             icon: LucideIcons.lockKeyhole,
-            label: 'Security',
-            subLabel: 'Password, verification, and 2FA',
+            label: 'settings_security'.tr(),
+            subLabel: 'settings_security_subtitle'.tr(),
             onTap: () => _push(const SecurityScreen()),
           ),
           const SizedBox(height: 20),
-          _sectionTitle('Notifications'),
+          _sectionTitle('settings_section_notifications'.tr()),
           _settingTile(
             icon: LucideIcons.bell,
-            label: 'Notifications',
-            subLabel: 'Push and delivery preferences',
+            label: 'settings_notifications'.tr(),
+            subLabel: 'settings_notifications_subtitle'.tr(),
             onTap: () => _push(const NotificationSettingsScreen()),
           ),
           _settingTile(
             icon: LucideIcons.messageSquareMore,
-            label: 'Messaging',
-            subLabel: 'Chats, requests, and conversation settings',
+            label: 'settings_messaging'.tr(),
+            subLabel: 'settings_messaging_subtitle'.tr(),
             onTap: () => _push(const MessagingSettingsScreen()),
           ),
           const SizedBox(height: 20),
-          _sectionTitle('Preferences'),
+          _sectionTitle('settings_section_preferences'.tr()),
           _settingTile(
             icon: isDark ? LucideIcons.moon : LucideIcons.sunMedium,
-            label: 'Appearance',
-            subLabel: isDark ? 'Dark mode is on' : 'Light mode is on',
+            label: 'settings_appearance'.tr(),
+            subLabel: isDark
+                ? 'settings_appearance_dark'.tr()
+                : 'settings_appearance_light'.tr(),
             trailing: Switch(
               value: isDark,
               onChanged: (_) => ThemeScope.of(context).toggle(),
@@ -327,90 +324,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           _settingTile(
             icon: LucideIcons.slidersHorizontal,
-            label: 'Content Preferences',
-            subLabel: 'Age, restrictions, and feed controls',
+            label: 'settings_content_preferences'.tr(),
+            subLabel: 'settings_content_preferences_subtitle'.tr(),
             onTap: () => _push(const ContentSettingsScreen()),
           ),
           const SizedBox(height: 20),
-          _sectionTitle('Rewards'),
+          _sectionTitle('settings_section_rewards'.tr()),
           _settingTile(
             icon: LucideIcons.wallet,
-            label: 'Rewards & Wallet',
-            subLabel: 'Coins, history, and balances',
+            label: 'settings_rewards_wallet'.tr(),
+            subLabel: 'settings_rewards_wallet_subtitle'.tr(),
             onTap: () => Navigator.of(context).pushNamed('/wallet'),
           ),
           if (_isCreator) ...[
             _settingTile(
               icon: LucideIcons.sparkles,
-              label: 'Creator Center',
-              subLabel: 'Creator tools, earnings, and analytics',
+              label: 'settings_creator_center'.tr(),
+              subLabel: 'settings_creator_center_subtitle'.tr(),
               onTap: () => _push(const _CreatorCenterScreen()),
             ),
           ],
           if (_isVendor) ...[
             _settingTile(
               icon: LucideIcons.store,
-              label: 'Vendor Center',
-              subLabel: 'Campaigns, ads, and business wallet',
+              label: 'settings_vendor_center'.tr(),
+              subLabel: 'settings_vendor_center_subtitle'.tr(),
               onTap: () => _push(const _VendorCenterScreen()),
             ),
           ],
           const SizedBox(height: 20),
-          _sectionTitle('Safety'),
+          _sectionTitle('settings_section_safety'.tr()),
           _settingTile(
             icon: LucideIcons.userX,
-            label: 'Blocked & Restricted Accounts',
-            subLabel: 'Manage blocks and view account limitations',
+            label: 'settings_blocked_accounts'.tr(),
+            subLabel: 'settings_blocked_accounts_subtitle'.tr(),
             onTap: () => _push(const _BlockedRestrictedScreen()),
           ),
           const SizedBox(height: 20),
-          _sectionTitle('Data'),
+          _sectionTitle('settings_section_data'.tr()),
           _settingTile(
             icon: LucideIcons.databaseZap,
-            label: 'Storage & Data',
-            subLabel: 'Cache, downloads, and local app storage',
+            label: 'settings_storage_data'.tr(),
+            subLabel: 'settings_storage_data_subtitle'.tr(),
             onTap: () => _push(_StorageDataScreen(onClearCache: _clearCache)),
           ),
           const SizedBox(height: 20),
-          _sectionTitle('Support'),
+          _sectionTitle('settings_section_support'.tr()),
           _settingTile(
             icon: Icons.help_outline,
-            label: 'Help & Support',
-            subLabel: 'Contact us and get help',
+            label: 'settings_help_support'.tr(),
+            subLabel: 'settings_help_support_subtitle'.tr(),
             onTap: () => _push(_HelpSupportScreen(onContactSupport: _openMailSupport)),
           ),
           _settingTile(
             icon: Icons.article_outlined,
-            label: 'Legal & Compliance',
-            subLabel: 'Policies, terms, and guidelines',
+            label: 'settings_legal_compliance'.tr(),
+            subLabel: 'settings_legal_compliance_subtitle'.tr(),
             onTap: () => _push(const _LegalComplianceScreen()),
           ),
           const SizedBox(height: 20),
-          _sectionTitle('About'),
+          _sectionTitle('settings_section_about'.tr()),
           _settingTile(
             icon: Icons.info_outline,
-            label: 'About bSmart',
+            label: 'settings_about_bsmart'.tr(),
             subLabel: _aboutSubtitle,
             onTap: () => _push(_AboutScreen(packageInfo: _info)),
           ),
           const SizedBox(height: 20),
-          _sectionTitle('Account Actions'),
-          _sectionTitle('Session Controls'),
+          _sectionTitle('settings_section_account_actions'.tr()),
+          _sectionTitle('settings_section_session_controls'.tr()),
           _destructiveActionCard(
             icon: LucideIcons.logOut,
-            title: _loggingOut ? 'Logging out...' : 'Logout',
-            subtitle: 'Sign out of your account on this device',
+            title: _loggingOut ? 'settings_logging_out'.tr() : 'settings_logout'.tr(),
+            subtitle: 'settings_logout_subtitle'.tr(),
             loading: _loggingOut,
             onTap: _loggingOut ? null : _logout,
           ),
           const SizedBox(height: 20),
-          _sectionTitle('Account Controls'),
+          _sectionTitle('settings_section_account_controls'.tr()),
           _destructiveActionCard(
             icon: LucideIcons.userX,
             title: _deactivatingAccount
-                ? 'Preparing deactivate flow...'
-                : 'Deactivate Account',
-            subtitle: 'Temporarily disable your account',
+                ? 'settings_preparing_deactivate'.tr()
+                : 'settings_deactivate_account'.tr(),
+            subtitle: 'settings_deactivate_account_subtitle'.tr(),
             loading: _deactivatingAccount,
             onTap: _deactivatingAccount ? null : _showDeactivateAccountDialog,
             danger: false,
@@ -419,9 +416,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _destructiveActionCard(
             icon: LucideIcons.trash2,
             title: _deletingAccount
-                ? 'Preparing delete flow...'
-                : 'Delete Account Permanently',
-            subtitle: 'Request permanent account removal',
+                ? 'settings_preparing_delete'.tr()
+                : 'settings_delete_account_permanently'.tr(),
+            subtitle: 'settings_delete_account_subtitle'.tr(),
             loading: _deletingAccount,
             onTap: _deletingAccount ? null : _showDeleteAccountDialog,
             danger: true,
@@ -487,9 +484,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Profile Settings',
-                  style: TextStyle(
+                Text(
+                  'settings_profile_settings'.tr(),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
@@ -497,7 +494,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Manage your account, privacy, content, data, and support in one place.',
+                  'settings_profile_settings_subtitle'.tr(),
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.9),
                     height: 1.35,
@@ -510,8 +507,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     _chip(roleLabel),
                     _chip(_aboutSubtitle),
-                    if (_isCreator) _chip('Creator tools enabled'),
-                    if (_isVendor) _chip('Vendor tools enabled'),
+                    if (_isCreator) _chip('settings_creator_tools_enabled'.tr()),
+                    if (_isVendor) _chip('settings_vendor_tools_enabled'.tr()),
                   ],
                 ),
               ],
@@ -700,22 +697,22 @@ class _CreatorCenterScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Creator Center')),
+      appBar: AppBar(title: Text('settings_creator_center'.tr())),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _infoCard(
             context,
-            title: 'Creator tools',
-            subtitle: 'This space is ready for creator analytics, earnings, and content tools.',
+            title: 'settings_creator_tools_title'.tr(),
+            subtitle: 'settings_creator_tools_subtitle'.tr(),
             icon: LucideIcons.sparkles,
           ),
           const SizedBox(height: 12),
           _centerTile(
             context,
             icon: Icons.insights,
-            title: 'Creator dashboard',
-            subtitle: 'Views, reach, and content performance',
+            title: 'settings_creator_dashboard'.tr(),
+            subtitle: 'settings_creator_dashboard_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AdvertiserDashboardScreen()),
             ),
@@ -723,8 +720,8 @@ class _CreatorCenterScreen extends StatelessWidget {
           _centerTile(
             context,
             icon: Icons.account_balance_wallet,
-            title: 'Earnings & wallet',
-            subtitle: 'Coins, payouts, and history',
+            title: 'settings_creator_earnings_wallet'.tr(),
+            subtitle: 'settings_creator_earnings_wallet_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const WalletScreen()),
             ),
@@ -732,8 +729,8 @@ class _CreatorCenterScreen extends StatelessWidget {
           _centerTile(
             context,
             icon: Icons.verified,
-            title: 'Creator onboarding',
-            subtitle: 'Upgrade and verification guidance',
+            title: 'settings_creator_onboarding'.tr(),
+            subtitle: 'settings_creator_onboarding_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AccountUpgradeScreen()),
             ),
@@ -750,22 +747,22 @@ class _VendorCenterScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Vendor Center')),
+      appBar: AppBar(title: Text('settings_vendor_center'.tr())),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _infoCard(
             context,
-            title: 'Vendor tools',
-            subtitle: 'Manage ads, wallet, and campaign analytics from this hub.',
+            title: 'settings_vendor_tools_title'.tr(),
+            subtitle: 'settings_vendor_tools_subtitle'.tr(),
             icon: LucideIcons.store,
           ),
           const SizedBox(height: 12),
           _centerTile(
             context,
             icon: LucideIcons.layoutDashboard,
-            title: 'Vendor dashboard',
-            subtitle: 'Topline metrics and campaign overview',
+            title: 'settings_vendor_dashboard'.tr(),
+            subtitle: 'settings_vendor_dashboard_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AdvertiserDashboardScreen()),
             ),
@@ -773,8 +770,8 @@ class _VendorCenterScreen extends StatelessWidget {
           _centerTile(
             context,
             icon: LucideIcons.megaphone,
-            title: 'Ad manager',
-            subtitle: 'Campaigns, creatives, and performance',
+            title: 'settings_vendor_ad_manager'.tr(),
+            subtitle: 'settings_vendor_ad_manager_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AdvertiserAdsListScreen()),
             ),
@@ -782,8 +779,8 @@ class _VendorCenterScreen extends StatelessWidget {
           _centerTile(
             context,
             icon: LucideIcons.wallet,
-            title: 'Business wallet',
-            subtitle: 'Coin balance, spending, and activity',
+            title: 'settings_vendor_business_wallet'.tr(),
+            subtitle: 'settings_vendor_business_wallet_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AdvertiserWalletScreen()),
             ),
@@ -800,22 +797,22 @@ class _BlockedRestrictedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Blocked & Restricted Accounts')),
+      appBar: AppBar(title: Text('settings_blocked_accounts'.tr())),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _infoCard(
             context,
-            title: 'Account safety',
-            subtitle: 'This area will hold blocked users, account restrictions, and moderation history.',
+            title: 'settings_account_safety_title'.tr(),
+            subtitle: 'settings_account_safety_subtitle'.tr(),
             icon: Icons.block,
           ),
           const SizedBox(height: 12),
           _centerTile(
             context,
             icon: Icons.privacy_tip_outlined,
-            title: 'Review privacy',
-            subtitle: 'Make your account private and manage follow requests',
+            title: 'settings_review_privacy'.tr(),
+            subtitle: 'settings_review_privacy_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const PrivacyScreen()),
             ),
@@ -823,8 +820,8 @@ class _BlockedRestrictedScreen extends StatelessWidget {
           _centerTile(
             context,
             icon: Icons.report_gmailerrorred_outlined,
-            title: 'Content restrictions',
-            subtitle: 'See moderation and restricted-content controls',
+            title: 'settings_content_restrictions'.tr(),
+            subtitle: 'settings_content_restrictions_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ContentSettingsScreen()),
             ),
@@ -860,7 +857,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Storage & Data'),
+        title: Text('settings_storage_data'.tr()),
         centerTitle: true,
         elevation: 0,
       ),
@@ -871,37 +868,37 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
           children: [
             _storageHeader(isDark, totalStorage),
             const SizedBox(height: 20),
-            _sectionTitle('Storage'),
+            _sectionTitle('settings_storage_section_storage'.tr()),
             _settingsCard(
               children: [
                 _actionRow(
                   icon: LucideIcons.wandSparkles,
-                  title: 'Clear Cache',
-                  subtitle: 'Remove cached images and downloaded assets.',
+                  title: 'settings_clear_cache'.tr(),
+                  subtitle: 'settings_clear_cache_subtitle'.tr(),
                   onTap: _clearCache,
-                  trailing: const Text(
-                    'Recommended',
+                  trailing: Text(
+                    'settings_recommended'.tr(),
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
                   ),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   icon: LucideIcons.download,
-                  title: 'Downloaded Media',
-                  subtitle: 'Manage files saved for offline access.',
-                  onTap: () => _showUnavailable('Downloaded Media'),
+                  title: 'settings_downloaded_media'.tr(),
+                  subtitle: 'settings_downloaded_media_subtitle'.tr(),
+                  onTap: () => _showUnavailable('settings_downloaded_media'.tr()),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Data Usage'),
+            _sectionTitle('settings_storage_section_data_usage'.tr()),
             _settingsCard(
               children: [
                 SwitchListTile(
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  title: const Text('Mobile Data Saver'),
-                  subtitle: const Text('Reduce data usage when on cellular data.'),
+                  title: Text('settings_mobile_data_saver'.tr()),
+                  subtitle: Text('settings_mobile_data_saver_subtitle'.tr()),
                   value: _mobileDataSaver,
                   activeThumbColor: DesignTokens.instaPink,
                   activeTrackColor:
@@ -912,18 +909,15 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                       isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB),
                   onChanged: (value) {
                     setState(() => _mobileDataSaver = value);
-                    _showUnavailable(
-                      'Mobile Data Saver is local-only in this build.',
-                    );
+                    _showUnavailable('settings_mobile_data_saver_local_only'.tr());
                   },
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  title: const Text('Wi-Fi Only Downloads'),
-                  subtitle:
-                      const Text('Only download media when connected to Wi-Fi.'),
+                  title: Text('settings_wifi_only_downloads'.tr()),
+                  subtitle: Text('settings_wifi_only_downloads_subtitle'.tr()),
                   value: _wifiOnlyDownloads,
                   activeThumbColor: DesignTokens.instaPink,
                   activeTrackColor:
@@ -934,31 +928,29 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                       isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB),
                   onChanged: (value) {
                     setState(() => _wifiOnlyDownloads = value);
-                    _showUnavailable(
-                      'Wi-Fi Only Downloads is local-only in this build.',
-                    );
+                    _showUnavailable('settings_wifi_only_downloads_local_only'.tr());
                   },
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Storage Breakdown'),
+            _sectionTitle('settings_storage_breakdown'.tr()),
             _settingsCard(
               children: [
                 _breakdownRow(
-                  label: 'Images',
+                  label: 'settings_images'.tr(),
                   valueMb: _cachedImagesMb,
                   color: DesignTokens.instaPink,
                 ),
                 const Divider(height: 1),
                 _breakdownRow(
-                  label: 'Videos',
+                  label: 'settings_videos'.tr(),
                   valueMb: _cachedVideosMb,
                   color: DesignTokens.instaOrange,
                 ),
                 const Divider(height: 1),
                 _breakdownRow(
-                  label: 'Documents',
+                  label: 'settings_documents'.tr(),
                   valueMb: _cachedDocumentsMb,
                   color: DesignTokens.instaPurple,
                 ),
@@ -1007,8 +999,8 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Storage & data',
+                Text(
+                  'settings_storage_data_header'.tr(),
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -1017,7 +1009,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$totalStorage MB cached locally',
+                  'settings_storage_cached_locally'.tr(args: ['$totalStorage']),
                   style: const TextStyle(color: Colors.white, height: 1.3),
                 ),
               ],
@@ -1206,8 +1198,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Clear cache is the only action that connects to a real local cleanup right now. '
-              'Downloaded Media, Data Usage, and the breakdown rows represent about $totalStorage MB of cached content right now, and can be connected later if a backend endpoint is added.',
+              'settings_storage_info_text'.tr(args: ['$totalStorage']),
               style: TextStyle(
                 fontSize: 13,
                 height: 1.4,
@@ -1224,13 +1215,13 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
     await widget.onClearCache();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cache cleared')),
+      SnackBar(content: Text('settings_cache_cleared'.tr())),
     );
   }
 
   void _showUnavailable(String label) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No API exists yet for $label.')),
+      SnackBar(content: Text('settings_no_api_exists_yet'.tr(args: [label]))),
     );
   }
 }
@@ -1248,7 +1239,7 @@ class _HelpSupportScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Help & Support'),
+        title: Text('settings_help_support'.tr()),
         centerTitle: true,
         elevation: 0,
       ),
@@ -1259,15 +1250,15 @@ class _HelpSupportScreen extends StatelessWidget {
           children: [
             _headerCard(isDark),
             const SizedBox(height: 20),
-            _sectionTitle('Support'),
+            _sectionTitle('settings_help_section_support'.tr()),
             _settingsCard(
               context,
               children: [
                 _actionRow(
                   context,
                   icon: Icons.mail_outline,
-                  title: 'Contact Support',
-                  subtitle: 'Email the support inbox for account help and troubleshooting.',
+                  title: 'settings_contact_support'.tr(),
+                  subtitle: 'settings_contact_support_subtitle'.tr(),
                   onTap: () async {
                     await onContactSupport();
                   },
@@ -1276,86 +1267,85 @@ class _HelpSupportScreen extends StatelessWidget {
                 _actionRow(
                   context,
                   icon: Icons.confirmation_num_outlined,
-                  title: 'Raise a Ticket',
-                  subtitle: 'Create a support request for follow-up.',
-                  onTap: () => _showUnavailable(context, 'Raise a Ticket'),
+                  title: 'settings_raise_ticket'.tr(),
+                  subtitle: 'settings_raise_ticket_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_raise_ticket'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.chat_bubble_outline,
-                  title: 'Live Chat',
-                  subtitle: 'Chat with support in real time.',
-                  onTap: () => _showUnavailable(context, 'Live Chat'),
+                  title: 'settings_live_chat'.tr(),
+                  subtitle: 'settings_live_chat_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_live_chat'.tr()),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Resources'),
+            _sectionTitle('settings_help_section_resources'.tr()),
             _settingsCard(
               context,
               children: [
                 _actionRow(
                   context,
                   icon: Icons.quiz_outlined,
-                  title: 'FAQs',
-                  subtitle: 'Common questions and quick answers.',
-                  onTap: () => _showUnavailable(context, 'FAQs'),
+                  title: 'settings_faqs'.tr(),
+                  subtitle: 'settings_faqs_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_faqs'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.video_library_outlined,
-                  title: 'Tutorials',
-                  subtitle: 'Step-by-step walkthroughs and how-to videos.',
-                  onTap: () => _showUnavailable(context, 'Tutorials'),
+                  title: 'settings_tutorials'.tr(),
+                  subtitle: 'settings_tutorials_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_tutorials'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.menu_book_outlined,
-                  title: 'User Guide',
-                  subtitle: 'Learn how to use bSmart features and tools.',
-                  onTap: () => _showUnavailable(context, 'User Guide'),
+                  title: 'settings_user_guide'.tr(),
+                  subtitle: 'settings_user_guide_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_user_guide'.tr()),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Reports'),
+            _sectionTitle('settings_help_section_reports'.tr()),
             _settingsCard(
               context,
               children: [
                 _actionRow(
                   context,
                   icon: Icons.bug_report_outlined,
-                  title: 'Report a Bug',
-                  subtitle: 'Flag crashes, layout issues, or broken flows.',
-                  onTap: () => _showUnavailable(context, 'Report a Bug'),
+                  title: 'settings_report_bug'.tr(),
+                  subtitle: 'settings_report_bug_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_report_bug'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.flag_outlined,
-                  title: 'Report Content',
-                  subtitle: 'Report posts, reels, or ads that violate rules.',
-                  onTap: () => _showUnavailable(context, 'Report Content'),
+                  title: 'settings_report_content'.tr(),
+                  subtitle: 'settings_report_content_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_report_content'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.person_off_outlined,
-                  title: 'Report a User',
-                  subtitle: 'Report harassment, spam, or abuse.',
-                  onTap: () => _showUnavailable(context, 'Report a User'),
+                  title: 'settings_report_user'.tr(),
+                  subtitle: 'settings_report_user_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_report_user'.tr()),
                 ),
               ],
             ),
             const SizedBox(height: 20),
             _infoCard(
               context,
-              title: 'Help hub',
-              subtitle:
-                  'Contact Support is wired to email right now. The rest of the help items are shown in the new hub layout and will show a snackbar until their flows are connected.',
+              title: 'settings_help_hub'.tr(),
+              subtitle: 'settings_help_hub_subtitle'.tr(),
               icon: Icons.support_agent,
             ),
           ],
@@ -1395,12 +1385,12 @@ class _HelpSupportScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 14),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Help & support',
+                  'settings_help_support_header'.tr(),
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -1409,7 +1399,7 @@ class _HelpSupportScreen extends StatelessWidget {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'Support, resources, and reporting tools in one place.',
+                  'settings_help_support_header_subtitle'.tr(),
                   style: TextStyle(
                     color: Colors.white,
                     height: 1.3,
@@ -1539,7 +1529,7 @@ class _LegalComplianceScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Legal & Compliance'),
+        title: Text('settings_legal_compliance'.tr()),
         centerTitle: true,
         elevation: 0,
       ),
@@ -1550,120 +1540,114 @@ class _LegalComplianceScreen extends StatelessWidget {
           children: [
             _legalHeader(isDark),
             const SizedBox(height: 20),
-            _sectionTitle('Legal Documents'),
+            _sectionTitle('settings_legal_section_documents'.tr()),
             _settingsCard(
               context,
               children: [
                 _actionRow(
                   context,
                   icon: Icons.article_outlined,
-                  title: 'Terms & Conditions',
-                  subtitle: 'Rules for using bSmart.',
-                  onTap: () => _showUnavailable(context, 'Terms & Conditions'),
+                  title: 'settings_terms_conditions'.tr(),
+                  subtitle: 'settings_terms_conditions_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_terms_conditions'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.privacy_tip_outlined,
-                  title: 'Privacy Policy',
-                  subtitle: 'How your data is collected and used.',
-                  onTap: () => _showUnavailable(context, 'Privacy Policy'),
+                  title: 'settings_privacy_policy'.tr(),
+                  subtitle: 'settings_privacy_policy_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_privacy_policy'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.receipt_long_outlined,
-                  title: 'Refund Policy',
-                  subtitle: 'Refund rules for purchases and services.',
-                  onTap: () => _showUnavailable(context, 'Refund Policy'),
+                  title: 'settings_refund_policy'.tr(),
+                  subtitle: 'settings_refund_policy_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_refund_policy'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.rule_outlined,
-                  title: 'Community Guidelines',
-                  subtitle: 'Content and behavior standards.',
-                  onTap: () => _showUnavailable(context, 'Community Guidelines'),
+                  title: 'settings_community_guidelines'.tr(),
+                  subtitle: 'settings_community_guidelines_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_community_guidelines'.tr()),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Data Controls'),
+            _sectionTitle('settings_legal_section_data_controls'.tr()),
             _settingsCard(
               context,
               children: [
                 _actionRow(
                   context,
                   icon: Icons.download_outlined,
-                  title: 'Download My Data',
-                  subtitle: 'Export your account data.',
-                  onTap: () => _showUnavailable(context, 'Download My Data'),
+                  title: 'settings_download_my_data'.tr(),
+                  subtitle: 'settings_download_my_data_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_download_my_data'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.delete_outline,
-                  title: 'Delete My Data',
-                  subtitle: 'Request permanent deletion of stored data.',
-                  onTap: () => _showUnavailable(context, 'Delete My Data'),
+                  title: 'settings_delete_my_data'.tr(),
+                  subtitle: 'settings_delete_my_data_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_delete_my_data'.tr()),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Consent Management'),
+            _sectionTitle('settings_legal_section_consent_management'.tr()),
             _settingsCard(
               context,
               children: [
                 _actionRow(
                   context,
                   icon: Icons.tune_outlined,
-                  title: 'Manage Consent Preferences',
-                  subtitle: 'Control optional data and communication consent.',
-                  onTap: () => _showUnavailable(
-                    context,
-                    'Manage Consent Preferences',
-                  ),
+                  title: 'settings_manage_consent_preferences'.tr(),
+                  subtitle: 'settings_manage_consent_preferences_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_manage_consent_preferences'.tr()),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('DPDP Compliance'),
+            _sectionTitle('settings_legal_section_dpdp'.tr()),
             _settingsCard(
               context,
               children: [
                 _actionRow(
                   context,
                   icon: Icons.manage_search_outlined,
-                  title: 'Data Access Request',
-                  subtitle: 'Request a copy of your personal data.',
-                  onTap: () => _showUnavailable(context, 'Data Access Request'),
+                  title: 'settings_data_access_request'.tr(),
+                  subtitle: 'settings_data_access_request_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_data_access_request'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.edit_outlined,
-                  title: 'Data Correction Request',
-                  subtitle: 'Request a correction to inaccurate data.',
-                  onTap: () =>
-                      _showUnavailable(context, 'Data Correction Request'),
+                  title: 'settings_data_correction_request'.tr(),
+                  subtitle: 'settings_data_correction_request_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_data_correction_request'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
                   context,
                   icon: Icons.delete_sweep_outlined,
-                  title: 'Data Deletion Request',
-                  subtitle: 'Request deletion under applicable law.',
-                  onTap: () =>
-                      _showUnavailable(context, 'Data Deletion Request'),
+                  title: 'settings_data_deletion_request'.tr(),
+                  subtitle: 'settings_data_deletion_request_subtitle'.tr(),
+                  onTap: () => _showUnavailable(context, 'settings_data_deletion_request'.tr()),
                 ),
               ],
             ),
             const SizedBox(height: 20),
             _infoCard(
               context,
-              title: 'Legal hub',
-              subtitle:
-                  'This page is organized to match the rest of settings. The listed legal/data requests are visible here, but they will show a snackbar until a dedicated backend flow is added.',
+              title: 'settings_legal_hub'.tr(),
+              subtitle: 'settings_legal_hub_subtitle'.tr(),
               icon: Icons.gavel,
             ),
           ],
@@ -1703,12 +1687,12 @@ class _LegalComplianceScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 14),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Legal & compliance',
+                  'settings_legal_compliance_header'.tr(),
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -1717,7 +1701,7 @@ class _LegalComplianceScreen extends StatelessWidget {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'Documents, data controls, consent, and DPDP request tools.',
+                  'settings_legal_compliance_header_subtitle'.tr(),
                   style: TextStyle(
                     color: Colors.white,
                     height: 1.3,
