@@ -29,14 +29,6 @@ class _NotificationSettingsScreenState
   final bool _newMessages = true;
   final bool _messageRequests = true;
 
-  final bool _campaignInvites = false;
-  final bool _collaborationRequests = false;
-  final bool _earningsUpdates = false;
-
-  final bool _productUpdates = false;
-  final bool _promotions = false;
-  final bool _marketingEmails = false;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -182,73 +174,6 @@ class _NotificationSettingsScreenState
                             ),
                           ],
                         ),
-                        const SizedBox(height: 20),
-                        _sectionTitle('Creator Notifications'),
-                        _settingsCard(
-                          children: [
-                            _toggleRow(
-                              icon: Icons.campaign_outlined,
-                              title: 'Campaign Invitations',
-                              subtitle: 'New campaign invites from brands.',
-                              value: _campaignInvites,
-                              onChanged: (value) =>
-                                  _unsupportedToggle('Campaign Invitations'),
-                            ),
-                            const Divider(height: 1),
-                            _toggleRow(
-                              icon: Icons.handshake_outlined,
-                              title: 'Collaboration Requests',
-                              subtitle:
-                                  'Collab requests from creators and vendors.',
-                              value: _collaborationRequests,
-                              onChanged: (value) =>
-                                  _unsupportedToggle('Collaboration Requests'),
-                            ),
-                            const Divider(height: 1),
-                            _toggleRow(
-                              icon: Icons.account_balance_wallet_outlined,
-                              title: 'Earnings Updates',
-                              subtitle:
-                                  'Wallet credits, payouts, and earnings activity.',
-                              value: _earningsUpdates,
-                              onChanged: (value) =>
-                                  _unsupportedToggle('Earnings Updates'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        _sectionTitle('Email Notifications'),
-                        _settingsCard(
-                          children: [
-                            _toggleRow(
-                              icon: Icons.newspaper_outlined,
-                              title: 'Product Updates',
-                              subtitle: 'App releases and feature updates.',
-                              value: _productUpdates,
-                              onChanged: (value) =>
-                                  _unsupportedToggle('Product Updates'),
-                            ),
-                            const Divider(height: 1),
-                            _toggleRow(
-                              icon: Icons.local_offer_outlined,
-                              title: 'Promotions',
-                              subtitle: 'Offers, deals, and announcements.',
-                              value: _promotions,
-                              onChanged: (value) =>
-                                  _unsupportedToggle('Promotions'),
-                            ),
-                            const Divider(height: 1),
-                            _toggleRow(
-                              icon: Icons.mark_email_read_outlined,
-                              title: 'Marketing Emails',
-                              subtitle: 'Marketing and newsletter emails.',
-                              value: _marketingEmails,
-                              onChanged: (value) =>
-                                  _unsupportedToggle('Marketing Emails'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
                         _infoCard(isDark),
                       ],
                     )
@@ -527,20 +452,8 @@ class _NotificationSettingsScreenState
 
       if (!mounted) return;
       setState(() => _pushNotifications = value);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            value
-                ? 'Push notifications enabled'
-                : 'Push notifications disabled',
-          ),
-        ),
-      );
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not update push notifications: $e')),
-      );
+      debugPrint('Could not update push notifications: $e');
     } finally {
       if (mounted) setState(() => _savingPush = false);
     }
