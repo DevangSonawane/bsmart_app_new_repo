@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../services/content_moderation_service.dart';
 import '../theme/design_tokens.dart';
 
 class ContentSettingsScreen extends StatefulWidget {
@@ -12,35 +11,26 @@ class ContentSettingsScreen extends StatefulWidget {
 }
 
 class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
-  final ContentModerationService _moderationService =
-      ContentModerationService();
-  final String _currentUserId = 'user-1';
+  final Set<String> _selectedInterests = <String>{'Tech', 'Travel'};
+  final Set<String> _followTopics = <String>{'Creativity', 'Business'};
 
-  bool _showRestrictedContent = false;
-  int _userAge = 18;
-  String _language = 'English (Default)';
-  String _region = 'Not set';
+  bool _sensitiveContentFilter = true;
+  bool _adultContentFilter = true;
+  bool _politicalContentFilter = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadUserSettings();
-  }
+  bool _autoPlayVideos = true;
+  bool _autoPlayPulse = false;
 
-  void _loadUserSettings() {
-    setState(() {
-      _userAge = 18;
-      _showRestrictedContent = false;
-      _language = 'English (Default)';
-      _region = 'Not set';
-    });
-  }
+  String _appLanguage = 'English';
+  String _defaultLanguage = 'English';
+  final List<String> _optionalLanguages = <String>['Hindi', 'Spanish'];
+  bool _autoTranslation = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final strikeRecord = _moderationService.getUserStrikes(_currentUserId);
+    final bottomInset = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -52,70 +42,247 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
       body: SafeArea(
         bottom: true,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
             _headerCard(isDark),
             const SizedBox(height: 20),
-            _sectionTitle('Account Status'),
-            _statusCard(strikeRecord),
-            const SizedBox(height: 20),
-            _sectionTitle('Content Preferences'),
+            _sectionTitle('Feed Preferences'),
             _settingsCard(
               children: [
                 _actionRow(
-                  icon: Icons.cake_outlined,
-                  title: 'Your Age',
-                  subtitle: '$_userAge years old',
-                  onTap: _showAgeDialog,
+                  icon: LucideIcons.sparkles,
+                  title: 'Select Interests',
+                  subtitle:
+                      _selectedInterests.isEmpty
+                          ? 'Choose topics you want more of'
+                          : _selectedInterests.join(' • '),
                   trailing: Text(
-                    _userAge >= 18 ? 'Adult' : 'Minor',
+                    '${_selectedInterests.length} selected',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                      fontWeight: FontWeight.w700,
+                      color: theme.textTheme.bodyMedium?.color,
                     ),
+                  ),
+                  onTap: () => _editSelection(
+                    title: 'Select Interests',
+                    options: const [
+                      'Tech',
+                      'Travel',
+                      'Food',
+                      'Fashion',
+                      'Sports',
+                      'Music',
+                      'Business',
+                      'Fitness',
+                      'Art',
+                      'Gaming',
+                    ],
+                    initial: _selectedInterests,
+                    onSaved: (next) => setState(() {
+                      _selectedInterests
+                        ..clear()
+                        ..addAll(next);
+                    }),
                   ),
                 ),
                 const Divider(height: 1),
-                _toggleRow(
-                  icon: Icons.visibility_outlined,
-                  title: 'Show Restricted Content',
-                  subtitle: 'Allow sexualized content (18+ only).',
-                  value: _showRestrictedContent,
-                  onChanged: _handleRestrictedToggle,
+                _actionRow(
+                  icon: LucideIcons.hash,
+                  title: 'Follow Topics',
+                  subtitle: _followTopics.isEmpty
+                      ? 'Choose topics and creators to follow'
+                      : _followTopics.join(' • '),
+                  trailing: Text(
+                    '${_followTopics.length} followed',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: theme.textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  onTap: () => _editSelection(
+                    title: 'Follow Topics',
+                    options: const [
+                      'Creativity',
+                      'Business',
+                      'Lifestyle',
+                      'Design',
+                      'Marketing',
+                      'News',
+                      'Learning',
+                      'Photography',
+                      'Comedy',
+                      'Cooking',
+                    ],
+                    initial: _followTopics,
+                    onSaved: (next) => setState(() {
+                      _followTopics
+                        ..clear()
+                        ..addAll(next);
+                    }),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            _sectionTitle('App Settings'),
+            _sectionTitle('Content Controls'),
+            _settingsCard(
+              children: [
+                _toggleRow(
+                  icon: LucideIcons.shieldAlert,
+                  title: 'Sensitive Content Filter',
+                  subtitle: 'Reduce posts flagged as sensitive.',
+                  value: _sensitiveContentFilter,
+                  onChanged: (value) =>
+                      setState(() => _sensitiveContentFilter = value),
+                ),
+                const Divider(height: 1),
+                _toggleRow(
+                  icon: LucideIcons.badgeAlert,
+                  title: 'Adult Content Filter',
+                  subtitle: 'Block 18+ content from your feed.',
+                  value: _adultContentFilter,
+                  onChanged: (value) =>
+                      setState(() => _adultContentFilter = value),
+                ),
+                const Divider(height: 1),
+                _toggleRow(
+                  icon: LucideIcons.gavel,
+                  title: 'Political Content Filter',
+                  subtitle: 'Limit political content in recommendations.',
+                  value: _politicalContentFilter,
+                  onChanged: (value) =>
+                      setState(() => _politicalContentFilter = value),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Video Preferences'),
+            _settingsCard(
+              children: [
+                _toggleRow(
+                  icon: LucideIcons.play,
+                  title: 'Auto Play Videos',
+                  subtitle: 'Play videos automatically while scrolling.',
+                  value: _autoPlayVideos,
+                  onChanged: (value) => setState(() => _autoPlayVideos = value),
+                ),
+                const Divider(height: 1),
+                _toggleRow(
+                  icon: LucideIcons.circleDot,
+                  title: 'Auto Play Pulse',
+                  subtitle: 'Auto-play short pulse previews in the feed.',
+                  value: _autoPlayPulse,
+                  onChanged: (value) => setState(() => _autoPlayPulse = value),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionTitle('Language Preferences'),
             _settingsCard(
               children: [
                 _actionRow(
-                  icon: Icons.language_outlined,
-                  title: 'Language',
-                  subtitle: _language,
-                  onTap: _showLanguageDialog,
+                  icon: LucideIcons.languages,
+                  title: 'App Language',
+                  subtitle: 'Select the language used throughout the app',
+                  trailing: Text(
+                    _appLanguage,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: theme.textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  onTap: () => _pickFromList(
+                    title: 'Select Language',
+                    options: const [
+                      'English',
+                      'Hindi',
+                      'Spanish',
+                      'French',
+                      'Portuguese',
+                      'German',
+                    ],
+                    current: _appLanguage,
+                    onSelected: (value) => setState(() => _appLanguage = value),
+                  ),
                 ),
                 const Divider(height: 1),
                 _actionRow(
-                  icon: Icons.place_outlined,
-                  title: 'Region / Address',
-                  subtitle: _region,
-                  onTap: _showAddressDialog,
+                  icon: LucideIcons.bookOpen,
+                  title: 'Default Language',
+                  subtitle: 'Primary language for content and labels',
+                  trailing: Text(
+                    _defaultLanguage,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: theme.textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  onTap: () => _pickFromList(
+                    title: 'Default Language',
+                    options: const [
+                      'English',
+                      'Hindi',
+                      'Spanish',
+                      'French',
+                      'Portuguese',
+                      'German',
+                    ],
+                    current: _defaultLanguage,
+                    onSelected: (value) =>
+                        setState(() => _defaultLanguage = value),
+                  ),
+                ),
+                const Divider(height: 1),
+                _actionRow(
+                  icon: LucideIcons.listChecks,
+                  title: 'Optional Languages',
+                  subtitle:
+                      '${_optionalLanguages.length} saved extra languages',
+                  trailing: Text(
+                    'Edit',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: theme.textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  onTap: () => _editSelection(
+                    title: 'Optional Languages',
+                    options: const [
+                      'English',
+                      'Hindi',
+                      'Spanish',
+                      'French',
+                      'Portuguese',
+                      'German',
+                      'Arabic',
+                      'Bengali',
+                    ],
+                    initial: _optionalLanguages.toSet(),
+                    onSaved: (next) => setState(() {
+                      _optionalLanguages
+                        ..clear()
+                        ..addAll(next);
+                    }),
+                  ),
+                ),
+                const Divider(height: 1),
+                _toggleRow(
+                  icon: LucideIcons.languages,
+                  title: 'Auto Translation',
+                  subtitle:
+                      'Translate content into your selected language automatically.',
+                  value: _autoTranslation,
+                  onChanged: (value) => setState(() => _autoTranslation = value),
                 ),
               ],
             ),
             const SizedBox(height: 20),
             _infoCard(isDark),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: _resetDefaults,
-              icon: const Icon(Icons.restart_alt_outlined),
-              label: const Text('Reset Preferences'),
-              style: FilledButton.styleFrom(
-                backgroundColor: DesignTokens.instaPink,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-            ),
           ],
         ),
       ),
@@ -147,7 +314,7 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
               border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
             ),
             child: const Icon(
-              Icons.tune_outlined,
+              LucideIcons.slidersHorizontal,
               color: Colors.white,
               size: 28,
             ),
@@ -167,7 +334,7 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'Control age gating, restricted content, language, and region in one place.',
+                  'Tune your feed, content filters, video playback, and languages in one place.',
                   style: TextStyle(
                     color: Colors.white,
                     height: 1.3,
@@ -211,101 +378,6 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
     );
   }
 
-  Widget _statusCard(dynamic strikeRecord) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final bg = theme.cardColor;
-    final border = theme.dividerColor.withValues(alpha: 0.08);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
-
-    final int strikes = strikeRecord?.policyStrikes ?? 0;
-    final bool suspended = strikeRecord?.isSuspended ?? false;
-    final bool restricted = strikeRecord?.isRestricted ?? false;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: DesignTokens.instaPink.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  LucideIcons.shieldAlert,
-                  color: DesignTokens.instaPink,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Account safety',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: labelColor,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (strikeRecord != null && strikes > 0) ...[
-            Row(
-              children: [
-                Icon(
-                  Icons.warning_amber_rounded,
-                  color: strikes >= 3 ? Colors.red : Colors.orange,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Policy Violations: $strikes',
-                    style: TextStyle(
-                      color: strikes >= 3 ? Colors.red : Colors.orange,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              suspended
-                  ? 'Your account is suspended due to policy violations.'
-                  : restricted
-                      ? 'Your posting is restricted due to policy violations.'
-                      : '${3 - strikes} strikes remaining before restrictions.',
-              style: TextStyle(color: hintColor),
-            ),
-          ] else
-            Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.green),
-                const SizedBox(width: 8),
-                Text(
-                  'No policy violations',
-                  style: TextStyle(
-                    color: Colors.green.shade700,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _actionRow({
     required IconData icon,
     required String title,
@@ -315,65 +387,58 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
     final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
     final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border.all(color: border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: DesignTokens.instaPink.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: DesignTokens.instaPink.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: DesignTokens.instaPink, size: 20),
               ),
-              child: Icon(icon, color: DesignTokens.instaPink, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: labelColor,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.35,
-                      color: hintColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (trailing != null) ...[
               const SizedBox(width: 12),
-              trailing,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: labelColor,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: hintColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 12),
+                trailing,
+              ],
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right, color: hintColor, size: 20),
             ],
-            const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_right,
-              color: hintColor,
-              size: 20,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -388,48 +453,62 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final border = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
     final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
     final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final inactiveThumbColor =
+        isDark ? const Color(0xFFE5E7EB) : const Color(0xFF4B5563);
+    final inactiveTrackColor =
+        isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB);
 
-    return SwitchListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      tileColor: bg,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(0),
-        side: BorderSide(color: border),
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: DesignTokens.instaPink.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: DesignTokens.instaPink, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: labelColor,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: hintColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Switch.adaptive(
+            value: value,
+            activeThumbColor: DesignTokens.instaPink,
+            activeTrackColor: DesignTokens.instaPink.withValues(alpha: 0.35),
+            inactiveThumbColor: inactiveThumbColor,
+            inactiveTrackColor: inactiveTrackColor,
+            onChanged: onChanged,
+          ),
+        ],
       ),
-      secondary: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: DesignTokens.instaPink.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: DesignTokens.instaPink, size: 20),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontWeight: FontWeight.w700,
-          color: labelColor,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          height: 1.35,
-          color: hintColor,
-        ),
-      ),
-      value: value,
-      activeThumbColor: DesignTokens.instaPink,
-      activeTrackColor: DesignTokens.instaPink.withValues(alpha: 0.35),
-      inactiveThumbColor: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF4B5563),
-      inactiveTrackColor: isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB),
-      onChanged: onChanged,
     );
   }
 
@@ -454,7 +533,7 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'These settings are matched to the current backend support. Age, language, and region stay local for now, while restricted content uses the age gate.',
+              'This page now follows the same card and spacing style as Messaging. The filters here are kept local for now, but the UI is ready for backend wiring later.',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.4,
@@ -467,162 +546,129 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
     );
   }
 
-  Future<void> _showAgeDialog() async {
-    var tempAge = _userAge;
-    final selected = await showDialog<int>(
+  Future<void> _pickFromList({
+    required String title,
+    required List<String> options,
+    required String current,
+    required ValueChanged<String> onSelected,
+  }) async {
+    final selected = await showModalBottomSheet<String>(
       context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final option in options)
+                ListTile(
+                  title: Text(option),
+                  trailing: option == current
+                      ? const Icon(Icons.check_circle,
+                          color: DesignTokens.instaPink)
+                      : null,
+                  onTap: () => Navigator.pop(ctx, option),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted || selected == null) return;
+    onSelected(selected);
+  }
+
+  Future<void> _editSelection({
+    required String title,
+    required List<String> options,
+    required Set<String> initial,
+    required ValueChanged<Set<String>> onSaved,
+  }) async {
+    final next = Set<String>.from(initial);
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: const Text('Set Your Age'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Age: $tempAge'),
-                  Slider(
-                    value: tempAge.toDouble(),
-                    min: 13,
-                    max: 100,
-                    divisions: 87,
-                    label: '$tempAge',
-                    onChanged: (value) {
-                      setLocal(() => tempAge = value.toInt());
-                    },
-                  ),
-                ],
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final option in options)
+                          FilterChip(
+                            label: Text(option),
+                            selected: next.contains(option),
+                            onSelected: (selected) {
+                              setLocal(() {
+                                if (selected) {
+                                  next.add(option);
+                                } else {
+                                  next.remove(option);
+                                }
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: DesignTokens.instaPink,
+                            ),
+                            child: const Text('Save'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, tempAge),
-                  child: const Text('Save'),
-                ),
-              ],
             );
           },
         );
       },
     );
 
-    if (!mounted || selected == null) return;
-    setState(() {
-      _userAge = selected;
-      if (_userAge < 18) {
-        _showRestrictedContent = false;
-      }
-    });
-  }
-
-  Future<void> _showLanguageDialog() async {
-    final options = ['English (Default)', 'Spanish', 'French'];
-    final selected = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        return SimpleDialog(
-          title: const Text('Select Language'),
-          children: [
-            for (final option in options)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, option),
-                child: Text(option),
-              ),
-          ],
-        );
-      },
-    );
-
-    if (!mounted || selected == null) return;
-    setState(() => _language = selected);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Language set to $selected')),
-    );
-  }
-
-  Future<void> _showAddressDialog() async {
-    final streetController = TextEditingController();
-    final cityController = TextEditingController();
-    final postalController = TextEditingController();
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Update Address'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: streetController,
-                  decoration: const InputDecoration(labelText: 'Street Address'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: cityController,
-                  decoration: const InputDecoration(labelText: 'City'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: postalController,
-                  decoration: const InputDecoration(labelText: 'Postal Code'),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
-
     if (!mounted || saved != true) return;
-    final parts = <String>[
-      streetController.text.trim(),
-      cityController.text.trim(),
-      postalController.text.trim(),
-    ].where((e) => e.isNotEmpty).toList();
-
-    setState(() {
-      _region = parts.isEmpty ? 'Not set' : parts.join(', ');
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Address updated')),
-    );
-  }
-
-  void _handleRestrictedToggle(bool value) {
-    if (_userAge < 18) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You must be 18+ to view restricted content'),
-        ),
-      );
-      return;
-    }
-    setState(() => _showRestrictedContent = value);
-  }
-
-  void _resetDefaults() {
-    setState(() {
-      _userAge = 18;
-      _showRestrictedContent = false;
-      _language = 'English (Default)';
-      _region = 'Not set';
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Content preferences reset')),
-    );
+    onSaved(next);
   }
 }
