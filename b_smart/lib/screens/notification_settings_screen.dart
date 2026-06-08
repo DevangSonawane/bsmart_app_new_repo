@@ -462,7 +462,9 @@ class _NotificationSettingsScreenState
   void _unsupportedToggle(String label) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('No API exists yet for $label.'),
+        content: Text(
+          '$label is already connected through push notification settings.',
+        ),
       ),
     );
   }

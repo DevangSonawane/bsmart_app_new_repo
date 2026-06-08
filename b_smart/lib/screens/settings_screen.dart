@@ -8,7 +8,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api.dart';
 import '../services/auth/auth_service.dart';
-import '../services/ui_prefs.dart';
 import '../theme/design_tokens.dart';
 import '../theme/theme_scope.dart';
 import 'account_details_screen.dart';
@@ -18,7 +17,7 @@ import 'advertiser_dashboard_screen.dart';
 import 'advertiser_wallet_screen.dart';
 import 'auth/login/login_screen.dart';
 import 'content_settings_screen.dart';
-import 'messaging_screen.dart';
+import 'messaging_settings_screen.dart';
 import 'notification_settings_screen.dart';
 import 'privacy_screen.dart';
 import 'security_screen.dart';
@@ -312,7 +311,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: LucideIcons.messageSquareMore,
             label: 'Messaging',
             subLabel: 'Chats, requests, and conversation settings',
-            onTap: () => _push(const MessagingScreen()),
+            onTap: () => _push(const MessagingSettingsScreen()),
           ),
           const SizedBox(height: 20),
           _sectionTitle('Preferences'),
@@ -326,7 +325,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             onTap: () => ThemeScope.of(context).toggle(),
           ),
-          _floatingMessageTile(theme),
           _settingTile(
             icon: LucideIcons.slidersHorizontal,
             label: 'Content Preferences',
@@ -462,7 +460,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.35 : 0.12),
+            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
             blurRadius: 24,
             offset: const Offset(0, 12),
           ),
@@ -474,9 +472,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.16),
+              color: Colors.white.withValues(alpha: 0.16),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.22)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
             ),
             child: const Icon(
               LucideIcons.settings2,
@@ -501,7 +499,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Text(
                   'Manage your account, privacy, content, data, and support in one place.',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                     height: 1.35,
                   ),
                 ),
@@ -528,9 +526,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.14),
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.16)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
       ),
       child: Text(
         label,
@@ -582,7 +580,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: DesignTokens.instaPink.withOpacity(0.12),
+                    color: DesignTokens.instaPink.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(icon, color: DesignTokens.instaPink, size: 21),
@@ -627,73 +625,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _floatingMessageTile(ThemeData theme) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: UiPrefs.showFloatingMessage,
-      builder: (context, show, _) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Material(
-            color: theme.cardColor,
-            borderRadius: BorderRadius.circular(18),
-            child: InkWell(
-              onTap: () => UiPrefs.showFloatingMessage.value = !show,
-              borderRadius: BorderRadius.circular(18),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: DesignTokens.instaPink.withOpacity(0.12),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        LucideIcons.messageCircle,
-                        color: DesignTokens.instaPink,
-                        size: 21,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Floating messages',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: theme.textTheme.bodyLarge?.color,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            show ? 'Shown on main tabs' : 'Hidden',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: theme.textTheme.bodyMedium?.color ??
-                                  Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Switch(
-                      value: show,
-                      onChanged: (v) => UiPrefs.showFloatingMessage.value = v,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _destructiveActionCard({
     required IconData icon,
     required String title,
@@ -718,7 +649,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
+                  color: color.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 child: loading
@@ -2247,7 +2178,7 @@ Widget _infoCard(
       color: theme.cardColor,
       borderRadius: BorderRadius.circular(18),
       border: Border.all(
-        color: theme.dividerColor.withOpacity(0.25),
+        color: theme.dividerColor.withValues(alpha: 0.25),
       ),
     ),
     child: Row(
@@ -2256,7 +2187,7 @@ Widget _infoCard(
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: DesignTokens.instaPink.withOpacity(0.12),
+            color: DesignTokens.instaPink.withValues(alpha: 0.12),
             shape: BoxShape.circle,
           ),
           child: Icon(icon, color: DesignTokens.instaPink, size: 24),
@@ -2315,7 +2246,7 @@ Widget _centerTile(
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: DesignTokens.instaPink.withOpacity(0.12),
+                  color: DesignTokens.instaPink.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(icon, color: DesignTokens.instaPink, size: 21),
