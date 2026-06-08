@@ -46,6 +46,7 @@ dependencies:
   image: ^4.1.7
   meta: ^1.11.0
   path: ^1.9.0
+  path_provider: ^2.1.5
   shared_preferences: ^2.2.3
   cached_network_image: ^3.3.1
   flutter_cache_manager: ^3.3.1

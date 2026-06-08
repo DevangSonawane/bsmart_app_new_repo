@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../services/chat_media_auto_save_service.dart';
 import '../services/ui_prefs.dart';
 import '../theme/design_tokens.dart';
 
@@ -13,6 +16,10 @@ class MessagingSettingsScreen extends StatefulWidget {
 }
 
 class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> {
+  final ChatMediaAutoSaveService _prefs =
+      ChatMediaAutoSaveService.instance;
+
+  bool _loading = true;
   bool _readReceipts = true;
   bool _lastSeen = true;
   bool _messageRequests = true;
@@ -22,6 +29,44 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> {
   bool _autoDownloadDocuments = false;
 
   bool _dataSaverMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    await _prefs.load();
+    if (!mounted) return;
+    setState(() {
+      _autoDownloadImages = _prefs.autoDownloadImages;
+      _autoDownloadVideos = _prefs.autoDownloadVideos;
+      _autoDownloadDocuments = _prefs.autoDownloadDocuments;
+      _dataSaverMode = _prefs.dataSaverMode;
+      _loading = false;
+    });
+  }
+
+  void _toggleAutoImages(bool value) {
+    setState(() => _autoDownloadImages = value);
+    unawaited(_prefs.setAutoDownloadImages(value));
+  }
+
+  void _toggleAutoVideos(bool value) {
+    setState(() => _autoDownloadVideos = value);
+    unawaited(_prefs.setAutoDownloadVideos(value));
+  }
+
+  void _toggleAutoDocuments(bool value) {
+    setState(() => _autoDownloadDocuments = value);
+    unawaited(_prefs.setAutoDownloadDocuments(value));
+  }
+
+  void _toggleDataSaver(bool value) {
+    setState(() => _dataSaverMode = value);
+    unawaited(_prefs.setDataSaverMode(value));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,109 +83,115 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> {
       ),
       body: SafeArea(
         bottom: true,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
-          children: [
-            _headerCard(isDark),
-            const SizedBox(height: 20),
-            _sectionTitle('Chat Settings'),
-            _settingsCard(
-              children: [
-                _toggleRow(
-                  icon: LucideIcons.checkCheck,
-                  title: 'Read Receipts',
-                  subtitle: 'Let others see when you have read their messages.',
-                  value: _readReceipts,
-                  onChanged: (value) => setState(() => _readReceipts = value),
-                ),
-                const Divider(height: 1),
-                _toggleRow(
-                  icon: LucideIcons.eye,
-                  title: 'Last Seen',
-                  subtitle: 'Show when you were last active in chat.',
-                  value: _lastSeen,
-                  onChanged: (value) => setState(() => _lastSeen = value),
-                ),
-                const Divider(height: 1),
-                _toggleRow(
-                  icon: LucideIcons.messageSquareMore,
-                  title: 'Message Requests',
-                  subtitle:
-                      'Receive chats from people you do not follow in requests.',
-                  value: _messageRequests,
-                  onChanged: (value) => setState(() => _messageRequests = value),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            _sectionTitle('Media Settings'),
-            _settingsCard(
-              children: [
-                _toggleRow(
-                  icon: LucideIcons.image,
-                  title: 'Auto Download Images',
-                  subtitle: 'Download images automatically on mobile data or Wi-Fi.',
-                  value: _autoDownloadImages,
-                  onChanged: (value) =>
-                      setState(() => _autoDownloadImages = value),
-                ),
-                const Divider(height: 1),
-                _toggleRow(
-                  icon: LucideIcons.video,
-                  title: 'Auto Download Videos',
-                  subtitle: 'Download video attachments automatically.',
-                  value: _autoDownloadVideos,
-                  onChanged: (value) =>
-                      setState(() => _autoDownloadVideos = value),
-                ),
-                const Divider(height: 1),
-                _toggleRow(
-                  icon: LucideIcons.fileText,
-                  title: 'Auto Download Documents',
-                  subtitle: 'Download document attachments automatically.',
-                  value: _autoDownloadDocuments,
-                  onChanged: (value) =>
-                      setState(() => _autoDownloadDocuments = value),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            _sectionTitle('Data Usage'),
-            _settingsCard(
-              children: [
-                _toggleRow(
-                  icon: LucideIcons.wifiOff,
-                  title: 'Data Saver Mode',
-                  subtitle: 'Reduce media loading and limit heavy downloads.',
-                  value: _dataSaverMode,
-                  onChanged: (value) => setState(() => _dataSaverMode = value),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            _sectionTitle('Floating Messages'),
-            ValueListenableBuilder<bool>(
-              valueListenable: UiPrefs.showFloatingMessage,
-              builder: (context, showFloatingMessage, _) {
-                return _settingsCard(
-                  children: [
-                    _toggleRow(
-                      icon: LucideIcons.messageCircle,
-                      title: 'Show Floating Message on Home',
-                      subtitle:
-                          'Display a floating message button on the home page.',
-                      value: showFloatingMessage,
-                      onChanged: (value) =>
-                          UiPrefs.showFloatingMessage.value = value,
-                    ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-            _infoCard(isDark),
-          ],
-        ),
+        child: _loading
+            ? const Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : ListView(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
+                children: [
+                  _headerCard(isDark),
+                  const SizedBox(height: 20),
+                  _sectionTitle('Chat Settings'),
+                  _settingsCard(
+                    children: [
+                      _toggleRow(
+                        icon: LucideIcons.checkCheck,
+                        title: 'Read Receipts',
+                        subtitle:
+                            'Let others see when you have read their messages.',
+                        value: _readReceipts,
+                        onChanged: (value) =>
+                            setState(() => _readReceipts = value),
+                      ),
+                      const Divider(height: 1),
+                      _toggleRow(
+                        icon: LucideIcons.eye,
+                        title: 'Last Seen',
+                        subtitle: 'Show when you were last active in chat.',
+                        value: _lastSeen,
+                        onChanged: (value) => setState(() => _lastSeen = value),
+                      ),
+                      const Divider(height: 1),
+                      _toggleRow(
+                        icon: LucideIcons.messageSquareMore,
+                        title: 'Message Requests',
+                        subtitle:
+                            'Receive chats from people you do not follow in requests.',
+                        value: _messageRequests,
+                        onChanged: (value) =>
+                            setState(() => _messageRequests = value),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _sectionTitle('Media Settings'),
+                  _settingsCard(
+                    children: [
+                      _toggleRow(
+                        icon: LucideIcons.image,
+                        title: 'Auto Download Images',
+                        subtitle:
+                            'Download images automatically on mobile data or Wi-Fi.',
+                        value: _autoDownloadImages,
+                        onChanged: _toggleAutoImages,
+                      ),
+                      const Divider(height: 1),
+                      _toggleRow(
+                        icon: LucideIcons.video,
+                        title: 'Auto Download Videos',
+                        subtitle: 'Download video attachments automatically.',
+                        value: _autoDownloadVideos,
+                        onChanged: _toggleAutoVideos,
+                      ),
+                      const Divider(height: 1),
+                      _toggleRow(
+                        icon: LucideIcons.fileText,
+                        title: 'Auto Download Documents',
+                        subtitle: 'Download document attachments automatically.',
+                        value: _autoDownloadDocuments,
+                        onChanged: _toggleAutoDocuments,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _sectionTitle('Data Usage'),
+                  _settingsCard(
+                    children: [
+                      _toggleRow(
+                        icon: LucideIcons.wifiOff,
+                        title: 'Data Saver Mode',
+                        subtitle:
+                            'Reduce media loading and limit heavy downloads.',
+                        value: _dataSaverMode,
+                        onChanged: _toggleDataSaver,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _sectionTitle('Floating Messages'),
+                  ValueListenableBuilder<bool>(
+                    valueListenable: UiPrefs.showFloatingMessage,
+                    builder: (context, showFloatingMessage, _) {
+                      return _settingsCard(
+                        children: [
+                          _toggleRow(
+                            icon: LucideIcons.messageCircle,
+                            title: 'Show Floating Message on Home',
+                            subtitle:
+                                'Display a floating message button on the home page.',
+                            value: showFloatingMessage,
+                            onChanged: (value) =>
+                                UiPrefs.showFloatingMessage.value = value,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  _infoCard(isDark),
+                ],
+              ),
       ),
     );
   }

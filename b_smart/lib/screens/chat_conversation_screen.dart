@@ -19,6 +19,7 @@ import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../services/ads_service.dart';
+import '../services/chat_media_auto_save_service.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/post_detail_modal.dart';
 import '../widgets/voice_recorder_sheet.dart';
@@ -52,6 +53,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   final _inputFocusNode = FocusNode();
   final _picker = ImagePicker();
   final _adsService = AdsService();
+  final _autoSaveService = ChatMediaAutoSaveService.instance;
 
   static const bool _showCallButtons = false;
 
@@ -611,6 +613,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     }
   }
 
+  Future<void> _autoSaveIncomingMedia(List<Map<String, dynamic>> messages) async {
+    final uid = (_currentUserId ?? '').trim();
+    if (uid.isEmpty) return;
+    await _autoSaveService.maybeAutoSaveMessages(
+      messages: messages,
+      currentUserId: uid,
+    );
+  }
+
   Future<void> _load({required int page, required bool replace}) async {
     setState(() {
       _error = null;
@@ -646,6 +657,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       // Auto-mark latest message as seen (best-effort, matches web).
       unawaited(_markLatestSeen());
       unawaited(_loadOtherProfileIfNeeded());
+      unawaited(_autoSaveIncomingMedia(items));
 
       if (replace) {
         _pinToBottom(force: true);
@@ -852,6 +864,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
           _messages = next;
           if (!wasNearBottom) _pendingNewCount += appended;
         });
+        unawaited(_autoSaveIncomingMedia(latestChrono));
         if (wasNearBottom) _pinToBottom();
       }
 
