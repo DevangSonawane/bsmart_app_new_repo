@@ -36,7 +36,6 @@ import '../models/story_model.dart';
 import 'story_viewer_screen.dart';
 import '../models/media_model.dart';
 import 'create_upload_screen.dart';
-import 'create_post_screen.dart';
 import 'chat_conversation_screen.dart';
 import 'messaging_screen.dart';
 import '../utils/url_helper.dart';
@@ -2353,7 +2352,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _openCreatePostFlow() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => const CreatePostScreen(),
+        builder: (context) => const CreateUploadScreen(
+          initialMode: UploadMode.post,
+        ),
       ),
     );
   }

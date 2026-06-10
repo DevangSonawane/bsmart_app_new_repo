@@ -320,13 +320,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: isDark ? LucideIcons.moon : LucideIcons.sunMedium,
             label: 'settings_appearance'.tr(),
             subLabel: 'settings_appearance_subtitle'.tr(),
-            trailing: Text(
-              _appearanceModeLabel().tr(),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: theme.textTheme.bodyMedium?.color,
-              ),
+            trailing: Icon(
+              LucideIcons.chevronRight,
+              color: theme.iconTheme.color ?? Colors.grey.shade400,
+              size: 20,
             ),
             onTap: () => _push(const AppearanceSettingsScreen()),
           ),
@@ -807,8 +804,6 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
         child: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
-            _storageHeader(isDark, totalStorage),
-            const SizedBox(height: 20),
             _sectionTitle('settings_storage_section_storage'.tr()),
             _settingsCard(
               children: [
@@ -901,62 +896,6 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
             _infoCard(isDark, totalStorage),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _storageHeader(bool isDark, int totalStorage) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: DesignTokens.instaGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: const Icon(
-              Icons.storage_outlined,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'settings_storage_data_header'.tr(),
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'settings_storage_cached_locally'.tr(args: ['$totalStorage']),
-                  style: const TextStyle(color: Colors.white, height: 1.3),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1175,7 +1114,6 @@ class _HelpSupportScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
@@ -1190,8 +1128,6 @@ class _HelpSupportScreen extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
-            _headerCard(isDark),
-            const SizedBox(height: 20),
             _sectionTitle('settings_help_section_support'.tr()),
             _settingsCard(
               context,
@@ -1292,65 +1228,6 @@ class _HelpSupportScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _headerCard(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: DesignTokens.instaGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: const Icon(
-              Icons.help_outline,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'settings_help_support_header'.tr(),
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'settings_help_support_header_subtitle'.tr(),
-                  style: TextStyle(
-                    color: Colors.white,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1463,7 +1340,6 @@ class _LegalComplianceScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
@@ -1478,8 +1354,6 @@ class _LegalComplianceScreen extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
-            _legalHeader(isDark),
-            const SizedBox(height: 20),
             _sectionTitle('settings_legal_section_documents'.tr()),
             _settingsCard(
               context,
@@ -1592,65 +1466,6 @@ class _LegalComplianceScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _legalHeader(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: DesignTokens.instaGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: const Icon(
-              Icons.gavel_outlined,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'settings_legal_compliance_header'.tr(),
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'settings_legal_compliance_header_subtitle'.tr(),
-                  style: TextStyle(
-                    color: Colors.white,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1771,7 +1586,6 @@ class _AboutScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final bottomInset = MediaQuery.of(context).padding.bottom;
     final versionText = packageInfo == null
         ? 'Version information loading...'
@@ -1792,19 +1606,6 @@ class _AboutScreen extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
-            _aboutHeader(isDark),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _pill('App Info'),
-                _pill('Company'),
-                _pill('Links'),
-                _pill('Support'),
-              ],
-            ),
-            const SizedBox(height: 20),
             _sectionTitle('Application Information'),
             _settingsCard(
               context,
@@ -1877,65 +1678,6 @@ class _AboutScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _aboutHeader(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: DesignTokens.instaGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: const Icon(
-              Icons.apps_outlined,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'About bSmart',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Application details, company info, and official links.',
-                  style: TextStyle(
-                    color: Colors.white,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -2097,26 +1839,6 @@ class _AboutScreen extends StatelessWidget {
     );
   }
 
-  Widget _pill(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: DesignTokens.instaPink.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: DesignTokens.instaPink.withValues(alpha: 0.18)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: DesignTokens.instaPink,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.2,
-        ),
-      ),
-    );
-  }
-
   void _showUnavailable(BuildContext context, String label) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('settings_no_api_exists_yet'.tr(args: [label]))),
@@ -2144,7 +1866,6 @@ class _AccountActionsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
       return Scaffold(
@@ -2159,8 +1880,6 @@ class _AccountActionsScreen extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
-            _accountActionsHeader(isDark),
-            const SizedBox(height: 14),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -2220,68 +1939,6 @@ class _AccountActionsScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _accountActionsHeader(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: DesignTokens.instaGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: const Icon(
-              LucideIcons.shieldAlert,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _trFallback('settings_section_account_actions', 'Account Actions'),
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  _trFallback(
-                    'settings_account_actions_screen_subtitle',
-                    'Manage logout, deactivation, and permanent deletion from one dedicated screen.',
-                  ),
-                  style: TextStyle(
-                    color: Colors.white,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

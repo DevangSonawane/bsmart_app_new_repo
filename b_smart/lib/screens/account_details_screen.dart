@@ -27,7 +27,6 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   final _emailApi = EmailApi();
   final _uploadApi = UploadApi();
   final _imagePicker = ImagePicker();
-  final _formKey = GlobalKey<FormState>();
 
   final _fullNameController = TextEditingController();
   final _usernameController = TextEditingController();
@@ -36,6 +35,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   final _locationController = TextEditingController();
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
+  final _dobController = TextEditingController();
+  final _genderController = TextEditingController(text: 'Prefer Not to Say');
+  final _interestsController = TextEditingController();
 
   bool _loading = true;
   bool _saving = false;
@@ -67,6 +69,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     _locationController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
+    _dobController.dispose();
+    _genderController.dispose();
+    _interestsController.dispose();
     super.dispose();
   }
 
@@ -121,6 +126,28 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     return age < 0 ? null : age;
   }
 
+  DateTime? _tryParseDobCandidates(String input) {
+    final raw = input.trim();
+    if (raw.isEmpty) return null;
+    const formats = [
+      'dd MMM yyyy',
+      'd MMM yyyy',
+      'dd/MM/yyyy',
+      'd/M/yyyy',
+      'yyyy-MM-dd',
+      'MM/dd/yyyy',
+      'M/d/yyyy',
+    ];
+    for (final pattern in formats) {
+      try {
+        return DateFormat(pattern).parseStrict(raw);
+      } catch (_) {
+        // Try the next known format.
+      }
+    }
+    return null;
+  }
+
   String _locationFromUser(Map<String, dynamic> user) {
     final location = _pickString(user, ['location']);
     if (location != null) return location;
@@ -159,6 +186,17 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   }
 
   String _genderBackendValue() {
+    final current = _genderController.text.trim();
+    switch (current) {
+      case 'Male':
+        return 'male';
+      case 'Female':
+        return 'female';
+      case 'Third Gender':
+        return 'third_gender';
+      case 'Prefer Not to Say':
+        return 'prefer_not_to_say';
+    }
     switch (_gender) {
       case 'Male':
         return 'male';
@@ -239,7 +277,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         _gender = _genderLabel(
           _pickString(user, ['gender', 'sex']) ?? 'Prefer Not to Say',
         );
+        _genderController.text = _gender;
         _dateOfBirth = dob;
+        _dobController.text = dob == null ? '' : DateFormat('dd MMM yyyy').format(dob);
         _ageOnRecord = int.tryParse(
           _pickString(user, ['age']) ?? '',
         );
@@ -250,6 +290,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
             _asBool(user['phoneVerified']) ||
             _asBool(user['is_phone_verified']);
         _interests = interests;
+        _interestsController.text = interests.join(', ');
         _loading = false;
       });
     } catch (e) {
@@ -316,7 +357,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
       editable: true,
       onSaved: (next) {
         if (!mounted) return;
-        setState(() => _interests = next);
+        setState(() {
+          _interests = next;
+          _interestsController.text = next.join(', ');
+        });
       },
     );
     await _loadAccount();
@@ -506,11 +550,18 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         'location': _locationController.text.trim(),
       };
 
-      final dob = _dateOfBirth;
-      if (dob != null) {
-        updates['date_of_birth'] = DateFormat('yyyy-MM-dd').format(dob);
-        final age = _calculateAge(dob);
-        if (age != null) updates['age'] = age;
+      final dobText = _dobController.text.trim();
+      if (dobText.isNotEmpty) {
+        final parsedDob = _parseDate(dobText) ??
+            _tryParseDobCandidates(dobText);
+        if (parsedDob != null) {
+          updates['date_of_birth'] = DateFormat('yyyy-MM-dd').format(parsedDob);
+          final age = _calculateAge(parsedDob);
+          if (age != null) updates['age'] = age;
+          _dateOfBirth = parsedDob;
+        } else {
+          updates['date_of_birth'] = dobText;
+        }
       }
       if (_avatarUrl != null && _avatarUrl!.trim().isNotEmpty) {
         updates['avatar_url'] = _avatarUrl!.trim();
@@ -555,6 +606,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
           _gender = _genderLabel(
             _pickString(updated, ['gender', 'sex']) ?? _gender,
           );
+          _genderController.text = _gender;
           final updatedDob = _parseDate(_pickString(updated, [
                 'date_of_birth',
                 'dateOfBirth',
@@ -564,10 +616,14 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
               ]) ??
               updated['date_of_birth'] ??
               updated['dob']);
-          if (updatedDob != null) _dateOfBirth = updatedDob;
+          if (updatedDob != null) {
+            _dateOfBirth = updatedDob;
+            _dobController.text = DateFormat('dd MMM yyyy').format(updatedDob);
+          }
           _ageOnRecord = int.tryParse(
             _pickString(updated, ['age']) ?? '',
           ) ?? _ageOnRecord;
+          _interestsController.text = _interests.join(', ');
         });
       }
 
@@ -602,179 +658,149 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
-        title: const Text('Account'),
-        centerTitle: true,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
         elevation: 0,
+        centerTitle: true,
+        leadingWidth: 56,
+        leading: IconButton(
+          icon: const Icon(LucideIcons.arrowLeft, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          'Account',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
               bottom: true,
               top: false,
-              child: Form(
-                key: _formKey,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                  children: [
-                    _headerCard(isDark),
-                    const SizedBox(height: 20),
-                    _sectionTitle('Profile Picture'),
-                    _avatarCard(),
-                    const SizedBox(height: 18),
-                    const Divider(height: 1, thickness: 1),
-                    const SizedBox(height: 18),
-                    _sectionTitle('Profile'),
-                    _buildTextField(
-                      controller: _fullNameController,
-                      label: 'Full Name',
-                      hint: 'Enter your full name',
-                      icon: Icons.person_outline,
-                    ),
-                    _buildTextField(
-                      controller: _usernameController,
-                      label: 'Username',
-                      hint: 'Choose a unique username',
-                      icon: Icons.alternate_email,
-                    ),
-                    _buildTextField(
-                      controller: _bioController,
-                      label: 'Bio',
-                      hint: 'Write a short bio',
-                      icon: Icons.short_text,
-                      maxLines: 4,
-                    ),
-                    _buildTextField(
-                      controller: _websiteController,
-                      label: 'Website',
-                      hint: 'https://yourwebsite.com',
-                      icon: Icons.language,
-                      keyboardType: TextInputType.url,
-                    ),
-                    const SizedBox(height: 14),
-                    _dateTile(),
-                    const SizedBox(height: 14),
-                    _genderTile(),
-                    const SizedBox(height: 14),
-                    _interestTile(),
-                    const SizedBox(height: 18),
-                    const Divider(height: 1, thickness: 1),
-                    const SizedBox(height: 18),
-                    _sectionTitle('Location'),
-                    _buildTextField(
-                      controller: _locationController,
-                      label: 'Location',
-                      hint: 'City, State, Country',
-                      icon: Icons.location_on_outlined,
-                    ),
-                    const SizedBox(height: 18),
-                    const Divider(height: 1, thickness: 1),
-                    const SizedBox(height: 18),
-                    _sectionTitle('Contact Information'),
-                    _contactCard(),
-                    const SizedBox(height: 24),
-                    FilledButton.icon(
-                      onPressed: _saving ? null : _saveAccount,
-                      icon: _saving
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.save_outlined),
-                      label: Text(_saving ? 'Saving…' : 'Save Changes'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: DesignTokens.instaPink,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                children: [
+                  _sectionTitle('Profile Picture'),
+                  _avatarCard(),
+                  const SizedBox(height: 10),
+                  _sectionTitle('Profile'),
+                  _inlineFieldCard(
+                    icon: LucideIcons.userRound,
+                    label: 'Full Name',
+                    controller: _fullNameController,
+                    hintText: 'Enter your full name',
+                  ),
+                  _inlineFieldCard(
+                    icon: LucideIcons.atSign,
+                    label: 'Username',
+                    controller: _usernameController,
+                    hintText: 'Choose a username',
+                  ),
+                  _inlineFieldCard(
+                    icon: LucideIcons.textCursorInput,
+                    label: 'Bio',
+                    controller: _bioController,
+                    hintText: 'Write a short bio',
+                    maxLines: 3,
+                  ),
+                  _inlineFieldCard(
+                    icon: LucideIcons.globe,
+                    label: 'Website',
+                    controller: _websiteController,
+                    hintText: 'https://www.example.com',
+                    keyboardType: TextInputType.url,
+                  ),
+                  _inlineFieldCard(
+                    icon: LucideIcons.cake,
+                    label: 'Date of Birth',
+                    controller: _dobController,
+                    hintText: 'dd MMM yyyy',
+                    onChanged: (value) {
+                      final parsed = _tryParseDobCandidates(value);
+                      setState(() {
+                        _dateOfBirth = parsed;
+                      });
+                    },
+                  ),
+                  _inlineFieldCard(
+                    icon: LucideIcons.transgender,
+                    label: 'Gender',
+                    controller: _genderController,
+                    hintText: 'Male, Female, Third Gender, Prefer Not to Say',
+                    onChanged: (value) {
+                      setState(() => _gender = value.trim().isEmpty ? _gender : value.trim());
+                    },
+                  ),
+                  _interestTile(),
+                  const SizedBox(height: 10),
+                  _sectionTitle('Location'),
+                  _inlineFieldCard(
+                    icon: LucideIcons.mapPin,
+                    label: 'Location',
+                    controller: _locationController,
+                    hintText: 'City, State, Country',
+                  ),
+                  const SizedBox(height: 10),
+                  _sectionTitle('Contact Information'),
+                  _contactCard(),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 56,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: DesignTokens.instaGradient,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: _saving ? null : _saveAccount,
+                          child: Center(
+                            child: _saving
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        LucideIcons.save,
+                                        color: Colors.white,
+                                        size: 17,
+                                      ),
+                                      SizedBox(width: 10),
+                                      Text(
+                                        'Save Changes',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-    );
-  }
-
-  Widget _headerCard(bool isDark) {
-    final avatar = _avatarUrl?.trim() ?? '';
-    final initials = _initials(_fullNameController.text.isNotEmpty
-        ? _fullNameController.text
-        : _usernameController.text);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: DesignTokens.instaGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: Center(
-              child: Text(
-                initials,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Edit your account',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Update your profile, contact details, interests, and identity settings.',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    height: 1.3,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _chip(_emailVerified ? 'Email verified' : 'Email not verified'),
-                    _chip(_phoneVerified ? 'Mobile verified' : 'Mobile not verified'),
-                    _chip(_gender),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (avatar.isNotEmpty)
-            const SizedBox(width: 8),
-        ],
-      ),
     );
   }
 
@@ -785,26 +811,26 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         : _usernameController.text);
 
     return Material(
-      color: Theme.of(context).cardColor,
-      borderRadius: BorderRadius.circular(20),
+      color: const Color(0xFFFFF3F8),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: _uploadingAvatar ? null : _pickAvatar,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Row(
             children: [
               Stack(
                 children: [
                   Container(
-                    width: 84,
-                    height: 84,
+                    width: 72,
+                    height: 72,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(
                         colors: [
-                          DesignTokens.instaPink.withValues(alpha: 0.18),
-                          DesignTokens.instaOrange.withValues(alpha: 0.18),
+                          DesignTokens.instaPink.withValues(alpha: 0.16),
+                          DesignTokens.instaOrange.withValues(alpha: 0.16),
                         ],
                       ),
                     ),
@@ -815,8 +841,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                       child: avatar.isNotEmpty
                           ? SafeNetworkImage(
                               url: avatar,
-                              width: 78,
-                              height: 78,
+                              width: 66,
+                              height: 66,
                               fit: BoxFit.cover,
                               placeholder: Container(
                                 color: Colors.grey.shade200,
@@ -827,7 +853,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                                   child: Text(
                                     initials,
                                     style: const TextStyle(
-                                      fontSize: 22,
+                                      fontSize: 18,
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
@@ -840,7 +866,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                                 child: Text(
                                   initials,
                                   style: const TextStyle(
-                                    fontSize: 22,
+                                    fontSize: 18,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
@@ -869,26 +895,29 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                     ),
                 ],
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Profile Picture',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF24364B),
+                      ),
                     ),
-                    SizedBox(height: 4),
+                    SizedBox(height: 3),
                     Text(
                       'Tap to change your avatar',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF6B7280),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              Icon(
-                LucideIcons.chevronRight,
-                color: Theme.of(context).iconTheme.color ?? Colors.grey,
               ),
             ],
           ),
@@ -900,16 +929,17 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   Widget _dateTile() {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final fillColor = isDark ? const Color(0xFF242424) : Colors.white;
+    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF5D5E1);
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF526071);
 
     return InkWell(
       onTap: _pickDob,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: fillColor,
           borderRadius: BorderRadius.circular(16),
@@ -918,8 +948,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: DesignTokens.instaPink.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
@@ -927,10 +957,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
               child: const Icon(
                 Icons.cake_outlined,
                 color: DesignTokens.instaPink,
-                size: 20,
+                size: 18,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -938,6 +968,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   Text(
                     'Date of Birth',
                     style: TextStyle(
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: labelColor,
                     ),
@@ -961,7 +992,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                const Icon(Icons.chevron_right, color: Colors.grey),
+                const Icon(Icons.chevron_right, color: Color(0xFF526071), size: 20),
               ],
             ),
           ],
@@ -973,90 +1004,125 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   Widget _genderTile() {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final fillColor = isDark ? const Color(0xFF242424) : Colors.white;
+    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF5D5E1);
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF526071);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: fillColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: DesignTokens.instaPink.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.transgender_outlined,
-                  color: DesignTokens.instaPink,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Gender',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: labelColor,
-                ),
-              ),
-            ],
+    return InkWell(
+      onTap: () async {
+        final next = await showModalBottomSheet<String>(
+          context: context,
+          backgroundColor: Colors.white,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _gender,
-            isExpanded: true,
-            dropdownColor: theme.cardColor,
-            iconEnabledColor: hintColor,
-            style: TextStyle(color: labelColor),
-            items: const [
-              DropdownMenuItem(value: 'Male', child: Text('Male')),
-              DropdownMenuItem(value: 'Female', child: Text('Female')),
-              DropdownMenuItem(
-                value: 'Third Gender',
-                child: Text('Third Gender'),
+          builder: (ctx) {
+            return SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                children: [
+                  const Center(
+                    child: SizedBox(
+                      width: 40,
+                      child: Divider(thickness: 4, height: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'Select Gender',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  RadioListTile<String>(
+                    value: 'Male',
+                    groupValue: _gender,
+                    activeColor: DesignTokens.instaPink,
+                    onChanged: (value) => Navigator.of(ctx).pop(value),
+                    title: const Text('Male'),
+                  ),
+                  RadioListTile<String>(
+                    value: 'Female',
+                    groupValue: _gender,
+                    activeColor: DesignTokens.instaPink,
+                    onChanged: (value) => Navigator.of(ctx).pop(value),
+                    title: const Text('Female'),
+                  ),
+                  RadioListTile<String>(
+                    value: 'Third Gender',
+                    groupValue: _gender,
+                    activeColor: DesignTokens.instaPink,
+                    onChanged: (value) => Navigator.of(ctx).pop(value),
+                    title: const Text('Third Gender'),
+                  ),
+                  RadioListTile<String>(
+                    value: 'Prefer Not to Say',
+                    groupValue: _gender,
+                    activeColor: DesignTokens.instaPink,
+                    onChanged: (value) => Navigator.of(ctx).pop(value),
+                    title: const Text('Prefer Not to Say'),
+                  ),
+                ],
               ),
-              DropdownMenuItem(
-                value: 'Prefer Not to Say',
-                child: Text('Prefer Not to Say'),
-              ),
-            ],
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() => _gender = value);
-            },
-            decoration: InputDecoration(
-              labelText: 'Select gender',
-              labelStyle: TextStyle(color: hintColor),
-              filled: true,
-              fillColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: borderColor, width: 1),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: DesignTokens.instaPink, width: 1.4),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: borderColor),
-              ),
+            );
+          },
+        );
+        if (next != null && mounted) setState(() => _gender = next);
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: fillColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor, width: 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: DesignTokens.instaPink.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.transgender_outlined,
+                    color: DesignTokens.instaPink,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Gender',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: labelColor,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 3),
+            Text(
+              _gender,
+              style: TextStyle(color: hintColor, fontSize: 13),
+            ),
+            const SizedBox(height: 2),
+            const Align(
+              alignment: Alignment.centerRight,
+              child: Icon(Icons.chevron_right, color: Color(0xFF526071), size: 20),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1064,16 +1130,17 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   Widget _interestTile() {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFFFF3F8);
+    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF6CFE0);
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF526071);
 
     return InkWell(
       onTap: _editInterests,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: fillColor,
           borderRadius: BorderRadius.circular(16),
@@ -1082,8 +1149,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: DesignTokens.instaPink.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
@@ -1091,10 +1158,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
               child: const Icon(
                 Icons.interests_outlined,
                 color: DesignTokens.instaPink,
-                size: 20,
+                size: 18,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1102,6 +1169,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   Text(
                     'Interests',
                     style: TextStyle(
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: labelColor,
                     ),
@@ -1123,8 +1191,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   '${_interests.length} selected',
                   style: TextStyle(fontSize: 12, color: hintColor),
                 ),
-                const SizedBox(height: 2),
-                const Icon(Icons.chevron_right, color: Colors.grey),
+                const SizedBox(height: 4),
+                const Icon(Icons.chevron_right, color: Color(0xFF526071), size: 20),
               ],
             ),
           ],
@@ -1133,193 +1201,310 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     );
   }
 
-  Widget _contactCard() {
+  Widget _editableRowCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required VoidCallback onTap,
+    int maxValueLines = 1,
+  }) {
     final theme = Theme.of(context);
-    return Material(
-      color: theme.cardColor,
-      borderRadius: BorderRadius.circular(18),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _contactField(
-              label: 'Email Address',
-              controller: _emailController,
-              icon: Icons.mail_outline,
-              readOnly: true,
-              helper: _emailVerified ? 'Verified' : 'Not verified',
-              action: TextButton(
-                onPressed: (_verifyingEmail || _emailVerified) ? null : _verifyEmail,
-                child: Text(_emailVerified ? 'Verified' : 'Verify Email'),
-              ),
+    final isDark = theme.brightness == Brightness.dark;
+    final fillColor = isDark ? const Color(0xFF242424) : Colors.white;
+    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF5D5E1);
+    final titleColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
+    final valueColor = isDark ? const Color(0xFFB6BBC6) : const Color(0xFF526071);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: fillColor,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: borderColor, width: 1),
             ),
-            const SizedBox(height: 16),
-            _contactField(
-              label: 'Mobile Number',
-              controller: _phoneController,
-              icon: Icons.phone_outlined,
-              keyboardType: TextInputType.phone,
-              helper: _phoneVerified ? 'Verified' : 'Not verified',
-              action: TextButton(
-                onPressed: (_verifyingMobile || _phoneVerified) ? null : _verifyMobile,
-                child: Text(_phoneVerified ? 'Verified' : 'Verify Mobile Number'),
-              ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: DesignTokens.instaPink.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: DesignTokens.instaPink, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: titleColor,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        value,
+                        maxLines: maxValueLines,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: valueColor,
+                          fontSize: 13,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right, color: Color(0xFF526071), size: 20),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _contactField({
-    required String label,
-    required TextEditingController controller,
-    required IconData icon,
-    TextInputType? keyboardType,
-    bool readOnly = false,
-    String? helper,
-    Widget? action,
-  }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
-
+  Widget _contactCard() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: DesignTokens.instaPink.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: DesignTokens.instaPink, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: labelColor,
+        _inlineFieldCard(
+          icon: Icons.mail_outline,
+          label: 'Email Address',
+          controller: _emailController,
+          hintText: 'Enter your email address',
+          keyboardType: TextInputType.emailAddress,
+          verified: _emailVerified,
+          trailing: _emailVerified
+              ? const Icon(
+                  Icons.check_circle,
+                  color: Color(0xFF22C55E),
+                  size: 24,
+                )
+              : TextButton(
+                  onPressed: (_verifyingEmail || _emailVerified)
+                      ? null
+                      : _verifyEmail,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: DesignTokens.instaPink.withValues(alpha: 0.95),
+                        width: 1.4,
+                      ),
                     ),
+                    foregroundColor: DesignTokens.instaPink,
+                    backgroundColor: Colors.transparent,
+                    visualDensity: VisualDensity.compact,
                   ),
-                  if (helper != null) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      helper,
-                      style: TextStyle(fontSize: 12, color: hintColor),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (action != null) action,
-          ],
+                  child: const Text(
+                    'Verify Email',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
         ),
-        const SizedBox(height: 10),
-        TextFormField(
-          controller: controller,
-          readOnly: readOnly,
-          keyboardType: keyboardType,
-          decoration: InputDecoration(
-            hintText: label,
-            filled: true,
-            fillColor: fillColor,
-            labelStyle: TextStyle(color: labelColor),
-            hintStyle: TextStyle(color: hintColor),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: borderColor, width: 1),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: DesignTokens.instaPink, width: 1.4),
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: borderColor),
-            ),
-          ),
+        _inlineFieldCard(
+          icon: Icons.phone_outlined,
+          label: 'Mobile Number',
+          controller: _phoneController,
+          hintText: 'Enter your mobile number',
+          keyboardType: TextInputType.phone,
+          verified: _phoneVerified,
+          trailing: _phoneVerified
+              ? const Icon(
+                  Icons.check_circle,
+                  color: Color(0xFF22C55E),
+                  size: 24,
+                )
+              : TextButton(
+                  onPressed: (_verifyingMobile || _phoneVerified)
+                      ? null
+                      : _verifyMobile,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: DesignTokens.instaPink.withValues(alpha: 0.95),
+                        width: 1.4,
+                      ),
+                    ),
+                    foregroundColor: DesignTokens.instaPink,
+                    backgroundColor: Colors.transparent,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text(
+                    'Verify Mobile Number',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
         ),
       ],
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
+  Widget _inlineFieldCard({
     required IconData icon,
+    required String label,
+    required TextEditingController controller,
+    required String hintText,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
+    bool verified = false,
+    ValueChanged<String>? onChanged,
+    Widget? trailing,
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFF6F7F9);
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFD7DCE3);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFFFF3F8);
+    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF6CFE0);
+    final titleColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF526071);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        maxLines: maxLines,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          prefixIcon: Icon(icon, color: hintColor),
-          filled: true,
-          fillColor: fillColor,
-          labelStyle: TextStyle(color: labelColor),
-          hintStyle: TextStyle(color: hintColor),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: borderColor, width: 1),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: DesignTokens.instaPink.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: DesignTokens.instaPink, size: 16),
           ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: DesignTokens.instaPink, width: 1.4),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: titleColor,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                TextField(
+                  controller: controller,
+                  keyboardType: keyboardType,
+                  maxLines: maxLines,
+                  minLines: maxLines,
+                  onChanged: onChanged,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    hintText: hintText,
+                    hintStyle: TextStyle(
+                      color: hintColor,
+                      fontSize: 13,
+                    ),
+                  ),
+                  style: TextStyle(
+                    color: hintColor,
+                    fontSize: 13,
+                    height: 1.25,
+                  ),
+                ),
+                if (verified) ...[
+                  const SizedBox(height: 2),
+                  const SizedBox.shrink(),
+                ],
+              ],
+            ),
           ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: borderColor),
-          ),
-          alignLabelWithHint: maxLines > 1,
-        ),
+          if (trailing != null) ...[
+            const SizedBox(width: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: trailing,
+            ),
+          ],
+        ],
       ),
     );
   }
 
   Widget _sectionTitle(String title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      padding: const EdgeInsets.only(left: 4, bottom: 10),
       child: Text(
         title.toUpperCase(),
         style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
           color: DesignTokens.instaPink,
-          letterSpacing: 0.7,
+          letterSpacing: 0.2,
         ),
       ),
     );
+  }
+
+  Future<void> _editTextField({
+    required String title,
+    required TextEditingController controller,
+    String hintText = '',
+    TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
+  }) async {
+    final tempController = TextEditingController(text: controller.text);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: tempController,
+            keyboardType: keyboardType,
+            maxLines: maxLines,
+            decoration: InputDecoration(
+              hintText: hintText,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(tempController.text.trim()),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    tempController.dispose();
+    if (result == null || !mounted) return;
+    setState(() {
+      controller.text = result;
+    });
   }
 
   Widget _chip(String text) {

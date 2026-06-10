@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../services/ads_service.dart';
 import '../services/wallet_service.dart';
@@ -40,6 +41,11 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
   DateTime? _pauseStartTime;
   bool _isInForeground = true;
   String _userId = 'unknown';
+
+  void _logRewardDebug(String message) {
+    if (!kDebugMode) return;
+    debugPrint('[WatchAdsReward] $message');
+  }
 
   @override
   void initState() {
@@ -95,6 +101,9 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
   Future<void> _startWatchingAd(Ad ad) async {
     // Check eligibility
     final eligibility = _eligibilityService.checkEligibility(_userId, ad);
+    _logRewardDebug(
+      'Start watch request adId=${ad.id} userId=$_userId eligible=${eligibility.isEligible} reason=${eligibility.reason}',
+    );
     if (!eligibility.isEligible) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -108,6 +117,9 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     // Show daily capacity
     final capacity = _eligibilityService.getDailyCapacity(_userId);
     if (capacity.remainingCoins < ad.coinReward) {
+      _logRewardDebug(
+        'Daily cap blocks adId=${ad.id} userId=$_userId remainingCoins=${capacity.remainingCoins} required=${ad.coinReward}',
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -133,6 +145,9 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
       _isInForeground = true;
     });
 
+    _logRewardDebug(
+      'Watch session started adId=${ad.id} userId=$_userId duration=${ad.watchDurationSeconds}',
+    );
     _startWatchTimer();
   }
 
@@ -230,6 +245,9 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
 
     // Validate watch completion
     final watchPercentage = _watchSession!.watchPercentage;
+    _logRewardDebug(
+      'Attempting completion adId=${_currentAd!.id} userId=$_userId watchPercentage=$watchPercentage pauses=$_pauseCount pauseDuration=$_totalPauseDuration foreground=$_isInForeground',
+    );
     if (watchPercentage < AdEligibilityService.minWatchPercentage * 100) {
       _handleAdAbandoned(
         'Minimum watch time not met (${(AdEligibilityService.minWatchPercentage * 100).toInt()}% required)',
@@ -253,6 +271,9 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     // Re-validate eligibility
     final eligibility = _eligibilityService.checkEligibility(_userId, _currentAd!);
     if (!eligibility.isEligible) {
+      _logRewardDebug(
+        'Completion blocked by eligibility adId=${_currentAd!.id} userId=$_userId reason=${eligibility.reason}',
+      );
       _handleAdAbandoned(eligibility.reason ?? 'Eligibility check failed');
       return;
     }
@@ -268,20 +289,35 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
         'pauseCount': _pauseCount,
       },
     );
+    _logRewardDebug(
+      'Ledger credit result adId=${_currentAd!.id} userId=$_userId success=$success amount=${_currentAd!.coinReward}',
+    );
 
     if (success) {
       if (_userId != 'unknown') {
         try {
+          _logRewardDebug(
+            'Recording ad view with backend adId=${_currentAd!.id} userId=$_userId',
+          );
           await _adsService.recordAdView(adId: _currentAd!.id, userId: _userId);
+          _logRewardDebug(
+            'Backend ad view recorded adId=${_currentAd!.id} userId=$_userId',
+          );
         } catch (_) {}
       }
 
       // Record in eligibility service
       _eligibilityService.recordAdWatch(_userId, _currentAd!.id, _currentAd!.coinReward);
+      _logRewardDebug(
+        'Eligibility service updated adId=${_currentAd!.id} userId=$_userId coins=${_currentAd!.coinReward}',
+      );
 
       // Show success
       if (mounted) {
         final earned = _currentAd!.coinReward;
+        _logRewardDebug(
+          'Showing reward popup adId=${_currentAd!.id} userId=$_userId amount=$earned',
+        );
         await AppModalPopup.show<void>(
           context: context,
           barrierDismissible: false,
@@ -305,6 +341,9 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
         _loadAds(); // Reload to update available ads
       }
     } else {
+      _logRewardDebug(
+        'Failed to credit coins adId=${_currentAd!.id} userId=$_userId',
+      );
       _handleAdAbandoned('Failed to credit coins');
     }
   }

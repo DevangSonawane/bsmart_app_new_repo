@@ -512,22 +512,46 @@ class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
     return _persistViewedAdIds.contains(id);
   }
 
+  void _logAdRewardDebug(String message) {
+    if (!kDebugMode) return;
+    debugPrint('[AdsPageReward] $message');
+  }
+
   Future<void> _recordViewForAd(Ad ad) async {
     final adId = ad.id.trim();
-    if (adId.isEmpty) return;
-    if (_sessionViewedAdIds.contains(adId)) return;
+    if (adId.isEmpty) {
+      _logAdRewardDebug('Skip view record: empty adId');
+      return;
+    }
+    if (_sessionViewedAdIds.contains(adId)) {
+      _logAdRewardDebug('Skip view record: already sent this session for adId=$adId');
+      return;
+    }
     await _ensurePersistViewedLoaded();
-    if (_wasAdViewedPersisted(adId)) return;
+    if (_wasAdViewedPersisted(adId)) {
+      _logAdRewardDebug('Skip view record: ad already persisted as viewed for adId=$adId');
+      return;
+    }
 
     final userId = await CurrentUser.id;
-    if (userId == null || userId.trim().isEmpty) return;
+    if (userId == null || userId.trim().isEmpty) {
+      _logAdRewardDebug('Skip view record: missing userId for adId=$adId');
+      return;
+    }
 
     _sessionViewedAdIds.add(adId);
+    _logAdRewardDebug(
+      'Sending view record request adId=$adId userId=${userId.trim()} coinReward=${ad.coinReward}',
+    );
     try {
       final res = await _adsService.recordAdView(adId: adId, userId: userId);
       if (!mounted) return;
+      _logAdRewardDebug(
+        'View record response adId=$adId keys=${res.keys.toList()} rewarded=${res['rewarded']} coins_rewarded=${res['coins_rewarded']} coins=${res['coins']} reward=${res['reward']}',
+      );
       await _handleViewReward(res, ad);
     } catch (_) {
+      _logAdRewardDebug('View record failed for adId=$adId');
       _sessionViewedAdIds.remove(adId);
     }
   }
@@ -546,16 +570,23 @@ class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
     final viewCount = viewCountRaw is num
         ? viewCountRaw.round()
         : int.tryParse(viewCountRaw?.toString() ?? '');
+    _logAdRewardDebug(
+      'Parsed reward state adId=${ad.id} rewarded=$rewarded coinsRaw=$coinsRaw coins=$coins viewCount=$viewCount adCoinReward=${ad.coinReward}',
+    );
     if (rewarded) {
       final reward = (coins ?? (ad.coinReward > 0 ? ad.coinReward : 10));
+      _logAdRewardDebug('Reward granted adId=${ad.id} amount=$reward');
       unawaited(_rememberAdViewed(ad.id));
       await _showViewRewardPopup(amount: reward);
       return;
     }
     if (res.containsKey('rewarded') || res.containsKey('view_count')) {
+      _logAdRewardDebug('View recorded without reward adId=${ad.id} viewCount=$viewCount');
       if (_showViewRecordedPopupEnabled) {
         await _showViewRecordedPopup(viewCount: viewCount);
       }
+    } else {
+      _logAdRewardDebug('Reward response missing expected keys for adId=${ad.id}');
     }
   }
 

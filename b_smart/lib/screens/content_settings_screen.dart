@@ -70,8 +70,6 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
         child: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
           children: [
-            _headerCard(isDark),
-            const SizedBox(height: 20),
             _sectionTitle('content_preferences_feed_preferences'.tr()),
             _settingsCard(
               children: [
@@ -302,65 +300,6 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
             _infoCard(isDark),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _headerCard(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: DesignTokens.instaGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: const Icon(
-              LucideIcons.slidersHorizontal,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'content_preferences_header_title'.tr(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'content_preferences_header_subtitle'.tr(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

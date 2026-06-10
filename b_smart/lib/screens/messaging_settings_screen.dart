@@ -90,8 +90,6 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> {
             : ListView(
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
                 children: [
-                  _headerCard(isDark),
-                  const SizedBox(height: 20),
                   _sectionTitle('Chat Settings'),
                   _settingsCard(
                     children: [
@@ -192,65 +190,6 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> {
                   _infoCard(isDark),
                 ],
               ),
-      ),
-    );
-  }
-
-  Widget _headerCard(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: DesignTokens.instaGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.34 : 0.14),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: const Icon(
-              LucideIcons.messageSquareMore,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Messaging preferences',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Control chat behavior, media downloads, data usage, and floating messages.',
-                  style: TextStyle(
-                    color: Colors.white,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
