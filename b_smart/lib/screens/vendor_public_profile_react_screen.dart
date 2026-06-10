@@ -1193,11 +1193,13 @@ class _PlaceholderTab extends StatelessWidget {
   final bool isDark;
   final String title;
   final String emptyMessage;
+  final bool showTitle;
 
   const _PlaceholderTab({
     required this.isDark,
     required this.title,
     required this.emptyMessage,
+    this.showTitle = true,
   });
 
   @override
@@ -1208,15 +1210,17 @@ class _PlaceholderTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-            color: isDark ? Colors.white : const Color(0xFF111827),
+        if (showTitle) ...[
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: isDark ? Colors.white : const Color(0xFF111827),
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
+          const SizedBox(height: 10),
+        ],
         Text(
           emptyMessage,
           style: TextStyle(color: muted, height: 1.35),
@@ -1265,12 +1269,7 @@ class _ProductsTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
       children: [
-        Text(
-          'Products',
-          style:
-              TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: text),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 28),
         ...products.map((p) {
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
@@ -1370,7 +1369,6 @@ class _GalleryTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = isDark ? Colors.white : const Color(0xFF111827);
     final muted = isDark
         ? Colors.white.withValues(alpha: 0.70)
         : Colors.black.withValues(alpha: 0.55);
@@ -1401,23 +1399,17 @@ class _GalleryTab extends StatelessWidget {
         isDark: isDark,
         title: 'Gallery',
         emptyMessage: 'No gallery images yet.',
+        showTitle: false,
       );
     }
 
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-            child: Text(
-              'Gallery',
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w900, color: text),
-            ),
-          ),
+          child: const SizedBox(height: 42),
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
@@ -1483,15 +1475,10 @@ class _EventsTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
       children: [
-        Text(
-          'Events',
-          style:
-              TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: text),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 28),
         ...items.map(
           (e) => Container(
-            margin: const EdgeInsets.only(bottom: 10),
+            margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF0B0B0B) : Colors.white,
               borderRadius: BorderRadius.circular(16),
@@ -1503,6 +1490,10 @@ class _EventsTab extends StatelessWidget {
             ),
             child: ListTile(
               leading: const Icon(Icons.event_available_outlined),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 4,
+              ),
               title: Text(e.title,
                   style: TextStyle(color: text, fontWeight: FontWeight.w900)),
               subtitle: Text(e.subtitle,
@@ -1545,15 +1536,10 @@ class _LocationsTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
       children: [
-        Text(
-          'Locations',
-          style:
-              TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: text),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 28),
         ...locations.map(
           (l) => Container(
-            margin: const EdgeInsets.only(bottom: 10),
+            margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF0B0B0B) : Colors.white,
               borderRadius: BorderRadius.circular(16),
@@ -1565,6 +1551,10 @@ class _LocationsTab extends StatelessWidget {
             ),
             child: ListTile(
               leading: const Icon(Icons.place_outlined),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 4,
+              ),
               title: Text(l,
                   style: TextStyle(color: text, fontWeight: FontWeight.w900)),
               subtitle: Text('Open now',
@@ -1996,7 +1986,7 @@ class _AdsTab extends StatelessWidget {
     }
 
     return GridView.builder(
-      padding: const EdgeInsets.all(2),
+      padding: const EdgeInsets.fromLTRB(16, 42, 16, 16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         crossAxisSpacing: 2,
@@ -2011,6 +2001,7 @@ class _AdsTab extends StatelessWidget {
 
 class _VendorAdTile extends StatelessWidget {
   final Ad ad;
+
   const _VendorAdTile({required this.ad});
 
   @override
