@@ -693,7 +693,7 @@ class _VendorPublicProfileReactScreenState
             _EventsTab(isDark: isDark),
             _LocationsTab(
               isDark: isDark,
-              vendorLocations: _stringList(data['locations']),
+              data: data,
             ),
             _ContactTabReact(
               data: data,
@@ -752,7 +752,6 @@ class _VendorHeader extends StatelessWidget {
     final coverHeight = MediaQuery.sizeOf(context).width >= 600 ? 288.0 : 220.0;
     final safeTop = MediaQuery.paddingOf(context).top;
     final avatarSize = MediaQuery.sizeOf(context).width >= 600 ? 112.0 : 96.0;
-    final avatarOverlap = avatarSize / 2;
     final category =
         (categoryLabel ?? '').trim().isEmpty ? null : categoryLabel!.trim();
 
@@ -944,7 +943,7 @@ class _VendorHeader extends StatelessWidget {
                 ),
                 Positioned(
                   left: 16,
-                  top: coverHeight - avatarOverlap,
+                  top: coverHeight + 12,
                   child: InkWell(
                     onTap: onAvatarTap,
                     borderRadius: BorderRadius.circular(999),
@@ -1512,61 +1511,59 @@ class _EventsTab extends StatelessWidget {
 
 class _LocationsTab extends StatelessWidget {
   final bool isDark;
-  final List<String> vendorLocations;
+  final Map<String, dynamic> data;
 
   const _LocationsTab({
     required this.isDark,
-    required this.vendorLocations,
+    required this.data,
   });
+
+  Map<String, dynamic> _map(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return const <String, dynamic>{};
+  }
+
+  String _pick(dynamic value) => value?.toString().trim() ?? '';
+
+  String _formatAddress(Map<String, dynamic> address) {
+    final parts = <String>[
+      _pick(address['address_line1'] ?? address['addressLine1']),
+      _pick(address['address_line2'] ?? address['addressLine2']),
+      _pick(address['city']),
+      _pick(address['state']),
+      _pick(address['pincode']),
+      _pick(address['country']),
+    ].where((v) => v.isNotEmpty).toList();
+    return parts.join(', ');
+  }
 
   @override
   Widget build(BuildContext context) {
-    final text = isDark ? Colors.white : const Color(0xFF111827);
-    final muted = isDark
-        ? Colors.white.withValues(alpha: 0.70)
-        : Colors.black.withValues(alpha: 0.55);
-
-    final demo = const [
-      'Mumbai, Maharashtra',
-      'Pune, Maharashtra',
-      'Bengaluru, Karnataka',
-    ];
-    final locations = vendorLocations.isNotEmpty ? vendorLocations : demo;
+    final company = _map(data['company_details']);
+    final business = _map(data['business_details']);
+    final online = _map(data['online_presence']);
+    final address = _map(
+      online['address'] ?? company['address'] ?? business['address'],
+    );
+    final addressText = _formatAddress(address);
+    final companyAddressText = addressText.isNotEmpty
+        ? addressText
+        : _pick(online['company_address'] ?? company['company_address']);
+    final displayAddress =
+        companyAddressText.isNotEmpty ? companyAddressText : 'No company address available.';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
       children: [
         const SizedBox(height: 28),
-        ...locations.map(
-          (l) => Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0B0B0B) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.10)
-                    : Colors.black.withValues(alpha: 0.08),
-              ),
-            ),
-            child: ListTile(
-              leading: const Icon(Icons.place_outlined),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 4,
-              ),
-              title: Text(l,
-                  style: TextStyle(color: text, fontWeight: FontWeight.w900)),
-              subtitle: Text('Open now',
-                  style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ),
         Text(
-          vendorLocations.isNotEmpty
-              ? 'Vendor locations.'
-              : 'Demo locations for now.',
-          style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+          displayAddress,
+          style: TextStyle(
+            color: isDark ? Colors.white : const Color(0xFF111827),
+            fontWeight: FontWeight.w700,
+            height: 1.45,
+          ),
         ),
       ],
     );
@@ -2130,12 +2127,22 @@ class _ContactTabReact extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.70)
         : Colors.black.withValues(alpha: 0.55);
     final online = _map(data['online_presence']);
+    final social = _map(data['social_media_links']);
     final user = _map(data['user_id']);
 
     final companyEmail = _pick(online['company_email']);
     final phone = _pick(online['phone_number']);
     final website = _pick(online['website_url']);
     final accountEmail = _pick(user['email']);
+    final instagram = _pick(social['instagram']);
+    final facebook = _pick(social['facebook']);
+    final linkedin = _pick(social['linkedin']);
+    final twitter = _pick(social['twitter']);
+
+    final hasSocial = instagram.isNotEmpty ||
+        facebook.isNotEmpty ||
+        linkedin.isNotEmpty ||
+        twitter.isNotEmpty;
 
     final items = <_ContactItemReact>[
       if (companyEmail.isNotEmpty)
@@ -2180,7 +2187,7 @@ class _ContactTabReact extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        if (items.isEmpty)
+        if (items.isEmpty && !hasSocial)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 44),
             child: Center(
@@ -2192,6 +2199,49 @@ class _ContactTabReact extends StatelessWidget {
           )
         else ...[
           ...items.map((i) => _ContactTileReact(item: i, isDark: isDark)),
+          if (hasSocial) ...[
+            const SizedBox(height: 14),
+            Text(
+              'SOCIAL MEDIA',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.1,
+                color: muted,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _SocialButton(
+                  label: 'Instagram',
+                  url: instagram,
+                  icon: LucideIcons.instagram,
+                  tint: const Color(0xFFEC4899),
+                ),
+                _SocialButton(
+                  label: 'Facebook',
+                  url: facebook,
+                  icon: LucideIcons.facebook,
+                  tint: const Color(0xFF2563EB),
+                ),
+                _SocialButton(
+                  label: 'LinkedIn',
+                  url: linkedin,
+                  icon: LucideIcons.linkedin,
+                  tint: const Color(0xFF0EA5E9),
+                ),
+                _SocialButton(
+                  label: 'Twitter',
+                  url: twitter,
+                  icon: LucideIcons.twitter,
+                  tint: const Color(0xFF1D9BF0),
+                ),
+              ],
+            ),
+          ],
           if (companyEmail.isNotEmpty || phone.isNotEmpty) ...[
             const SizedBox(height: 12),
             Row(
