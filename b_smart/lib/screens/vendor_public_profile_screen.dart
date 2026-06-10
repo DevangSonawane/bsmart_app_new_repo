@@ -655,37 +655,33 @@ class _InfoTab extends StatelessWidget {
 
     Widget card(String title, String body, {IconData? icon}) {
       if (body.trim().isEmpty) return const SizedBox.shrink();
-      return Container(
-        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0F0F0F) : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.08),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 18, color: const Color(0xFFDC2743)),
-                  const SizedBox(width: 8),
-                ],
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: Text.rich(
+          TextSpan(
+            children: [
+              if (icon != null) ...[
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Icon(icon, size: 18, color: const Color(0xFFDC2743)),
+                  ),
+                ),
               ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              body,
-              style: TextStyle(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
-                height: 1.35,
+              TextSpan(
+                text: '$title\n',
+                style: const TextStyle(fontWeight: FontWeight.w900),
               ),
-            ),
-          ],
+              TextSpan(
+                text: body,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }

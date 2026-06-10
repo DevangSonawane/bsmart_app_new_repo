@@ -518,6 +518,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required bool isOwnProfile,
     IconData? emptyIcon,
     String? emptyTitle,
+    VoidCallback? onCreatePressed,
+    String createButtonLabel = 'Create now',
+    bool showCreateButton = true,
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -564,15 +567,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: titleColor,
               ),
             ),
-            if (isOwnProfile && !isReels) ...[
+            if (showCreateButton &&
+                isOwnProfile &&
+                (onCreatePressed != null || !isReels)) ...[
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () => _openCreateUpload(mode: UploadMode.post),
+                onPressed: onCreatePressed ??
+                    () => _openCreateUpload(mode: UploadMode.post),
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF3B82F6),
                   textStyle: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                child: const Text('Create now'),
+                child: Text(createButtonLabel),
               ),
             ],
           ],
@@ -2093,6 +2099,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         context,
         isReels: true,
         isOwnProfile: isMe,
+        emptyIcon: LucideIcons.video,
+        emptyTitle: 'No Reels Yet',
+        createButtonLabel: 'Create new reel',
+        onCreatePressed: () => _openCreateUpload(mode: UploadMode.reel),
       );
     }
     return GridView.builder(
@@ -2161,6 +2171,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         isOwnProfile: isMe,
         emptyIcon: LucideIcons.messageCircle,
         emptyTitle: 'No Tweets Yet',
+        createButtonLabel: 'Create new tweet',
+        onCreatePressed: () => Navigator.of(context).pushNamed('/tweet'),
       );
     }
 
@@ -2617,6 +2629,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       isOwnProfile: isMe,
                       emptyIcon: LucideIcons.megaphone,
                       emptyTitle: 'No Promote Yet',
+                      showCreateButton: false,
                     )
                   : PostsGrid(
                       posts: promotePosts,

@@ -1147,15 +1147,8 @@ class _InformationTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted = isDark
-        ? Colors.white.withValues(alpha: 0.70)
-        : Colors.black.withValues(alpha: 0.55);
-
     final company = _map(data['company_details']);
     final business = _map(data['business_details']);
-    final online = _map(data['online_presence']);
-    final social = _map(data['social_media_links']);
-    final address = _map(online['address']);
 
     final companyDescription = _pick(data['company_description']);
     final industry = _pick(company['industry']).isNotEmpty
@@ -1166,97 +1159,19 @@ class _InformationTab extends StatelessWidget {
     final yearEstablished = _pick(company['year_established']);
     final country = _pick(business['country']);
     final companyType = _pick(company['company_type']);
-    final registrationNumber = _pick(company['registration_number']);
-    final taxId = _pick(company['tax_id']);
-
-    final addressParts = [
-      _pick(address['address_line1']),
-      _pick(address['address_line2']),
-      _pick(address['city']),
-      _pick(address['state']),
-      _pick(address['pincode']),
-      _pick(address['country']),
-    ].where((e) => e.isNotEmpty).toList();
-    final addressStr = addressParts.join(', ');
-
-    final hasSocial = _pick(social['instagram']).isNotEmpty ||
-        _pick(social['facebook']).isNotEmpty ||
-        _pick(social['linkedin']).isNotEmpty ||
-        _pick(social['twitter']).isNotEmpty;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
         if (companyDescription.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? const [
-                        Color(0x33210B00),
-                        Color(0x331A0014),
-                        Color(0x3315002B),
-                      ]
-                    : const [
-                        Color(0xFFFFF7ED),
-                        Color(0xFFFFF1F2),
-                        Color(0xFFFAF5FF),
-                      ],
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.10)
-                    : const Color(0xFFFDE7DD),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 26,
-                      height: 26,
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0x33F97316)
-                            : const Color(0xFFFFEDD5),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.business_outlined,
-                        size: 14,
-                        color: Color(0xFFF97316),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'ABOUT',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.1,
-                        color: Color(0xFFF97316),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  companyDescription,
-                  style: TextStyle(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.82)
-                        : Colors.black.withValues(alpha: 0.78),
-                    height: 1.45,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+          Text(
+            companyDescription,
+            style: TextStyle(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.82)
+                  : Colors.black.withValues(alpha: 0.78),
+              height: 1.45,
+              fontWeight: FontWeight.w600,
             ),
           ),
         const SizedBox(height: 1),
@@ -1269,176 +1184,6 @@ class _InformationTab extends StatelessWidget {
           country: country,
           companyType: companyType,
         ),
-        const SizedBox(height: 12),
-        if (registrationNumber.isNotEmpty || taxId.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F0F10) : Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.10)
-                    : Colors.black.withValues(alpha: 0.06),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'REGISTRATION',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.1,
-                    color: muted,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 24,
-                  runSpacing: 14,
-                  children: [
-                    if (registrationNumber.isNotEmpty)
-                      _KeyValue(
-                        label: 'Reg. Number',
-                        value: registrationNumber,
-                        mono: true,
-                      ),
-                    if (taxId.isNotEmpty)
-                      _KeyValue(
-                        label: 'Tax ID / GST',
-                        value: taxId,
-                        mono: true,
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        if (addressStr.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F0F10) : Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.10)
-                    : Colors.black.withValues(alpha: 0.06),
-              ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0x33221212)
-                        : const Color(0xFFFFE4E6),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(
-                    Icons.place_outlined,
-                    color: Color(0xFFFB7185),
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'ADDRESS',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.1,
-                          color: muted,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        addressStr,
-                        style: TextStyle(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.82)
-                              : Colors.black.withValues(alpha: 0.78),
-                          height: 1.45,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        if (hasSocial) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F0F10) : Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.10)
-                    : Colors.black.withValues(alpha: 0.06),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'SOCIAL MEDIA',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.1,
-                    color: muted,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _SocialButton(
-                      label: 'Instagram',
-                      url: _pick(social['instagram']),
-                      icon: LucideIcons.instagram,
-                      tint: const Color(0xFFEC4899),
-                    ),
-                    _SocialButton(
-                      label: 'Facebook',
-                      url: _pick(social['facebook']),
-                      icon: LucideIcons.facebook,
-                      tint: const Color(0xFF2563EB),
-                    ),
-                    _SocialButton(
-                      label: 'LinkedIn',
-                      url: _pick(social['linkedin']),
-                      icon: LucideIcons.linkedin,
-                      tint: const Color(0xFF0EA5E9),
-                    ),
-                    _SocialButton(
-                      label: 'Twitter',
-                      url: _pick(social['twitter']),
-                      icon: LucideIcons.twitter,
-                      tint: const Color(0xFF1D9BF0),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
       ],
     );
   }

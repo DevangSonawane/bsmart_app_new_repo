@@ -969,42 +969,14 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                         ],
                         if (captionPreview.isNotEmpty) ...[
                           const SizedBox(height: 14),
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
+                          Text(
+                            captionPreview,
+                            style: TextStyle(
                               color: isDark
-                                  ? Colors.white.withValues(alpha: 0.06)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: isDark
-                                    ? Colors.white.withValues(alpha: 0.08)
-                                    : Colors.black.withValues(alpha: 0.06),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'CAPTION',
-                                  style: TextStyle(
-                                    color: mutedForegroundColor,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.2,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  captionPreview,
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? Colors.white.withValues(alpha: 0.88)
-                                        : Colors.black.withValues(alpha: 0.80),
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ],
+                                  ? Colors.white.withValues(alpha: 0.88)
+                                  : Colors.black.withValues(alpha: 0.80),
+                              fontSize: 14,
+                              height: 1.45,
                             ),
                           ),
                         ],

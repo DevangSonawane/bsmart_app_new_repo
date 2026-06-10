@@ -305,15 +305,7 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
   }
 
   void _openSearch() {
-    setState(() {
-      _searchOpen = true;
-      _searchDropdownVisible = true;
-    });
-    _searchController.text = _searchInput;
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _searchFocusNode.requestFocus();
-    });
+    Navigator.of(context).pushNamed('/search');
   }
 
   void _closeSearch() {

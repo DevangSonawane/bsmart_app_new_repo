@@ -346,16 +346,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
   }
 
   void _openSearch() {
-    setState(() {
-      _searchOpen = true;
-      _searchDropdownVisible = true;
-    });
-    _searchController.text = _searchInput;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _searchFocusNode.requestFocus();
-      }
-    });
+    Navigator.of(context).pushNamed('/search');
   }
 
   void _closeSearch() {
@@ -2859,7 +2850,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                           Navigator.of(context)
                               .pushNamed('/vendor/$uid/public');
                         },
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(999),
                         child: _buildAdAvatarThumb(),
                       ),
                       const SizedBox(width: 6),
@@ -3179,7 +3170,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       height: 36,
       decoration: BoxDecoration(
         border: Border.all(color: Colors.white54, width: 1.4),
-        borderRadius: BorderRadius.circular(10),
+        shape: BoxShape.circle,
       ),
       clipBehavior: Clip.antiAlias,
       child: avatarUrl != null && avatarUrl.isNotEmpty

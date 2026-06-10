@@ -20,6 +20,7 @@ import 'screens/story_camera_screen.dart';
 import 'screens/own_story_viewer_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/search_explore_screen.dart';
+import 'screens/tweet_composer/tweet_composer_page.dart';
 import 'screens/follow_requests_screen.dart';
 import 'screens/advertiser_ads_list_screen.dart';
 import 'screens/advertiser_create_ad_screen.dart';
@@ -92,6 +93,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   // Explore-first search flow: show explore grid, tap search bar to open search input.
   '/search': (ctx) => const ExploreSearchScreen(),
   '/search/input': (ctx) => const SearchScreen(),
+  '/tweet': (ctx) => const TweetComposerPage(),
   '/auth/google/success': (ctx) => const AuthCallbackScreen(),
   '/edit-profile': (ctx) => const EditProfileScreen(userId: ''),
   '/story-camera': (ctx) => const StoryCameraScreen(),
