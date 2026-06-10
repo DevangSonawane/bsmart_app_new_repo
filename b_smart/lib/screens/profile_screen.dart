@@ -36,6 +36,7 @@ import '../models/story_model.dart';
 import 'story_viewer_screen.dart';
 import '../models/media_model.dart';
 import 'create_upload_screen.dart';
+import 'create_post_screen.dart';
 import 'chat_conversation_screen.dart';
 import 'messaging_screen.dart';
 import '../utils/url_helper.dart';
@@ -445,68 +446,144 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildFavoriteCategoryStrip(BuildContext context) {
+  Widget _buildFavoriteCategoryStrip(
+    BuildContext context, {
+    required String profileUserId,
+    required bool isMe,
+  }) {
     if (!_isFavoriteProfile) return const SizedBox.shrink();
-    if (_selectedFavoriteBanners.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF0B0B0C) : const Color(0xFFF3F4F6);
+    final bg = theme.scaffoldBackgroundColor;
     const bannerAspect = 625 / 313; // Source banners are 625x313 (~2:1)
-    final borderColor = theme.dividerColor.withValues(alpha: 0.55);
+    final borderColor = theme.dividerColor.withValues(alpha: 0.35);
     final tileBorderColor = theme.dividerColor.withValues(alpha: 0.35);
 
     final banners = _selectedFavoriteBanners.toList();
+    final showEditAction = isMe && profileUserId.isNotEmpty;
+    if (banners.isEmpty && !showEditAction) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 10),
-      child: SizedBox(
-        height: 56,
-        width: double.infinity,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: bg,
-            border: Border(
-              top: BorderSide(color: borderColor),
-              bottom: BorderSide(color: borderColor),
-              left: BorderSide(color: borderColor),
-              right: BorderSide(color: borderColor),
-            ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border(
+            top: BorderSide(color: borderColor),
+            bottom: BorderSide(color: borderColor),
+            left: BorderSide(color: borderColor),
+            right: BorderSide(color: borderColor),
           ),
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: banners.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final asset = banners[index];
-              final w = 56 * bannerAspect;
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: SizedBox(
-                  width: w,
-                  height: 56,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: tileBorderColor, width: 1),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(13),
-                        child: Image.asset(
-                          asset,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.medium,
-                        ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+              child: Text(
+                'Interests',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+            if (banners.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      showEditAction
+                          ? 'Tap + to choose interests.'
+                          : 'No interests yet.',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ),
+                    if (showEditAction) ...[
+                      const SizedBox(height: 8),
+                      IconButton(
+                        onPressed: () => _openInterestsSelector(
+                          profileUserId: profileUserId,
+                          isMe: true,
+                        ),
+                        icon: const Icon(LucideIcons.plus),
+                        tooltip: 'Add interests',
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ],
                 ),
-              );
-            },
-          ),
+              )
+            else
+              SizedBox(
+                height: 56,
+                width: double.infinity,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: banners.length + (showEditAction ? 1 : 0),
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (context, index) {
+                    if (showEditAction && index == banners.length) {
+                      return InkWell(
+                        onTap: () => _openInterestsSelector(
+                          profileUserId: profileUserId,
+                          isMe: true,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: tileBorderColor,
+                              width: 1,
+                            ),
+                            color: theme.scaffoldBackgroundColor,
+                          ),
+                          child: const Icon(LucideIcons.plus),
+                        ),
+                      );
+                    }
+
+                    final asset = banners[index];
+                    final w = 56 * bannerAspect;
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: SizedBox(
+                        width: w,
+                        height: 56,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                  color: tileBorderColor, width: 1),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(13),
+                              child: Image.asset(
+                                asset,
+                                fit: BoxFit.cover,
+                                filterQuality: FilterQuality.medium,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -2273,88 +2350,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _showCreateModal() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => SafeArea(
-        child: Container(
-          decoration: BoxDecoration(
-            color: Theme.of(ctx).cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: const [
-              BoxShadow(
-                  color: Colors.black26, blurRadius: 12, offset: Offset(0, -4))
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey.shade400,
-                      borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 16),
-              Text('Create',
-                  style: Theme.of(ctx)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                      gradient: DesignTokens.instaGradient,
-                      borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(LucideIcons.image,
-                      color: Colors.white, size: 22),
-                ),
-                title: const Text('Create Post'),
-                subtitle: Text('Photo or video',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) return;
-                    _openCreateUpload(mode: UploadMode.post);
-                  });
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                      gradient: DesignTokens.instaGradient,
-                      borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(LucideIcons.video,
-                      color: Colors.white, size: 22),
-                ),
-                title: const Text('Upload Reel'),
-                subtitle: Text('Short video',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) {
-                      _openCreateUpload(mode: UploadMode.reel);
-                    }
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
+  Future<void> _openCreatePostFlow() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const CreatePostScreen(),
       ),
     );
   }
@@ -2695,10 +2694,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     if (isMe) ...[
                       IconButton(
                         icon: Icon(LucideIcons.squarePlus, color: fgColor),
-                        onPressed: () => _openInterestsSelector(
-                          profileUserId: profileUserId,
-                          isMe: true,
-                        ),
+                        onPressed: _openCreatePostFlow,
                       ),
                       IconButton(
                         icon: Icon(LucideIcons.menu, color: fgColor),
@@ -2818,7 +2814,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         })(),
                       ),
                       SliverToBoxAdapter(
-                        child: _buildFavoriteCategoryStrip(context),
+                        child: _buildFavoriteCategoryStrip(
+                          context,
+                          profileUserId: profileUserId,
+                          isMe: isMe,
+                        ),
                       ),
                       SliverToBoxAdapter(
                         child: _buildFollowSuggestionsBlock(context),

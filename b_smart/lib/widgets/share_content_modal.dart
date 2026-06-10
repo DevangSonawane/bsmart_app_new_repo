@@ -9,7 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api/chat_api.dart';
 import '../api/follows_api.dart';
-import '../screens/create_screen.dart';
+import '../models/media_model.dart';
+import '../screens/create_upload_screen.dart';
 import '../screens/new_group_chat_screen.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
@@ -120,7 +121,13 @@ class _ShareContentModalState extends State<ShareContentModal> {
     final rootNav = Navigator.of(context, rootNavigator: true);
     rootNav.pop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      rootNav.push(MaterialPageRoute(builder: (_) => const CreateScreen()));
+      rootNav.push(
+        MaterialPageRoute(
+          builder: (_) => const CreateUploadScreen(
+            initialMode: UploadMode.story,
+          ),
+        ),
+      );
     });
   }
 

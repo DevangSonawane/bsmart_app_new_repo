@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/reel_model.dart';
 import '../theme/instagram_theme.dart';
-import 'create_screen.dart';
+import '../models/media_model.dart';
+import 'create_upload_screen.dart';
 
 class ReelRemixScreen extends StatelessWidget {
   final Reel reel;
@@ -128,7 +129,9 @@ class ReelRemixScreen extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).pushReplacement(
                     MaterialPageRoute(
-                      builder: (context) => const CreateScreen(),
+                      builder: (context) => const CreateUploadScreen(
+                        initialMode: UploadMode.reel,
+                      ),
                     ),
                   );
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -175,7 +178,9 @@ class ReelRemixScreen extends StatelessWidget {
         onTap: () {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
-              builder: (context) => const CreateScreen(),
+              builder: (context) => const CreateUploadScreen(
+                initialMode: UploadMode.reel,
+              ),
             ),
           );
           ScaffoldMessenger.of(context).showSnackBar(
