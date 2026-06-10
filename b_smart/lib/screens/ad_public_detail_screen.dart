@@ -609,9 +609,9 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
       borderRadius: BorderRadius.circular(18),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          const targetAspect = 2.2; // slightly more squared preview
+          const targetAspect = 2.0; // a little taller for the preview hero
           final width = constraints.maxWidth;
-          final height = (width / targetAspect).clamp(160.0, 260.0);
+          final height = (width / targetAspect).clamp(180.0, 300.0);
 
           return SizedBox(
             height: height,
@@ -912,40 +912,17 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                 padding: EdgeInsets.zero,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 24, 0, 0),
-                    child: mediaWidget,
+                    padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+                    child: Transform.translate(
+                      offset: const Offset(0, -8),
+                      child: mediaWidget,
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _VendorRow(
-                          uid: uid,
-                          vendorName: businessName.isNotEmpty
-                              ? businessName
-                              : (ad.companyName.trim().isNotEmpty
-                                  ? ad.companyName.trim()
-                                  : displayName),
-                          username: (ad.userName ?? '').trim().isNotEmpty
-                              ? (ad.userName ?? '').trim()
-                              : 'vendor',
-                          avatarUrl: (ad.userAvatarUrl ?? '').trim(),
-                          isVerified: ad.isVerified,
-                          foregroundColor: foregroundColor,
-                          mutedForegroundColor: mutedForegroundColor,
-                          borderColor: isDark
-                              ? Colors.white.withValues(alpha: 0.12)
-                              : Colors.black.withValues(alpha: 0.12),
-                          onViewProfile: uid == null
-                              ? null
-                              : () {
-                                  unawaited(_trackClick());
-                                  Navigator.of(context)
-                                      .pushNamed('/vendor/$uid/public');
-                                },
-                        ),
-                        const SizedBox(height: 14),
                         if (ad.title.trim().isNotEmpty)
                           Text(
                             ad.title.trim(),
@@ -1596,92 +1573,6 @@ class _VendorAdsGrid extends StatelessWidget {
           },
         );
       },
-    );
-  }
-}
-
-class _VendorRow extends StatelessWidget {
-  final String? uid;
-  final String vendorName;
-  final String username;
-  final String avatarUrl;
-  final bool isVerified;
-  final Color foregroundColor;
-  final Color mutedForegroundColor;
-  final Color borderColor;
-  final VoidCallback? onViewProfile;
-
-  const _VendorRow({
-    required this.uid,
-    required this.vendorName,
-    required this.username,
-    required this.avatarUrl,
-    required this.isVerified,
-    required this.foregroundColor,
-    required this.mutedForegroundColor,
-    required this.borderColor,
-    required this.onViewProfile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final canNavigate = onViewProfile != null;
-    return Row(
-      children: [
-        Expanded(
-          child: InkWell(
-            onTap: canNavigate ? onViewProfile : null,
-            borderRadius: BorderRadius.circular(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              'Info',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: foregroundColor,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          // Verified tick intentionally removed for Info row.
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        OutlinedButton(
-          onPressed: onViewProfile,
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            side: BorderSide(color: borderColor),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          child: Text(
-            'View Profile',
-            style: TextStyle(
-              color: mutedForegroundColor,
-              fontWeight: FontWeight.w900,
-              fontSize: 12,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
