@@ -1,5 +1,6 @@
 import 'api_client.dart';
 import 'api_exceptions.dart';
+import 'privacy_api.dart';
 import 'search_api.dart';
 
 /// Result wrapper for username/email/phone availability checks.
@@ -203,9 +204,25 @@ class UsersApi {
     }
 
     final q = query.trim().toLowerCase();
+    final looksLikeEmail = q.contains('@');
+    final digitsOnly = q.replaceAll(RegExp(r'[^0-9+]'), '');
+    final looksLikePhone = digitsOnly.length >= 6 &&
+        RegExp(r'^\+?[0-9][0-9+\-()\s]*$').hasMatch(q);
+
     return users.where((u) {
       final username = (u['username'] as String?)?.toLowerCase() ?? '';
       final fullName = (u['full_name'] as String?)?.toLowerCase() ?? '';
+      if (looksLikeEmail) {
+        if (!privacyAllowsSearchByEmail(u)) return false;
+        final email = (u['email'] as String?)?.toLowerCase() ?? '';
+        return email.contains(q) || username.contains(q) || fullName.contains(q);
+      }
+      if (looksLikePhone) {
+        if (!privacyAllowsSearchByPhone(u)) return false;
+        final phone = (u['phone'] as String?)?.toLowerCase() ?? '';
+        return phone.contains(q) || username.contains(q) || fullName.contains(q);
+      }
+      if (!privacyAllowsSearchByUsername(u)) return false;
       return username.contains(q) || fullName.contains(q);
     }).toList();
   }

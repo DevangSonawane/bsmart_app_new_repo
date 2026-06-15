@@ -1,4 +1,5 @@
 import '../config/api_config.dart';
+import 'privacy_api.dart';
 import 'api_client.dart';
 
 /// REST API wrapper for suggestions endpoints.
@@ -85,7 +86,9 @@ class SuggestionsApi {
       '$_basePath/suggestions/users',
       queryParams: <String, String>{'limit': '$limit'},
     );
-    return _extractList(res);
+    return _extractList(res)
+        .where((user) => privacyAppearsInSuggestions(user))
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> getReelSuggestions(

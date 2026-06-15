@@ -30,6 +30,7 @@ import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
 import '../api/chat_api.dart';
 import '../api/notification_preferences_api.dart';
+import '../api/privacy_api.dart';
 import '../config/api_config.dart';
 import '../services/feed_service.dart';
 import '../services/auth/auth_service.dart';
@@ -245,6 +246,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
         error.body?['privacy_blocked'] == true;
   }
 
+  bool _isFollowingViewer(Map<String, dynamic>? profile) {
+    if (profile == null) return false;
+    final direct = profile['is_followed_by_me'] ??
+        profile['isFollowing'] ??
+        profile['is_following'];
+    return privacyBoolOf(direct, defaultValue: false);
+  }
+
+  bool _canMessageProfile(Map<String, dynamic>? profile) {
+    if (profile == null) return false;
+    if (_isOwnProfile) return true;
+    return privacyCanReceiveMessagesFrom(
+      profile,
+      isFollowing: _isFollowingViewer(profile),
+    );
+  }
+
   bool _parseBool(dynamic value) {
     if (value is bool) return value;
     if (value is num) return value != 0;
@@ -383,6 +401,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final list = users
           .map((e) => Map<String, dynamic>.from(e))
           .where((u) => _suggestionIdOf(u).isNotEmpty)
+          .where(privacyAppearsInSuggestions)
           .toList();
       list.shuffle();
       if (list.length > 80) {
@@ -748,7 +767,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               profile?['private_account'] ??
               profile?['isPrivateAccount'],
         );
-        final canMessage = !isPrivate || followingByMe;
+        final canMessage = profile == null
+            ? true
+            : privacyCanReceiveMessagesFrom(
+                profile,
+                isFollowing: followingByMe,
+              );
+        if (!canMessage) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                privacyMessagingValueOf(profile ?? const <String, dynamic>{}) ==
+                        'nobody'
+                    ? "This user doesn't accept direct messages."
+                    : 'This user only accepts messages from followers.',
+              ),
+            ),
+          );
+          return;
+        }
 
         final conversation = await ChatApi()
             .createOrGetConversation(participantId: participantId);
@@ -3011,30 +3048,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     headerSliverBuilder: (context, innerBoxIsScrolled) => [
                       SliverToBoxAdapter(
                         child: (() {
-                          bool toBool(dynamic v) {
-                            if (v is bool) return v;
-                            if (v is num) return v != 0;
-                            final s = v?.toString().trim().toLowerCase() ?? '';
-                            return s == 'true' ||
-                                s == '1' ||
-                                s == 'yes' ||
-                                s == 'y';
-                          }
-
-                          final followingByMe =
-                              (displayProfile?['is_followed_by_me'] as bool?) ??
-                                  (displayProfile?['isFollowing'] as bool?) ??
-                                  (displayProfile?['is_following'] as bool?) ??
-                                  false;
-                          final isPrivate = toBool(
-                            displayProfile?['is_private'] ??
-                                displayProfile?['isPrivate'] ??
-                                displayProfile?['private'] ??
-                                displayProfile?['private_account'] ??
-                                displayProfile?['isPrivateAccount'],
-                          );
-                          final canMessage =
-                              isMe || !isPrivate || followingByMe;
+                          final canMessage = _canMessageProfile(displayProfile);
 
                           return ProfileHeader(
                             username: username,
@@ -3049,7 +3063,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             isMe: isMe,
                             isVendor: isVendor,
                             isValidated: isValidated,
-                            isFollowing: followingByMe,
+                            isFollowing: _isFollowingViewer(displayProfile),
                             canMessage: canMessage,
                             isFavorite: _isFavoriteProfile,
                             isSuggestionsOpen:

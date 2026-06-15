@@ -230,3 +230,99 @@ class PrivacyApi {
     return <String, dynamic>{};
   }
 }
+
+Map<String, dynamic> privacyMapOf(dynamic raw) {
+  if (raw is Map<String, dynamic>) return raw;
+  if (raw is Map) return Map<String, dynamic>.from(raw);
+  return const <String, dynamic>{};
+}
+
+Map<String, dynamic> privacyResolvedUserOf(Map<String, dynamic> user) {
+  final embedded = privacyMapOf(user['user']);
+  if (embedded.isEmpty) return user;
+  return <String, dynamic>{...user, ...embedded};
+}
+
+bool privacyBoolOf(dynamic value, {bool defaultValue = true}) {
+  if (value == null) return defaultValue;
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return defaultValue;
+    if (normalized == 'true' ||
+        normalized == '1' ||
+        normalized == 'yes' ||
+        normalized == 'y' ||
+        normalized == 'on') {
+      return true;
+    }
+    if (normalized == 'false' ||
+        normalized == '0' ||
+        normalized == 'no' ||
+        normalized == 'n' ||
+        normalized == 'off') {
+      return false;
+    }
+  }
+  return defaultValue;
+}
+
+String privacyStringOf(dynamic value, {String defaultValue = ''}) {
+  final text = value?.toString().trim() ?? '';
+  return text.isEmpty ? defaultValue : text;
+}
+
+Map<String, dynamic> privacyUserDiscoveryOf(Map<String, dynamic> user) {
+  final source = privacyResolvedUserOf(user);
+  final raw = source['search_discovery'] ?? source['searchDiscovery'];
+  final map = privacyMapOf(raw);
+  return <String, dynamic>{
+    'allow_search_by_username':
+        privacyBoolOf(map['allow_search_by_username'], defaultValue: true),
+    'allow_search_by_email':
+        privacyBoolOf(map['allow_search_by_email'], defaultValue: false),
+    'allow_search_by_phone':
+        privacyBoolOf(map['allow_search_by_phone'], defaultValue: false),
+    'appear_in_suggestions':
+        privacyBoolOf(map['appear_in_suggestions'], defaultValue: true),
+  };
+}
+
+String privacyMessagingValueOf(Map<String, dynamic> user) {
+  final source = privacyResolvedUserOf(user);
+  return privacyStringOf(
+    source['messaging_privacy'] ?? source['messagingPrivacy'],
+    defaultValue: 'everyone',
+  );
+}
+
+bool privacyAppearsInSuggestions(Map<String, dynamic> user) {
+  final discovery = privacyUserDiscoveryOf(user);
+  return discovery['appear_in_suggestions'] != false;
+}
+
+bool privacyAllowsSearchByUsername(Map<String, dynamic> user) {
+  final discovery = privacyUserDiscoveryOf(user);
+  return discovery['allow_search_by_username'] != false;
+}
+
+bool privacyAllowsSearchByEmail(Map<String, dynamic> user) {
+  final discovery = privacyUserDiscoveryOf(user);
+  return discovery['allow_search_by_email'] != false;
+}
+
+bool privacyAllowsSearchByPhone(Map<String, dynamic> user) {
+  final discovery = privacyUserDiscoveryOf(user);
+  return discovery['allow_search_by_phone'] != false;
+}
+
+bool privacyCanReceiveMessagesFrom(
+  Map<String, dynamic> user, {
+  required bool isFollowing,
+}) {
+  final value = privacyMessagingValueOf(user);
+  if (value == 'nobody') return false;
+  if (value == 'followers_only') return isFollowing;
+  return true;
+}

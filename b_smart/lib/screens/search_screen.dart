@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/search_api.dart';
+import '../api/privacy_api.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/post_detail_modal.dart';
@@ -115,6 +116,48 @@ class _SearchScreenState extends State<SearchScreen> {
     return false;
   }
 
+  bool _looksLikeEmail(String query) {
+    return query.contains('@');
+  }
+
+  bool _looksLikePhone(String query) {
+    final q = query.trim();
+    final digitsOnly = q.replaceAll(RegExp(r'[^0-9+]'), '');
+    return digitsOnly.length >= 6 &&
+        RegExp(r'^\+?[0-9][0-9+\-()\s]*$').hasMatch(q);
+  }
+
+  List<Map<String, dynamic>> _filterSearchUsers(
+    List<Map<String, dynamic>> users,
+    String query,
+  ) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return users;
+    final useEmail = _looksLikeEmail(q);
+    final usePhone = _looksLikePhone(q);
+    return users.where((user) {
+      final source = privacyResolvedUserOf(user);
+      final username = (source['username'] ?? source['userName'] ?? '')
+          .toString()
+          .toLowerCase();
+      final fullName = (source['full_name'] ?? source['fullName'] ?? '')
+          .toString()
+          .toLowerCase();
+      if (useEmail) {
+        if (!privacyAllowsSearchByEmail(source)) return false;
+        final email = (source['email'] ?? '').toString().toLowerCase();
+        return email.contains(q) || username.contains(q) || fullName.contains(q);
+      }
+      if (usePhone) {
+        if (!privacyAllowsSearchByPhone(source)) return false;
+        final phone = (source['phone'] ?? '').toString().toLowerCase();
+        return phone.contains(q) || username.contains(q) || fullName.contains(q);
+      }
+      if (!privacyAllowsSearchByUsername(source)) return false;
+      return username.contains(q) || fullName.contains(q);
+    }).toList();
+  }
+
   Future<void> _loadHistory() async {
     final userId = await CurrentUser.id;
     if (userId == null || userId.trim().isEmpty) return;
@@ -196,18 +239,21 @@ class _SearchScreenState extends State<SearchScreen> {
       final posts = (results['posts'] as List?) ?? const [];
       final reels = (results['reels'] as List?) ?? const [];
       final totals = (res['totals'] as Map?) ?? const {};
+      final filteredUsers = _filterSearchUsers(
+        users
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(),
+        trimmed,
+      );
       if (!mounted) return;
       setState(() {
         _totals = {
-          'users': (totals['users'] as int?) ?? users.length,
+          'users': (totals['users'] as int?) ?? filteredUsers.length,
           'posts': (totals['posts'] as int?) ?? posts.length,
           'reels': (totals['reels'] as int?) ?? reels.length,
         };
-        _users = users
-            .take(uLimit)
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
+        _users = filteredUsers.take(uLimit).toList();
         _posts = posts
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))

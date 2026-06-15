@@ -630,6 +630,39 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     return value != false;
   }
 
+  bool _otherIsFollowingViewer() {
+    final source = _otherProfile ?? _otherParticipant();
+    final raw = source?['is_followed_by_me'] ??
+        source?['isFollowing'] ??
+        source?['is_following'];
+    return privacyBoolOf(raw, defaultValue: false);
+  }
+
+  bool _messagingPrivacyBlocked() {
+    final source = _otherProfile ?? _otherParticipant();
+    if (source == null) return false;
+    return !privacyCanReceiveMessagesFrom(
+      source,
+      isFollowing: _otherIsFollowingViewer(),
+    );
+  }
+
+  String? _messagingPrivacyBlockedText() {
+    if (!_messagingPrivacyBlocked()) return null;
+    final name = _nameFor(_otherProfile ?? _otherParticipant()).trim();
+    final privacy = privacyMessagingValueOf(
+      _otherProfile ?? _otherParticipant() ?? const <String, dynamic>{},
+    );
+    if (privacy == 'nobody') {
+      return name.isEmpty
+          ? "This user doesn't accept direct messages."
+          : "$name doesn't accept direct messages.";
+    }
+    return name.isEmpty
+        ? 'This user only accepts messages from their followers.'
+        : '$name only accepts messages from their followers.';
+  }
+
   String? _otherLastSeenLabel() {
     if (_otherOnline) return null;
     if (!_otherAllowsLastSeen()) return null;
@@ -926,6 +959,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   Future<void> _send() async {
     if (_sending) return;
+    if (_messagingPrivacyBlocked()) return;
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
     setState(() => _sending = true);
@@ -1070,6 +1104,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         ?.toString()
         .trim();
     if (convId == null || convId.isEmpty) return;
+    if (_messagingPrivacyBlocked()) return;
     try {
       final replyId = (_replyToMessage?['_id'] ?? _replyToMessage?['id'])
           ?.toString()
@@ -1312,6 +1347,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   Future<void> _pickAndSendImages({required bool fromCamera}) async {
     if (_uploadingMedia) return;
+    if (_messagingPrivacyBlocked()) return;
     final convId = widget.conversationId.trim();
     if (convId.isEmpty) return;
 
@@ -1940,6 +1976,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final hint = cs.onSurface.withValues(alpha: 0.55);
     final bg = cs.onSurface.withValues(alpha: 0.08);
     final canSend = _inputController.text.trim().isNotEmpty;
+    final messagingBlocked = _messagingPrivacyBlocked();
+    final messagingBlockedText = _messagingPrivacyBlockedText();
 
     final reply = _replyToMessage;
     final replyText = _previewForMessage(reply);
@@ -2018,6 +2056,28 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               ),
             ),
           ),
+        if (messagingBlockedText != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+              ),
+              child: Text(
+                messagingBlockedText,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ),
+          ),
         Row(
           children: [
             Container(
@@ -2028,7 +2088,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 color: Color(0xFF3B82F6),
               ),
               child: IconButton(
-                onPressed: _uploadingMedia
+                onPressed: (_uploadingMedia || messagingBlocked)
                     ? null
                     : () => _pickAndSendImages(fromCamera: true),
                 icon: const Icon(
@@ -2053,6 +2113,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                       child: TextField(
                         controller: _inputController,
                         focusNode: _inputFocusNode,
+                        enabled: !messagingBlocked,
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
                         style: TextStyle(color: cs.onSurface),
@@ -2066,7 +2127,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                       ),
                     ),
                     IconButton(
-                      onPressed: () {
+                      onPressed: messagingBlocked
+                          ? null
+                          : () {
                         showModalBottomSheet(
                           context: context,
                           isScrollControlled: true,
@@ -2093,7 +2156,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                           const BoxConstraints(minWidth: 22, minHeight: 32),
                     ),
                     IconButton(
-                      onPressed: _uploadingMedia
+                      onPressed: (_uploadingMedia || messagingBlocked)
                           ? null
                           : () => _pickAndSendImages(fromCamera: false),
                       icon: _uploadingMedia
