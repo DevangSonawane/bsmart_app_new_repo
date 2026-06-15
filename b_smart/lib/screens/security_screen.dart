@@ -1378,43 +1378,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
             color: isDark ? _darkBorder : _topBarBorder,
           ),
         ),
-        actions: [
-          if (!_isEditing)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: TextButton.icon(
-                onPressed: () => setState(() => _isEditing = true),
-                icon: const Icon(LucideIcons.pencil, size: 13),
-                label: const Text('Edit'),
-                style: TextButton.styleFrom(
-                  foregroundColor: isDark ? Colors.white : const Color(0xFF374151),
-                ),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Row(
-                children: [
-                  TextButton.icon(
-                    onPressed: _cancelEdit,
-                    icon: const Icon(LucideIcons.x, size: 13),
-                    label: const Text('Cancel'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: isDark ? _darkMuted : _lightMuted,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  FilledButton.icon(
-                    onPressed: _saveEdit,
-                    style: FilledButton.styleFrom(backgroundColor: _accent),
-                    icon: const Icon(LucideIcons.check, size: 13),
-                    label: const Text('Save'),
-                  ),
-                ],
-              ),
-            ),
-        ],
+        actions: const [],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _accent))
@@ -1624,11 +1588,13 @@ class _TwoFAModalState extends State<_TwoFAModal> {
   Widget build(BuildContext context) {
     final isEnable = widget.mode == 'enable';
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final maxDialogWidth = MediaQuery.sizeOf(context).width - 32;
+    final dialogWidth = maxDialogWidth < 360 ? maxDialogWidth : 360.0;
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
-        width: 360,
+        width: dialogWidth,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: isDark ? _darkCard : Colors.white,
@@ -1663,6 +1629,8 @@ class _TwoFAModalState extends State<_TwoFAModal> {
                       const SizedBox(height: 2),
                       Text(
                         widget.email,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted),
                       ),
                     ],
@@ -1757,43 +1725,53 @@ class _TwoFAModalState extends State<_TwoFAModal> {
   }
 
   Widget _otpBoxes() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(6, (index) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: SizedBox(
-            width: 42,
-            child: TextField(
-              controller: _otpControllers[index],
-              focusNode: _otpFocusNodes[index],
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.center,
-              maxLength: 1,
-              decoration: const InputDecoration(
-                counterText: '',
-                hintText: '0',
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(6, (index) {
+            return Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: index == 0 ? 0 : 4,
+                  right: index == 5 ? 0 : 4,
+                ),
+                child: SizedBox(
+                  height: 42,
+                  child: TextField(
+                    controller: _otpControllers[index],
+                    focusNode: _otpFocusNodes[index],
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    maxLength: 1,
+                    decoration: const InputDecoration(
+                      counterText: '',
+                      hintText: '0',
+                    ),
+                    onChanged: (value) {
+                      final digits = value.replaceAll(RegExp(r'\D'), '');
+                      final cleaned = digits.isEmpty ? '' : digits.substring(0, 1);
+                      if (cleaned != value) {
+                        _otpControllers[index].text = cleaned;
+                        _otpControllers[index].selection =
+                            TextSelection.fromPosition(
+                          TextPosition(offset: _otpControllers[index].text.length),
+                        );
+                      }
+                      if (cleaned.isNotEmpty && index < 5) {
+                        _otpFocusNodes[index + 1].requestFocus();
+                      }
+                      if (cleaned.isEmpty && index > 0 && value.isEmpty) {
+                        _otpFocusNodes[index - 1].requestFocus();
+                      }
+                    },
+                  ),
+                ),
               ),
-              onChanged: (value) {
-                final digits = value.replaceAll(RegExp(r'\D'), '');
-                final cleaned = digits.isEmpty ? '' : digits.substring(0, 1);
-                if (cleaned != value) {
-                  _otpControllers[index].text = cleaned;
-                  _otpControllers[index].selection = TextSelection.fromPosition(
-                    TextPosition(offset: _otpControllers[index].text.length),
-                  );
-                }
-                if (cleaned.isNotEmpty && index < 5) {
-                  _otpFocusNodes[index + 1].requestFocus();
-                }
-                if (cleaned.isEmpty && index > 0 && value.isEmpty) {
-                  _otpFocusNodes[index - 1].requestFocus();
-                }
-              },
-            ),
-          ),
+            );
+          }),
         );
-      }),
+      },
     );
   }
 
