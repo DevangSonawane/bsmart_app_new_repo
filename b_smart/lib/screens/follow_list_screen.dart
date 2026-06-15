@@ -5,6 +5,7 @@ import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/follows_api.dart';
+import '../api/api_exceptions.dart';
 import '../api/chat_api.dart';
 import '../state/app_state.dart';
 import '../utils/current_user.dart';
@@ -363,6 +364,7 @@ class _FollowListScreenState extends State<FollowListScreen>
     setState(() {
       if (replace) {
         tab.loading = true;
+        tab.privacyBlocked = false;
       } else {
         tab.loadingMore = true;
       }
@@ -517,6 +519,24 @@ class _FollowListScreenState extends State<FollowListScreen>
           }
         }
       });
+    } on ForbiddenException catch (e) {
+      final privacyBlocked = e.body?['privacy_blocked'] == true;
+      if (privacyBlocked && mounted) {
+        setState(() {
+          tab.users = <Map<String, dynamic>>[];
+          tab.hasMore = false;
+          tab.page = 1;
+          tab.privacyBlocked = true;
+        });
+        return;
+      }
+      if (replace && mounted) {
+        setState(() {
+          tab.users = <Map<String, dynamic>>[];
+          tab.hasMore = false;
+          tab.page = 1;
+        });
+      }
     } catch (_) {
       if (replace && mounted) {
         setState(() {
@@ -717,6 +737,53 @@ class _FollowListScreenState extends State<FollowListScreen>
           : 'Not following anyone yet.';
     }
     return s.isNotEmpty ? 'No vendors found for that search.' : 'No vendors.';
+  }
+
+  String _privateListMessage(FollowListMode mode) {
+    return switch (mode) {
+      FollowListMode.followers => 'Followers list is private.',
+      FollowListMode.following => 'Following list is private.',
+      FollowListMode.vendors => 'This list is private.',
+    };
+  }
+
+  Widget _privateListView(FollowListMode mode) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              LucideIcons.lock,
+              size: 38,
+              color: cs.onSurface.withValues(alpha: 0.50),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              _privateListMessage(mode),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: cs.onSurface,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Only the account owner can view this list.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: cs.onSurface.withValues(alpha: 0.60),
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -1261,6 +1328,9 @@ class _FollowListScreenState extends State<FollowListScreen>
 
   Widget _buildList(FollowListMode mode, String currentUserId) {
     final tab = _tabs[mode]!;
+    if (tab.privacyBlocked) {
+      return _privateListView(mode);
+    }
     if (tab.loading) {
       return Center(
         child: CircularProgressIndicator(
@@ -2092,5 +2162,6 @@ class _FollowTabState {
   bool loading = false;
   bool loadingMore = false;
   bool hasMore = true;
+  bool privacyBlocked = false;
   List<Map<String, dynamic>> users = <Map<String, dynamic>>[];
 }

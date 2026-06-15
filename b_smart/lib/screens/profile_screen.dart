@@ -27,6 +27,7 @@ import '../services/user_account_service.dart';
 import '../services/wallet_service.dart';
 import '../api/auth_api.dart';
 import '../api/api_client.dart';
+import '../api/api_exceptions.dart';
 import '../api/chat_api.dart';
 import '../api/notification_preferences_api.dart';
 import '../config/api_config.dart';
@@ -34,6 +35,7 @@ import '../services/feed_service.dart';
 import '../services/auth/auth_service.dart';
 import '../models/story_model.dart';
 import 'story_viewer_screen.dart';
+import '../api/stories_api.dart';
 import '../models/media_model.dart';
 import 'create_upload_screen.dart';
 import 'chat_conversation_screen.dart';
@@ -83,15 +85,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _hasError = false;
   bool _followLoading = false;
   final ReelsService _reelsService = ReelsService();
+  final StoriesApi _storiesApi = StoriesApi();
   List<Reel> _userReels = [];
   static const int _initialPostsLimit = 20;
   final FeedService _feedService = FeedService();
-  List<StoryGroup> _storyGroups = const [];
   bool _hasStory = false;
   Map<String, String>? _reelImageHeaders;
   Map<String, String>? _adsMediaHeaders;
   bool _isOwnProfile = false;
   bool _isFavoriteProfile = false;
+  bool _profileBlocked = false;
+  bool _storiesBlocked = false;
+  bool _postsRestricted = false;
+  bool _pulseRestricted = false;
+  Map<String, dynamic>? _privateProfilePreview;
   final Set<String> _selectedFavoriteBanners = <String>{};
 
   static const List<String> _favoriteBanners = <String>[
@@ -232,6 +239,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
         '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
     return url.startsWith('/') ? '$origin$url' : '$origin/$url';
   }
+
+  bool _isPrivacyBlockedError(Object error) {
+    return error is ForbiddenException &&
+        error.body?['privacy_blocked'] == true;
+  }
+
+  bool _parseBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      return v == 'true' || v == '1' || v == 'yes' || v == 'y';
+    }
+    return false;
+  }
+
+  Map<String, dynamic>? _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return value.cast<String, dynamic>();
+    return null;
+  }
+
+  Map<String, bool> _parsePrivacyRestricted(dynamic value) {
+    final map = _asMap(value);
+    return <String, bool>{
+      'posts': _parseBool(map?['posts']),
+      'pulse': _parseBool(map?['pulse']),
+    };
+  }
+
+  Map<String, dynamic> _privateProfileFallback(
+    Map<String, dynamic>? body,
+    String targetId,
+  ) {
+    final user = _asMap(body?['user']) ??
+        _asMap(body?['profile']) ??
+        _asMap(body?['data']) ??
+        <String, dynamic>{};
+    return <String, dynamic>{
+      'id': user['_id'] ?? user['id'] ?? targetId,
+      'username': user['username'] ?? 'user',
+      'full_name': user['full_name'] ?? user['fullName'] ?? '',
+      'avatar_url': user['avatar_url'] ?? user['avatarUrl'] ?? '',
+      'is_private': true,
+      'privacy_blocked': true,
+    };
+  }
+
 
   Future<void> _shareProfile(Map<String, dynamic>? profile) async {
     if (profile == null) return;
@@ -1035,39 +1090,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
     }
 
-    final profileFuture = isMe ? AuthApi().me() : _svc.getUserById(targetId);
-    final postsFuture = _svc.getUserPosts(targetId, limit: _initialPostsLimit);
-    final savedFuture = isMe
-        ? _svc.getUserSavedPosts(targetId, limit: _initialPostsLimit)
-        : Future.value(<Map<String, dynamic>>[]);
-    final taggedFuture =
-        _svc.getUserTaggedPosts(targetId, limit: _initialPostsLimit);
-    final walletFuture = (widget.userId == null)
-        ? WalletService().getCoinBalance()
-        : Future.value(0);
-    final userAccount = UserAccountService().getAccount(targetId);
-
     Map<String, dynamic>? profile;
-    List<Map<String, dynamic>> rawPosts = [];
-    List<Map<String, dynamic>> rawSaved = [];
-    List<Map<String, dynamic>> rawTagged = [];
-    int walletBalance = 0;
-
     try {
-      final results = await Future.wait([
-        profileFuture,
-        postsFuture,
-        savedFuture,
-        taggedFuture,
-        walletFuture,
-      ]);
-
-      profile = results[0] as Map<String, dynamic>?;
-      rawPosts = results[1] as List<Map<String, dynamic>>;
-      rawSaved = results[2] as List<Map<String, dynamic>>;
-      rawTagged = results[3] as List<Map<String, dynamic>>;
-      walletBalance = results[4] as int;
-    } catch (e) {
+      profile = isMe ? await AuthApi().me() : await _usersApi.getUserProfile(targetId);
+    } on ForbiddenException catch (e) {
+      if (_isPrivacyBlockedError(e)) {
+        final preview = _privateProfileFallback(e.body, targetId);
+        if (mounted) {
+          setState(() {
+            _profileBlocked = true;
+            _privateProfilePreview = preview;
+            _profile = preview;
+            _storiesBlocked = true;
+            _posts = const [];
+            _saved = const [];
+            _tagged = const [];
+            _tweets = const [];
+            _promotes = const [];
+            _userReels = const [];
+            _hasStory = false;
+            _loading = false;
+            _hasError = false;
+          });
+        }
+        return;
+      }
       if (mounted) {
         setState(() {
           _loading = false;
@@ -1075,6 +1122,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
       return;
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _hasError = true;
+        });
+      }
+      return;
+    }
+
+    final postsFuture = _svc.getUserPosts(targetId, limit: _initialPostsLimit);
+    final savedFuture = isMe
+        ? _svc.getUserSavedPosts(targetId, limit: _initialPostsLimit)
+        : Future.value(<Map<String, dynamic>>[]);
+    final taggedFuture =
+        _svc.getUserTaggedPosts(targetId, limit: _initialPostsLimit);
+    final contentFuture = _usersApi.getUserProfileContent(targetId);
+    final walletFuture = (widget.userId == null)
+        ? WalletService().getCoinBalance()
+        : Future.value(0);
+    final userAccount = UserAccountService().getAccount(targetId);
+
+    Map<String, dynamic>? content;
+    List<Map<String, dynamic>> rawPosts = [];
+    List<Map<String, dynamic>> rawSaved = [];
+    List<Map<String, dynamic>> rawTagged = [];
+    int walletBalance = 0;
+
+    try {
+      final results = await Future.wait([
+        postsFuture,
+        savedFuture,
+        taggedFuture,
+        contentFuture,
+        walletFuture,
+      ]);
+
+      rawPosts = (results[0] as List).whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+      rawSaved = (results[1] as List).whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+      rawTagged = (results[2] as List).whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+      content = results[3] as Map<String, dynamic>?;
+      walletBalance = results[4] as int;
+    } catch (_) {
+      // Keep whatever we already have cached; privacy gating still applies below.
+    }
+
+    final privacyRestricted = _parsePrivacyRestricted(content?['privacy_restricted']);
+    final postsRestricted = privacyRestricted['posts'] == true;
+    final pulseRestricted = privacyRestricted['pulse'] == true;
+    if (mounted) {
+      setState(() {
+        _profileBlocked = false;
+        _privateProfilePreview = null;
+        _storiesBlocked = false;
+        _postsRestricted = postsRestricted;
+        _pulseRestricted = pulseRestricted;
+      });
     }
 
     final isVendor = (profile?['role'] as String?)?.toLowerCase() == 'vendor';
@@ -1627,7 +1731,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _vendorAds = vendorAds;
         _vendorInfo = vendorInfo;
         _userReels = combinedReels.values.toList();
-        _storyGroups = const [];
         _loading = false;
       });
       unawaited(_loadAdInterests(targetId, force: true));
@@ -1710,23 +1813,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _openStoriesFromProfile() async {
+    if (_storiesBlocked) return;
     final profile = _profile;
     if (profile == null) return;
     final targetId =
         (profile['id'] as String?) ?? (profile['_id'] as String?) ?? '';
     if (targetId.isEmpty) return;
-    final groups = await _feedService.fetchStoriesFeed();
-    final userGroups = groups.where((g) => g.userId == targetId).toList();
-    if (userGroups.isEmpty) return;
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => StoryViewerScreen(
-          storyGroups: userGroups,
-          initialIndex: 0,
+    try {
+      final stories = await _storiesApi.userStories(targetId);
+      final groups = await _feedService.fetchStoriesFeed();
+      final userGroups = groups.where((g) => g.userId == targetId).toList();
+      final resolvedGroups = userGroups.isNotEmpty
+          ? userGroups
+          : await Future.wait(
+              stories.map((story) async {
+                final storyId = (story['_id'] ?? story['id'])?.toString().trim() ?? '';
+                if (storyId.isEmpty) return null;
+                final items = await _feedService.fetchStoryItems(
+                  storyId,
+                  ownerUserName: (profile['username'] as String?)?.trim() ?? 'user',
+                  ownerAvatar: profile['avatar_url'] as String?,
+                );
+                if (items.isEmpty) return null;
+                return StoryGroup(
+                  userId: targetId,
+                  userName: (profile['username'] as String?)?.trim() ?? 'user',
+                  userAvatar: profile['avatar_url'] as String?,
+                  storyId: storyId,
+                  stories: items,
+                );
+              }),
+            ).then((value) => value.whereType<StoryGroup>().toList());
+      if (resolvedGroups.isEmpty) return;
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => StoryViewerScreen(
+            storyGroups: resolvedGroups,
+            initialIndex: 0,
+          ),
         ),
-      ),
-    );
+      );
+    } on ForbiddenException catch (e) {
+      if (_isPrivacyBlockedError(e) && mounted) {
+        setState(() {
+          _storiesBlocked = true;
+          _hasStory = false;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _changeAvatarFromProfile() async {
@@ -1915,14 +2050,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadStoryStatus(String userId) async {
     if (userId.isEmpty) return;
     try {
-      final groups = await _feedService.fetchStoriesFeed();
-      final hasStory = groups.any(
-        (g) => g.userId == userId && g.stories.isNotEmpty,
-      );
+      final stories = await _storiesApi.userStories(userId);
+      final hasStory = stories.isNotEmpty;
       if (!mounted) return;
       if (_hasStory != hasStory) {
         setState(() {
           _hasStory = hasStory;
+          _storiesBlocked = false;
+        });
+      }
+    } on ForbiddenException catch (e) {
+      if (_isPrivacyBlockedError(e)) {
+        if (!mounted) return;
+        setState(() {
+          _storiesBlocked = true;
+          _hasStory = false;
+        });
+        return;
+      }
+      if (!mounted) return;
+      if (_hasStory) {
+        setState(() {
+          _hasStory = false;
         });
       }
     } catch (_) {
@@ -2425,6 +2574,83 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final displayProfile =
             isMe ? (myProfileFromRedux ?? _profile) : _profile;
 
+        if (_profileBlocked && !isMe) {
+          final privateUser = _privateProfilePreview ?? displayProfile;
+          final username = (privateUser?['username'] as String?)?.trim() ?? 'user';
+          final fullName = (privateUser?['full_name'] as String?)?.trim();
+          final avatar = (privateUser?['avatar_url'] as String?)?.trim();
+          return Scaffold(
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            appBar: AppBar(
+              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
+              title: Text(username),
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircleAvatar(
+                      radius: 42,
+                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      backgroundImage: (avatar != null && avatar.isNotEmpty)
+                          ? NetworkImage(avatar)
+                          : null,
+                      child: (avatar == null || avatar.isEmpty)
+                          ? Text(
+                              username.isNotEmpty ? username[0].toUpperCase() : 'U',
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      'This account is private',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      fullName != null && fullName.isNotEmpty
+                          ? '@$username · $fullName'
+                          : '@$username',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.65),
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Follow them to see their posts, stories, and profile content.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.60),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
         if (_loading && displayProfile == null) {
           return const Scaffold(
               body: Center(
@@ -2565,6 +2791,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             .toList();
         final tweetPosts = _tweets;
         final promotePosts = _promotes;
+        final storyTap = _storiesBlocked ? null : _openStoriesFromProfile;
 
         final allById = <String, FeedPost>{};
         for (final p in [...mediaPosts, ...reelPosts, ...reelFromService]) {
@@ -2582,6 +2809,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const Tab(icon: Icon(LucideIcons.messageCircle)),
           const Tab(icon: Icon(LucideIcons.megaphone)),
         ];
+
+        Widget privacyPlaceholder({
+          required String title,
+          required String subtitle,
+          IconData icon = LucideIcons.lock,
+        }) {
+          final muted = theme.colorScheme.onSurface.withValues(alpha: 0.60);
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 42, horizontal: 24),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: theme.dividerColor.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Icon(icon, size: 30, color: muted),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: muted,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
 
         final allTab = (allCount == 0)
             ? Padding(
@@ -2605,39 +2880,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: EdgeInsets.zero,
             children: [allTab],
           ),
-          mediaPosts.isEmpty
-              ? _emptyGridPlaceholder(
-                  context,
-                  isReels: false,
-                  isOwnProfile: isMe,
+          _postsRestricted
+              ? privacyPlaceholder(
+                  title: 'Posts are private',
+                  subtitle: 'Only approved followers can see these posts.',
                 )
-              : PostsGrid(posts: mediaPosts, onTap: (p) => _onPostTap(p)),
-          _buildReelsGrid(isMe: isMe),
-          ListView(
-            padding: EdgeInsets.zero,
-            children: [_buildTweetsList(tweetPosts, isMe: isMe)],
-          ),
-          isVendor
-              ? Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: _buildAdsGrid(),
-                )
-              : (promotePosts.isEmpty
+              : (mediaPosts.isEmpty
                   ? _emptyGridPlaceholder(
                       context,
                       isReels: false,
                       isOwnProfile: isMe,
-                      emptyIcon: LucideIcons.megaphone,
-                      emptyTitle: 'No Promote Yet',
-                      showCreateButton: false,
                     )
-                  : PostsGrid(
-                      posts: promotePosts,
-                      onTap: (_) => Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => const PromoteScreen()),
-                      ),
-                    )),
+                  : PostsGrid(posts: mediaPosts, onTap: (p) => _onPostTap(p))),
+          _pulseRestricted
+              ? privacyPlaceholder(
+                  title: 'Pulse is private',
+                  subtitle: 'Only approved followers can see these reels.',
+                  icon: LucideIcons.video,
+                )
+              : _buildReelsGrid(isMe: isMe),
+          ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              _postsRestricted
+                  ? privacyPlaceholder(
+                      title: 'Posts are private',
+                      subtitle: 'Only approved followers can see this content.',
+                    )
+                  : _buildTweetsList(tweetPosts, isMe: isMe),
+            ],
+          ),
+          _pulseRestricted
+              ? privacyPlaceholder(
+                  title: 'Pulse is private',
+                  subtitle: 'Only approved followers can see this content.',
+                  icon: LucideIcons.megaphone,
+                )
+              : (isVendor
+                  ? Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: _buildAdsGrid(),
+                    )
+                  : (promotePosts.isEmpty
+                      ? _emptyGridPlaceholder(
+                          context,
+                          isReels: false,
+                          isOwnProfile: isMe,
+                          emptyIcon: LucideIcons.megaphone,
+                          emptyTitle: 'No Promote Yet',
+                          showCreateButton: false,
+                        )
+                      : PostsGrid(
+                          posts: promotePosts,
+                          onTap: (_) => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => const PromoteScreen()),
+                          ),
+                        ))),
         ];
 
         return DefaultTabController(
@@ -2755,7 +3054,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             isFavorite: _isFavoriteProfile,
                             isSuggestionsOpen:
                                 isMe ? _showFollowSuggestions : false,
-                            hasStory: _hasStory,
+                            hasStory: _hasStory && !_storiesBlocked,
                             onEdit: isMe ? _onEdit : null,
                             onFollow: isMe ? null : _onFollow,
                             onShare: () => _shareProfile(displayProfile),
@@ -2785,7 +3084,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ? _openMessaging
                                 : (canMessage ? _openMessaging : null),
                             onUser: isMe ? _toggleFollowSuggestions : null,
-                            onAvatarTap: _openStoriesFromProfile,
+                            onAvatarTap: storyTap,
                             onAvatarEdit: isMe && !_avatarUploading
                                 ? _showAvatarOptionsSheet
                                 : null,

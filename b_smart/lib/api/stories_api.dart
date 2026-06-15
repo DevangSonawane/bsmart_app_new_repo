@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import 'api_exceptions.dart';
 import '../config/api_config.dart';
 import 'upload_api.dart';
 
@@ -34,6 +35,11 @@ class StoriesApi {
       }
     }
     return const <Map<String, dynamic>>[];
+  }
+
+  bool isPrivacyBlockedError(Object error) {
+    return error is ForbiddenException &&
+        error.body?['privacy_blocked'] == true;
   }
 
   Future<Map<String, dynamic>> upload(List<int> bytes) async {

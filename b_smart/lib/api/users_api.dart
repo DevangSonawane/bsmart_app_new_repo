@@ -66,6 +66,20 @@ class UsersApi {
     return res as Map<String, dynamic>;
   }
 
+  /// Get the profile content payload that carries privacy restrictions.
+  ///
+  /// Mirrors the web app's `GET /api/users/:id/profile-content` call.
+  Future<Map<String, dynamic>> getUserProfileContent(String userId) async {
+    final res = await _client.get('/users/$userId/profile-content');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  /// Returns true if the backend indicates a privacy-blocked resource.
+  bool isPrivacyBlockedError(Object error) {
+    return error is ForbiddenException &&
+        error.body?['privacy_blocked'] == true;
+  }
+
   /// Get a user's posts.
   ///
   /// Returns a list of posts or an object containing `posts`.
