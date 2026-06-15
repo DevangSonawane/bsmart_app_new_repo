@@ -56,6 +56,9 @@ class ChatBubbleShell extends StatelessWidget {
     final hasMeta = (timestampText ?? '').trim().isNotEmpty;
     final metaReserveRight = hasMeta ? 68.0 : 0.0;
     final metaReserveBottom = hasMeta ? 16.0 : 0.0;
+    final deliveryLabelColor = isOutgoing
+        ? colors.outgoingMeta
+        : colors.incomingMeta;
 
     final padding = EdgeInsets.fromLTRB(
       12,
@@ -101,9 +104,9 @@ class ChatBubbleShell extends StatelessWidget {
                               ),
                               if (isOutgoing) ...[
                                 const SizedBox(width: 4),
-                                _DeliveryIcon(
+                                _DeliveryMeta(
                                   status: deliveryStatus,
-                                  color: Colors.white.withValues(alpha: 0.85),
+                                  color: Colors.white.withValues(alpha: 0.90),
                                 ),
                               ],
                             ],
@@ -177,9 +180,9 @@ class ChatBubbleShell extends StatelessWidget {
                               ),
                               if (isOutgoing) ...[
                                 const SizedBox(width: 4),
-                                _DeliveryIcon(
+                                _DeliveryMeta(
                                   status: deliveryStatus,
-                                  color: metaColor,
+                                  color: deliveryLabelColor,
                                 ),
                               ],
                             ],
@@ -231,11 +234,11 @@ class ChatBubbleShell extends StatelessWidget {
   }
 }
 
-class _DeliveryIcon extends StatelessWidget {
+class _DeliveryMeta extends StatelessWidget {
   final ChatDeliveryStatus? status;
   final Color color;
 
-  const _DeliveryIcon({
+  const _DeliveryMeta({
     required this.status,
     required this.color,
   });
@@ -252,7 +255,16 @@ class _DeliveryIcon extends StatelessWidget {
     if (s == ChatDeliveryStatus.delivered) {
       return Icon(LucideIcons.checkCheck, size: 14, color: color);
     }
-    return Icon(LucideIcons.checkCheck, size: 14, color: const Color(0xFF34B7F1));
+    return Text(
+      'Seen',
+      style: TextStyle(
+        color: const Color(0xFF34B7F1).withValues(alpha: 0.95),
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        height: 1.0,
+      ),
+      textScaler: MediaQuery.textScalerOf(context),
+    );
   }
 }
 

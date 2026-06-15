@@ -1022,8 +1022,11 @@ class _MessagingScreenState extends State<MessagingScreen>
     final isGroup = _isGroup(conversation);
     final other = _otherParticipant(conversation);
     final otherId = _userId(other);
+    final otherActivity = _map(other?['activity_status'] ?? other?['activityStatus']);
+    final showOnlineStatus = otherActivity['show_online_status'] != false;
     final showOnlineDot = !isCommunity &&
         !isGroup &&
+        showOnlineStatus &&
         otherId != null &&
         otherId.isNotEmpty &&
         _onlineUserIds.contains(otherId);
@@ -1188,6 +1191,12 @@ class _MessagingScreenState extends State<MessagingScreen>
         ),
       ),
     );
+  }
+
+  Map<String, dynamic> _map(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return const <String, dynamic>{};
   }
 
   Widget _mergedGroupAvatar(Map<String, dynamic> conversation, double size) {

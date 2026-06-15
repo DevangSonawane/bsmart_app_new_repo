@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
+import '../api/privacy_api.dart';
 import '../api/users_api.dart';
 import '../services/chat_socket_service.dart';
 import '../theme/design_tokens.dart';
@@ -50,6 +51,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     with WidgetsBindingObserver {
   final _chatApi = ChatApi();
   final _usersApi = UsersApi();
+  final _privacyApi = PrivacyApi();
   final ChatSocketService _chatSocket = ChatSocketService();
   final _scrollController = ScrollController();
   final _inputController = TextEditingController();
@@ -81,6 +83,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   Timer? _presenceTimer;
   bool _otherOnline = false;
   bool _refreshingPresence = false;
+  bool _allowOwnReadReceipts = true;
   Timer? _scrollPinTimer;
   int _scrollPinAttempts = 0;
   SocketHandler? _onSocketNewMessage;
@@ -106,6 +109,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     };
     _autoSaveService.dataSaverModeNotifier.addListener(_mediaPrefsListener);
     _init();
+    unawaited(_loadOwnPrivacy());
     unawaited(_loadMediaPrefs());
     _scrollController.addListener(_handleScroll);
     _inputController.addListener(_handleComposerChanged);
@@ -426,6 +430,20 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     _presenceTimer = null;
   }
 
+  Future<void> _loadOwnPrivacy() async {
+    try {
+      final settings = await _privacyApi.getPrivacySettings();
+      final value = settings.activityStatus['show_read_receipts'];
+      final next = value != false;
+      if (!mounted) return;
+      if (next != _allowOwnReadReceipts) {
+        setState(() => _allowOwnReadReceipts = next);
+      }
+    } catch (_) {
+      // Best-effort only.
+    }
+  }
+
   String _otherParticipantId() {
     final other = _otherProfile ?? _otherParticipant();
     return (_idFor(other) ?? '').trim();
@@ -435,6 +453,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     if (_refreshingPresence) return;
     final otherId = _otherParticipantId();
     if (otherId.isEmpty) return;
+    if (!_otherAllowsOnlineStatus()) {
+      if (_otherOnline) {
+        if (!mounted) return;
+        setState(() => _otherOnline = false);
+      }
+      return;
+    }
     _refreshingPresence = true;
     try {
       final online = await _chatApi.getOnlineUsers(ids: [otherId]);
@@ -536,6 +561,65 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     }
     final p0 = participants.first;
     return p0 is Map ? Map<String, dynamic>.from(p0) : null;
+  }
+
+  Map<String, dynamic> _otherActivityStatus() {
+    final source = _otherProfile ?? _otherParticipant();
+    final raw = source?['activity_status'] ?? source?['activityStatus'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return const <String, dynamic>{};
+  }
+
+  bool _otherAllowsOnlineStatus() {
+    final activity = _otherActivityStatus();
+    final value = activity['show_online_status'];
+    return value != false;
+  }
+
+  bool _otherAllowsLastSeen() {
+    final activity = _otherActivityStatus();
+    final value = activity['show_last_seen'];
+    return value != false;
+  }
+
+  bool _otherAllowsReadReceipts() {
+    final activity = _otherActivityStatus();
+    final value = activity['show_read_receipts'];
+    return value != false;
+  }
+
+  String? _otherLastSeenLabel() {
+    if (_otherOnline) return null;
+    if (!_otherAllowsLastSeen()) return null;
+    final source = _otherProfile ?? _otherParticipant();
+    final candidates = [
+      source?['last_seen_at'],
+      source?['lastSeenAt'],
+      source?['last_active_at'],
+      source?['lastActiveAt'],
+      source?['last_seen'],
+      source?['lastSeen'],
+    ];
+    DateTime? dt;
+    for (final raw in candidates) {
+      if (raw == null) continue;
+      if (raw is DateTime) {
+        dt = raw;
+        break;
+      }
+      final parsed = DateTime.tryParse(raw.toString());
+      if (parsed != null) {
+        dt = parsed;
+        break;
+      }
+    }
+    if (dt == null) return null;
+    final local = dt.toLocal();
+    final diff = DateTime.now().difference(local);
+    if (diff.inMinutes < 1) return 'Last seen just now';
+    if (diff.inMinutes < 60) return 'Last seen ${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return 'Last seen ${diff.inHours}h ago';
+    return 'Last seen ${DateFormat('MMM d').format(local)}';
   }
 
   String _nameFor(Map<String, dynamic>? user) {
@@ -765,6 +849,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   Future<void> _markLatestSeen() async {
     final uid = _currentUserId;
     if (uid == null || uid.isEmpty) return;
+    if (!_allowOwnReadReceipts) return;
     final latest = _messages.reversed.cast<Map<String, dynamic>?>().firstWhere(
       (m) {
         if (m == null) return false;
@@ -1285,6 +1370,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             : otherDisplayName;
     final otherAvatar = _avatarFor(_otherProfile ?? other);
     final otherId = _idFor(_otherProfile ?? other) ?? '';
+    final showOtherOnlineStatus = _otherAllowsOnlineStatus();
+    final showOtherLastSeen = _otherAllowsLastSeen();
+    final otherLastSeenLabel = _otherLastSeenLabel();
     final isRequestPending = _isRequestConversation(_conversation);
     bool toBool(dynamic v) {
       if (v is bool) return v;
@@ -1343,7 +1431,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                       ),
                     ),
                   ),
-                if (_otherOnline && otherId.isNotEmpty)
+                if (showOtherOnlineStatus && _otherOnline && otherId.isNotEmpty)
                   Positioned(
                     right: -1,
                     bottom: -1,
@@ -1379,7 +1467,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  if (_otherOnline && otherId.isNotEmpty)
+                  if (showOtherOnlineStatus && _otherOnline && otherId.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
                       child: Text(
@@ -1391,6 +1479,25 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         ),
                       ),
                     ),
+                  if (!(_otherOnline && showOtherOnlineStatus) &&
+                      showOtherLastSeen &&
+                      otherLastSeenLabel != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Text(
+                        otherLastSeenLabel,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.color
+                              ?.withValues(alpha: 0.72),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -3384,6 +3491,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     required bool mine,
   }) {
     if (!mine) return null;
+    if (!_otherAllowsReadReceipts()) return ChatDeliveryStatus.sent;
     final seenBy = message['seenBy'];
     if (seenBy is List && seenBy.isNotEmpty) return ChatDeliveryStatus.read;
     return ChatDeliveryStatus.sent;
