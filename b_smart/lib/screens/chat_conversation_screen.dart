@@ -364,8 +364,20 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   Widget _chatStatusBuilder(types.Message message,
       {required BuildContext context}) {
-    // Timestamp is rendered inside the bubble (via message builders).
-    return const SizedBox.shrink();
+    final label = _readReceiptLabelForMessage(message.id, context: context);
+    if (label == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        label,
+        textAlign: TextAlign.right,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.48),
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 
   String _timeLabelFor(types.Message message) {
@@ -394,6 +406,36 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         color: color,
       ),
     );
+  }
+
+  Map<String, dynamic>? _rawMessageById(String messageId) {
+    final id = messageId.trim();
+    if (id.isEmpty) return null;
+    for (final message in _messages.reversed) {
+      if (_messageId(message) == id) return message;
+    }
+    return null;
+  }
+
+  String? _readReceiptLabelForMessage(
+    String messageId, {
+    required BuildContext context,
+  }) {
+    if (!_allowOwnReadReceipts) return null;
+    final raw = _rawMessageById(messageId);
+    if (raw == null) return null;
+    final uid = (_currentUserId ?? '').trim();
+    if (uid.isEmpty) return null;
+    final sender = raw['sender'];
+    final senderId = (sender is Map
+            ? (sender['_id'] ?? sender['id'] ?? sender['user_id'])
+            : sender)
+        ?.toString()
+        .trim();
+    if (senderId == null || senderId != uid) return null;
+    final seenBy = raw['seenBy'];
+    if (seenBy is! List || seenBy.isEmpty) return null;
+    return 'Seen';
   }
 
   bool _shallowMapEquals(Map<String, dynamic> a, Map<String, dynamic> b) {

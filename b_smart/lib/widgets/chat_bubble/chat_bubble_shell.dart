@@ -255,15 +255,10 @@ class _DeliveryMeta extends StatelessWidget {
     if (s == ChatDeliveryStatus.delivered) {
       return Icon(LucideIcons.checkCheck, size: 14, color: color);
     }
-    return Text(
-      'Seen',
-      style: TextStyle(
-        color: const Color(0xFF34B7F1).withValues(alpha: 0.95),
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        height: 1.0,
-      ),
-      textScaler: MediaQuery.textScalerOf(context),
+    return Icon(
+      LucideIcons.checkCheck,
+      size: 14,
+      color: const Color(0xFF34B7F1),
     );
   }
 }
