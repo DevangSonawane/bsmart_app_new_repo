@@ -82,6 +82,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   final Map<String, Future<File?>> _assetFileFutures = {};
   late final List<GlobalKey> _tabSourceBarKeys =
       List<GlobalKey>.generate(4, (_) => GlobalKey());
+  final GlobalKey _previewSectionKey = GlobalKey();
   Offset _sourceMenuPosition = const Offset(16, 328);
   final Map<UploadMode, _GalleryCache> _cache = {};
 
@@ -527,11 +528,24 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           ..add(asset.id);
         _selectedOrder
           ..clear()
-          ..add(asset.id);
+        ..add(asset.id);
       }
     });
     _prefetchAssetFile(asset);
     _scheduleSaveCache();
+    if (!_multiSelect || _selectedIds.length == 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final ctx = _previewSectionKey.currentContext;
+        if (ctx == null) return;
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          alignment: 0.0,
+        );
+      });
+    }
   }
 
   Future<void> _handleNext() async {
@@ -802,15 +816,23 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                         galleryPermissionLimited: _galleryPermissionLimited,
                         sourceLabel: _sourceLabel,
                         sourceBarKey: _tabSourceBarKeys[index],
+                        previewSectionKey: _previewSectionKey,
                         onSourceBarTap: () {
                           final box = _tabSourceBarKeys[modeIndex]
                               .currentContext
                               ?.findRenderObject();
                           if (box is RenderBox) {
                             final pos = box.localToGlobal(Offset.zero);
+                            final screenHeight = MediaQuery.sizeOf(context).height;
+                            const menuHeight = 220.0;
+                            const gap = 6.0;
+                            final openDown = pos.dy + box.size.height + gap + menuHeight <
+                                screenHeight - MediaQuery.paddingOf(context).bottom;
                             _sourceMenuPosition = Offset(
                               pos.dx,
-                              pos.dy + box.size.height + 6,
+                              openDown
+                                  ? pos.dy + box.size.height + gap
+                                  : (pos.dy - menuHeight - gap).clamp(12.0, double.infinity),
                             );
                           }
                           setState(() {
@@ -880,15 +902,21 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
               child: Container(
                 width: 220,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
+                  color: const Color(0xFF1F1F1F).withValues(alpha: 0.98),
                   borderRadius: BorderRadius.circular(12),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1012,6 +1040,7 @@ class _UploadPage extends StatelessWidget {
   final bool galleryPermissionLimited;
   final String sourceLabel;
   final GlobalKey sourceBarKey;
+  final GlobalKey previewSectionKey;
   final VoidCallback onSourceBarTap;
   final VoidCallback onMultiSelectToggle;
   final VoidCallback onLoadGalleryMedia;
@@ -1035,6 +1064,7 @@ class _UploadPage extends StatelessWidget {
     required this.galleryPermissionLimited,
     required this.sourceLabel,
     required this.sourceBarKey,
+    required this.previewSectionKey,
     required this.onSourceBarTap,
     required this.onMultiSelectToggle,
     required this.onLoadGalleryMedia,
@@ -1058,32 +1088,35 @@ class _UploadPage extends StatelessWidget {
                 slivers: [
                   if (!isReelMode)
                     SliverToBoxAdapter(
-                      child: AspectRatio(
-                        aspectRatio: 1.0,
-                        child: Container(
-                          width: double.infinity,
-                          color: Colors.black,
-                          child: currentAsset == null
-                              ? Center(
-                                  child: Icon(Icons.image,
-                                      size: 64, color: Colors.grey[700]),
-                                )
-                              : FutureBuilder<Uint8List?>(
-                                  future: getPreviewFuture(currentAsset!),
-                                  builder: (context, snap) {
-                                    if (snap.connectionState !=
-                                            ConnectionState.done ||
-                                        snap.data == null) {
-                                      return const Center(
-                                          child: CircularProgressIndicator(
-                                              color: Colors.white));
-                                    }
-                                    return Image.memory(
-                                      snap.data!,
-                                      fit: BoxFit.contain,
-                                    );
-                                  },
-                                ),
+                      child: Container(
+                        key: previewSectionKey,
+                        child: AspectRatio(
+                          aspectRatio: 1.0,
+                          child: Container(
+                            width: double.infinity,
+                            color: Colors.black,
+                            child: currentAsset == null
+                                ? Center(
+                                    child: Icon(Icons.image,
+                                        size: 64, color: Colors.grey[700]),
+                                  )
+                                : FutureBuilder<Uint8List?>(
+                                    future: getPreviewFuture(currentAsset!),
+                                    builder: (context, snap) {
+                                      if (snap.connectionState !=
+                                              ConnectionState.done ||
+                                          snap.data == null) {
+                                        return const Center(
+                                            child: CircularProgressIndicator(
+                                                color: Colors.white));
+                                      }
+                                      return Image.memory(
+                                        snap.data!,
+                                        fit: BoxFit.contain,
+                                      );
+                                    },
+                                  ),
+                          ),
                         ),
                       ),
                     ),
@@ -1306,6 +1339,12 @@ class _UploadPage extends StatelessWidget {
                                         );
                                       },
                                     ),
+                                    if (isSelected)
+                                      Container(
+                                        color: Colors.grey.withValues(
+                                          alpha: 0.34,
+                                        ),
+                                      ),
                                     if (asset.type == AssetType.video)
                                       Positioned(
                                         bottom: 4,

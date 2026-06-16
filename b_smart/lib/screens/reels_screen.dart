@@ -1851,9 +1851,6 @@ class _ReelsScreenState extends State<ReelsScreen>
                 const avatarSize = 36.0; // CircleAvatar radius 18
                 const gapAfterAvatar = 10.0;
                 const gapBeforeFollow = 10.0;
-                const followHeight = 30.0;
-                const followPadH = 10.0;
-                const followPadV = 6.0;
                 const approxFollowWidth = 72.0;
                 final availableWithoutDots = constraints.maxWidth -
                     avatarSize -
@@ -1903,29 +1900,27 @@ class _ReelsScreenState extends State<ReelsScreen>
                     ),
                     if (canShowFollow) ...[
                       const SizedBox(width: gapBeforeFollow),
-                      SizedBox(
-                        height: followHeight,
-                        child: OutlinedButton(
-                          onPressed: _isFollowLoading
-                              ? null
-                              : () => unawaited(_toggleFollow()),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.65)),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: followPadH,
-                              vertical: followPadV,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.4),
                           ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: GestureDetector(
+                          onTap:
+                              _isFollowLoading ? null : () => unawaited(_toggleFollow()),
                           child: Text(
                             _isFollowLoading ? '...' : 'Follow',
                             style: const TextStyle(
+                              color: Colors.white,
                               fontSize: 11,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -1964,7 +1959,6 @@ class _ReelsScreenState extends State<ReelsScreen>
               const avatarSize = 36.0; // CircleAvatar radius 18
               const gapAfterAvatar = 10.0;
               const gapBeforeFollow = 10.0;
-              const followHeight = 30.0;
               const approxFollowWidth = 72.0;
               final availableWithoutDots = constraints.maxWidth -
                   avatarSize -
@@ -2014,30 +2008,27 @@ class _ReelsScreenState extends State<ReelsScreen>
                   ),
                   if (canShowFollow) ...[
                     const SizedBox(width: gapBeforeFollow),
-                    SizedBox(
-                      height: followHeight,
-                      child: OutlinedButton(
-                        onPressed: _isFollowLoading
-                            ? null
-                            : () => unawaited(_toggleFollow()),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.65),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.4),
                         ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: GestureDetector(
+                        onTap:
+                            _isFollowLoading ? null : () => unawaited(_toggleFollow()),
                         child: Text(
                           _isFollowLoading ? '...' : 'Follow',
                           style: const TextStyle(
+                            color: Colors.white,
                             fontSize: 11,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),

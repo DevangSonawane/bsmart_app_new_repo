@@ -11,7 +11,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:camera/camera.dart';
 import 'package:video_player/video_player.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:photo_manager/photo_manager.dart';
+import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import '../instagram_text_editor/instagram_text_editor.dart';
@@ -671,6 +671,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
   String _storyFilterLabel = '';
   double _storyFilterLabelOpacity = 0.0;
   Timer? _storyFilterLabelTimer;
+  double _screenFlashOpacity = 0.0;
+  Timer? _screenFlashTimer;
 
   @override
   void initState() {
@@ -692,6 +694,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
     _storyCaptionController.dispose();
     _storyCaptionFocus.dispose();
     _storyFilterLabelTimer?.cancel();
+    _screenFlashTimer?.cancel();
     _controller?.dispose();
     _controller = null;
     _editingVideoController?.dispose();
@@ -877,6 +880,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         page: 0,
         size: 15,
       );
+      media.sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
 
       if (!mounted) return;
 
@@ -912,6 +916,12 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       return;
     }
     try {
+      final bool useScreenFlash =
+          _isFrontCamera && _flashMode != FlashMode.off;
+      if (useScreenFlash && mounted) {
+        _startScreenFlash(opacity: 1.0, durationMs: 140);
+        await Future.delayed(const Duration(milliseconds: 60));
+      }
       final xfile = await _controller!.takePicture();
       await _navigateToEditor(
         File(xfile.path),
@@ -920,6 +930,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       );
     } catch (e) {
       debugPrint('Error capturing photo: $e');
+      if (mounted) {
+        setState(() => _screenFlashOpacity = 0.0);
+      }
     }
   }
 
@@ -931,12 +944,30 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       return;
     }
     try {
+      if (_isFrontCamera && _flashMode != FlashMode.off) {
+        _startScreenFlash(opacity: 0.30, durationMs: 260);
+        await Future.delayed(const Duration(milliseconds: 90));
+      }
       await _controller!.startVideoRecording();
       if (!mounted) return;
       setState(() => _recording = true);
     } catch (e) {
       debugPrint('Error starting video recording: $e');
     }
+  }
+
+  void _startScreenFlash({
+    required double opacity,
+    required int durationMs,
+  }) {
+    if (!mounted) return;
+    _screenFlashTimer?.cancel();
+    setState(() => _screenFlashOpacity = opacity);
+    _screenFlashTimer = Timer(Duration(milliseconds: durationMs), () {
+      if (mounted) {
+        setState(() => _screenFlashOpacity = 0.0);
+      }
+    });
   }
 
   Future<int> _probeVideoRotation(String path) async {
@@ -1221,6 +1252,22 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         asset.type == AssetType.video ? MediaType.video : MediaType.image;
     await _navigateToEditor(file, type,
         flipHorizontal: false, loopPreview: false);
+  }
+
+  Future<void> _openGalleryPicker() async {
+    try {
+      final assets = await AssetPicker.pickAssets(
+        context,
+        pickerConfig: const AssetPickerConfig(
+          maxAssets: 1,
+          requestType: RequestType.common,
+        ),
+      );
+      if (assets == null || assets.isEmpty) return;
+      await _onThumbnailTap(assets.first);
+    } catch (e) {
+      debugPrint('Error opening gallery picker: $e');
+    }
   }
 
   void _openToolOverlay(_ToolOverlayType type, {Widget? icon}) {
@@ -1925,7 +1972,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
           child: SizedBox(
             width: 40,
             height: 40,
-            child: Center(
+            child: Align(
+              alignment: Alignment.centerLeft,
               child: AnimatedRotation(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeInOut,
@@ -2190,8 +2238,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         height: 44,
         decoration: BoxDecoration(
           color: Colors.white10,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white24, width: 2),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white, width: 1.4),
         ),
         child: const Icon(Icons.photo_library_outlined,
             color: Colors.white, size: 20),
@@ -2199,26 +2247,35 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
     }
     final asset = _recentAssets.first;
     return GestureDetector(
-      onTap: () => _onThumbnailTap(asset),
-      child: ClipOval(
-        child: FutureBuilder<Uint8List?>(
-          future: asset.thumbnailDataWithSize(const ThumbnailSize(200, 200)),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done ||
-                snapshot.data == null) {
-              return Container(
+      onTap: _openGalleryPicker,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white, width: 1.4),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(11),
+          child: FutureBuilder<Uint8List?>(
+            future: asset.thumbnailDataWithSize(const ThumbnailSize(200, 200)),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done ||
+                  snapshot.data == null) {
+                return Container(
+                  width: 44,
+                  height: 44,
+                  color: Colors.grey[900],
+                );
+              }
+              return Image.memory(
+                snapshot.data!,
                 width: 44,
                 height: 44,
-                color: Colors.grey[900],
+                fit: BoxFit.cover,
               );
-            }
-            return Image.memory(
-              snapshot.data!,
-              width: 44,
-              height: 44,
-              fit: BoxFit.cover,
-            );
-          },
+            },
+          ),
         ),
       ),
     );
@@ -2228,22 +2285,22 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
     return GestureDetector(
       onTap: _isSwitchingCamera ? null : _switchCamera,
       child: Container(
-        width: 46,
-        height: 46,
+        width: 38,
+        height: 38,
         decoration: BoxDecoration(
           color: Colors.white10,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white24, width: 2),
+          border: Border.all(color: Colors.white24, width: 1.4),
         ),
         child: Center(
           child: _isSwitchingCamera
               ? const SizedBox(
-                  width: 18,
-                  height: 18,
+                  width: 14,
+                  height: 14,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white),
+                      strokeWidth: 1.8, color: Colors.white),
                 )
-              : const Icon(Icons.cached_rounded, color: Colors.white, size: 22),
+              : const Icon(Icons.cached_rounded, color: Colors.white, size: 18),
         ),
       ),
     );
@@ -5052,6 +5109,18 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
                       ),
                     ),
                   ),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: AnimatedOpacity(
+                        opacity: _screenFlashOpacity,
+                        duration: const Duration(milliseconds: 120),
+                        curve: Curves.easeOut,
+                        child: Container(
+                          color: Colors.white.withValues(alpha: 0.30),
+                        ),
+                      ),
+                    ),
+                  ),
                   Positioned(
                     top: 8,
                     left: 8,
@@ -5109,11 +5178,15 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
                 child: Row(
                   children: [
                     _buildGalleryShortcut(),
-                    const Spacer(),
-                    widget.showModeTabs && !_isStoryEditing
-                        ? _buildModeTabs()
-                        : const SizedBox.shrink(),
-                    const Spacer(),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Center(
+                        child: widget.showModeTabs && !_isStoryEditing
+                            ? _buildModeTabs()
+                            : const SizedBox.shrink(),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     _buildReverseIcon(),
                   ],
                 ),
