@@ -64,6 +64,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final Set<String> _resolvingImageAspectRatioUrls = <String>{};
   bool _isTweet = false;
   StreamSubscription<CommentChangeEvent>? _commentSyncSub;
+  String _likesSummaryText = '';
+  String? _likesSummaryUserId;
 
   bool _isReelPost() {
     final post = _post;
@@ -388,6 +390,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         : (_asBool(post['is_saved_by_me']) || _asBool(post['saved_by_me']));
     bool isFollowed = _asBool(post['is_followed_by_me']) ||
         _asBool(user?['is_followed_by_me']);
+    String likesSummaryText = '';
+    String? likesSummaryUserId;
+    try {
+      final likedUsers = await _svc.getPostLikes(widget.postId);
+      likesSummaryText = _buildLikesSummaryFromUsers(likedUsers);
+      likesSummaryUserId = _firstLikeUserId(likedUsers);
+      if (likesSummaryText.isEmpty) {
+        final rawLikes = post['likes'];
+        if (rawLikes is List) {
+          final fallbackUsers = rawLikes
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+          likesSummaryText = _buildLikesSummaryFromUsers(fallbackUsers);
+          likesSummaryUserId ??= _firstLikeUserId(fallbackUsers);
+        }
+      }
+    } catch (_) {}
     if (mounted) {
       setState(() {
         _post = post;
@@ -402,6 +422,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _loadingComments = false;
         _currentUserId = meId2;
         _isAuthorFollowed = isFollowed;
+        _likesSummaryText = likesSummaryText;
+        _likesSummaryUserId = likesSummaryUserId;
       });
       _syncCurrentMediaPlayback();
       _prefetchRepliesForTopLevelComments(topLevelComments);
@@ -1148,6 +1170,59 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return int.tryParse(explicit?.toString() ?? '') ?? 0;
   }
 
+  String _displayNameOf(dynamic item) {
+    if (item is Map) {
+      final candidate = (item['username'] ??
+              item['user_name'] ??
+              item['full_name'] ??
+              item['name'] ??
+              item['handle'])
+          ?.toString()
+          .trim();
+      if (candidate != null && candidate.isNotEmpty) return candidate;
+      final user = item['user'];
+      if (user is Map) return _displayNameOf(user);
+    } else if (item is String) {
+      final candidate = item.trim();
+      if (candidate.isNotEmpty) return candidate;
+    }
+    return '';
+  }
+
+  String _buildLikesSummaryFromUsers(List<Map<String, dynamic>> users) {
+    if (users.isEmpty) return '';
+    final names = <String>[];
+    for (final user in users) {
+      final name = _displayNameOf(user);
+      if (name.isNotEmpty && !names.contains(name)) {
+        names.add(name);
+      }
+      if (names.length >= 2) break;
+    }
+    if (names.isEmpty) return '';
+    if (users.length <= 1) return 'Liked by ${names.first}';
+    final others = users.length - 1;
+    return 'Liked by ${names.first} and $others ${others == 1 ? 'other' : 'others'}';
+  }
+
+  String? _firstLikeUserId(List<Map<String, dynamic>> users) {
+    for (final user in users) {
+      final direct = (user['id'] ?? user['_id'] ?? user['user_id'] ?? user['userId'])
+          ?.toString()
+          .trim();
+      if (direct != null && direct.isNotEmpty) return direct;
+      final nested = user['user'];
+      if (nested is Map) {
+        final nestedId =
+            (nested['id'] ?? nested['_id'] ?? nested['user_id'] ?? nested['userId'])
+                ?.toString()
+                .trim();
+        if (nestedId != null && nestedId.isNotEmpty) return nestedId;
+      }
+    }
+    return null;
+  }
+
   DateTime? _parsePostCreatedAt() {
     final post = _post;
     if (post == null) return null;
@@ -1179,6 +1254,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     required int count,
     required Color primaryText,
     required Color secondaryText,
+    double iconSize = 26,
     Color? iconColor,
     VoidCallback? onTap,
   }) {
@@ -1190,7 +1266,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 26, color: iconColor ?? primaryText),
+            Icon(icon, size: iconSize, color: iconColor ?? primaryText),
             const SizedBox(width: 6),
             Text(
               '$count',
@@ -1277,6 +1353,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final isOwner = ownerId != null &&
         _currentUserId != null &&
         ownerId.toString() == _currentUserId.toString();
+    final likesSummary = _likesSummaryText;
 
     // Kick off a best-effort aspect ratio resolve for images so the media section
     // can size itself to the real dimensions (prevents side bars for non-4:5 posts).
@@ -1312,8 +1389,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         GestureDetector(
                           onTap: _onAuthorTap,
                           child: Container(
-                            width: 44,
-                            height: 44,
+                            width: 38,
+                            height: 38,
                             padding: const EdgeInsets.all(2),
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
@@ -1351,7 +1428,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1361,7 +1438,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 child: Text(
                                   username,
                                   style: TextStyle(
-                                      fontSize: 16,
+                                      fontSize: 15,
                                       fontWeight: FontWeight.w700,
                                       color: primaryText),
                                 ),
@@ -1646,6 +1723,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           icon: _isLiked ? Icons.favorite : LucideIcons.heart,
                           iconColor: _isLiked ? Colors.red : primaryText,
                           count: _likeCount,
+                          iconSize: 20,
                           primaryText: primaryText,
                           secondaryText: secondaryText,
                           onTap: () async {
@@ -1677,6 +1755,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         _actionWithCount(
                           icon: LucideIcons.messageCircle,
                           count: _commentCount,
+                          iconSize: 20,
                           primaryText: primaryText,
                           secondaryText: secondaryText,
                           onTap: () {},
@@ -1684,6 +1763,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         _actionWithCount(
                           icon: LucideIcons.send,
                           count: _shareCount,
+                          iconSize: 20,
                           primaryText: primaryText,
                           secondaryText: secondaryText,
                           onTap: () {
@@ -1701,19 +1781,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 _isSaved
                                     ? Icons.bookmark
                                     : LucideIcons.bookmark,
-                                size: 28,
+                                size: 22,
                               ),
                               color: primaryText,
                               onPressed: _handleSave),
                       ],
                     ),
                   ),
+                  if (likesSummary.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: InkWell(
+                        onTap: _likesSummaryUserId == null
+                            ? null
+                            : () {
+                                Navigator.of(context).pushNamed(
+                                  '/profile/${_likesSummaryUserId!}',
+                                );
+                              },
+                        child: Text(
+                          likesSummary,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: secondaryText,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 6),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: RichText(
                       text: TextSpan(
-                        style: TextStyle(fontSize: 16, color: primaryText),
+                        style: TextStyle(fontSize: 15, color: primaryText),
                         children: [
                           TextSpan(
                             text: '$username ',
@@ -1751,7 +1852,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           child: Text(
                             'Comments',
                             style: TextStyle(
-                              fontSize: 24,
+                              fontSize: 18,
                               fontWeight: FontWeight.w700,
                               color: primaryText,
                             ),
@@ -1770,7 +1871,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               child: Text(
                                 'No comments yet. Be the first to comment!',
                                 style: TextStyle(
-                                  fontSize: 22,
+                                  fontSize: 14,
                                   color: secondaryText,
                                 ),
                                 textAlign: TextAlign.center,
@@ -1847,7 +1948,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                 Text(
                                                   username,
                                                   style: TextStyle(
-                                                      fontSize: 14,
+                                                      fontSize: 13,
                                                       fontWeight:
                                                           FontWeight.w600,
                                                       color: primaryText),
@@ -1866,7 +1967,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                             Text(
                                               text,
                                               style: TextStyle(
-                                                  fontSize: 13,
+                                                  fontSize: 12,
                                                   color: primaryText),
                                             ),
                                             const SizedBox(height: 4),
@@ -1876,7 +1977,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                   Text(
                                                     '$likesCount likes',
                                                     style: TextStyle(
-                                                        fontSize: 12,
+                                                        fontSize: 11,
                                                         color: secondaryText),
                                                   ),
                                                 if (likesCount > 0)
@@ -1895,7 +1996,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                   child: Text(
                                                     'Reply',
                                                     style: TextStyle(
-                                                        fontSize: 12,
+                                                        fontSize: 11,
                                                         fontWeight:
                                                             FontWeight.w600,
                                                         color: secondaryText),
