@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/auth_api.dart';
-import '../api/email_api.dart';
+import '../api/account_verification_api.dart';
 import '../api/upload_api.dart';
 import '../api/users_api.dart';
 import '../theme/design_tokens.dart';
@@ -24,7 +24,6 @@ class AccountDetailsScreen extends StatefulWidget {
 class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   final _usersApi = UsersApi();
   final _authApi = AuthApi();
-  final _emailApi = EmailApi();
   final _uploadApi = UploadApi();
   final _imagePicker = ImagePicker();
 
@@ -43,7 +42,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   bool _saving = false;
   bool _uploadingAvatar = false;
   bool _verifyingEmail = false;
-  final bool _verifyingMobile = false;
+  bool _verifyingMobile = false;
 
   String? _userId;
   String? _avatarUrl;
@@ -389,148 +388,58 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
       return;
     }
     if (_verifyingEmail) return;
-
-    final otpController = TextEditingController();
-    bool loading = false;
-    String? error;
-    int cooldown = 0;
-    Timer? timer;
-    StateSetter? setDialogState;
-
-    Future<void> sendOtp(StateSetter setLocal) async {
-      setLocal(() {
-        loading = true;
-        error = null;
-      });
-      try {
-        await _emailApi.sendOtp(email: email, purpose: 'two_factor');
-        setLocal(() => cooldown = 60);
-        timer?.cancel();
-        timer = Timer.periodic(const Duration(seconds: 1), (t) {
-          if (cooldown <= 1) {
-            t.cancel();
-            setDialogState?.call(() => cooldown = 0);
-            return;
-          }
-          setDialogState?.call(() => cooldown -= 1);
-        });
-      } catch (e) {
-        setLocal(() => error = e.toString().replaceAll('Exception: ', ''));
-      } finally {
-        setLocal(() => loading = false);
-      }
-    }
-
-    Future<void> verifyOtp(StateSetter setLocal) async {
-      final otp = otpController.text.trim();
-      if (otp.length < 6) {
-        setLocal(() => error = 'Enter the 6-digit code.');
-        return;
-      }
-      setLocal(() {
-        loading = true;
-        error = null;
-      });
-      try {
-        await _emailApi.verifyOtp(
-          email: email,
-          otp: otp,
-          purpose: 'two_factor',
-        );
-        await _usersApi.updateUser(
-          _userId!,
-          extra: {
-            'email_verified': true,
-            'emailVerified': true,
-            'is_email_verified': true,
-          },
-        );
+    setState(() => _verifyingEmail = true);
+    await _showVerificationDialog(
+      type: 'email',
+      title: 'Verify Email',
+      value: email,
+      successMessage: 'Email verified',
+      onVerified: () async {
         if (!mounted) return;
         setState(() => _emailVerified = true);
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Email verified')),
-        );
-      } catch (e) {
-        setLocal(() => error = e.toString().replaceAll('Exception: ', ''));
-      } finally {
-        setLocal(() => loading = false);
-      }
-    }
-
-    setState(() => _verifyingEmail = true);
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            setDialogState = setLocal;
-            return AlertDialog(
-              title: const Text('Verify Email'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(email, style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 8),
-                  if (error != null) ...[
-                    Text(
-                      error!,
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  const Text(
-                    'We will send an OTP to your email. Enter it here to confirm.',
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: otpController,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    textAlign: TextAlign.center,
-                    decoration: const InputDecoration(
-                      hintText: '000000',
-                      counterText: '',
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: loading ? null : () => Navigator.of(ctx).pop(),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: (loading || cooldown > 0)
-                      ? null
-                      : () => sendOtp(setLocal),
-                  child: Text(cooldown > 0 ? 'Resend in $cooldown s' : 'Send OTP'),
-                ),
-                FilledButton(
-                  onPressed: loading ? null : () => verifyOtp(setLocal),
-                  child: const Text('Verify'),
-                ),
-              ],
-            );
-          },
-        );
       },
     );
-    timer?.cancel();
     if (mounted) setState(() => _verifyingEmail = false);
   }
 
   Future<void> _verifyMobile() async {
-    if (_phoneController.text.trim().isEmpty) {
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Add a mobile number first.')),
       );
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Mobile verification is not wired to a backend endpoint yet.'),
+    if (_verifyingMobile) return;
+    setState(() => _verifyingMobile = true);
+    await _showVerificationDialog(
+      type: 'phone',
+      title: 'Verify Mobile Number',
+      value: phone,
+      successMessage: 'Mobile verified',
+      onVerified: () async {
+        if (!mounted) return;
+        setState(() => _phoneVerified = true);
+      },
+    );
+    if (mounted) setState(() => _verifyingMobile = false);
+  }
+
+  Future<void> _showVerificationDialog({
+    required String type,
+    required String title,
+    required String value,
+    required String successMessage,
+    required Future<void> Function() onVerified,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _VerificationOtpDialog(
+        type: type,
+        title: title,
+        value: value,
+        successMessage: successMessage,
+        onVerified: onVerified,
       ),
     );
   }
@@ -1535,5 +1444,334 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     final a = first.characters.first.toUpperCase();
     final b = second.isNotEmpty ? second.characters.first.toUpperCase() : '';
     return (a + b).trim().isEmpty ? 'U' : (a + b);
+  }
+}
+
+class _VerificationOtpDialog extends StatefulWidget {
+  const _VerificationOtpDialog({
+    required this.type,
+    required this.title,
+    required this.value,
+    required this.successMessage,
+    required this.onVerified,
+  });
+
+  final String type;
+  final String title;
+  final String value;
+  final String successMessage;
+  final Future<void> Function() onVerified;
+
+  @override
+  State<_VerificationOtpDialog> createState() => _VerificationOtpDialogState();
+}
+
+class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
+  final _accountVerificationApi = AccountVerificationApi();
+  final List<TextEditingController> _otpControllers =
+      List.generate(6, (_) => TextEditingController());
+
+  bool _loading = false;
+  bool _sent = false;
+  String? _error;
+  String? _success;
+  int _cooldown = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _sendOtp();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    for (final controller in _otpControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _startCooldown() async {
+    _timer?.cancel();
+    if (!mounted) return;
+    setState(() => _cooldown = 60);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_cooldown <= 1) {
+        timer.cancel();
+        setState(() => _cooldown = 0);
+        return;
+      }
+      setState(() => _cooldown -= 1);
+    });
+  }
+
+  Future<void> _sendOtp() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _success = null;
+      _sent = false;
+    });
+    try {
+      await _accountVerificationApi.send(type: widget.type);
+      if (!mounted) return;
+      setState(() => _sent = true);
+      await _startCooldown();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    final otp = _otpControllers.map((c) => c.text).join().trim();
+    if (otp.length < 6) {
+      setState(() => _error = 'Please enter all 6 digits.');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+      _success = null;
+    });
+    try {
+      await _accountVerificationApi.confirm(type: widget.type, otp: otp);
+      await widget.onVerified();
+      if (!mounted) return;
+      setState(() => _success = widget.successMessage);
+      await Future.delayed(const Duration(milliseconds: 1200));
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeCard = isDark ? const Color(0xFF111827) : Colors.white;
+    final muted = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final maxDialogWidth = MediaQuery.sizeOf(context).width - 32;
+    final dialogWidth = maxDialogWidth < 360 ? maxDialogWidth : 360.0;
+
+    Widget otpBoxes() {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(6, (index) {
+          return Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: index == 0 ? 0 : 4,
+                right: index == 5 ? 0 : 4,
+              ),
+              child: SizedBox(
+                height: 42,
+                child: TextField(
+                  controller: _otpControllers[index],
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  maxLength: 1,
+                  decoration: const InputDecoration(
+                    counterText: '',
+                    hintText: '0',
+                  ),
+                  onChanged: (value) {
+                    final digits = value.replaceAll(RegExp(r'\D'), '');
+                    final cleaned = digits.isEmpty ? '' : digits.substring(0, 1);
+                    if (cleaned != value) {
+                      _otpControllers[index].text = cleaned;
+                      _otpControllers[index].selection = TextSelection.fromPosition(
+                        TextPosition(offset: _otpControllers[index].text.length),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ),
+          );
+        }),
+      );
+    }
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        width: dialogWidth,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: themeCard,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    LucideIcons.shield,
+                    color: Color(0xFFEF4444),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: muted),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: _loading ? null : () => Navigator.of(context).pop(),
+                  icon: const Icon(LucideIcons.x, size: 16),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_success != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFD1FAE5)),
+                ),
+                child: Text(
+                  _success!,
+                  style: const TextStyle(
+                    color: Color(0xFF047857),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (_error != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEE2E2),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                ),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(
+                    color: Color(0xFFB91C1C),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (!_sent) ...[
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+              Center(
+                child: Text(
+                  'Sending OTP…',
+                  style: TextStyle(fontSize: 13, color: muted),
+                ),
+              ),
+            ] else ...[
+              Text(
+                'Code sent. Enter the 6-digit code to confirm.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: muted,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 12),
+              otpBoxes(),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _loading ? null : _verifyOtp,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: DesignTokens.instaPink,
+                  ),
+                  child: _loading
+                      ? const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Text('Verifying…'),
+                          ],
+                        )
+                      : const Text('Verify & Confirm'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: (_cooldown > 0 || _loading) ? null : _sendOtp,
+                  icon: const Icon(LucideIcons.refreshCw, size: 14),
+                  label: Text(
+                    _cooldown > 0 ? 'Resend in ${_cooldown}s' : 'Resend',
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

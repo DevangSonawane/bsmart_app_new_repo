@@ -3,6 +3,7 @@ library;
 export 'api_client.dart';
 export 'api_exceptions.dart';
 export 'auth_api.dart';
+export 'account_verification_api.dart';
 export 'email_api.dart';
 export 'chat_api.dart';
 export 'users_api.dart';
