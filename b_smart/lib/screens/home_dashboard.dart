@@ -348,7 +348,16 @@ class _SheetAction extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: theme.colorScheme.primary),
+            ShaderMask(
+              blendMode: BlendMode.srcIn,
+              shaderCallback: (bounds) =>
+                  DesignTokens.instaGradient.createShader(bounds),
+              child: Icon(
+                icon,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
