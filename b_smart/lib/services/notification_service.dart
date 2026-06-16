@@ -104,18 +104,28 @@ class NotificationService {
 
   Future<int> getUnreadCount() async {
     try {
-      final res = await _client.get('$_basePath/notifications/unread-count');
-      if (res is Map<String, dynamic>) {
-        final value = res['unread_count'] ??
-            res['unreadCount'] ??
-            res['count'] ??
-            (res['data'] is Map ? (res['data'] as Map)['unread_count'] : null);
-        if (value is int) return value;
-        if (value is num) return value.toInt();
-        if (value is String) return int.tryParse(value) ?? 0;
-      }
+      final page = await getNotifications(
+        forceRefresh: true,
+        page: 1,
+        limit: 200,
+        typeFilter: 'unread',
+      );
+      return page.total > 0 ? page.total : page.items.length;
     } catch (_) {
-      // fallback to local cached count
+      try {
+        final res = await _client.get('$_basePath/notifications/unread-count');
+        if (res is Map<String, dynamic>) {
+          final value = res['unread_count'] ??
+              res['unreadCount'] ??
+              res['count'] ??
+              (res['data'] is Map ? (res['data'] as Map)['unread_count'] : null);
+          if (value is int) return value;
+          if (value is num) return value.toInt();
+          if (value is String) return int.tryParse(value) ?? 0;
+        }
+      } catch (_) {
+        // fallback to local cached count
+      }
     }
     return _notifications.where((n) => !n.isRead).length;
   }

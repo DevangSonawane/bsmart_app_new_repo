@@ -7,6 +7,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../api/api_client.dart';
 import '../utils/app_navigator.dart';
+import '../models/notification_model.dart';
+import 'notification_service.dart';
 
 class PushService {
   static final PushService _instance = PushService._internal();
@@ -17,6 +19,7 @@ class PushService {
   final FlutterLocalNotificationsPlugin _localNotifs =
       FlutterLocalNotificationsPlugin();
   final ApiClient _api = ApiClient();
+  final NotificationService _notificationService = NotificationService();
 
   late final FlutterSecureStorage _storage;
   final Map<String, String> _memoryStorage = {};
@@ -238,6 +241,40 @@ class PushService {
       body.toString(),
       const NotificationDetails(android: androidDetails),
       payload: payload,
+    );
+
+    _recordNotificationForBadge(message);
+  }
+
+  void _recordNotificationForBadge(RemoteMessage message) {
+    final data = message.data;
+    final now = DateTime.now();
+    final id = (data['id'] ?? data['_id'] ?? message.messageId ??
+            'push-${now.millisecondsSinceEpoch}')
+        .toString();
+    if (_notificationService.getNotificationById(id) != null) return;
+
+    final typeKey = (data['type'] ?? data['notification_type'] ?? 'system')
+        .toString()
+        .toLowerCase();
+    final title =
+        (message.notification?.title ?? data['title'] ?? 'Bsmart').toString();
+    final body = (message.notification?.body ?? data['body'] ?? '').toString();
+    final link = (data['link'] ?? '').toString().trim();
+    final relatedId = (data['related_id'] ?? data['relatedId']).toString().trim();
+
+    _notificationService.addNotification(
+      NotificationItem(
+        id: id,
+        typeKey: typeKey,
+        title: title,
+        message: body,
+        timestamp: now,
+        isRead: false,
+        relatedId: relatedId.isEmpty ? null : relatedId,
+        link: link.isEmpty ? null : link,
+        metadata: data.isEmpty ? null : Map<String, dynamic>.from(data),
+      ),
     );
   }
 

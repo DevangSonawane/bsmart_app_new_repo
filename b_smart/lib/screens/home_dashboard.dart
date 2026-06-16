@@ -9,6 +9,7 @@ import 'package:flutter_redux/flutter_redux.dart';
 import 'package:redux/redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../services/feed_service.dart';
+import '../services/notification_service.dart';
 import '../services/supabase_service.dart';
 import '../services/wallet_service.dart';
 import '../services/video_pool.dart';
@@ -22,6 +23,7 @@ import '../widgets/sidebar.dart';
 import '../theme/design_tokens.dart';
 import '../models/story_model.dart';
 import '../models/feed_post_model.dart';
+import '../models/notification_model.dart';
 import '../models/reel_model.dart';
 import '../models/media_model.dart';
 import '../widgets/post_detail_modal.dart';
@@ -366,6 +368,7 @@ class _SheetAction extends StatelessWidget {
 class _HomeDashboardState extends State<HomeDashboard>
     with RouteAware, WidgetsBindingObserver {
   final FeedService _feedService = FeedService();
+  final NotificationService _notificationService = NotificationService();
   final SupabaseService _supabase = SupabaseService();
   final WalletService _walletService = WalletService();
   final ReelsService _reelsService = ReelsService();
@@ -395,6 +398,9 @@ class _HomeDashboardState extends State<HomeDashboard>
   bool _isFeedScrolling = false;
   Timer? _scrollIdleTimer;
   String? _pendingActivePostId;
+  int _unreadNotificationCount = 0;
+  StreamSubscription<List<NotificationItem>>? _notificationSub;
+  Timer? _notificationRefreshTimer;
 
   final List<Map<String, String>> _mockLocations = const [
     {
@@ -575,6 +581,20 @@ class _HomeDashboardState extends State<HomeDashboard>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _notificationSub = _notificationService.getNotificationsStream().listen(
+      (notifications) {
+        if (!mounted) return;
+        setState(() {
+          _unreadNotificationCount =
+              notifications.where((notification) => !notification.isRead).length;
+        });
+      },
+    );
+    _loadUnreadNotificationCount();
+    _notificationRefreshTimer =
+        Timer.periodic(const Duration(seconds: 1), (_) {
+      _refreshUnreadNotificationCount();
+    });
     VisibilityDetectorController.instance.updateInterval =
         const Duration(milliseconds: 100);
     if (widget.initialIndex != null) {
@@ -598,6 +618,21 @@ class _HomeDashboardState extends State<HomeDashboard>
       unawaited(_loadReelSuggestions(force: true));
       _fetchCurrentLocation();
     });
+  }
+
+  Future<void> _loadUnreadNotificationCount() async {
+    final unreadCount = await _notificationService.getUnreadCount();
+    if (!mounted) return;
+    setState(() => _unreadNotificationCount = unreadCount);
+  }
+
+  Future<void> _refreshUnreadNotificationCount() async {
+    if (!mounted) return;
+    final unreadCount = await _notificationService.getUnreadCount();
+    if (!mounted) return;
+    if (unreadCount != _unreadNotificationCount) {
+      setState(() => _unreadNotificationCount = unreadCount);
+    }
   }
 
   String _suggestionIdOf(Map<String, dynamic> u) {
@@ -1251,6 +1286,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   void didPopNext() {
     if (_isRouteActive) return;
     _isRouteActive = true;
+    unawaited(_refreshUnreadNotificationCount());
     if (_pendingHomeRefreshAfterRoute && _currentIndex == 0) {
       _pendingHomeRefreshAfterRoute = false;
       _scheduleHomeRefresh();
@@ -1262,6 +1298,8 @@ class _HomeDashboardState extends State<HomeDashboard>
   void dispose() {
     VisibilityDetectorController.instance.updateInterval =
         const Duration(milliseconds: 500);
+    _notificationSub?.cancel();
+    _notificationRefreshTimer?.cancel();
     _activeFeedDebounce?.cancel();
     _autoRefreshDebounce?.cancel();
     _scrollIdleTimer?.cancel();
@@ -1282,6 +1320,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (state != AppLifecycleState.resumed) return;
     if (!mounted) return;
     if (_currentIndex != 0) return;
+    unawaited(_refreshUnreadNotificationCount());
     unawaited(VideoPool.instance.disposeAll());
     // When app resumes, jump to top and refresh to show latest posts.
     if (_feedScrollController.hasClients) {
@@ -1308,6 +1347,12 @@ class _HomeDashboardState extends State<HomeDashboard>
       unawaited(Future.wait(
           [_loadData(store), _loadInitialFeed(forceNetwork: true)]));
     });
+  }
+
+  String? _notificationBadgeText(int unreadCount) {
+    if (unreadCount <= 0) return null;
+    if (unreadCount >= 9) return '9+';
+    return unreadCount.toString();
   }
 
   Future<void> _loadData(Store<AppState> store) async {
@@ -2933,24 +2978,45 @@ class _HomeDashboardState extends State<HomeDashboard>
                     clipBehavior: Clip.none,
                     children: [
                       IconButton(
-                          onPressed: () =>
-                              Navigator.of(context).pushNamed('/notifications'),
-                          icon: Icon(LucideIcons.heart,
-                              size: 24, color: appBarFg)),
-                      Positioned(
-                          right: 8,
-                          top: 8,
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/notifications'),
+                        icon: Icon(LucideIcons.heart,
+                            size: 24, color: appBarFg),
+                      ),
+                      if (_notificationBadgeText(_unreadNotificationCount) !=
+                          null)
+                        Positioned(
+                          right: 5,
+                          top: 6,
                           child: Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                  color: DesignTokens.instaPink,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: isDark
-                                          ? const Color(0xFFE8E8E8)
-                                          : Colors.white,
-                                      width: 1.5)))),
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: DesignTokens.instaPink,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: isDark
+                                    ? const Color(0xFFE8E8E8)
+                                    : Colors.white,
+                                width: 1.5,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              _notificationBadgeText(_unreadNotificationCount)!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                   GestureDetector(
