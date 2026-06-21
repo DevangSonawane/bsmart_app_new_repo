@@ -32,7 +32,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _markingAll = false;
   bool _isVendor = false;
   Timer? _pollTimer;
-  String _wsStatus = 'polling';
+  final String _wsStatus = 'polling';
 
   static const int _limit = 15;
 
@@ -523,7 +523,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _buildCard(bool isDark, int totalPages) {
-    final theme = Theme.of(context);
     final dividerColor =
         (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06);
 

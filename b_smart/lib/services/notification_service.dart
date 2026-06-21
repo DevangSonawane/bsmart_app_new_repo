@@ -2,6 +2,7 @@
 
 import '../models/notification_model.dart';
 import 'dart:async';
+import 'dart:math';
 import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
 import '../config/api_config.dart';
@@ -33,6 +34,45 @@ class NotificationService {
   List<NotificationItem> _sortedCopy(List<NotificationItem> source) {
     return List<NotificationItem>.from(source)
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+  }
+
+  String _normalizeType(String? value) {
+    return (value ?? '').trim().toLowerCase();
+  }
+
+  bool _typeMatches(NotificationItem item, String filter) {
+    final normalizedFilter = _normalizeType(filter);
+    if (normalizedFilter.isEmpty || normalizedFilter == 'all') return true;
+
+    final type = _normalizeType(item.typeKey);
+    if (normalizedFilter == 'unread') {
+      return !item.isRead;
+    }
+
+    if (type == normalizedFilter) return true;
+
+    final filterAliases = <String, List<String>>{
+      'like': const ['like', 'ad_like'],
+      'comment': const ['comment', 'ad_comment'],
+      'follow': const ['follow', 'follow_request', 'follow_accepted'],
+      'mention': const ['mention', 'tag', 'tagged'],
+      'ad': const ['ad', 'ad_approved', 'ad_rejected', 'ad_submitted', 'ad_expired', 'ad_view'],
+    };
+    final aliases = filterAliases[normalizedFilter];
+    if (aliases != null && aliases.contains(type)) return true;
+
+    return type.contains(normalizedFilter);
+  }
+
+  List<NotificationItem> _filterNotifications(
+    List<NotificationItem> items, {
+    String? typeFilter,
+    bool? isRead,
+  }) {
+    return items.where((item) {
+      if (isRead != null && item.isRead != isRead) return false;
+      return _typeMatches(item, typeFilter ?? 'all');
+    }).toList(growable: false);
   }
 
   String? _normalizeUserId(String? userId) {
@@ -101,21 +141,27 @@ class NotificationService {
     int limit = 15,
     String? typeFilter,
     bool? isRead,
+    bool updateCache = true,
   }) async {
     await _bindToCurrentUser();
     if (!forceRefresh && _notifications.isNotEmpty) {
       return NotificationPage(items: _sortedCopy(_notifications), total: _notifications.length);
     }
     try {
+      final normalizedFilter = _normalizeType(typeFilter);
+      final requestLimit =
+          normalizedFilter.isNotEmpty && normalizedFilter != 'all'
+              ? max(limit, 200)
+              : limit;
       final query = <String, String>{
         'page': page.toString(),
-        'limit': limit.toString(),
+        'limit': requestLimit.toString(),
       };
-      if (typeFilter != null && typeFilter.isNotEmpty && typeFilter != 'all') {
-        if (typeFilter == 'unread') {
+      if (normalizedFilter.isNotEmpty && normalizedFilter != 'all') {
+        if (normalizedFilter == 'unread') {
           query['isRead'] = 'false';
         } else {
-          query['type'] = typeFilter;
+          query['type'] = normalizedFilter;
         }
       }
       if (isRead != null) {
@@ -123,15 +169,26 @@ class NotificationService {
       }
       final res = await _client.get('$_basePath/notifications', queryParams: query);
       final parsed = _parseNotifications(res);
-      _replaceCache(parsed);
-      int total = parsed.length;
+      final filtered = _filterNotifications(
+        parsed,
+        typeFilter: normalizedFilter,
+        isRead: isRead,
+      );
+      if (updateCache) {
+        _replaceCache(filtered);
+      }
+      final resultItems = updateCache ? _sortedCopy(_notifications) : _sortedCopy(filtered);
+      int total = filtered.length;
       if (res is Map<String, dynamic>) {
         final v = res['total'] ?? (res['data'] is Map ? (res['data'] as Map)['total'] : null);
-        if (v is int) total = v;
-        if (v is num) total = v.toInt();
-        if (v is String) total = int.tryParse(v) ?? total;
+        final hasFilter = normalizedFilter.isNotEmpty && normalizedFilter != 'all';
+        if (!hasFilter) {
+          if (v is int) total = v;
+          if (v is num) total = v.toInt();
+          if (v is String) total = int.tryParse(v) ?? total;
+        }
       }
-      return NotificationPage(items: _sortedCopy(_notifications), total: total);
+      return NotificationPage(items: resultItems, total: total);
     } catch (_) {
       // keep cached notifications if network/API fails
     }
@@ -146,6 +203,7 @@ class NotificationService {
         page: 1,
         limit: 200,
         typeFilter: 'unread',
+        updateCache: false,
       );
       return page.total > 0 ? page.total : page.items.length;
     } catch (_) {
