@@ -32,6 +32,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   String _activeTab = 'all';
   bool _markingAll = false;
   bool _isVendor = false;
+  StreamSubscription<List<NotificationItem>>? _notificationSub;
   Timer? _pollTimer;
   final String _wsStatus = 'polling';
 
@@ -40,12 +41,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
+    _notificationSub = _notificationService.getNotificationsStream().listen(
+      (_) {
+        if (!mounted) return;
+        unawaited(_loadNotifications(force: false, showLoading: false));
+      },
+    );
     _init();
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _notificationSub?.cancel();
     super.dispose();
   }
 
@@ -98,12 +106,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  Future<void> _loadNotifications({bool force = true}) async {
+  Future<void> _loadNotifications({
+    bool force = true,
+    bool showLoading = true,
+  }) async {
     if (!mounted) return;
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    } else {
+      setState(() => _error = null);
+    }
 
     try {
       final page = await _notificationService.getNotifications(
@@ -131,19 +146,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _markAsRead(String notificationId) async {
     await _notificationService.markAsRead(notificationId);
-    await _loadNotifications();
   }
 
   Future<void> _markAllAsRead() async {
     setState(() => _markingAll = true);
     await _notificationService.markAllAsRead();
-    await _loadNotifications();
     if (mounted) setState(() => _markingAll = false);
   }
 
   Future<void> _deleteNotification(String notificationId) async {
     await _notificationService.deleteNotification(notificationId);
-    await _loadNotifications();
   }
 
   void _handleTabChange(String tab) {
@@ -221,7 +233,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       backgroundColor: isDark ? Colors.black : Colors.white,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () async {
+      onRefresh: () async {
             setState(() => _page = 1);
             await _loadNotifications(force: true);
           },

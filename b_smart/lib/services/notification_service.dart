@@ -36,6 +36,18 @@ class NotificationService {
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
   }
 
+  NotificationPage _pageFromCachedNotifications({
+    String? typeFilter,
+    bool? isRead,
+  }) {
+    final filtered = _filterNotifications(
+      _notifications,
+      typeFilter: typeFilter,
+      isRead: isRead,
+    );
+    return NotificationPage(items: _sortedCopy(filtered), total: filtered.length);
+  }
+
   String _normalizeType(String? value) {
     return (value ?? '').trim().toLowerCase();
   }
@@ -145,7 +157,7 @@ class NotificationService {
   }) async {
     await _bindToCurrentUser();
     if (!forceRefresh && _notifications.isNotEmpty) {
-      return NotificationPage(items: _sortedCopy(_notifications), total: _notifications.length);
+      return _pageFromCachedNotifications(typeFilter: typeFilter, isRead: isRead);
     }
     try {
       final normalizedFilter = _normalizeType(typeFilter);
@@ -197,6 +209,9 @@ class NotificationService {
 
   Future<int> getUnreadCount() async {
     await _bindToCurrentUser();
+    if (_notifications.isNotEmpty) {
+      return _notifications.where((n) => !n.isRead).length;
+    }
     try {
       final page = await getNotifications(
         forceRefresh: true,
