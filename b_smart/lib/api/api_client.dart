@@ -216,6 +216,7 @@ class ApiClient {
     required String filePath,
     String fileField = 'file',
     Map<String, String>? fields,
+    Duration? timeout,
   }) async {
     try {
       final request = http.MultipartRequest('POST', _uri(path));
@@ -229,7 +230,7 @@ class ApiClient {
         filePath,
         contentType: ct,
       ));
-      final streamed = await request.send().timeout(ApiConfig.timeout);
+      final streamed = await request.send().timeout(timeout ?? ApiConfig.timeout);
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
     } on SocketException {
@@ -245,6 +246,7 @@ class ApiClient {
     String fileField = 'file',
     Map<String, String>? fields,
     Map<String, String>? extraFields,
+    Duration? timeout,
   }) async {
     try {
       final request = http.MultipartRequest('POST', _uri(path));
@@ -259,7 +261,7 @@ class ApiClient {
         filename: filename,
         contentType: ct,
       ));
-      final streamed = await request.send().timeout(ApiConfig.timeout);
+      final streamed = await request.send().timeout(timeout ?? ApiConfig.timeout);
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
     } on SocketException {
@@ -276,6 +278,7 @@ class ApiClient {
     String fileField = 'file',
     Map<String, String>? fields,
     Map<String, String>? extraFields,
+    Duration? timeout,
   }) async {
     if (files.isEmpty) return <String, dynamic>{};
     try {
@@ -296,7 +299,7 @@ class ApiClient {
         ));
       }
 
-      final streamed = await request.send().timeout(ApiConfig.timeout);
+      final streamed = await request.send().timeout(timeout ?? ApiConfig.timeout);
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
     } on SocketException {

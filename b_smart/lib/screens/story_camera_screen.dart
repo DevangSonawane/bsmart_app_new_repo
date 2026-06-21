@@ -17,6 +17,7 @@ import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import '../instagram_text_editor/instagram_text_editor.dart';
 import '../instagram_text_editor/instagram_text_result.dart';
 import '../models/media_model.dart';
+import '../services/create_service.dart';
 import 'create_post_screen.dart';
 import 'create_upload_screen.dart';
 import 'create_edit_preview_screen.dart';
@@ -4595,7 +4596,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         debugPrint(
             '✅ JPEG compressed: ${jpg.length} bytes (${(jpg.length / 1024 / 1024).toStringAsFixed(2)} MB)');
 
-        if (jpg.length > 4 * 1024 * 1024) {
+        if (jpg.length > CreateService.maxImageUploadBytes) {
           debugPrint('⚠️ File too large, re-compressing...');
           jpg = await FlutterImageCompress.compressWithList(
             jpg,
@@ -4952,8 +4953,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         debugPrint('Upload attempt $attempts of $maxRetries');
 
         final response = await StoriesApi()
-            .uploadFile(file.path)
-            .timeout(const Duration(seconds: 60));
+            .uploadFile(file.path);
 
         debugPrint('✓ Upload successful on attempt $attempts');
         return response;

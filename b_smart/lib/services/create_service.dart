@@ -7,6 +7,9 @@ class CreateService {
 
   CreateService._internal();
 
+  static const int maxVideoDurationSeconds = 60;
+  static const int maxImageUploadBytes = 4 * 1024 * 1024;
+
   // Get available filters
   List<Filter> getFilters() {
     return [
@@ -67,8 +70,7 @@ class CreateService {
   // Validate media
   bool validateMedia(MediaItem media) {
     if (media.type == MediaType.video && media.duration != null) {
-      // Max video duration: 60 seconds
-      return media.duration!.inSeconds <= 60;
+      return media.duration!.inSeconds <= maxVideoDurationSeconds;
     }
     return true;
   }

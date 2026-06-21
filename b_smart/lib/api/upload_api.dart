@@ -17,12 +17,27 @@ class UploadApi {
   UploadApi._internal();
 
   final ApiClient _client = ApiClient();
+  static const Duration _videoUploadTimeout = Duration(minutes: 2);
 
   String _pathFor(String segment) {
     final base =
         ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
     final endsWithApi = base.endsWith('/api');
     return endsWithApi ? '/upload/$segment' : '/api/upload/$segment';
+  }
+
+  bool _looksLikeVideo(String name) {
+    final n = name.toLowerCase();
+    return n.endsWith('.mp4') ||
+        n.endsWith('.mov') ||
+        n.endsWith('.m4v') ||
+        n.endsWith('.3gp') ||
+        n.endsWith('.webm') ||
+        n.endsWith('.mkv');
+  }
+
+  Duration _timeoutForFilename(String name) {
+    return _looksLikeVideo(name) ? _videoUploadTimeout : ApiConfig.timeout;
   }
 
   String get _genericPath {
@@ -37,12 +52,14 @@ class UploadApi {
     required List<int> bytes,
     required String filename,
     String fileField = 'file',
+    Duration? timeout,
   }) async {
     final res = await _client.multipartPostBytes(
       path,
       bytes: bytes,
       filename: filename,
       fileField: fileField,
+      timeout: timeout,
     );
     return (res as Map).cast<String, dynamic>();
   }
@@ -51,11 +68,13 @@ class UploadApi {
     String path, {
     required String filePath,
     String fileField = 'file',
+    Duration? timeout,
   }) async {
     final res = await _client.multipartPost(
       path,
       filePath: filePath,
       fileField: fileField,
+      timeout: timeout,
     );
     return (res as Map).cast<String, dynamic>();
   }
@@ -69,11 +88,16 @@ class UploadApi {
       _pathFor('story'),
       bytes: bytes,
       filename: filename,
+      timeout: _timeoutForFilename(filename),
     );
   }
 
   Future<Map<String, dynamic>> uploadStoryFile(String filePath) async {
-    return _uploadFile(_pathFor('story'), filePath: filePath);
+    return _uploadFile(
+      _pathFor('story'),
+      filePath: filePath,
+      timeout: _timeoutForFilename(filePath),
+    );
   }
 
   /// Upload a post media file.
@@ -85,11 +109,16 @@ class UploadApi {
       _pathFor('post'),
       bytes: bytes,
       filename: filename,
+      timeout: _timeoutForFilename(filename),
     );
   }
 
   Future<Map<String, dynamic>> uploadPostFile(String filePath) async {
-    return _uploadFile(_pathFor('post'), filePath: filePath);
+    return _uploadFile(
+      _pathFor('post'),
+      filePath: filePath,
+      timeout: _timeoutForFilename(filePath),
+    );
   }
 
   /// Upload a reel media file.
@@ -101,11 +130,16 @@ class UploadApi {
       _pathFor('reel'),
       bytes: bytes,
       filename: filename,
+      timeout: _timeoutForFilename(filename),
     );
   }
 
   Future<Map<String, dynamic>> uploadReelFile(String filePath) async {
-    return _uploadFile(_pathFor('reel'), filePath: filePath);
+    return _uploadFile(
+      _pathFor('reel'),
+      filePath: filePath,
+      timeout: _timeoutForFilename(filePath),
+    );
   }
 
   /// Upload a promoted reel media file.
@@ -117,11 +151,16 @@ class UploadApi {
       _pathFor('promote'),
       bytes: bytes,
       filename: filename,
+      timeout: _timeoutForFilename(filename),
     );
   }
 
   Future<Map<String, dynamic>> uploadPromoteFile(String filePath) async {
-    return _uploadFile(_pathFor('promote'), filePath: filePath);
+    return _uploadFile(
+      _pathFor('promote'),
+      filePath: filePath,
+      timeout: _timeoutForFilename(filePath),
+    );
   }
 
   /// Upload a tweet media file.
@@ -133,11 +172,16 @@ class UploadApi {
       _pathFor('tweet'),
       bytes: bytes,
       filename: filename,
+      timeout: _timeoutForFilename(filename),
     );
   }
 
   Future<Map<String, dynamic>> uploadTweetFile(String filePath) async {
-    return _uploadFile(_pathFor('tweet'), filePath: filePath);
+    return _uploadFile(
+      _pathFor('tweet'),
+      filePath: filePath,
+      timeout: _timeoutForFilename(filePath),
+    );
   }
 
   /// Backward-compatible generic upload helper.
@@ -145,7 +189,11 @@ class UploadApi {
   /// Prefer the explicit `uploadStory*`, `uploadPost*`, `uploadReel*`,
   /// `uploadPromote*`, or `uploadTweet*` methods for new code.
   Future<Map<String, dynamic>> uploadFile(String filePath) async {
-    return _uploadFile(_genericPath, filePath: filePath);
+    return _uploadFile(
+      _genericPath,
+      filePath: filePath,
+      timeout: _timeoutForFilename(filePath),
+    );
   }
 
   /// Backward-compatible generic upload helper.
@@ -157,6 +205,7 @@ class UploadApi {
       _genericPath,
       bytes: bytes,
       filename: filename,
+      timeout: _timeoutForFilename(filename),
     );
   }
 
@@ -172,6 +221,7 @@ class UploadApi {
       _pathFor('thumbnail'),
       bytes: bytes,
       filename: filename,
+      timeout: _timeoutForFilename(filename),
     );
   }
 
@@ -187,6 +237,7 @@ class UploadApi {
       _pathFor('avatar'),
       bytes: bytes,
       filename: filename,
+      timeout: _timeoutForFilename(filename),
     );
   }
 }

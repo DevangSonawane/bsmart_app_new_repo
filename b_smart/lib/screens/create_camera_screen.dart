@@ -74,7 +74,7 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
       final XFile? file = await _picker.pickVideo(
         source: ImageSource.camera,
         preferredCameraDevice: _isFrontCamera ? CameraDevice.front : CameraDevice.rear,
-        maxDuration: const Duration(seconds: 60),
+        maxDuration: const Duration(seconds: CreateService.maxVideoDurationSeconds),
       );
       
       if (file != null) {

@@ -612,7 +612,11 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
         if (!_createService.validateMedia(media)) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Video must be 60 seconds or less')),
+              const SnackBar(
+                content: Text(
+                  'Video must be 60 seconds or less',
+                ),
+              ),
             );
           }
           return;

@@ -11,6 +11,7 @@ import '../utils/current_user.dart';
 import '../config/api_config.dart';
 import '../api/upload_api.dart';
 import '../api/posts_api.dart';
+import '../services/create_service.dart';
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 import '../models/media_model.dart';
@@ -232,7 +233,7 @@ class _PostTag {
 }
 
 // Filter names matching React CreatePostModal
-const _filterNames = [
+final _filterNames = [
   'Original',
   'Clarendon',
   'Gingham',
@@ -756,7 +757,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Future<void> _recordVideo() async {
     try {
       final x = await _picker.pickVideo(
-          source: ImageSource.camera, maxDuration: const Duration(seconds: 60));
+          source: ImageSource.camera,
+          maxDuration:
+              const Duration(seconds: CreateService.maxVideoDurationSeconds));
       if (x == null) return;
       final item = _CreatePostMediaItem(sourcePath: x.path, isVideo: true);
       if (mounted) {
@@ -930,7 +933,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               quality: 85,
               format: CompressFormat.jpeg,
             );
-            if (jpg.length > 4 * 1024 * 1024) {
+            if (jpg.length > CreateService.maxImageUploadBytes) {
               jpg = await FlutterImageCompress.compressWithList(
                 jpg,
                 quality: 70,
