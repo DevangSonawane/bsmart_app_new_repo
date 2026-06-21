@@ -1846,16 +1846,9 @@ class _ReelsScreenState extends State<ReelsScreen>
           SizedBox(
             height: 44,
             child: LayoutBuilder(
-              builder: (context, constraints) {
-                const avatarSize = 36.0; // CircleAvatar radius 18
+            builder: (context, constraints) {
                 const gapAfterAvatar = 10.0;
-                const gapBeforeFollow = 10.0;
-                const approxFollowWidth = 72.0;
-                final availableWithoutDots = constraints.maxWidth -
-                    avatarSize -
-                    gapAfterAvatar -
-                    (canShowFollow ? (gapBeforeFollow + approxFollowWidth) : 0);
-
+                const gapBeforeFollow = 6.0;
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -1886,7 +1879,8 @@ class _ReelsScreenState extends State<ReelsScreen>
                       ),
                     ),
                     const SizedBox(width: gapAfterAvatar),
-                    Expanded(
+                    Flexible(
+                      fit: FlexFit.loose,
                       child: InkWell(
                         onTap: () => unawaited(_openUserProfile(reel.userId)),
                         child: Text(
@@ -1904,8 +1898,9 @@ class _ReelsScreenState extends State<ReelsScreen>
                             ? null
                             : () => unawaited(_toggleFollow()),
                         child: Padding(
-                          padding: const EdgeInsets.only(right: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 6),
                           child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 reel.isFollowing
@@ -1962,15 +1957,8 @@ class _ReelsScreenState extends State<ReelsScreen>
           height: 44,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              const avatarSize = 36.0; // CircleAvatar radius 18
               const gapAfterAvatar = 10.0;
-              const gapBeforeFollow = 10.0;
-              const approxFollowWidth = 72.0;
-              final availableWithoutDots = constraints.maxWidth -
-                  avatarSize -
-                  gapAfterAvatar -
-                  (canShowFollow ? (gapBeforeFollow + approxFollowWidth) : 0);
-
+              const gapBeforeFollow = 6.0;
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -2001,7 +1989,8 @@ class _ReelsScreenState extends State<ReelsScreen>
                     ),
                   ),
                   const SizedBox(width: gapAfterAvatar),
-                  Expanded(
+                  Flexible(
+                    fit: FlexFit.loose,
                     child: InkWell(
                       onTap: () => unawaited(_openUserProfile(reel.userId)),
                       child: Text(
@@ -2012,43 +2001,44 @@ class _ReelsScreenState extends State<ReelsScreen>
                       ),
                     ),
                   ),
-                    if (canShowFollow) ...[
-                      const SizedBox(width: gapBeforeFollow),
-                      GestureDetector(
-                        onTap: _isFollowLoading
-                            ? null
-                            : () => unawaited(_toggleFollow()),
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 12),
-                          child: Row(
-                            children: [
-                              Icon(
-                                reel.isFollowing
-                                    ? LucideIcons.userCheck
-                                    : LucideIcons.userPlus,
-                                size: 16,
+                  if (canShowFollow) ...[
+                    const SizedBox(width: gapBeforeFollow),
+                    GestureDetector(
+                      onTap: _isFollowLoading
+                          ? null
+                          : () => unawaited(_toggleFollow()),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              reel.isFollowing
+                                  ? LucideIcons.userCheck
+                                  : LucideIcons.userPlus,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _isFollowLoading
+                                  ? '...'
+                                  : (reel.isFollowing
+                                      ? 'Following'
+                                      : 'Follow'),
+                              style: const TextStyle(
                                 color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _isFollowLoading
-                                    ? '...'
-                                    : (reel.isFollowing
-                                        ? 'Following'
-                                        : 'Follow'),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                    ),
                   ],
-                );
+                ],
+              );
             },
           ),
         ),

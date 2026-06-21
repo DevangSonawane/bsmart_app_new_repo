@@ -1534,7 +1534,8 @@ class _PromoteUsernamePill extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Expanded(
+          Flexible(
+            fit: FlexFit.loose,
             child: Text(
               displayName,
               maxLines: 1,
@@ -1547,7 +1548,7 @@ class _PromoteUsernamePill extends StatelessWidget {
             ),
           ),
           if (showFollow) ...[
-            const SizedBox(width: 10),
+            const SizedBox(width: 6),
             GestureDetector(
               onTap: isFollowLoading ? null : onFollowTap,
               child: Padding(
