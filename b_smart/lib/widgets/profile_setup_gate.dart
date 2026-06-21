@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -6,8 +8,6 @@ import 'package:flutter_redux/flutter_redux.dart';
 import '../api/api.dart';
 import '../state/app_state.dart';
 import '../state/profile_actions.dart';
-import '../widgets/app_popups/app_modal_popup.dart';
-import '../utils/app_navigator.dart';
 import '../theme/design_tokens.dart';
 
 class ProfileSetupGate extends StatefulWidget {
@@ -41,9 +41,6 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
   String _gender = '';
   String _currentUserId = '';
 
-  bool _showProfileSetup = false;
-  bool _profileSetupDialogOpen = false;
-  VoidCallback? _closeProfileSetupDialog;
   bool _savingProfileSetup = false;
   bool _checkingProfileSetup = false;
   bool _saveSuccess = false;
@@ -222,13 +219,12 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     _checkingProfileSetup = true;
     try {
       final hasToken = await _apiClient.hasToken;
-      if (!hasToken) {
-        if (!mounted) return;
-        setState(() {
-          _showProfileSetup = false;
-          _error = '';
-          _saveSuccess = false;
-        });
+        if (!hasToken) {
+          if (!mounted) return;
+          setState(() {
+            _error = '';
+            _saveSuccess = false;
+          });
         return;
       }
 
@@ -238,7 +234,8 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
       } catch (_) {
         if (!mounted) return;
         setState(() {
-          _showProfileSetup = false;
+          _error = '';
+          _saveSuccess = false;
         });
         return;
       }
@@ -253,29 +250,21 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
       }
 
       final needsSetup = _needsProfileSetup(profile);
-      final dismissKey = _dismissKey(userId);
       _currentUserId = userId;
       _fillFormFromProfile(profile);
 
       setState(() {
         if (!needsSetup) {
-          _showProfileSetup = false;
           _error = '';
           _saveSuccess = false;
           _savingProfileSetup = false;
           return;
         }
-        _showProfileSetup = !_dismissedSession.contains(dismissKey);
+        _error = '';
+        _saveSuccess = false;
       });
-
-      if (!needsSetup) {
-        _closeProfileSetupDialog?.call();
-        return;
-      }
-
-      if (_showProfileSetup) {
-        unawaited(_presentProfileSetupDialog());
-      }
+      // Temporarily suppress the automatic "Complete Your Profile" popup
+      // after login. Keep the completeness check in place for future use.
     } finally {
       _checkingProfileSetup = false;
     }
@@ -284,7 +273,6 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
   void _closeForSession() {
     _dismissedSession.add(_dismissKey(_currentUserId));
     setState(() {
-      _showProfileSetup = false;
       _error = '';
       _saveSuccess = false;
     });
@@ -390,7 +378,6 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
     await Future<void>.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
     setDialogState(() {
-      _showProfileSetup = false;
       _saveSuccess = false;
     });
     closeDialog();
@@ -789,28 +776,6 @@ class _ProfileSetupGateState extends State<ProfileSetupGate>
         ),
       ),
     );
-  }
-
-  Future<void> _presentProfileSetupDialog() async {
-    if (_profileSetupDialogOpen || !mounted) return;
-    _profileSetupDialogOpen = true;
-    try {
-      await AppModalPopup.show<void>(
-        context: AppNavigator.state?.overlay?.context ?? AppNavigator.context,
-        barrierDismissible: false,
-        builder: (dialogContext, close) {
-          _closeProfileSetupDialog = close;
-          return StatefulBuilder(
-            builder: (dialogContext, setDialogState) {
-              return _buildModal(setDialogState, close);
-            },
-          );
-        },
-      );
-    } finally {
-      _profileSetupDialogOpen = false;
-      _closeProfileSetupDialog = null;
-    }
   }
 
   @override

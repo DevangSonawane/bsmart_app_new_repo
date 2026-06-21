@@ -7,6 +7,7 @@ import '../state/store.dart';
 import '../utils/current_user.dart';
 import '../widgets/dynamic_media_widget.dart';
 import 'media_aspect_cache.dart';
+import 'notification_service.dart';
 import 'reels_service.dart';
 import 'story_cache.dart';
 import 'supabase_service.dart';
@@ -24,6 +25,7 @@ class SessionResetService {
     resetMediaAuthHeaders();
     MediaAspectCache.instance.clear();
     StoryCache.clear();
+    NotificationService().clearSessionCache();
     clearTweetComposerCache();
     SupabaseService().clearSessionCache();
     ReelsService().clearCache();

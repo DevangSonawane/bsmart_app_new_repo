@@ -5,6 +5,7 @@ import 'dart:async';
 import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
 import '../config/api_config.dart';
+import '../utils/current_user.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -14,6 +15,7 @@ class NotificationService {
   List<NotificationItem> _notifications = [];
   final StreamController<List<NotificationItem>> _controller = StreamController.broadcast();
   StreamSubscription<dynamic>? _subscription;
+  String? _activeUserId;
 
   // Server-backed notifications (no seeded mock data).
   NotificationService._internal() {
@@ -31,6 +33,42 @@ class NotificationService {
   List<NotificationItem> _sortedCopy(List<NotificationItem> source) {
     return List<NotificationItem>.from(source)
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+  }
+
+  String? _normalizeUserId(String? userId) {
+    final trimmed = userId?.trim();
+    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+  }
+
+  Future<String?> _resolveCurrentUserId() async {
+    try {
+      return _normalizeUserId(await CurrentUser.id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _bindToCurrentUser({bool notifyIfChanged = true}) async {
+    final currentUserId = await _resolveCurrentUserId();
+    if (currentUserId == _activeUserId) return;
+    _activeUserId = currentUserId;
+    _notifications = [];
+    if (notifyIfChanged) {
+      _controller.add(const <NotificationItem>[]);
+    }
+  }
+
+  void _replaceCache(List<NotificationItem> items) {
+    _notifications = items;
+    _controller.add(_sortedCopy(_notifications));
+  }
+
+  void clearSessionCache() {
+    _activeUserId = null;
+    _notifications = [];
+    if (!_controller.isClosed) {
+      _controller.add(const <NotificationItem>[]);
+    }
   }
 
   List<NotificationItem> _parseNotifications(dynamic res) {
@@ -64,6 +102,7 @@ class NotificationService {
     String? typeFilter,
     bool? isRead,
   }) async {
+    await _bindToCurrentUser();
     if (!forceRefresh && _notifications.isNotEmpty) {
       return NotificationPage(items: _sortedCopy(_notifications), total: _notifications.length);
     }
@@ -84,10 +123,7 @@ class NotificationService {
       }
       final res = await _client.get('$_basePath/notifications', queryParams: query);
       final parsed = _parseNotifications(res);
-      if (parsed.isNotEmpty || _notifications.isEmpty) {
-        _notifications = parsed;
-        _controller.add(_sortedCopy(_notifications));
-      }
+      _replaceCache(parsed);
       int total = parsed.length;
       if (res is Map<String, dynamic>) {
         final v = res['total'] ?? (res['data'] is Map ? (res['data'] as Map)['total'] : null);
@@ -103,6 +139,7 @@ class NotificationService {
   }
 
   Future<int> getUnreadCount() async {
+    await _bindToCurrentUser();
     try {
       final page = await getNotifications(
         forceRefresh: true,
@@ -132,6 +169,7 @@ class NotificationService {
 
   // Mark notification as read
   Future<void> markAsRead(String notificationId) async {
+    await _bindToCurrentUser();
     final id = notificationId.trim();
     if (id.isEmpty) return;
     try {
@@ -147,6 +185,7 @@ class NotificationService {
   }
 
   Future<void> deleteNotification(String notificationId) async {
+    await _bindToCurrentUser();
     final id = notificationId.trim();
     if (id.isEmpty) return;
     try {
@@ -160,6 +199,7 @@ class NotificationService {
 
   // Mark all as read
   Future<void> markAllAsRead() async {
+    await _bindToCurrentUser();
     try {
       await _client.patch('$_basePath/notifications/mark-all-read');
     } on NotFoundException {
@@ -176,6 +216,7 @@ class NotificationService {
 
   // Clear all notifications
   Future<void> clearAll() async {
+    await _bindToCurrentUser();
     var clearedOnServer = false;
     try {
       await _client.delete('$_basePath/notifications/all');
@@ -206,7 +247,15 @@ class NotificationService {
   }
 
   // Add new notification (for new ads, etc.)
-  void addNotification(NotificationItem notification) {
+  Future<void> addNotification(NotificationItem notification, {String? userId}) async {
+    final scopeUserId = _normalizeUserId(userId) ?? await _resolveCurrentUserId();
+    if (scopeUserId == null) {
+      return;
+    }
+    if (_activeUserId != scopeUserId) {
+      _activeUserId = scopeUserId;
+      _notifications = [];
+    }
     _notifications.insert(0, notification);
     _controller.add(_sortedCopy(_notifications));
   }
@@ -224,7 +273,7 @@ class NotificationService {
       isRead: false,
       relatedId: adId,
     );
-    addNotification(notification);
+    unawaited(addNotification(notification));
   }
 
   // Get notification by ID
@@ -238,8 +287,15 @@ class NotificationService {
 
   // Initialize realtime subscription for a user
   void startRealtimeForUser(String userId) {
-    // Realtime notifications are not yet supported in the REST API.
-    // Keeping this stub for future implementation.
+    final id = _normalizeUserId(userId);
+    if (id == null) return;
+    if (_activeUserId != id) {
+      _activeUserId = id;
+      _notifications = [];
+      if (!_controller.isClosed) {
+        _controller.add(const <NotificationItem>[]);
+      }
+    }
   }
 
   // Get notifications stream (for real-time updates)

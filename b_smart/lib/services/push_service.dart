@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../api/api_client.dart';
 import '../utils/app_navigator.dart';
 import '../models/notification_model.dart';
+import '../utils/current_user.dart';
 import 'notification_service.dart';
 
 class PushService {
@@ -243,10 +244,10 @@ class PushService {
       payload: payload,
     );
 
-    _recordNotificationForBadge(message);
+    await _recordNotificationForBadge(message);
   }
 
-  void _recordNotificationForBadge(RemoteMessage message) {
+  Future<void> _recordNotificationForBadge(RemoteMessage message) async {
     final data = message.data;
     final now = DateTime.now();
     final id = (data['id'] ?? data['_id'] ?? message.messageId ??
@@ -262,8 +263,9 @@ class PushService {
     final body = (message.notification?.body ?? data['body'] ?? '').toString();
     final link = (data['link'] ?? '').toString().trim();
     final relatedId = (data['related_id'] ?? data['relatedId']).toString().trim();
+    final currentUserId = await CurrentUser.id;
 
-    _notificationService.addNotification(
+    await _notificationService.addNotification(
       NotificationItem(
         id: id,
         typeKey: typeKey,
@@ -275,6 +277,7 @@ class PushService {
         link: link.isEmpty ? null : link,
         metadata: data.isEmpty ? null : Map<String, dynamic>.from(data),
       ),
+      userId: currentUserId,
     );
   }
 
