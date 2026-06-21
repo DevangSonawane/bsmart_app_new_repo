@@ -4577,7 +4577,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                               ),
                               child: Row(
                                 children: [
-                                  const Text('Edit video'),
+                                  const Text('Trim video'),
                                   if (_trimStartFor(_currentMedia) != null) ...[
                                     const SizedBox(width: 6),
                                     Container(
