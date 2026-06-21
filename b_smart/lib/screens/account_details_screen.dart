@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -417,12 +420,15 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     );
     if (picked == null) return;
 
-    setState(() => _uploadingAvatar = true);
     try {
-      final bytes = await picked.readAsBytes();
+      final sourceBytes = await picked.readAsBytes();
+      final editedBytes = await _editAvatarImage(sourceBytes);
+      if (editedBytes == null || editedBytes.isEmpty) return;
+
+      setState(() => _uploadingAvatar = true);
       final upload = await _uploadApi.uploadAvatarBytes(
-        bytes: bytes,
-        filename: picked.name.isNotEmpty ? picked.name : 'avatar.jpg',
+        bytes: editedBytes,
+        filename: 'avatar.png',
       );
       final newUrl = (upload['avatar_url'] ??
               upload['url'] ??
@@ -453,6 +459,119 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     } finally {
       if (mounted) setState(() => _uploadingAvatar = false);
     }
+  }
+
+  Future<Uint8List?> _editAvatarImage(Uint8List sourceBytes) async {
+    final previewKey = GlobalKey();
+    final controller = TransformationController();
+    final result = await showDialog<Uint8List>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          insetPadding: const EdgeInsets.all(16),
+          backgroundColor: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Adjust profile photo',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Drag to reposition and pinch to zoom.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                RepaintBoundary(
+                  key: previewKey,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: Container(
+                      width: 300,
+                      height: 300,
+                      color: const Color(0xFF111827),
+                      child: InteractiveViewer(
+                        transformationController: controller,
+                        minScale: 1.0,
+                        maxScale: 4.0,
+                        panEnabled: true,
+                        scaleEnabled: true,
+                        boundaryMargin: const EdgeInsets.all(80),
+                        child: Image.memory(
+                          sourceBytes,
+                          fit: BoxFit.cover,
+                          width: 300,
+                          height: 300,
+                          gaplessPlayback: true,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(null),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white24),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () async {
+                          final boundary = previewKey.currentContext
+                              ?.findRenderObject() as RenderRepaintBoundary?;
+                          if (boundary == null) {
+                            Navigator.of(ctx).pop(null);
+                            return;
+                          }
+                          final image = await boundary.toImage(pixelRatio: 2.0);
+                          final byteData = await image.toByteData(
+                            format: ui.ImageByteFormat.png,
+                          );
+                          if (!ctx.mounted) return;
+                          Navigator.of(ctx).pop(
+                            byteData?.buffer.asUint8List(),
+                          );
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: DesignTokens.instaPink,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text('Use photo'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    return result;
   }
 
   Future<void> _editInterests() async {
