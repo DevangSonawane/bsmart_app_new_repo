@@ -26,6 +26,7 @@ import 'reel_voice_recorder_sheet.dart';
 import 'reel_volume_panel.dart';
 import 'reel_clip_context_menu.dart';
 import 'reel_transition_picker.dart';
+import '../../utils/app_navigator.dart';
 
 enum ReelEditorMode {
   idle,
@@ -49,7 +50,8 @@ class ReelEditorScreen extends StatefulWidget {
   State<ReelEditorScreen> createState() => _ReelEditorScreenState();
 }
 
-class _ReelEditorScreenState extends State<ReelEditorScreen> {
+class _ReelEditorScreenState extends State<ReelEditorScreen>
+    with WidgetsBindingObserver {
   static const List<double> _identityMatrix = <double>[
     1,
     0,
@@ -116,6 +118,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _clips = widget.initialMedia.map((m) {
       final isVideo = m.type == app_models.MediaType.video;
       return ReelClip(
@@ -136,6 +139,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _hidePlayheadTimer?.cancel();
     _playheadTimer?.cancel();
     final cachedControllers = _controllerCache.values.toList(growable: false);
@@ -150,6 +154,34 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
     _playheadMsNotifier.dispose();
     _clockNotifier.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(_pauseAllPlayback());
+    }
+  }
+
+  Future<void> _pauseAllPlayback() async {
+    final controllers = <VideoPlayerController?>[
+      _videoController,
+      ..._controllerCache.values,
+    ];
+    for (final controller in controllers) {
+      if (controller == null) continue;
+      try {
+        await controller.pause();
+        await controller.setVolume(0.0);
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() => _isPlaying = false);
+    } else {
+      _isPlaying = false;
+    }
   }
 
   VideoPlayerController? _getCachedController(String path) {
@@ -1262,6 +1294,9 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
 
   Future<void> _onNext() async {
     if (_clips.isEmpty) return;
+    await _pauseAllPlayback();
+    final navigator = AppNavigator.state;
+    if (navigator == null) return;
     final activeClip = _clips.isNotEmpty ? _clips[_activeClipIndex] : null;
     debugPrint(
       '[ReelEditor] next tapped clipCount=${_clips.length} '
@@ -1273,7 +1308,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
       'isPlaying=$_isPlaying',
     );
     showDialog<void>(
-      context: context,
+      context: navigator.context,
       barrierDismissible: false,
       builder: (_) => const _ExportProgressDialog(),
     );
@@ -1345,7 +1380,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
         captions: _captions,
       );
       if (!mounted) return;
-      Navigator.of(context).pop(); // progress
+      navigator.pop(); // progress
       if (stitchedPath == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Export failed, please try again')),
@@ -1362,14 +1397,14 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
         filePath: stitchedPath,
         createdAt: DateTime.now(),
       );
-      await Navigator.of(context).push(
+      await navigator.push(
         MaterialPageRoute(
           builder: (_) => CreateReelDetailsScreen(media: media),
         ),
       );
     } catch (_) {
       if (mounted) {
-        Navigator.of(context).pop();
+        navigator.pop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Export failed, please try again')),
         );
@@ -1402,207 +1437,218 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
     final availableHeight = size.height - safeTop - safeBottom;
     final previewHeight = availableHeight * 0.70;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(
-          children: [
-            SizedBox(
-              height: previewHeight,
-              width: double.infinity,
-              child: Stack(
-                children: [
-                  Positioned.fill(child: _buildPreview(activeClip)),
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    right: 12,
-                    child: _buildTopBar(),
-                  ),
-                  Positioned(
-                    right: 12,
-                    top: 84,
-                    child: _buildRightSidebar(),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Container(
-                color: const Color(0xFF1C1C1E),
-                child: Column(
+    return WillPopScope(
+      onWillPop: () async {
+        await _pauseAllPlayback();
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Column(
+            children: [
+              SizedBox(
+                height: previewHeight,
+                width: double.infinity,
+                child: Stack(
                   children: [
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 88,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Positioned.fill(
-                            child: ValueListenableBuilder<double>(
-                              valueListenable: _playheadMsNotifier,
-                              builder: (context, ms, _) {
-                                return ReelTimelineStrip(
-                                  key: _timelineKey,
-                                  clips: _clips,
-                                  playheadMs: ms,
-                                  totalDurationMs: _totalDurationMs,
-                                  pxPerMs: _pxPerMs,
-                                  selectedClipIndex: _selectedClipIndex,
-                                  trimMode: _isTrimMode,
-                                  onScrollOffsetChanged: (v) => setState(
-                                    () => _timelineScrollOffset = v,
-                                  ),
-                                  onClipSelected: _onClipTap,
-                                  onClipDoubleTap: _toggleClipSelection,
-                                  onClipLongPress: (i) {
-                                    setState(() {
-                                      _selectedClipIndex = i;
-                                      _isReorderMode = true;
-                                    });
-                                    _openClipContextMenu(i).whenComplete(() {
-                                      if (mounted) {
-                                        setState(() => _isReorderMode = false);
-                                      }
-                                    });
-                                  },
-                                  onClipReorder: (from, to) {
-                                    setState(() => _isReorderMode = false);
-                                    _reorderClip(from, to);
-                                  },
-                                  onClipTrimmed: (index, trimStart, trimEnd) {
-                                    _mutate((clips) {
-                                      final clip = clips[index];
-                                      if (clip.type == ReelClipType.image) {
-                                        clips[index] = clip.copyWith(
-                                          duration: trimEnd,
-                                          trimStart: Duration.zero,
-                                          trimEnd: trimEnd,
-                                        );
-                                      } else {
-                                        clips[index] = clip.copyWith(
-                                          trimStart: trimStart,
-                                          trimEnd: trimEnd,
-                                        );
-                                      }
-                                      return clips;
-                                    });
-                                  },
-                                  onPlayheadScrub: _onScrub,
-                                  onScrubStart: _onScrubStart,
-                                  onScrubEnd: _onScrubEnd,
-                                  onZoomChanged: (v) =>
-                                      setState(() => _pxPerMs = v),
-                                  onAddClip: _onAddClip,
-                                  overlaySpans: _overlaySpans(),
-                                  onTransitionTap: _openTransitionPicker,
-                                );
-                              },
-                            ),
-                          ),
-                          if (_showPlayheadTooltip)
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    return ValueListenableBuilder<double>(
-                                      valueListenable: _playheadMsNotifier,
-                                      builder: (context, playheadMs, _) {
-                                        final x = _playheadX(
-                                          playheadMs,
-                                          constraints.maxWidth,
-                                        );
-                                        return SizedBox.expand(
-                                          child: Stack(
-                                            children: [
-                                              Positioned(
-                                                left: x - 32,
-                                                top: -18,
-                                                child: Container(
-                                                  width: 64,
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 3,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: const Color(
-                                                      0xCC000000,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            6),
-                                                  ),
-                                                  child: Text(
-                                                    _playheadLabel(playheadMs),
-                                                    textAlign: TextAlign.center,
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 10,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                    Positioned.fill(child: _buildPreview(activeClip)),
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      right: 12,
+                      child: _buildTopBar(),
                     ),
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Column(
-                        children: [
-                          _buildTrackRow(
-                            icon: Icons.music_note_outlined,
-                            label: _audioPath == null
-                                ? 'Tap to add audio'
-                                : 'Audio added',
-                            onTap: _openAudioPicker,
-                            hasContent: _audioPath != null,
-                            contentColor: Colors.amber,
-                          ),
-                          const SizedBox(height: 8),
-                          _buildTrackRow(
-                            icon: Icons.text_fields,
-                            label: _textOverlays.isEmpty
-                                ? 'Tap to add text'
-                                : 'Text added',
-                            onTap: _openTextEditor,
-                            hasContent: _textOverlays.isNotEmpty,
-                            contentColor: const Color(0xFF0095F6),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Divider(height: 1, color: Color(0xFF2C2C2E)),
-                    SizedBox(
-                      height: 44,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: _buildPlaybackRow(),
-                      ),
-                    ),
-                    const Divider(height: 1, color: Color(0xFF2C2C2E)),
-                    SizedBox(
-                      height: 68,
-                      child: _buildBottomToolbar(),
+                    Positioned(
+                      right: 12,
+                      top: 84,
+                      child: _buildRightSidebar(),
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: Container(
+                  color: const Color(0xFF1C1C1E),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 88,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned.fill(
+                              child: ValueListenableBuilder<double>(
+                                valueListenable: _playheadMsNotifier,
+                                builder: (context, ms, _) {
+                                  return ReelTimelineStrip(
+                                    key: _timelineKey,
+                                    clips: _clips,
+                                    playheadMs: ms,
+                                    totalDurationMs: _totalDurationMs,
+                                    pxPerMs: _pxPerMs,
+                                    selectedClipIndex: _selectedClipIndex,
+                                    trimMode: _isTrimMode,
+                                    onScrollOffsetChanged: (v) => setState(
+                                      () => _timelineScrollOffset = v,
+                                    ),
+                                    onClipSelected: _onClipTap,
+                                    onClipDoubleTap: _toggleClipSelection,
+                                    onClipLongPress: (i) {
+                                      setState(() {
+                                        _selectedClipIndex = i;
+                                        _isReorderMode = true;
+                                      });
+                                      _openClipContextMenu(i).whenComplete(() {
+                                        if (mounted) {
+                                          setState(
+                                            () => _isReorderMode = false,
+                                          );
+                                        }
+                                      });
+                                    },
+                                    onClipReorder: (from, to) {
+                                      setState(() => _isReorderMode = false);
+                                      _reorderClip(from, to);
+                                    },
+                                    onClipTrimmed: (index, trimStart, trimEnd) {
+                                      _mutate((clips) {
+                                        final clip = clips[index];
+                                        if (clip.type == ReelClipType.image) {
+                                          clips[index] = clip.copyWith(
+                                            duration: trimEnd,
+                                            trimStart: Duration.zero,
+                                            trimEnd: trimEnd,
+                                          );
+                                        } else {
+                                          clips[index] = clip.copyWith(
+                                            trimStart: trimStart,
+                                            trimEnd: trimEnd,
+                                          );
+                                        }
+                                        return clips;
+                                      });
+                                    },
+                                    onPlayheadScrub: _onScrub,
+                                    onScrubStart: _onScrubStart,
+                                    onScrubEnd: _onScrubEnd,
+                                    onZoomChanged: (v) =>
+                                        setState(() => _pxPerMs = v),
+                                    onAddClip: _onAddClip,
+                                    overlaySpans: _overlaySpans(),
+                                    onTransitionTap: _openTransitionPicker,
+                                  );
+                                },
+                              ),
+                            ),
+                            if (_showPlayheadTooltip)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return ValueListenableBuilder<double>(
+                                        valueListenable: _playheadMsNotifier,
+                                        builder: (context, playheadMs, _) {
+                                          final x = _playheadX(
+                                            playheadMs,
+                                            constraints.maxWidth,
+                                          );
+                                          return SizedBox.expand(
+                                            child: Stack(
+                                              children: [
+                                                Positioned(
+                                                  left: x - 32,
+                                                  top: -18,
+                                                  child: Container(
+                                                    width: 64,
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 3,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                        0xCC000000,
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              6),
+                                                    ),
+                                                    child: Text(
+                                                      _playheadLabel(
+                                                        playheadMs,
+                                                      ),
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Column(
+                          children: [
+                            _buildTrackRow(
+                              icon: Icons.music_note_outlined,
+                              label: _audioPath == null
+                                  ? 'Tap to add audio'
+                                  : 'Audio added',
+                              onTap: _openAudioPicker,
+                              hasContent: _audioPath != null,
+                              contentColor: Colors.amber,
+                            ),
+                            const SizedBox(height: 8),
+                            _buildTrackRow(
+                              icon: Icons.text_fields,
+                              label: _textOverlays.isEmpty
+                                  ? 'Tap to add text'
+                                  : 'Text added',
+                              onTap: _openTextEditor,
+                              hasContent: _textOverlays.isNotEmpty,
+                              contentColor: const Color(0xFF0095F6),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Divider(height: 1, color: Color(0xFF2C2C2E)),
+                      SizedBox(
+                        height: 44,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: _buildPlaybackRow(),
+                        ),
+                      ),
+                      const Divider(height: 1, color: Color(0xFF2C2C2E)),
+                      SizedBox(
+                        height: 68,
+                        child: _buildBottomToolbar(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1703,7 +1749,10 @@ class _ReelEditorScreenState extends State<ReelEditorScreen> {
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
-              onTap: () => Navigator.of(context).pop(),
+              onTap: () {
+                unawaited(_pauseAllPlayback());
+                Navigator.of(context).pop();
+              },
               child: const Icon(Icons.chevron_left, color: Colors.white),
             ),
           ),

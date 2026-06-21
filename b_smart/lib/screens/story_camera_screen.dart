@@ -629,6 +629,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
   bool _boomerangEnabled = false;
   bool _boomerangProcessing = false;
   bool _boomerangStarting = false;
+  bool _videoRecordStartPending = false;
   bool _layoutMenuOpen = false;
   _StoryLayoutType? _selectedLayout;
   final List<Uint8List?> _layoutSlotImages = [];
@@ -939,21 +940,29 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
 
   Future<void> _onRecordStart() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
-    if (_controller!.value.isRecordingVideo) return;
+    if (_controller!.value.isRecordingVideo || _videoRecordStartPending) {
+      return;
+    }
     if (_boomerangEnabled) {
       await _startBoomerangRecording();
       return;
     }
     try {
+      _videoRecordStartPending = true;
       if (_isFrontCamera && _flashMode != FlashMode.off) {
         _startScreenFlash(opacity: 0.30, durationMs: 260);
         await Future.delayed(const Duration(milliseconds: 90));
+      }
+      if (!mounted || !_videoRecordStartPending) {
+        return;
       }
       await _controller!.startVideoRecording();
       if (!mounted) return;
       setState(() => _recording = true);
     } catch (e) {
       debugPrint('Error starting video recording: $e');
+    } finally {
+      _videoRecordStartPending = false;
     }
   }
 
@@ -1040,6 +1049,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
   }
 
   Future<void> _onRecordEnd() async {
+    _videoRecordStartPending = false;
     if (_controller == null || !_controller!.value.isRecordingVideo) {
       if (_recording && mounted) setState(() => _recording = false);
       return;
@@ -1073,6 +1083,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
   }
 
   Future<void> _stopVideoAndNavigate() async {
+    _videoRecordStartPending = false;
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (!_controller!.value.isRecordingVideo) {
       if (_recording) {
