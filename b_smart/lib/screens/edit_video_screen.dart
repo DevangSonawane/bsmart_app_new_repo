@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/media_model.dart';
-import '../services/create_service.dart';
 
 class VideoEditResult {
   final Duration trimStart;
@@ -28,11 +27,9 @@ class EditVideoScreen extends StatefulWidget {
 }
 
 class _EditVideoScreenState extends State<EditVideoScreen> {
-  final CreateService _createService = CreateService();
   late final VideoPlayerController _controller;
   Future<void>? _initFuture;
   bool _isPlaying = false;
-  bool _isExporting = false;
   bool _hasInitError = false;
 
   Duration _trimStart = Duration.zero;
@@ -125,36 +122,13 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
   }
 
   Future<void> _saveTrimAndClose() async {
-    if (!_controller.value.isInitialized || _isExporting) return;
-    final inputPath = widget.media.filePath;
-    if (inputPath == null || inputPath.isEmpty) return;
-
-    setState(() => _isExporting = true);
-    try {
-      final outputPath = await _createService.trimVideoForUpload(
-        inputPath: inputPath,
+    if (!_controller.value.isInitialized) return;
+    Navigator.of(context).pop(
+      VideoEditResult(
         trimStart: _trimStart,
         trimEnd: _trimEnd,
-        videoDuration: _videoDuration,
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop(
-        VideoEditResult(
-          trimStart: _trimStart,
-          trimEnd: _trimEnd,
-          outputPath: outputPath,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save trim: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isExporting = false);
-      }
-    }
+      ),
+    );
   }
 
   void _cancel() {
@@ -163,250 +137,241 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_isExporting,
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildTopBar(),
-              Expanded(
-                child: FutureBuilder<void>(
-                  future: _initFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done ||
-                        !_controller.value.isInitialized) {
-                      if (_hasInitError) {
-                        return const Center(
-                          child: Text(
-                            'Video not available',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                        );
-                      }
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildTopBar(),
+            Expanded(
+              child: FutureBuilder<void>(
+                future: _initFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done ||
+                      !_controller.value.isInitialized) {
+                    if (_hasInitError) {
                       return const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
+                        child: Text(
+                          'Video not available',
+                          style: TextStyle(color: Colors.white70),
+                        ),
                       );
                     }
+                    return const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    );
+                  }
 
-                    final duration = _videoDuration;
-                    return Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const SizedBox(height: 8),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Center(
-                              child: AspectRatio(
-                                aspectRatio: 9 / 16,
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Container(color: Colors.black),
-                                      FittedBox(
-                                        fit: BoxFit.cover,
-                                        child: SizedBox(
-                                          width: _controller.value.size.width,
-                                          height: _controller.value.size.height,
-                                          child: VideoPlayer(_controller),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        left: 16,
-                                        right: 16,
-                                        top: 16,
-                                        child: IgnorePointer(
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 8,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black
-                                                  .withValues(alpha: 0.45),
-                                              borderRadius:
-                                                  BorderRadius.circular(999),
-                                            ),
-                                            child: const Text(
-                                              'Trim only',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      if (_isExporting)
-                                        Container(
-                                          color: Colors.black
-                                              .withValues(alpha: 0.55),
-                                          child: const Center(
-                                            child: CircularProgressIndicator(
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Row(
-                            children: [
-                              IconButton(
-                                onPressed: _togglePlayback,
-                                icon: Icon(
-                                  _isPlaying
-                                      ? Icons.pause_circle_filled
-                                      : Icons.play_circle_fill,
-                                  color: Colors.white,
-                                  size: 40,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                  final duration = _videoDuration;
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Center(
+                            child: AspectRatio(
+                              aspectRatio: 9 / 16,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: Stack(
+                                  fit: StackFit.expand,
                                   children: [
-                                    Text(
-                                      '${_formatDuration(_trimStart)} - ${_formatDuration(_trimEnd)}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
+                                    Container(color: Colors.black),
+                                    FittedBox(
+                                      fit: BoxFit.cover,
+                                      child: SizedBox(
+                                        width: _controller.value.size.width,
+                                        height: _controller.value.size.height,
+                                        child: VideoPlayer(_controller),
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Selected range ${_formatDuration(Duration(milliseconds: (_trimEnd - _trimStart).inMilliseconds.clamp(0, duration.inMilliseconds)))}',
-                                      style: const TextStyle(
-                                        color: Colors.white54,
-                                        fontSize: 12,
+                                    Positioned(
+                                      left: 16,
+                                      right: 16,
+                                      top: 16,
+                                      child: IgnorePointer(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.45),
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                          ),
+                                          child: const Text(
+                                            'Trim only',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              Text(
-                                _formatDuration(duration),
-                                style: const TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: RangeSlider(
-                            values: RangeValues(_startFraction, _endFraction),
-                            min: 0,
-                            max: 1,
-                            divisions: 100,
-                            activeColor: const Color(0xFF0095F6),
-                            inactiveColor: Colors.white24,
-                            labels: RangeLabels(
-                              _formatDuration(Duration(
-                                milliseconds:
-                                    (duration.inMilliseconds * _startFraction)
-                                        .round(),
-                              )),
-                              _formatDuration(Duration(
-                                milliseconds:
-                                    (duration.inMilliseconds * _endFraction)
-                                        .round(),
-                              )),
                             ),
-                            onChanged: _updateTrimRange,
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _formatDuration(_trimStart),
-                                style: const TextStyle(
-                                    color: Colors.white54, fontSize: 12),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              onPressed: _togglePlayback,
+                              icon: Icon(
+                                _isPlaying
+                                    ? Icons.pause_circle_filled
+                                    : Icons.play_circle_fill,
+                                color: Colors.white,
+                                size: 40,
                               ),
-                              Text(
-                                _formatDuration(_trimEnd),
-                                style: const TextStyle(
-                                    color: Colors.white54, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: _isExporting ? null : _cancel,
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.white,
-                                    side:
-                                        const BorderSide(color: Colors.white24),
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 14),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${_formatDuration(_trimStart)} - ${_formatDuration(_trimEnd)}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  child: const Text('Cancel'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed:
-                                      _isExporting ? null : _saveTrimAndClose,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF0095F6),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 14),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Selected range ${_formatDuration(Duration(milliseconds: (_trimEnd - _trimStart).inMilliseconds.clamp(0, duration.inMilliseconds)))}',
+                                    style: const TextStyle(
+                                      color: Colors.white54,
+                                      fontSize: 12,
                                     ),
                                   ),
-                                  child: const Text('Done'),
-                                ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                            Text(
+                              _formatDuration(duration),
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          'Only the trimmed section will be exported.',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.45),
-                            fontSize: 11,
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: RangeSlider(
+                          values: RangeValues(_startFraction, _endFraction),
+                          min: 0,
+                          max: 1,
+                          divisions: 100,
+                          activeColor: const Color(0xFF0095F6),
+                          inactiveColor: Colors.white24,
+                          labels: RangeLabels(
+                            _formatDuration(Duration(
+                              milliseconds:
+                                  (duration.inMilliseconds * _startFraction)
+                                      .round(),
+                            )),
+                            _formatDuration(Duration(
+                              milliseconds:
+                                  (duration.inMilliseconds * _endFraction)
+                                      .round(),
+                            )),
                           ),
+                          onChanged: _updateTrimRange,
                         ),
-                        const SizedBox(height: 16),
-                      ],
-                    );
-                  },
-                ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _formatDuration(_trimStart),
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              _formatDuration(_trimEnd),
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: _cancel,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(color: Colors.white24),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: const Text('Cancel'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _saveTrimAndClose,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0095F6),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: const Text('Done'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        'Only the trimmed section will be exported.',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -418,7 +383,7 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: _isExporting ? null : _cancel,
+            onTap: _cancel,
             child: Container(
               width: 44,
               height: 44,

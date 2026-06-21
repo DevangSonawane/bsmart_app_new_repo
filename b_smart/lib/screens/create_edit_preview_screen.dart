@@ -3911,41 +3911,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   _buildPostBottomPill(
-                                    icon: Icons.music_note,
-                                    label: 'Audio',
-                                    onTap: () {
-                                      setState(() {
-                                        _showMusicControls =
-                                            !_showMusicControls;
-                                      });
-                                    },
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _buildPostBottomPill(
-                                    icon: Icons.text_fields,
-                                    label: 'Text',
-                                    onTap: _onTapText,
-                                    enabled: !_isCarouselVideo,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _buildPostBottomPill(
-                                    icon: Icons.layers_outlined,
-                                    label: 'Overlay',
-                                    onTap: _openOverlayPicker,
-                                    enabled: !_isCarouselVideo,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _buildPostBottomPill(
-                                    icon: Icons.filter_alt_outlined,
-                                    label: 'Filter',
-                                    onTap: _openFilterPicker,
-                                    isActive:
-                                        (_selectedFilter ?? 'none') != 'none',
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _buildPostBottomPill(
-                                    icon: Icons.tune,
-                                    label: 'Edit',
+                                    icon: Icons.content_cut,
+                                    label: 'Trim',
                                     onTap: widget.media.type ==
                                             app_models.MediaType.video
                                         ? _openVideoEditor
@@ -4637,95 +4604,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                               child: Row(
                                 children: [
                                   _buildEditOption(
-                                    iconWidget: const Text(
-                                      'Aa',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    label: 'Text',
-                                    onTap: _onTapText,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.emoji_emotions_outlined,
-                                    label: 'Sticker',
-                                    onTap: _openOverlayPicker,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.graphic_eq,
-                                    label: 'Audio',
-                                    onTap: () {
-                                      setState(() {
-                                        _showMusicControls =
-                                            !_showMusicControls;
-                                      });
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.video_call_outlined,
-                                    label: 'Add clips',
-                                    onTap: _openAddClips,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.layers_outlined,
-                                    label: 'Overlay',
-                                    onTap: _openOverlayPicker,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.auto_awesome,
-                                    label: 'Effects',
-                                    onTap: () {},
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.tune,
-                                    label: 'Edit',
+                                    icon: Icons.content_cut,
+                                    label: 'Trim',
                                     onTap: _openVideoEditor,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.volume_up_outlined,
-                                    label: 'Volume',
-                                    onTap: () {},
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.photo_outlined,
-                                    label: 'Photo',
-                                    onTap: () {},
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.closed_caption_outlined,
-                                    label: 'Captions',
-                                    onTap: () {},
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.mic_none,
-                                    label: 'Voice',
-                                    onTap: () {},
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.filter_alt_outlined,
-                                    label: 'Filters',
-                                    onTap: _openFilterPicker,
-                                    isActive:
-                                        (_selectedFilter ?? 'none') != 'none',
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildEditOption(
-                                    icon: Icons.save_alt,
-                                    label: 'Save',
-                                    onTap: () {},
                                   ),
                                 ],
                               ),
@@ -6822,41 +6703,9 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
                 child: Row(
                   children: [
                     _buildBottomPill(
-                      icon: Icons.music_note,
-                      label: 'Audio',
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Audio is global only'),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    _buildBottomPill(
-                      icon: Icons.text_fields,
-                      label: 'Text',
-                      onTap: () => _openTextEditor(),
-                    ),
-                    const SizedBox(width: 10),
-                    _buildBottomPill(
-                      icon: Icons.layers_outlined,
-                      label: 'Overlay',
-                      onTap: _openOverlayPicker,
-                    ),
-                    const SizedBox(width: 10),
-                    _buildBottomPill(
-                      icon: Icons.filter_alt_outlined,
-                      label: 'Filter',
-                      onTap: _openFilterPicker,
-                      isActive: (_selectedFilter ?? 'none') != 'none',
-                    ),
-                    const SizedBox(width: 10),
-                    _buildBottomPill(
-                      icon: Icons.tune,
-                      label: 'Edit',
+                      icon: Icons.content_cut,
+                      label: 'Trim',
                       onTap: _openAdjustmentsEditor,
-                      isActive: _adjustments.values.any((v) => v != 0),
                     ),
                   ],
                 ),
