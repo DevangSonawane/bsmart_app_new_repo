@@ -2941,31 +2941,33 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 ),
                               ),
                             const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: _isFollowing
-                                    ? Colors.green.withValues(alpha: 0.15)
-                                    : Colors.white.withValues(alpha: 0.1),
-                                border: Border.all(
-                                  color: _isFollowing
-                                      ? Colors.green.withValues(alpha: 0.45)
-                                      : Colors.white.withValues(alpha: 0.4),
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: GestureDetector(
-                                onTap: _isFollowLoading ? null : _toggleFollow,
-                                child: Text(
-                                  _isFollowLoading
-                                      ? '...'
-                                      : (_isFollowing ? 'Following' : 'Follow'),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                            GestureDetector(
+                              onTap: _isFollowLoading ? null : _toggleFollow,
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _isFollowing
+                                          ? LucideIcons.userCheck
+                                          : LucideIcons.userPlus,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _isFollowLoading
+                                          ? '...'
+                                          : (_isFollowing
+                                              ? 'Following'
+                                              : 'Follow'),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),

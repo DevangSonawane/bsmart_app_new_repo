@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api.dart';
-import '../api/wallet_api.dart';
 import '../models/account_details_model.dart';
 import '../models/ledger_model.dart';
 
@@ -12,6 +11,7 @@ class WalletService {
   factory WalletService() => _instance;
 
   static const String _accountDetailsKey = 'wallet_account_details_v1';
+  static const String _localLedgerKey = 'wallet_local_ledger_v1';
 
   final AuthApi _authApi = AuthApi();
   final WalletApi _walletApi = WalletApi();
@@ -20,12 +20,6 @@ class WalletService {
   bool _hasLoadedAccountDetails = false;
 
   WalletService._internal();
-
-  Future<Map<String, dynamic>> _normalizeMap(dynamic raw) async {
-    if (raw is Map<String, dynamic>) return raw;
-    if (raw is Map) return Map<String, dynamic>.from(raw);
-    return <String, dynamic>{};
-  }
 
   String _extractUserId(Map<String, dynamic> profile) {
     final id = profile['id'] ?? profile['_id'] ?? profile['user_id'];
@@ -119,7 +113,8 @@ class WalletService {
   Future<int> getCoinBalance() async {
     try {
       final bal = await fetchWalletBalance(limit: 1);
-      if (bal > 0) return bal;
+      final local = await _getLocalAdRewardBalance();
+      if (bal > 0) return bal + local;
       final data = await fetchMemberWalletHistoryForCurrentUser();
       dynamic wallet = data['wallet'];
       if (wallet == null && data['data'] is Map) {
@@ -127,13 +122,13 @@ class WalletService {
       }
       if (wallet is Map) {
         final balance = wallet['balance'];
-        if (balance is int) return balance;
-        if (balance is num) return balance.toInt();
-        if (balance is String) return int.tryParse(balance) ?? 0;
+        if (balance is int) return balance + local;
+        if (balance is num) return balance.toInt() + local;
+        if (balance is String) return (int.tryParse(balance) ?? 0) + local;
       }
-      return 0;
+      return local;
     } catch (_) {
-      return 0;
+      return _getLocalAdRewardBalance();
     }
   }
 
@@ -152,7 +147,7 @@ class WalletService {
       final profile = _normalizeProfile(meRaw);
       final userId = _extractUserId(profile);
 
-      return txRaw.map((raw) {
+      final remote = txRaw.map((raw) {
         final map = raw is Map<String, dynamic>
             ? raw
             : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
@@ -183,8 +178,19 @@ class WalletService {
           metadata: map,
         );
       }).toList();
+
+      final local = await _loadLocalLedger(userId: userId);
+      final existingIds = remote.map((t) => t.id).toSet();
+      final merged = <LedgerTransaction>[
+        ...local.where((t) => !existingIds.contains(t.id)),
+        ...remote,
+      ];
+      merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return merged;
     } catch (_) {
-      return <LedgerTransaction>[];
+      final local = await _loadLocalLedger();
+      local.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return local;
     }
   }
 
@@ -223,8 +229,132 @@ class WalletService {
     required String adId,
     Map<String, dynamic>? metadata,
   }) async {
-    // Not yet exposed by backend.
-    return false;
+    final normalizedAmount = amount > 0 ? amount : 0;
+    final normalizedAdId = adId.trim();
+    final normalizedDescription = description.trim();
+    if (normalizedAmount <= 0 || normalizedAdId.isEmpty || normalizedDescription.isEmpty) {
+      return false;
+    }
+
+    final userId = await _resolveCurrentUserId();
+    if (userId.isEmpty) return false;
+
+    final ledger = await _loadLedgerEntries();
+    final existing = ledger.any((entry) {
+      return (entry['userId'] ?? '').toString() == userId &&
+          (entry['relatedId'] ?? '').toString() == normalizedAdId &&
+          (entry['type'] ?? '').toString() == 'AD_REWARD' &&
+          (entry['status'] ?? '').toString() == 'COMPLETED';
+    });
+    if (existing) return true;
+
+    ledger.add({
+      'id': 'ledger-${DateTime.now().microsecondsSinceEpoch}',
+      'userId': userId,
+      'type': 'AD_REWARD',
+      'amount': normalizedAmount,
+      'timestamp': DateTime.now().toIso8601String(),
+      'status': 'COMPLETED',
+      'description': normalizedDescription,
+      'relatedId': normalizedAdId,
+      'metadata': metadata ?? <String, dynamic>{},
+    });
+
+    return _saveLedgerEntries(ledger);
+  }
+
+  Future<String> _resolveCurrentUserId() async {
+    try {
+      final meRaw = await _authApi.me();
+      final profile = _normalizeProfile(meRaw);
+      final userId = _extractUserId(profile);
+      return userId.trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadLedgerEntries() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_localLedgerKey);
+      if (raw == null || raw.isEmpty) return <Map<String, dynamic>>[];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return <Map<String, dynamic>>[];
+      return decoded
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<bool> _saveLedgerEntries(List<Map<String, dynamic>> entries) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.setString(_localLedgerKey, jsonEncode(entries));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<LedgerTransaction>> _loadLocalLedger({String? userId}) async {
+    final raw = await _loadLedgerEntries();
+    final selectedUserId = userId?.trim();
+    return raw
+        .where((entry) {
+          if (selectedUserId == null || selectedUserId.isEmpty) return true;
+          return (entry['userId'] ?? '').toString() == selectedUserId;
+        })
+        .map((entry) {
+          final timestampRaw = entry['timestamp']?.toString();
+          final timestamp = timestampRaw == null
+              ? DateTime.now()
+              : DateTime.tryParse(timestampRaw) ?? DateTime.now();
+          final amountRaw = entry['amount'];
+          final amount = amountRaw is int
+              ? amountRaw
+              : amountRaw is num
+                  ? amountRaw.toInt()
+                  : int.tryParse(amountRaw?.toString() ?? '') ?? 0;
+          final statusRaw = (entry['status'] ?? '').toString().toUpperCase();
+          final status = statusRaw == 'COMPLETED'
+              ? LedgerTransactionStatus.completed
+              : statusRaw == 'FAILED'
+                  ? LedgerTransactionStatus.failed
+                  : statusRaw == 'BLOCKED'
+                      ? LedgerTransactionStatus.blocked
+                      : LedgerTransactionStatus.pending;
+          final typeRaw = (entry['type'] ?? '').toString().toUpperCase();
+          final type = typeRaw.contains('GIFT')
+              ? LedgerTransactionType.giftReceived
+              : typeRaw.contains('REFUND')
+                  ? LedgerTransactionType.refund
+                  : typeRaw.contains('PAYOUT')
+                      ? LedgerTransactionType.payout
+                      : LedgerTransactionType.adReward;
+          return LedgerTransaction(
+            id: (entry['id'] ?? timestamp.microsecondsSinceEpoch).toString(),
+            userId: (entry['userId'] ?? '').toString(),
+            type: type,
+            amount: amount,
+            timestamp: timestamp,
+            status: status,
+            description: entry['description']?.toString(),
+            relatedId: entry['relatedId']?.toString(),
+            metadata: entry['metadata'] is Map
+                ? Map<String, dynamic>.from(entry['metadata'] as Map)
+                : null,
+          );
+        })
+        .where((tx) => tx.status == LedgerTransactionStatus.completed)
+        .toList();
+  }
+
+  Future<int> _getLocalAdRewardBalance() async {
+    final local = await _loadLocalLedger();
+    return local.fold<int>(0, (sum, tx) => sum + tx.amount);
   }
 
   AccountDetails? getAccountDetails() {

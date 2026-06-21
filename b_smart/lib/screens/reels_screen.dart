@@ -1828,8 +1828,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget _buildBottomInfo(Reel reel) {
     final isOwn =
         _currentUserId != null && reel.userId.trim() == _currentUserId;
-    final canShowFollow =
-        reel.userId.trim().isNotEmpty && !isOwn && reel.isFollowing == false;
+    final canShowFollow = reel.userId.trim().isNotEmpty && !isOwn;
     final isExpanded = _captionExpanded[reel.id] ?? false;
     final caption = (reel.caption ?? '').trim();
     final hasCaption = caption.isNotEmpty;
@@ -1900,28 +1899,35 @@ class _ReelsScreenState extends State<ReelsScreen>
                     ),
                     if (canShowFollow) ...[
                       const SizedBox(width: gapBeforeFollow),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.4),
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: GestureDetector(
-                          onTap:
-                              _isFollowLoading ? null : () => unawaited(_toggleFollow()),
-                          child: Text(
-                            _isFollowLoading ? '...' : 'Follow',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
+                      GestureDetector(
+                        onTap: _isFollowLoading
+                            ? null
+                            : () => unawaited(_toggleFollow()),
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                reel.isFollowing
+                                    ? LucideIcons.userCheck
+                                    : LucideIcons.userPlus,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _isFollowLoading
+                                    ? '...'
+                                    : (reel.isFollowing
+                                        ? 'Following'
+                                        : 'Follow'),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -2006,36 +2012,43 @@ class _ReelsScreenState extends State<ReelsScreen>
                       ),
                     ),
                   ),
-                  if (canShowFollow) ...[
-                    const SizedBox(width: gapBeforeFollow),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.4),
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: GestureDetector(
-                        onTap:
-                            _isFollowLoading ? null : () => unawaited(_toggleFollow()),
-                        child: Text(
-                          _isFollowLoading ? '...' : 'Follow',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                    if (canShowFollow) ...[
+                      const SizedBox(width: gapBeforeFollow),
+                      GestureDetector(
+                        onTap: _isFollowLoading
+                            ? null
+                            : () => unawaited(_toggleFollow()),
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                reel.isFollowing
+                                    ? LucideIcons.userCheck
+                                    : LucideIcons.userPlus,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _isFollowLoading
+                                    ? '...'
+                                    : (reel.isFollowing
+                                        ? 'Following'
+                                        : 'Follow'),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
-              );
+                );
             },
           ),
         ),

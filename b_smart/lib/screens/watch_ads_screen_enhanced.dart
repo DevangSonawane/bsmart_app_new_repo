@@ -4,11 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../services/ads_service.dart';
 import '../services/wallet_service.dart';
-import '../services/notification_service.dart';
 import '../services/ad_service.dart';
 import '../services/ad_eligibility_service.dart';
 import '../models/ad_model.dart';
-import '../models/notification_model.dart';
 import '../utils/current_user.dart';
 import '../widgets/app_popups/app_modal_popup.dart';
 import '../widgets/app_popups/view_reward_popup_card.dart';
@@ -24,7 +22,6 @@ class WatchAdsScreenEnhanced extends StatefulWidget {
 class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     with WidgetsBindingObserver {
   final WalletService _walletService = WalletService();
-  final NotificationService _notificationService = NotificationService();
   final AdService _adService = AdService();
   final AdEligibilityService _eligibilityService = AdEligibilityService();
   final AdsService _adsService = AdsService();

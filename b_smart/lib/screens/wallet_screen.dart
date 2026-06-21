@@ -52,18 +52,9 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
       final meRaw = await _authApi.me();
       final me = _normalizeProfile(meRaw);
       final data = await _walletService.fetchMemberWalletHistoryForCurrentUser();
-      final wallet = data['wallet'] is Map ? Map<String, dynamic>.from(data['wallet'] as Map) : <String, dynamic>{};
       final summary = data['summary'] is Map ? Map<String, dynamic>.from(data['summary'] as Map) : <String, dynamic>{};
-      final parsedTransactions = _mapApiTransactions(data);
-      final balanceRaw = wallet['balance'];
-      int balance = 0;
-      if (balanceRaw is int) {
-        balance = balanceRaw;
-      } else if (balanceRaw is num) {
-        balance = balanceRaw.toInt();
-      } else if (balanceRaw is String) {
-        balance = int.tryParse(balanceRaw) ?? 0;
-      }
+      final parsedTransactions = await _walletService.getTransactions();
+      final balance = await _walletService.getCoinBalance();
       final earnedFromSummary = _parseMaybeInt(summary['total_earned']);
       final spentFromSummary = _parseMaybeInt(summary['total_deducted']);
 
@@ -129,67 +120,6 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value);
     return null;
-  }
-
-  LedgerTransactionStatus _mapStatus(String rawStatus) {
-    final s = rawStatus.toUpperCase();
-    if (s == 'SUCCESS' || s == 'COMPLETED') return LedgerTransactionStatus.completed;
-    if (s == 'FAILED') return LedgerTransactionStatus.failed;
-    if (s == 'BLOCKED') return LedgerTransactionStatus.blocked;
-    return LedgerTransactionStatus.pending;
-  }
-
-  LedgerTransactionType _mapType(String rawType, String direction) {
-    final t = rawType.toUpperCase();
-    if (t.contains('GIFT') && direction == 'credit') {
-      return LedgerTransactionType.giftReceived;
-    }
-    if (t.contains('GIFT') && direction == 'debit') {
-      return LedgerTransactionType.giftSent;
-    }
-    if (t.contains('REFUND')) return LedgerTransactionType.refund;
-    if (direction == 'debit') return LedgerTransactionType.payout;
-    return LedgerTransactionType.adReward;
-  }
-
-  List<LedgerTransaction> _mapApiTransactions(Map<String, dynamic> data) {
-    final txRaw = data['transactions'];
-    if (txRaw is! List) return <LedgerTransaction>[];
-
-    final user = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
-    final userId = (user['_id'] ?? user['id'] ?? '').toString();
-
-    return txRaw.map((raw) {
-      final map = raw is Map<String, dynamic>
-          ? raw
-          : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
-      final direction = (map['direction'] ?? '').toString().toLowerCase();
-      final rawType = (map['type'] ?? 'UNKNOWN').toString();
-      final rawAmount = map['amount'];
-      int amount = 0;
-      if (rawAmount is int) amount = rawAmount;
-      if (rawAmount is num) amount = rawAmount.toInt();
-      if (rawAmount is String) amount = int.tryParse(rawAmount) ?? 0;
-      if (direction == 'debit' && amount > 0) amount = -amount;
-      if (direction == 'credit' && amount < 0) amount = amount.abs();
-
-      final createdAt = map['created_at']?.toString();
-      final timestamp = createdAt != null
-          ? DateTime.tryParse(createdAt)?.toLocal() ?? DateTime.now()
-          : DateTime.now();
-
-      return LedgerTransaction(
-        id: (map['_id'] ?? map['id'] ?? timestamp.millisecondsSinceEpoch).toString(),
-        userId: userId,
-        type: _mapType(rawType, direction),
-        amount: amount,
-        timestamp: timestamp,
-        status: _mapStatus((map['status'] ?? '').toString()),
-        description: map['description']?.toString() ?? map['label']?.toString(),
-        relatedId: map['ad_id']?.toString(),
-        metadata: map,
-      );
-    }).toList();
   }
 
   @override
