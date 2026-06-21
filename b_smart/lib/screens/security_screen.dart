@@ -54,6 +54,12 @@ class _SecurityScreenState extends State<SecurityScreen> {
   bool _pwdLoading = false;
   String? _pwdSuccess;
   String? _pwdError;
+  String? _currentPwdError;
+  String? _newPwdError;
+  String? _confirmPwdError;
+  bool _showCurrentPwd = false;
+  bool _showNewPwd = false;
+  bool _showConfirmPwd = false;
   bool _showActivity = false;
   bool _showHistory = false;
   bool _sessionsLoading = false;
@@ -278,21 +284,26 @@ class _SecurityScreenState extends State<SecurityScreen> {
     setState(() {
       _pwdError = null;
       _pwdSuccess = null;
+      _currentPwdError = null;
+      _newPwdError = null;
+      _confirmPwdError = null;
     });
 
     final current = _currentPwd.text.trim();
     final next = _newPwd.text;
     final confirm = _confirmPwd.text;
     if (current.isEmpty) {
-      setState(() => _pwdError = 'Current password is required.');
+      setState(() => _currentPwdError = 'Please enter your current password.');
       return;
     }
     if (next.length < 6) {
-      setState(() => _pwdError = 'New password must be at least 6 characters.');
+      setState(() => _newPwdError = 'New password must be at least 6 characters.');
       return;
     }
     if (next != confirm) {
-      setState(() => _pwdError = 'Passwords do not match.');
+      setState(
+        () => _confirmPwdError = 'Passwords do not match.',
+      );
       return;
     }
 
@@ -309,11 +320,23 @@ class _SecurityScreenState extends State<SecurityScreen> {
         _currentPwd.clear();
         _newPwd.clear();
         _confirmPwd.clear();
+        _currentPwdError = null;
+        _newPwdError = null;
+        _confirmPwdError = null;
       });
       _showToast('Password updated!');
-    } catch (e) {
+    } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _pwdError = _stripExceptionPrefix(e));
+      setState(() {
+        if (e.statusCode == 400 || e.statusCode == 401) {
+          _currentPwdError = 'Current password is incorrect.';
+        } else {
+          _pwdError = 'Unable to update password. Please try again.';
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _pwdError = 'Unable to update password. Please try again.');
     } finally {
       if (mounted) setState(() => _pwdLoading = false);
     }
@@ -555,16 +578,31 @@ class _SecurityScreenState extends State<SecurityScreen> {
                 _passwordField(
                   controller: _currentPwd,
                   label: 'Current Password',
+                  errorText: _currentPwdError,
+                  obscureText: !_showCurrentPwd,
+                  onToggleVisibility: () {
+                    setState(() => _showCurrentPwd = !_showCurrentPwd);
+                  },
                 ),
                 const SizedBox(height: 10),
                 _passwordField(
                   controller: _newPwd,
                   label: 'New Password',
+                  errorText: _newPwdError,
+                  obscureText: !_showNewPwd,
+                  onToggleVisibility: () {
+                    setState(() => _showNewPwd = !_showNewPwd);
+                  },
                 ),
                 const SizedBox(height: 10),
                 _passwordField(
                   controller: _confirmPwd,
                   label: 'Confirm New Password',
+                  errorText: _confirmPwdError,
+                  obscureText: !_showConfirmPwd,
+                  onToggleVisibility: () {
+                    setState(() => _showConfirmPwd = !_showConfirmPwd);
+                  },
                 ),
                 const SizedBox(height: 14),
                 SizedBox(
@@ -594,14 +632,54 @@ class _SecurityScreenState extends State<SecurityScreen> {
   Widget _passwordField({
     required TextEditingController controller,
     required String label,
+    String? errorText,
+    required bool obscureText,
+    required VoidCallback onToggleVisibility,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fillColor = isDark ? const Color(0xFF1F2937) : const Color(0xFFFFF3F8);
+    final borderColor = isDark ? const Color(0xFF374151) : const Color(0xFFF6CFE0);
+    final textColor = isDark ? Colors.white : const Color(0xFF111827);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+
     return TextField(
       controller: controller,
-      obscureText: true,
+      obscureText: obscureText,
+      style: TextStyle(
+        color: textColor,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
       decoration: InputDecoration(
         labelText: label,
-        border: OutlineInputBorder(
+        labelStyle: TextStyle(color: hintColor),
+        errorText: errorText,
+        filled: true,
+        fillColor: fillColor,
+        enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: borderColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _accent, width: 1.4),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.redAccent),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1.4),
+        ),
+        suffixIcon: IconButton(
+          onPressed: onToggleVisibility,
+          icon: Icon(
+            obscureText ? LucideIcons.eye : LucideIcons.eyeOff,
+            size: 18,
+            color: _accent,
+          ),
+          splashRadius: 18,
         ),
       ),
     );
