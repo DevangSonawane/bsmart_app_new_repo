@@ -23,6 +23,8 @@ class AccountDetailsScreen extends StatefulWidget {
 }
 
 class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
+  static final DateFormat _dobDisplayFormat = DateFormat('dd MMM yyyy');
+
   final _usersApi = UsersApi();
   final _authApi = AuthApi();
   final _uploadApi = UploadApi();
@@ -56,6 +58,13 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   String? _emailError;
   String? _phoneError;
   String? _websiteError;
+  String? _dobError;
+  String? _usernameError;
+  bool _usernameChecking = false;
+  bool _usernameAvailable = false;
+  String _originalUsername = '';
+  Timer? _usernameCheckDebounce;
+  int _usernameCheckEpoch = 0;
 
   @override
   void initState() {
@@ -75,6 +84,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     _dobController.dispose();
     _genderController.dispose();
     _interestsController.dispose();
+    _usernameCheckDebounce?.cancel();
     super.dispose();
   }
 
@@ -117,7 +127,96 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     if (value is DateTime) return value;
     final raw = value.toString().trim();
     if (raw.isEmpty) return null;
-    return DateTime.tryParse(raw);
+    final parsed = DateTime.tryParse(raw);
+    if (parsed != null) return parsed;
+    return _tryParseDobCandidates(raw);
+  }
+
+  DateTime? _parseDobInput(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return null;
+    try {
+      return _dobDisplayFormat.parseStrict(raw);
+    } catch (_) {
+      return _tryParseDobCandidates(raw);
+    }
+  }
+
+  Future<void> _checkUsernameAvailability(String value, {bool force = false}) async {
+    final username = value.trim();
+    if (!mounted) return;
+
+    if (username.isEmpty) {
+      setState(() {
+        _usernameError = null;
+        _usernameChecking = false;
+        _usernameAvailable = false;
+      });
+      return;
+    }
+
+    final formatError = Validators.validateUsername(username);
+    if (formatError != null) {
+      setState(() {
+        _usernameError = formatError;
+        _usernameChecking = false;
+        _usernameAvailable = false;
+      });
+      return;
+    }
+
+    if (!force && username == _originalUsername) {
+      setState(() {
+        _usernameError = null;
+        _usernameChecking = false;
+        _usernameAvailable = true;
+      });
+      return;
+    }
+
+    final currentEpoch = ++_usernameCheckEpoch;
+    setState(() {
+      _usernameChecking = true;
+      _usernameError = null;
+    });
+
+    try {
+      final result = await _usersApi.checkUsernameAvailability(username);
+      if (!mounted || currentEpoch != _usernameCheckEpoch) return;
+      setState(() {
+        _usernameChecking = false;
+        _usernameAvailable = result.available;
+        _usernameError = result.available ? null : 'This username is already taken.';
+      });
+    } catch (_) {
+      if (!mounted || currentEpoch != _usernameCheckEpoch) return;
+      setState(() {
+        _usernameChecking = false;
+        _usernameAvailable = false;
+        _usernameError = 'Could not verify username right now.';
+      });
+    }
+  }
+
+  void _scheduleUsernameCheck(String value) {
+    _usernameCheckDebounce?.cancel();
+    final username = value.trim();
+    if (username.isEmpty) {
+      setState(() {
+        _usernameError = null;
+        _usernameChecking = false;
+        _usernameAvailable = false;
+      });
+      return;
+    }
+    setState(() {
+      _usernameError = null;
+      _usernameChecking = true;
+      _usernameAvailable = false;
+    });
+    _usernameCheckDebounce = Timer(const Duration(milliseconds: 450), () {
+      unawaited(_checkUsernameAvailability(value));
+    });
   }
 
   int? _calculateAge(DateTime dob) {
@@ -259,6 +358,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
             _pickString(user, ['full_name', 'fullName', 'name']) ?? '';
         _usernameController.text =
             _pickString(user, ['username', 'handle']) ?? '';
+        _originalUsername = _usernameController.text.trim();
+        _usernameAvailable = _originalUsername.isNotEmpty;
+        _usernameError = null;
+        _usernameChecking = false;
         _bioController.text = _pickString(user, ['bio', 'about']) ?? '';
         _websiteController.text = _pickString(user, [
               'website',
@@ -282,7 +385,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         );
         _genderController.text = _gender;
         _dateOfBirth = dob;
-        _dobController.text = dob == null ? '' : DateFormat('dd MMM yyyy').format(dob);
+        _dobController.text =
+            dob == null ? '' : _dobDisplayFormat.format(dob);
         _ageOnRecord = int.tryParse(
           _pickString(user, ['age']) ?? '',
         );
@@ -380,7 +484,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
       helpText: 'Select Date of Birth',
     );
     if (picked == null) return;
-    setState(() => _dateOfBirth = picked);
+    setState(() {
+      _dateOfBirth = picked;
+      _dobController.text = _dobDisplayFormat.format(picked);
+    });
   }
 
   Future<void> _verifyEmail() async {
@@ -451,6 +558,31 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   Future<void> _saveAccount() async {
     if (_userId == null || _userId!.isEmpty || _saving) return;
 
+    final username = _usernameController.text.trim();
+    final usernameFormatError = Validators.validateUsername(username);
+    if (usernameFormatError != null) {
+      setState(() {
+        _usernameError = usernameFormatError;
+        _usernameChecking = false;
+        _usernameAvailable = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fix the highlighted fields.')),
+      );
+      return;
+    }
+
+    if (username.isNotEmpty && username != _originalUsername) {
+      await _checkUsernameAvailability(username, force: true);
+      if (!mounted) return;
+      if (_usernameError != null || !_usernameAvailable) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please fix the highlighted fields.')),
+        );
+        return;
+      }
+    }
+
     final emailError = _validateEmail(_emailController.text);
     final phoneError = _validatePhone(_phoneController.text);
     final websiteError = _validateWebsite(_websiteController.text);
@@ -474,11 +606,12 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         _emailError = null;
         _phoneError = null;
         _websiteError = null;
+        _dobError = null;
       });
 
       final updates = <String, dynamic>{
         'full_name': _fullNameController.text.trim(),
-        'username': _usernameController.text.trim(),
+        'username': username,
         'bio': _bioController.text.trim(),
         'website': _websiteController.text.trim(),
         'phone': _phoneController.text.trim(),
@@ -488,15 +621,19 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
       final dobText = _dobController.text.trim();
       if (dobText.isNotEmpty) {
-        final parsedDob = _parseDate(dobText) ??
-            _tryParseDobCandidates(dobText);
+        final parsedDob = _parseDobInput(dobText) ?? _dateOfBirth;
         if (parsedDob != null) {
           updates['date_of_birth'] = DateFormat('yyyy-MM-dd').format(parsedDob);
           final age = _calculateAge(parsedDob);
           if (age != null) updates['age'] = age;
           _dateOfBirth = parsedDob;
+          _dobError = null;
         } else {
-          updates['date_of_birth'] = dobText;
+          setState(() => _dobError = 'Please select a valid date of birth.');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please fix the highlighted fields.')),
+          );
+          return;
         }
       }
       if (_avatarUrl != null && _avatarUrl!.trim().isNotEmpty) {
@@ -509,7 +646,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         bio: _bioController.text.trim(),
         avatarUrl: _avatarUrl?.trim(),
         phone: _phoneController.text.trim(),
-        username: _usernameController.text.trim(),
+        username: username,
         extra: updates,
       );
 
@@ -527,6 +664,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
           _usernameController.text =
               _pickString(updated, ['username', 'handle']) ??
                   _usernameController.text;
+          _originalUsername = _usernameController.text.trim();
+          _usernameAvailable = _originalUsername.isNotEmpty;
+          _usernameError = null;
           _bioController.text =
               _pickString(updated, ['bio', 'about']) ?? _bioController.text;
           _websiteController.text =
@@ -554,7 +694,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
               updated['dob']);
           if (updatedDob != null) {
             _dateOfBirth = updatedDob;
-            _dobController.text = DateFormat('dd MMM yyyy').format(updatedDob);
+            _dobController.text = _dobDisplayFormat.format(updatedDob);
           }
           _ageOnRecord = int.tryParse(
             _pickString(updated, ['age']) ?? '',
@@ -678,6 +818,28 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                     label: 'Username',
                     controller: _usernameController,
                     hintText: 'Choose a username',
+                    onChanged: _scheduleUsernameCheck,
+                    errorText: _usernameError,
+                    trailing: _usernameChecking
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : (_usernameError != null
+                            ? const Icon(
+                                Icons.error_outline,
+                                color: Color(0xFFEF4444),
+                                size: 22,
+                              )
+                            : (_usernameAvailable &&
+                                    _usernameController.text.trim().isNotEmpty
+                                ? const Icon(
+                                    Icons.check_circle,
+                                    color: Color(0xFF22C55E),
+                                    size: 22,
+                                  )
+                                : null)),
                   ),
                   _inlineFieldCard(
                     icon: LucideIcons.textCursorInput,
@@ -699,22 +861,11 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                     label: 'Date of Birth',
                     controller: _dobController,
                     hintText: 'dd MMM yyyy',
-                    onChanged: (value) {
-                      final parsed = _tryParseDobCandidates(value);
-                      setState(() {
-                        _dateOfBirth = parsed;
-                      });
-                    },
+                    readOnly: true,
+                    onTap: _pickDob,
+                    errorText: _dobError,
                   ),
-                  _inlineFieldCard(
-                    icon: LucideIcons.transgender,
-                    label: 'Gender',
-                    controller: _genderController,
-                    hintText: 'Male, Female, Third Gender, Prefer Not to Say',
-                    onChanged: (value) {
-                      setState(() => _gender = value.trim().isEmpty ? _gender : value.trim());
-                    },
-                  ),
+                  _genderTile(),
                   _interestTile(),
                   const SizedBox(height: 10),
                   _sectionTitle('Location'),
@@ -981,103 +1132,45 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   Widget _genderTile() {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF5D5E1);
+    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFFFF3F8);
+    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF6CFE0);
     final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
     final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF526071);
+    const items = <String>[
+      'Male',
+      'Female',
+      'Third Gender',
+      'Prefer Not to Say',
+    ];
 
-    return InkWell(
-      onTap: () async {
-        final next = await showModalBottomSheet<String>(
-          context: context,
-          backgroundColor: Colors.white,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: DesignTokens.instaPink.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.transgender_outlined,
+              color: DesignTokens.instaPink,
+              size: 16,
+            ),
           ),
-          builder: (ctx) {
-            return SafeArea(
-              child: ListView(
-                shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-                children: [
-                  const Center(
-                    child: SizedBox(
-                      width: 40,
-                      child: Divider(thickness: 4, height: 20),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      'Select Gender',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  RadioListTile<String>(
-                    value: 'Male',
-                    groupValue: _gender,
-                    activeColor: DesignTokens.instaPink,
-                    onChanged: (value) => Navigator.of(ctx).pop(value),
-                    title: const Text('Male'),
-                  ),
-                  RadioListTile<String>(
-                    value: 'Female',
-                    groupValue: _gender,
-                    activeColor: DesignTokens.instaPink,
-                    onChanged: (value) => Navigator.of(ctx).pop(value),
-                    title: const Text('Female'),
-                  ),
-                  RadioListTile<String>(
-                    value: 'Third Gender',
-                    groupValue: _gender,
-                    activeColor: DesignTokens.instaPink,
-                    onChanged: (value) => Navigator.of(ctx).pop(value),
-                    title: const Text('Third Gender'),
-                  ),
-                  RadioListTile<String>(
-                    value: 'Prefer Not to Say',
-                    groupValue: _gender,
-                    activeColor: DesignTokens.instaPink,
-                    onChanged: (value) => Navigator.of(ctx).pop(value),
-                    title: const Text('Prefer Not to Say'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-        if (next != null && mounted) setState(() => _gender = next);
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: fillColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: borderColor, width: 1),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: DesignTokens.instaPink.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.transgender_outlined,
-                    color: DesignTokens.instaPink,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 10),
                 Text(
                   'Gender',
                   style: TextStyle(
@@ -1086,20 +1179,46 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                     color: labelColor,
                   ),
                 ),
+                const SizedBox(height: 3),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: items.contains(_gender)
+                        ? _gender
+                        : 'Prefer Not to Say',
+                    isExpanded: true,
+                    icon: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 18,
+                      color: Color(0xFF526071),
+                    ),
+                    dropdownColor:
+                        isDark ? const Color(0xFF1F1F1F) : Colors.white,
+                    style: TextStyle(
+                      color: hintColor,
+                      fontSize: 13,
+                      height: 1.25,
+                    ),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _gender = value;
+                        _genderController.text = value;
+                      });
+                    },
+                    items: items
+                        .map(
+                          (item) => DropdownMenuItem<String>(
+                            value: item,
+                            child: Text(item),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 3),
-            Text(
-              _gender,
-              style: TextStyle(color: hintColor, fontSize: 13),
-            ),
-            const SizedBox(height: 2),
-            const Align(
-              alignment: Alignment.centerRight,
-              child: Icon(Icons.chevron_right, color: Color(0xFF526071), size: 20),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1346,6 +1465,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     ValueChanged<String>? onChanged,
     Widget? trailing,
     String? errorText,
+    bool readOnly = false,
+    VoidCallback? onTap,
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -1396,6 +1517,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   keyboardType: keyboardType,
                   maxLines: maxLines,
                   minLines: maxLines,
+                  readOnly: readOnly,
+                  onTap: onTap,
                   onChanged: (value) {
                     if (onChanged != null) onChanged(value);
                     if (label == 'Email Address' && _emailError != null) {
@@ -1404,6 +1527,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                       setState(() => _phoneError = null);
                     } else if (label == 'Website' && _websiteError != null) {
                       setState(() => _websiteError = null);
+                    } else if (label == 'Date of Birth' && _dobError != null) {
+                      setState(() => _dobError = null);
                     }
                   },
                   decoration: InputDecoration(
