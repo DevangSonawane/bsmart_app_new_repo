@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/email_api.dart';
+import '../../utils/app_error_handler.dart';
 import '../../theme/design_tokens.dart';
 import '../home_dashboard.dart';
 
@@ -65,9 +66,13 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
         _cooldown = 60;
       });
       _tickCooldown();
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('verify-otp-send', e, st);
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+      setState(() => _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to send the verification code. Please try again.',
+          ));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -106,9 +111,13 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
           (route) => false,
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('verify-otp-verify', e, st);
       setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to verify the code. Please try again.',
+        );
         _loading = false;
       });
     }

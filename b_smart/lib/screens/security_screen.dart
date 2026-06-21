@@ -1,11 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/api.dart';
 import '../services/auth/auth_service.dart';
+import '../utils/app_error_handler.dart';
+import '../utils/timezone_service.dart';
 
 const _accent = Color(0xFFFA3F5E);
 const _darkCard = Color(0xFF111827);
@@ -106,7 +107,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   String _stripExceptionPrefix(Object e) {
-    return e.toString().replaceAll('Exception: ', '');
+    return AppErrorHandler.userMessage(e);
   }
 
   void _showToast(String message, {bool error = false}) {
@@ -124,14 +125,8 @@ class _SecurityScreenState extends State<SecurityScreen> {
 
   String _formatDate(dynamic raw) {
     if (raw == null) return '—';
-    DateTime? dt;
-    if (raw is DateTime) {
-      dt = raw;
-    } else {
-      dt = DateTime.tryParse(raw.toString());
-    }
-    if (dt == null) return '—';
-    return DateFormat('dd MMM yyyy, hh:mm a', 'en_IN').format(dt.toLocal());
+    final formatted = TimezoneService.instance.formatDateTime(raw);
+    return formatted.isEmpty ? '—' : formatted;
   }
 
   String _formatPhone(String phone) {
@@ -1612,9 +1607,13 @@ class _TwoFAModalState extends State<_TwoFAModal> {
       if (!mounted) return;
       setState(() => _step = 2);
       await _startCooldown();
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('security-twofa-send', e, st);
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+      setState(() => _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to send the code right now.',
+          ));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1654,9 +1653,13 @@ class _TwoFAModalState extends State<_TwoFAModal> {
       await widget.onDone(widget.mode == 'enable');
       if (!mounted) return;
       Navigator.of(context).pop();
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('security-twofa-verify', e, st);
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+      setState(() => _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to verify the code right now.',
+          ));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1918,9 +1921,13 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
       await EmailApi().forgotPassword(email: widget.email);
       if (!mounted) return;
       setState(() => _step = 2);
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('security-reset', e, st);
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+      setState(() => _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to reset your password right now.',
+          ));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1950,9 +1957,13 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
       );
       if (!mounted) return;
       setState(() => _step = 3);
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('security-reset', e, st);
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+      setState(() => _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to reset your password right now.',
+          ));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

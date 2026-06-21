@@ -11,6 +11,8 @@ import '../utils/current_user.dart';
 import '../api/api_exceptions.dart';
 import '../config/api_config.dart';
 import '../api/api_client.dart';
+import '../utils/timezone_service.dart';
+import '../utils/app_error_handler.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
@@ -686,21 +688,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   static String _formatRelativeTime(String dateString) {
-    final date = DateTime.tryParse(dateString);
-    if (date == null) return '';
-    final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inSeconds < 60) return '${diff.inSeconds}s';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    if (diff.inDays < 7) return '${diff.inDays}d';
-    return '${(diff.inDays / 7).floor()}w';
+    return TimezoneService.instance.formatPostTimestamp(dateString);
   }
 
   static String _formatFullDate(String dateString) {
-    final date = DateTime.tryParse(dateString);
-    if (date == null) return '';
-    return '${date.month} ${date.day}, ${date.year}';
+    return TimezoneService.instance.formatDate(
+      dateString,
+      pattern: 'MMMM d, yyyy',
+    );
   }
 
   String _absolute(String url) {
@@ -1347,7 +1342,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final createdAt = _parsePostCreatedAt();
     final createdAtLabel = createdAt == null
         ? ''
-        : _formatRelativeTime(createdAt.toIso8601String()).toUpperCase();
+        : TimezoneService.instance
+            .formatPostTimestamp(createdAt.toIso8601String())
+            .toUpperCase();
     final ownerId = _extractId(_postUser?['id']) ??
         (_post == null ? null : _extractPostUserId(_post!));
     final isOwner = ownerId != null &&
@@ -1684,7 +1681,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                                                 if (mounted) {
                                                                                   setState(() => isDeleting = false);
                                                                                   Navigator.pop(context);
-                                                                                  messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+                                                                                  messenger.showSnackBar(
+                                                                                    SnackBar(
+                                                                                      content: Text(AppErrorHandler.userMessage(e)),
+                                                                                    ),
+                                                                                  );
                                                                                 }
                                                                               }
                                                                             },

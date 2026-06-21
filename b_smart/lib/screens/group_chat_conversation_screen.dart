@@ -18,6 +18,7 @@ import '../api/users_api.dart';
 import '../services/chat_unread_service.dart';
 import '../services/ads_service.dart';
 import '../services/chat_media_auto_save_service.dart';
+import '../utils/app_error_handler.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
@@ -459,10 +460,16 @@ class _GroupChatConversationScreenState
       if (!mounted) return;
       Navigator.of(context).pop(); // sheet
       Navigator.of(context).maybePop();
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('group-chat-leave', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to leave the group right now.',
+          )),
+        ),
       );
     }
   }
@@ -956,10 +963,14 @@ class _GroupChatConversationScreenState
       if (replace) {
         _pinToBottom(force: true);
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('group-chat-load', e, st);
       if (!mounted) return;
       setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to load this conversation right now.',
+        );
         _loading = false;
         _loadingMore = false;
       });
@@ -1062,10 +1073,16 @@ class _GroupChatConversationScreenState
         if (!mounted) return;
         _pinToBottom(force: true);
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('group-chat-send', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to send your message right now.',
+          )),
+        ),
       );
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -1200,14 +1217,16 @@ class _GroupChatConversationScreenState
               .addPostFrameCallback((_) => _pinToBottom(force: true));
         }
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('group-chat-voice', e, st);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              e.toString().replaceAll('Exception: ', '').isNotEmpty
-                  ? e.toString().replaceAll('Exception: ', '')
-                  : 'Failed to send voice message. Please try again.',
+              AppErrorHandler.userMessage(
+                e,
+                fallback: 'Failed to send voice message. Please try again.',
+              ),
             ),
           ),
         );
@@ -1527,10 +1546,16 @@ class _GroupChatConversationScreenState
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
       if (mounted) setState(() => _replyToMessage = null);
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('group-chat-media', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to send this media right now.',
+          )),
+        ),
       );
     } finally {
       if (mounted) setState(() => _uploadingMedia = false);
@@ -2287,10 +2312,16 @@ class _GroupChatConversationScreenState
           _replyToMessage = null;
         }
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('group-chat-unsend', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to unsend the message right now.',
+          )),
+        ),
       );
     } finally {
       if (mounted) setState(() => _unsending = false);
@@ -4709,10 +4740,16 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
       }
       if (!mounted) return;
       Navigator.of(context).pop();
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('group-chat-save', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to save this conversation right now.',
+          )),
+        ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);

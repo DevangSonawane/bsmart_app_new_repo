@@ -31,6 +31,7 @@ import 'widgets/profile_setup_gate.dart';
 import 'utils/app_navigator.dart';
 import 'services/push_service.dart';
 import 'services/session_reset_service.dart';
+import 'utils/timezone_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -133,6 +134,7 @@ void main() async {
 
     // Non-sensitive API base URL is configured in `ApiConfig` defaults.
     ApiConfig.init();
+    unawaited(TimezoneService.instance.captureDeviceTimezone());
 
     // In development, proactively clear the image cache so hot-reload does not
     // show stale media from disk cache while URLs stay the same on the server.

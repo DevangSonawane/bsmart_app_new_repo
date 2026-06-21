@@ -6,6 +6,7 @@ import '../api/api_client.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
 import '../utils/current_user.dart';
+import '../utils/timezone_service.dart';
 import '../utils/url_helper.dart';
 import 'ads_page_screen.dart';
 
@@ -148,8 +149,7 @@ class _AdDetailBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final createdAt = ad.createdAt;
-    final createdText =
-        '${createdAt.day.toString().padLeft(2, '0')}/${createdAt.month.toString().padLeft(2, '0')}/${createdAt.year}';
+    final createdText = TimezoneService.instance.formatDate(createdAt);
 
     final caption = (ad.caption ?? ad.description).trim();
     final title = ad.title.trim();

@@ -5,6 +5,7 @@ import '../../../theme/instagram_theme.dart';
 import '../../../widgets/clay_container.dart';
 import '../../../services/auth/auth_service.dart';
 import '../../../models/auth/signup_session_model.dart';
+import '../../../utils/app_error_handler.dart';
 import '../../../utils/validators.dart';
 import '../../../utils/constants.dart';
 import 'signup_success_screen.dart';
@@ -98,9 +99,13 @@ class _SignupAgeVerificationScreenState
           ),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-age-verify', e, st);
       if (mounted) {
-        _showError(e.toString().replaceAll('Exception: ', ''));
+        _showError(AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to verify your age right now.',
+        ));
       }
     } finally {
       if (mounted) {

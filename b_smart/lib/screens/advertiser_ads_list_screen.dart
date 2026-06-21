@@ -3,6 +3,7 @@ import '../models/ad_category_model.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
 import '../services/advertiser_service.dart';
+import '../utils/app_error_handler.dart';
 import '../utils/current_user.dart';
 import 'advertiser_analytics_screen.dart';
 
@@ -61,12 +62,16 @@ class _AdvertiserAdsListScreenState extends State<AdvertiserAdsListScreen> {
         _ads = ads;
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('advertiser-ads-load', e, st);
       if (!mounted) return;
       setState(() {
         _categories = _adsService.getFallbackCategories();
         _ads = _loadLocalFallbackAds();
-        _error = e.toString();
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to load your ads right now.',
+        );
         _isLoading = false;
       });
     }

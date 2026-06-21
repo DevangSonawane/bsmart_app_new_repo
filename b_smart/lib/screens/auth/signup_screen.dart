@@ -8,6 +8,8 @@ import '../../theme/instagram_theme.dart';
 import '../../screens/home_dashboard.dart';
 import '../../widgets/clay_container.dart';
 import '../../utils/validators.dart';
+import '../../utils/app_error_handler.dart';
+import '../../utils/timezone_service.dart';
 import 'google_sign_in_button.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -144,12 +146,16 @@ class _SignupScreenState extends State<SignupScreen> {
         _emailAvailabilityMessage = result.message;
         _emailCheckedValue = normalized;
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-email-check', e, st);
       if (!mounted || _emailController.text.trim() != normalized) return;
       setState(() {
         _checkingEmail = false;
         _emailAvailable = false;
-        _emailAvailabilityMessage = _cleanMessage(e.toString());
+        _emailAvailabilityMessage = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to check email availability right now.',
+        );
         _emailCheckedValue = normalized;
       });
     }
@@ -167,12 +173,16 @@ class _SignupScreenState extends State<SignupScreen> {
         _usernameAvailabilityMessage = result.message;
         _usernameCheckedValue = normalized;
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-username-check', e, st);
       if (!mounted || _usernameController.text.trim() != normalized) return;
       setState(() {
         _checkingUsername = false;
         _usernameAvailable = false;
-        _usernameAvailabilityMessage = _cleanMessage(e.toString());
+        _usernameAvailabilityMessage = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to check username availability right now.',
+        );
         _usernameCheckedValue = normalized;
       });
     }
@@ -190,12 +200,16 @@ class _SignupScreenState extends State<SignupScreen> {
         _phoneAvailabilityMessage = result.message;
         _phoneCheckedValue = normalized;
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-phone-check', e, st);
       if (!mounted || _phoneController.text.trim() != normalized) return;
       setState(() {
         _checkingPhone = false;
         _phoneAvailable = false;
-        _phoneAvailabilityMessage = _cleanMessage(e.toString());
+        _phoneAvailabilityMessage = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to check phone availability right now.',
+        );
         _phoneCheckedValue = normalized;
       });
     }
@@ -226,14 +240,6 @@ class _SignupScreenState extends State<SignupScreen> {
     if (futures.isNotEmpty) {
       await Future.wait(futures);
     }
-  }
-
-  String _cleanMessage(String message) {
-    return message
-        .replaceAll('ApiException(', '')
-        .replaceAll(RegExp(r'^\d+\):\s*'), '')
-        .replaceAll('Exception: ', '')
-        .trim();
   }
 
   InputDecoration _fieldDecoration({
@@ -321,12 +327,15 @@ class _SignupScreenState extends State<SignupScreen> {
       _error = null;
     });
     try {
+      final timezone = await TimezoneService.instance.captureDeviceTimezone();
       await AuthApi().register(
         email: email,
         password: pass,
         username: username,
         fullName: name,
         phone: phone,
+        clientTimezoneName: timezone.name,
+        clientTimezoneOffsetMinutes: timezone.offsetMinutes,
       );
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -334,8 +343,12 @@ class _SignupScreenState extends State<SignupScreen> {
           (route) => false,
         );
       }
-    } catch (e) {
-      setState(() => _error = e.toString());
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-submit', e, st);
+      setState(() => _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to create your account. Please try again.',
+          ));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

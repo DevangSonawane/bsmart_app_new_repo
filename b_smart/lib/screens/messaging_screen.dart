@@ -10,6 +10,7 @@ import '../services/chat_socket_service.dart';
 import '../services/supabase_service.dart';
 import '../services/chat_unread_service.dart';
 import '../theme/design_tokens.dart';
+import '../utils/app_error_handler.dart';
 import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
 import 'chat_conversation_screen.dart';
@@ -365,11 +366,15 @@ class _MessagingScreenState extends State<MessagingScreen>
       if (showLoading) setState(() => _loading = false);
       ChatUnreadService().setFromConversations(data);
       _refreshOnlineUsers();
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('messaging-load-normal', e, st);
       if (!mounted) return;
       if (showLoading) {
         setState(() {
-          _error = e.toString().replaceAll('Exception: ', '');
+          _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to load conversations right now.',
+          );
           _loading = false;
         });
       }
@@ -389,11 +394,15 @@ class _MessagingScreenState extends State<MessagingScreen>
       _sortByLastMessageAt(data);
       setState(() => _requestConversations = data);
       if (showLoading) setState(() => _loading = false);
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('messaging-load-requests', e, st);
       if (!mounted) return;
       if (showLoading) {
         setState(() {
-          _error = e.toString().replaceAll('Exception: ', '');
+          _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to load requests right now.',
+          );
           _loading = false;
         });
       }

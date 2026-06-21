@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import '../api/api.dart';
 import '../services/feed_service.dart';
 import '../utils/current_user.dart';
+import '../utils/timezone_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:photo_manager/photo_manager.dart';
 import '../widgets/offline_retry_banner.dart';
@@ -1820,7 +1821,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         ),
                         title: Text(name),
                         subtitle: viewedAt != null
-                            ? Text(viewedAt.toLocal().toString())
+                            ? Text(TimezoneService.instance
+                                .formatDateTime(viewedAt))
                             : null,
                       );
                     }),
@@ -1939,13 +1941,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   }
 
   String _timeAgoShort(DateTime date) {
-    final now = DateTime.now();
-    var diff = now.difference(date);
-    if (diff.isNegative) diff = Duration.zero;
-    if (diff.inSeconds < 60) return '${diff.inSeconds}s';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    return '${diff.inDays}d';
+    final formatted = TimezoneService.instance.relativeTimeShort(date);
+    return formatted.isEmpty ? '0s' : formatted;
   }
 
   Future<void> _quickAddStory() async {

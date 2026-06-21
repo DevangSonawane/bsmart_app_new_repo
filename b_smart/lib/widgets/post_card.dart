@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../models/feed_post_model.dart';
 import '../services/video_pool.dart';
 import '../utils/url_helper.dart';
+import '../utils/timezone_service.dart';
 import 'dynamic_media_widget.dart';
 import 'safe_network_image.dart';
 import '../screens/external_link_screen.dart';
@@ -1894,28 +1895,7 @@ class _PostCardState extends State<PostCard> {
   }
 
   String _formatTimestamp(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inSeconds < 60) return 'Just now';
-    if (difference.inMinutes < 60) return '${difference.inMinutes}m';
-    if (difference.inHours < 24) return '${difference.inHours}h';
-    if (difference.inDays < 7) return '${difference.inDays}d';
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day}';
+    return TimezoneService.instance.formatPostTimestamp(date);
   }
 }
 

@@ -1,5 +1,6 @@
 import 'package:b_smart/api/api.dart';
 import 'package:b_smart/utils/url_helper.dart';
+import 'package:b_smart/utils/app_error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
@@ -166,10 +167,16 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('tweet-composer-post', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to publish right now. Please try again.',
+          )),
+        ),
       );
       setState(() => _posting = false);
     }

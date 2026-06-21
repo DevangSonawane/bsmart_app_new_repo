@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/email_api.dart';
+import '../../utils/app_error_handler.dart';
 import '../../theme/design_tokens.dart';
 
 /// Mobile reset flow aligned with the React web app:
@@ -58,10 +59,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         _step = 2;
         _message = 'Reset code sent. Paste the code from your email below.';
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('forgot-password-find', e, st);
       if (!mounted) return;
       setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to send reset instructions. Please try again.',
+        );
       });
     } finally {
       if (mounted) {
@@ -98,10 +103,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       await EmailApi().resetPassword(token: code, newPassword: password);
       if (!mounted) return;
       setState(() => _step = 3);
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('forgot-password-reset', e, st);
       if (!mounted) return;
       setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to reset the password. Please try again.',
+        );
       });
     } finally {
       if (mounted) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../utils/app_error_handler.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -455,14 +456,16 @@ class _ShareContentModalState extends State<ShareContentModal> {
           behavior: SnackBarBehavior.floating,
         ),
       );
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('share-content', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            e.toString().replaceAll('Exception: ', '').trim().isEmpty
-                ? 'Failed to share content'
-                : e.toString().replaceAll('Exception: ', ''),
+            AppErrorHandler.userMessage(
+              e,
+              fallback: 'Failed to share content',
+            ),
           ),
           behavior: SnackBarBehavior.floating,
         ),

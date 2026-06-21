@@ -5,6 +5,7 @@ import '../../api/auth_api.dart';
 import '../../services/auth/auth_service.dart';
 import '../../services/session_reset_service.dart';
 import '../../services/push_service.dart';
+import '../../utils/app_error_handler.dart';
 import '../../state/app_state.dart';
 import '../../state/auth_actions.dart';
 import '../home_dashboard.dart';
@@ -61,10 +62,13 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> {
       } else {
         setState(() => _error = 'Authentication failed. Please try again.');
       }
-    } catch (e) {
+    } catch (e, st) {
       if (mounted) {
-        print('❌ Error: $e');
-        setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+        AppErrorHandler.logError('google-sign-in', e, st);
+        setState(() => _error = AppErrorHandler.userMessage(
+              e,
+              fallback: 'Google sign-in failed. Please try again.',
+            ));
       }
     } finally {
       if (mounted) setState(() => _loading = false);

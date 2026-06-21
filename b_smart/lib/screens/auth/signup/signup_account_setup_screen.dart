@@ -6,6 +6,7 @@ import '../../../models/auth/signup_session_model.dart';
 import '../../../utils/validators.dart';
 import '../../../utils/constants.dart';
 import '../../../services/auth/auth_service.dart';
+import '../../../utils/app_error_handler.dart';
 import 'signup_age_verification_screen.dart';
 
 class SignupAccountSetupScreen extends StatefulWidget {
@@ -95,7 +96,8 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
           _isCheckingUsername = false;
         });
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-account-username-check', e, st);
       if (mounted) {
         setState(() => _isCheckingUsername = false);
       }
@@ -162,9 +164,13 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
           ),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-account-continue', e, st);
       if (mounted) {
-        _showError(e.toString().replaceAll('Exception: ', ''));
+        _showError(AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to complete signup. Please try again.',
+        ));
       }
     } finally {
       if (mounted) {
@@ -355,4 +361,3 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
     );
   }
 }
-

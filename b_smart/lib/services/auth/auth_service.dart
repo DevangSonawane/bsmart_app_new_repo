@@ -8,6 +8,7 @@ import '../../models/auth/auth_user_model.dart' as model;
 import '../../models/auth/signup_session_model.dart';
 import '../../utils/validators.dart';
 import '../../utils/constants.dart';
+import '../../utils/timezone_service.dart';
 import '../push_service.dart';
 import '../session_reset_service.dart';
 
@@ -58,6 +59,7 @@ class AuthService {
   Future<SignupSession> signupWithEmail(String email, String password) async {
     final sessionToken = _generateSessionToken();
     final now = DateTime.now();
+    await TimezoneService.instance.captureDeviceTimezone();
 
     final session = SignupSession(
       id: sessionToken,
@@ -82,6 +84,7 @@ class AuthService {
   Future<SignupSession> signupWithPhone(String phone) async {
     final sessionToken = _generateSessionToken();
     final now = DateTime.now();
+    await TimezoneService.instance.captureDeviceTimezone();
 
     final session = SignupSession(
       id: sessionToken,
@@ -119,7 +122,12 @@ class AuthService {
       debugPrint(
         'Google sign-in success for ${googleUser.email}. Exchanging ID token with backend...',
       );
-      final data = await _authApi.loginWithGoogle(idToken: idToken);
+      final timezone = await TimezoneService.instance.captureDeviceTimezone();
+      final data = await _authApi.loginWithGoogle(
+        idToken: idToken,
+        clientTimezoneName: timezone.name,
+        clientTimezoneOffsetMinutes: timezone.offsetMinutes,
+      );
       final token = data['token'] as String?;
       if (token == null || token.isEmpty) {
         throw Exception(
@@ -239,6 +247,7 @@ class AuthService {
     try {
       final isUnder18 =
           Validators.calculateAge(dateOfBirth) < AuthConstants.restrictedAge;
+      final timezone = await TimezoneService.instance.captureDeviceTimezone();
 
       // For Google signups we don't ask the user for a password.
       // We derive a deterministic internal password from the Google email so
@@ -268,6 +277,8 @@ class AuthService {
         username: username,
         fullName: fullName,
         phone: session.metadata['phone'] as String?,
+        clientTimezoneName: timezone.name,
+        clientTimezoneOffsetMinutes: timezone.offsetMinutes,
       );
 
       final user = data['user'] as Map<String, dynamic>? ?? {};
@@ -302,10 +313,13 @@ class AuthService {
     String? otp,
   }) async {
     try {
+      final timezone = await TimezoneService.instance.captureDeviceTimezone();
       final data = await _authApi.login(
         email: identifier,
         password: password,
         otp: otp,
+        clientTimezoneName: timezone.name,
+        clientTimezoneOffsetMinutes: timezone.offsetMinutes,
       );
 
       final requires2fa = data['requires_2fa'] == true;
@@ -332,7 +346,13 @@ class AuthService {
 
   Future<model.AuthUser> loginWithEmail(String email, String password) async {
     try {
-      final data = await _authApi.login(email: email, password: password);
+      final timezone = await TimezoneService.instance.captureDeviceTimezone();
+      final data = await _authApi.login(
+        email: email,
+        password: password,
+        clientTimezoneName: timezone.name,
+        clientTimezoneOffsetMinutes: timezone.offsetMinutes,
+      );
       if (data['requires_2fa'] == true) {
         throw Exception('OTP required to complete login.');
       }
@@ -353,7 +373,13 @@ class AuthService {
     // we pass it as email and let the server handle the lookup, or
     // fall back to the email field.
     try {
-      final data = await _authApi.login(email: username, password: password);
+      final timezone = await TimezoneService.instance.captureDeviceTimezone();
+      final data = await _authApi.login(
+        email: username,
+        password: password,
+        clientTimezoneName: timezone.name,
+        clientTimezoneOffsetMinutes: timezone.offsetMinutes,
+      );
       if (data['requires_2fa'] == true) {
         throw Exception('OTP required to complete login.');
       }

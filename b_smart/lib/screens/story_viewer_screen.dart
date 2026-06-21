@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import '../models/story_model.dart';
 import '../services/feed_service.dart';
 import '../services/story_cache.dart';
+import '../utils/timezone_service.dart';
 import '../utils/url_helper.dart';
 import '../widgets/offline_retry_banner.dart';
 import 'package:image_picker/image_picker.dart';
@@ -1276,16 +1277,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   String _formatTimestamp(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
-    } else {
-      return 'Just now';
-    }
+    final formatted = TimezoneService.instance.relativeTime(date);
+    return formatted.isEmpty ? 'Just now' : formatted;
   }
 
   TextAlign _toAlign(String a) {

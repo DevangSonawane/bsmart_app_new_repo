@@ -3,6 +3,7 @@ import 'package:flutter_redux/flutter_redux.dart';
 import '../../state/app_state.dart';
 import '../../state/auth_actions.dart';
 import '../../services/auth/auth_service.dart';
+import '../../utils/app_error_handler.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,9 +31,13 @@ class _LoginScreenState extends State<LoginScreen> {
           : await AuthService().loginWithUsername(identifier, password);
       // Dispatch to store
       StoreProvider.of<AppState>(context).dispatch(SetAuthenticated(user.id));
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('legacy-login', e, st);
       setState(() {
-        _error = e.toString();
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to sign in. Please try again.',
+        );
       });
     } finally {
       if (mounted) {

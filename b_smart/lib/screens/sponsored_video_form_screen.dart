@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/user_account_model.dart';
 import '../services/sponsored_video_service.dart';
+import '../utils/app_error_handler.dart';
 import 'sponsored_video_preview_screen.dart';
 
 class SponsoredVideoFormScreen extends StatefulWidget {
@@ -190,13 +191,19 @@ class _SponsoredVideoFormScreenState extends State<SponsoredVideoFormScreen> {
           );
         }
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('sponsored-video-submit', e, st);
       if (mounted) {
         setState(() {
           _isSubmitting = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(
+            content: Text(AppErrorHandler.userMessage(
+              e,
+              fallback: 'Unable to submit the video. Please try again.',
+            )),
+          ),
         );
       }
     }

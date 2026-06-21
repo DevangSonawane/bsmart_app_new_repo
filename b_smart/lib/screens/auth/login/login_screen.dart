@@ -5,6 +5,7 @@ import '../../../theme/instagram_theme.dart';
 import '../../../widgets/clay_container.dart';
 import '../../../services/auth/auth_service.dart';
 import '../../../services/session_reset_service.dart';
+import '../../../utils/app_error_handler.dart';
 import '../../../state/app_state.dart';
 import '../../../state/auth_actions.dart';
 import '../../home_dashboard.dart';
@@ -85,8 +86,12 @@ class _LoginScreenState extends State<LoginScreen>
         }
         _navigateToHome();
       }
-    } catch (e) {
-      _showError(e.toString().replaceAll('Exception: ', ''));
+    } catch (e, st) {
+      AppErrorHandler.logError('login', e, st);
+      _showError(AppErrorHandler.userMessage(
+        e,
+        fallback: 'Unable to sign in. Please try again.',
+      ));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -137,9 +142,13 @@ class _LoginScreenState extends State<LoginScreen>
                       .dispatch(SetAuthenticated(userId));
                 }
                 _navigateToHome();
-              } catch (e) {
+              } catch (e, st) {
+                AppErrorHandler.logError('login-otp', e, st);
                 setLocalState(() {
-                  localError = e.toString().replaceAll('Exception: ', '');
+                  localError = AppErrorHandler.userMessage(
+                    e,
+                    fallback: 'Unable to verify the code. Please try again.',
+                  );
                 });
               } finally {
                 if (mounted) setState(() => _isVerifyingOtp = false);

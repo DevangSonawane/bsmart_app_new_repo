@@ -5,6 +5,7 @@ import '../../../theme/instagram_theme.dart';
 import '../../../widgets/clay_container.dart';
 import '../../../services/auth/auth_service.dart';
 import '../../../models/auth/signup_session_model.dart';
+import '../../../utils/app_error_handler.dart';
 import '../../../utils/validators.dart';
 import 'signup_account_setup_screen.dart';
 
@@ -88,9 +89,13 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
           ),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-identifier', e, st);
       if (mounted) {
-        _showError(e.toString().replaceAll('Exception: ', ''));
+        _showError(AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to continue signup. Please try again.',
+        ));
       }
     } finally {
       if (mounted) {
@@ -112,10 +117,13 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
           ),
         );
       }
-    } catch (e) {
-      print('error -.> $e');
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-google', e, st);
       if (mounted) {
-        _showError(e.toString().replaceAll('Exception: ', ''));
+        _showError(AppErrorHandler.userMessage(
+          e,
+          fallback: 'Google signup failed. Please try again.',
+        ));
       }
     } finally {
       if (mounted) {

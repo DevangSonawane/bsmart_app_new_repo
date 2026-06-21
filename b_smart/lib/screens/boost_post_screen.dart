@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../utils/current_user.dart';
 import '../models/boost_model.dart';
 import '../services/boost_service.dart';
+import '../utils/app_error_handler.dart';
 import 'boost_analytics_screen.dart';
 
 class BoostPostScreen extends StatefulWidget {
@@ -111,14 +112,18 @@ class _BoostPostScreenState extends State<BoostPostScreen> {
           );
         }
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('boost-post', e, st);
       if (mounted) {
         setState(() {
           _isProcessing = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
+            content: Text(AppErrorHandler.userMessage(
+              e,
+              fallback: 'Unable to boost this post. Please try again.',
+            )),
             backgroundColor: Colors.red,
           ),
         );

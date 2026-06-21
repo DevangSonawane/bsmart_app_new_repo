@@ -25,6 +25,8 @@ class AuthApi {
     String? fullName,
     String? phone,
     String role = 'member',
+    String? clientTimezoneName,
+    int? clientTimezoneOffsetMinutes,
   }) async {
     final body = <String, dynamic>{
       'email': email,
@@ -34,6 +36,12 @@ class AuthApi {
     };
     if (fullName != null) body['full_name'] = fullName;
     if (phone != null) body['phone'] = phone;
+    if (clientTimezoneName != null && clientTimezoneName.trim().isNotEmpty) {
+      body['client_timezone_name'] = clientTimezoneName.trim();
+    }
+    if (clientTimezoneOffsetMinutes != null) {
+      body['client_timezone_offset_minutes'] = clientTimezoneOffsetMinutes;
+    }
 
     final res = await _client.post('/auth/register', body: body);
     final data = res as Map<String, dynamic>;
@@ -54,6 +62,8 @@ class AuthApi {
     required String email,
     required String password,
     String? otp,
+    String? clientTimezoneName,
+    int? clientTimezoneOffsetMinutes,
   }) async {
     final body = <String, dynamic>{
       'email': email,
@@ -61,6 +71,12 @@ class AuthApi {
     };
     if (otp != null && otp.trim().isNotEmpty) {
       body['otp'] = otp.trim();
+    }
+    if (clientTimezoneName != null && clientTimezoneName.trim().isNotEmpty) {
+      body['client_timezone_name'] = clientTimezoneName.trim();
+    }
+    if (clientTimezoneOffsetMinutes != null) {
+      body['client_timezone_offset_minutes'] = clientTimezoneOffsetMinutes;
     }
 
     final res = await _client.post('/auth/login', body: body);
@@ -83,10 +99,21 @@ class AuthApi {
   }
 
   /// Login with Google ID token (native sign-in flow).
-  Future<Map<String, dynamic>> loginWithGoogle({required String idToken}) async {
-    final res = await _client.post('/auth/google/token', body: {
+  Future<Map<String, dynamic>> loginWithGoogle({
+    required String idToken,
+    String? clientTimezoneName,
+    int? clientTimezoneOffsetMinutes,
+  }) async {
+    final body = <String, dynamic>{
       'id_token': idToken,
-    });
+    };
+    if (clientTimezoneName != null && clientTimezoneName.trim().isNotEmpty) {
+      body['client_timezone_name'] = clientTimezoneName.trim();
+    }
+    if (clientTimezoneOffsetMinutes != null) {
+      body['client_timezone_offset_minutes'] = clientTimezoneOffsetMinutes;
+    }
+    final res = await _client.post('/auth/google/token', body: body);
     final data = res as Map<String, dynamic>;
     final token = data['token'] as String?;
     if (token != null && token.isNotEmpty) {

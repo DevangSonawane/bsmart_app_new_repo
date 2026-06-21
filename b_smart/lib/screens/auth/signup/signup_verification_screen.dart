@@ -5,6 +5,7 @@ import '../../../widgets/clay_container.dart';
 import '../../../services/auth/auth_service.dart';
 import '../../../services/auth/otp_service.dart';
 import '../../../models/auth/signup_session_model.dart';
+import '../../../utils/app_error_handler.dart';
 import '../../../utils/validators.dart';
 import '../../../utils/constants.dart';
 import 'signup_account_setup_screen.dart';
@@ -63,9 +64,13 @@ class _SignupVerificationScreenState extends State<SignupVerificationScreen> {
           ),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-verification', e, st);
       if (mounted) {
-        _showError(e.toString().replaceAll('Exception: ', ''));
+        _showError(AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to verify the code right now.',
+        ));
       }
     } finally {
       if (mounted) {
@@ -102,9 +107,13 @@ class _SignupVerificationScreenState extends State<SignupVerificationScreen> {
           ),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('signup-verification-resend', e, st);
       if (mounted) {
-        _showError(e.toString().replaceAll('Exception: ', ''));
+        _showError(AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to resend the code right now.',
+        ));
       }
     } finally {
       if (mounted) {

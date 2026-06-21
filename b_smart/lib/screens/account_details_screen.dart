@@ -13,6 +13,7 @@ import '../api/account_verification_api.dart';
 import '../api/upload_api.dart';
 import '../api/users_api.dart';
 import '../theme/design_tokens.dart';
+import '../utils/app_error_handler.dart';
 import '../utils/url_helper.dart';
 import '../utils/validators.dart';
 import '../widgets/ad_interests_sheet.dart';
@@ -1849,9 +1850,13 @@ class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
       if (!mounted) return;
       setState(() => _sent = true);
       await _startCooldown();
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('account-details-verify-send', e, st);
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+      setState(() => _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to send the verification code right now.',
+          ));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1877,9 +1882,13 @@ class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
       await Future.delayed(const Duration(milliseconds: 1200));
       if (!mounted) return;
       Navigator.of(context).pop();
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('account-details-verify-confirm', e, st);
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+      setState(() => _error = AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to confirm the code right now.',
+          ));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

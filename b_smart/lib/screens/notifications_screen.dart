@@ -7,6 +7,7 @@ import '../api/auth_api.dart';
 import '../api/follow_requests_api.dart';
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
+import '../utils/timezone_service.dart';
 import 'follow_requests_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -1102,10 +1103,5 @@ const _vendorTypeConfig = {
 };
 
 String _timeAgo(DateTime date) {
-  final diff = DateTime.now().difference(date);
-  if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
-  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-  if (diff.inHours < 24) return '${diff.inHours}h ago';
-  if (diff.inDays < 7) return '${diff.inDays}d ago';
-  return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  return TimezoneService.instance.relativeTime(date);
 }

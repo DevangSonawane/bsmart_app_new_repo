@@ -9,6 +9,7 @@ import '../api/chat_api.dart';
 import '../api/users_api.dart';
 import '../theme/design_tokens.dart';
 import '../theme/instagram_theme.dart';
+import '../utils/app_error_handler.dart';
 import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
 
@@ -114,11 +115,15 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
         _followersLoading = false;
         _followers = unique.values.toList(growable: false);
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('new-group-chat-followers', e, st);
       if (!mounted) return;
       setState(() {
         _followersLoading = false;
-        _followersError = e.toString().replaceAll('Exception: ', '');
+        _followersError = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to load followers right now.',
+        );
         _followers = const [];
       });
     }
@@ -265,11 +270,15 @@ class _NewGroupChatScreenState extends State<NewGroupChatScreen> {
         return;
       }
       Navigator.of(context).pop(conversation);
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('new-group-chat-create', e, st);
       if (!mounted) return;
       setState(() {
         _creating = false;
-        _createError = e.toString().replaceAll('Exception: ', '');
+        _createError = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to create the group right now.',
+        );
       });
     }
   }

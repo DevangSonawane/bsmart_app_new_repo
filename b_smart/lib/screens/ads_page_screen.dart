@@ -15,6 +15,7 @@ import '../models/ad_model.dart';
 import '../models/ad_category_model.dart';
 import '../services/ads_service.dart';
 import '../services/supabase_service.dart';
+import '../utils/app_error_handler.dart';
 import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/current_user.dart';
@@ -243,12 +244,16 @@ class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
       });
 
       await _fetchAdsPage(reset: true);
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('ads-page-load-categories', e, st);
       if (!mounted) return;
       setState(() {
         _categories = _adsService.getFallbackCategories();
         _ads = [];
-        _error = e.toString();
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to load ads right now.',
+        );
         _isLoading = false;
       });
     }
@@ -316,10 +321,14 @@ class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
         _page += 1;
         _error = null;
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('ads-page-fetch', e, st);
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to load ads right now.',
+        );
       });
     } finally {
       if (mounted) {

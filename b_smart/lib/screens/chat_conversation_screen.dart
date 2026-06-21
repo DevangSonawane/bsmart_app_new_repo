@@ -22,6 +22,7 @@ import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../services/ads_service.dart';
 import '../services/chat_media_auto_save_service.dart';
+import '../utils/app_error_handler.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/post_detail_modal.dart';
 import '../widgets/voice_recorder_sheet.dart';
@@ -783,10 +784,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Request accepted')),
       );
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('chat-accept-request', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to accept the request right now.',
+          )),
+        ),
       );
     } finally {
       if (mounted) setState(() => _requestActionLoading = false);
@@ -802,10 +809,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       await _chatApi.deleteConversation(conversationId: convId);
       if (!mounted) return;
       Navigator.of(context).pop();
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('chat-delete-request', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to delete the request right now.',
+          )),
+        ),
       );
     } finally {
       if (mounted) setState(() => _requestActionLoading = false);
@@ -880,10 +893,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       if (replace) {
         _pinToBottom(force: true);
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('chat-load', e, st);
       if (!mounted) return;
       setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to load this conversation right now.',
+        );
         _loading = false;
         _loadingMore = false;
       });
@@ -987,10 +1004,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         if (!mounted) return;
         _pinToBottom(force: true);
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('chat-send', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to send your message right now.',
+          )),
+        ),
       );
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -1127,14 +1150,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               .addPostFrameCallback((_) => _pinToBottom(force: true));
         }
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('chat-voice', e, st);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              e.toString().replaceAll('Exception: ', '').isNotEmpty
-                  ? e.toString().replaceAll('Exception: ', '')
-                  : 'Failed to send voice message. Please try again.',
+              AppErrorHandler.userMessage(
+                e,
+                fallback: 'Failed to send voice message. Please try again.',
+              ),
             ),
           ),
         );
@@ -1426,10 +1451,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
       if (mounted) setState(() => _replyToMessage = null);
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('chat-send-media', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to send this media right now.',
+          )),
+        ),
       );
     } finally {
       if (mounted) setState(() => _uploadingMedia = false);
@@ -2284,10 +2315,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
           _replyToMessage = null;
         }
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppErrorHandler.logError('chat-unsend', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        SnackBar(
+          content: Text(AppErrorHandler.userMessage(
+            e,
+            fallback: 'Unable to unsend the message right now.',
+          )),
+        ),
       );
     } finally {
       if (mounted) setState(() => _unsending = false);
