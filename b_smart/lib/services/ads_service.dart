@@ -10,6 +10,20 @@ class AdsService {
 
   final AdsApi _adsApi = AdsApi();
 
+  static const Map<String, List<String>> _categoryAliases = {
+    'accessories': ['accessories', 'fashion'],
+    'action_figures': ['action_figures', 'toys'],
+    'art_supplies': ['art_supplies', 'art'],
+    'baby_products': ['baby_products', 'baby'],
+    'electronics': ['electronics', 'technology'],
+    'fashion': ['fashion', 'lifestyle', 'accessories'],
+    'food': ['food', 'restaurant'],
+    'health': ['health', 'wellness'],
+    'home': ['home', 'furniture'],
+    'sports': ['sports', 'fitness'],
+    'technology': ['technology', 'electronics'],
+  };
+
   List<AdCategory> _ensureAllFirst(List<AdCategory> categories) {
     final allIndex = categories.indexWhere((c) {
       final id = c.id.trim().toLowerCase();
@@ -91,13 +105,56 @@ class AdsService {
     }).join(' ');
   }
 
+  String _normalizeCategoryKey(String raw) {
+    final normalized = raw.trim().toLowerCase();
+    if (normalized.isEmpty) return '';
+    return normalized
+        .replaceAll(RegExp(r'[\s&/-]+'), '_')
+        .replaceAll(RegExp(r'[^a-z0-9_]+'), '')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+  }
+
+  bool _matchesCategory(Ad ad, String category) {
+    final selected = _normalizeCategoryKey(category);
+    if (selected.isEmpty || selected == 'all') return true;
+
+    final candidateKeys = <String>{
+      _normalizeCategoryKey(ad.category ?? ''),
+      ...ad.targetCategories.map(_normalizeCategoryKey),
+      ...ad.hashtags.map(_normalizeCategoryKey),
+    }.where((value) => value.isNotEmpty).toSet();
+
+    final selectedAliases = <String>{
+      selected,
+      ...?_categoryAliases[selected],
+    }.where((value) => value.isNotEmpty).toSet();
+
+    for (final candidate in candidateKeys) {
+      if (selectedAliases.contains(candidate)) return true;
+      final candidateAliases = _categoryAliases[candidate] ?? const <String>[];
+      if (candidateAliases.any((alias) => selectedAliases.contains(alias))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  List<Ad> _applyCategoryFilter(List<Ad> ads, String? category) {
+    final normalized = category == null ? '' : category.trim();
+    if (normalized.isEmpty || normalized.toLowerCase() == 'all') return ads;
+    return ads.where((ad) => _matchesCategory(ad, normalized)).toList();
+  }
+
   Future<void> addCategory(String name) async {
     await _adsApi.addCategory(name);
   }
 
   Future<List<Ad>> fetchAds({String category = 'All'}) async {
     final rawList = await _adsApi.getFeed(category: category);
-    return rawList.map(Ad.fromApi).where((ad) => ad.id.isNotEmpty).toList();
+    final ads = rawList.map(Ad.fromApi).where((ad) => ad.id.isNotEmpty).toList();
+    return _applyCategoryFilter(ads, category);
   }
 
   Future<List<Ad>> fetchUserAds({
@@ -105,7 +162,8 @@ class AdsService {
     String? category,
   }) async {
     final rawList = await _adsApi.getVendorAdsAny(userId, category: category);
-    return rawList.map(Ad.fromApi).where((ad) => ad.id.isNotEmpty).toList();
+    final ads = rawList.map(Ad.fromApi).where((ad) => ad.id.isNotEmpty).toList();
+    return _applyCategoryFilter(ads, category);
   }
 
   Future<List<Ad>> fetchAllAds() async {
@@ -141,6 +199,7 @@ class AdsService {
         .map((item) => Ad.fromApi(Map<String, dynamic>.from(item)))
         .where((ad) => ad.id.isNotEmpty)
         .toList();
+    final filteredAds = _applyCategoryFilter(ads, category);
     final users = rawUsers
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
@@ -158,7 +217,7 @@ class AdsService {
       'page': toInt(res['page'], page),
       'limit': toInt(res['limit'], limit),
       'totalPages': toInt(res['totalPages'], 1),
-      'ads': ads,
+      'ads': filteredAds,
       'users': users,
     };
   }
