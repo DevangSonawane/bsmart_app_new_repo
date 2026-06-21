@@ -1135,7 +1135,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFFFF3F8);
     final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF6CFE0);
     final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF526071);
+    final valueColor = isDark ? const Color(0xFF9CA3AF) : DesignTokens.instaPink;
     const items = <String>[
       'Male',
       'Female',
@@ -1145,7 +1145,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: fillColor,
         borderRadius: BorderRadius.circular(16),
@@ -1154,8 +1154,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
       child: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               color: DesignTokens.instaPink.withValues(alpha: 0.12),
               shape: BoxShape.circle,
@@ -1163,7 +1163,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
             child: const Icon(
               Icons.transgender_outlined,
               color: DesignTokens.instaPink,
-              size: 16,
+              size: 18,
             ),
           ),
           const SizedBox(width: 10),
@@ -1186,15 +1186,16 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                         ? _gender
                         : 'Prefer Not to Say',
                     isExpanded: true,
+                    isDense: true,
                     icon: const Icon(
                       Icons.keyboard_arrow_down_rounded,
                       size: 18,
-                      color: Color(0xFF526071),
+                      color: DesignTokens.instaPink,
                     ),
                     dropdownColor:
-                        isDark ? const Color(0xFF1F1F1F) : Colors.white,
+                        isDark ? const Color(0xFF1F1F1F) : const Color(0xFFFFF3F8),
                     style: TextStyle(
-                      color: hintColor,
+                      color: valueColor,
                       fontSize: 13,
                       height: 1.25,
                     ),
