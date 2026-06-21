@@ -1548,30 +1548,43 @@ class _PromoteUsernamePill extends StatelessWidget {
           ),
           if (showFollow) ...[
             const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-              decoration: BoxDecoration(
-                color: isFollowing
-                    ? Colors.green.withValues(alpha: 0.15)
-                    : Colors.white.withValues(alpha: 0.1),
-                border: Border.all(
-                  color: isFollowing
-                      ? Colors.green.withValues(alpha: 0.45)
-                      : Colors.white.withValues(alpha: 0.4),
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: GestureDetector(
-                onTap: isFollowLoading ? null : onFollowTap,
-                child: Text(
-                  isFollowLoading
-                      ? '...'
-                      : (isFollowing ? 'Following' : 'Follow'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
+            GestureDetector(
+              onTap: isFollowLoading ? null : onFollowTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isFollowLoading)
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    else
+                      Icon(
+                        isFollowing
+                            ? LucideIcons.userCheck
+                            : LucideIcons.userPlus,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isFollowLoading
+                          ? '...'
+                          : (isFollowing ? 'Following' : 'Follow'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             )
