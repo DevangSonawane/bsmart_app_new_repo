@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/media_model.dart';
 import '../services/dummy_data_service.dart';
@@ -101,7 +102,8 @@ class CreateService {
       return inputPath;
     }
 
-    if (start <= Duration.zero && resolvedEnd >= (videoDuration ?? resolvedEnd)) {
+    if (start <= Duration.zero &&
+        resolvedEnd >= (videoDuration ?? resolvedEnd)) {
       return inputPath;
     }
 
@@ -113,32 +115,71 @@ class CreateService {
     final tmpDir = await Directory.systemTemp.createTemp('bsmart_trim_');
     final outputPath =
         '${tmpDir.path}/trimmed_${DateTime.now().millisecondsSinceEpoch}.mp4';
-    final args = [
+    final durationSec =
+        (clipDuration.inMilliseconds / 1000.0).toStringAsFixed(3);
+    final startSec = (start.inMilliseconds / 1000.0).toStringAsFixed(3);
+
+    Future<bool> runCommand(List<String> args) async {
+      final session = await FFmpegKit.executeWithArguments(args);
+      final rc = await session.getReturnCode();
+      if (ReturnCode.isSuccess(rc)) {
+        return true;
+      }
+      debugPrint('FFmpeg trim failed with rc=$rc for $inputPath');
+      return false;
+    }
+
+    final copyTrimSucceeded = await runCommand([
       '-y',
+      '-ss',
+      startSec,
       '-i',
       inputPath,
-      '-ss',
-      (start.inMilliseconds / 1000.0).toStringAsFixed(3),
       '-t',
-      (clipDuration.inMilliseconds / 1000.0).toStringAsFixed(3),
+      durationSec,
+      '-map',
+      '0',
+      '-c',
+      'copy',
+      '-movflags',
+      '+faststart',
+      outputPath,
+    ]);
+    if (copyTrimSucceeded) {
+      return outputPath;
+    }
+
+    final transcodeSucceeded = await runCommand([
+      '-y',
+      '-ss',
+      startSec,
+      '-i',
+      inputPath,
+      '-t',
+      durationSec,
+      '-map',
+      '0',
       '-c:v',
       'libx264',
       '-preset',
-      'ultrafast',
+      'medium',
       '-crf',
-      '25',
+      '18',
+      '-profile:v',
+      'high',
+      '-level',
+      '4.1',
       '-pix_fmt',
       'yuv420p',
       '-c:a',
       'aac',
+      '-b:a',
+      '192k',
       '-movflags',
       '+faststart',
       outputPath,
-    ];
-
-    final session = await FFmpegKit.executeWithArguments(args);
-    final rc = await session.getReturnCode();
-    if (ReturnCode.isSuccess(rc)) {
+    ]);
+    if (transcodeSucceeded) {
       return outputPath;
     }
     return null;
@@ -151,7 +192,7 @@ class CreateService {
   }) async {
     // Simulate processing delay
     await Future.delayed(const Duration(seconds: 2));
-    
+
     // In real app, this would process the media
     return media;
   }
