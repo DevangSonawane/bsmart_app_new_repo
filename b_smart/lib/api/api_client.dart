@@ -6,6 +6,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/api_config.dart';
+import '../services/connectivity_service.dart';
 import 'api_exceptions.dart';
 
 typedef UploadProgressCallback = void Function(int sentBytes, int totalBytes);
@@ -88,6 +89,8 @@ class ApiClient {
   /// Whether we currently hold a token.
   Future<bool> get hasToken async => (await getToken()) != null;
 
+  static const int _maxTransientRetries = 1;
+
   // ── Request helpers ────────────────────────────────────────────────────────
 
   Uri _uri(String path, [Map<String, String>? queryParams]) {
@@ -96,6 +99,46 @@ class ApiClient {
         : ApiConfig.baseUrl;
     final fullPath = path.startsWith('/') ? '$base$path' : '$base/$path';
     return Uri.parse(fullPath).replace(queryParameters: queryParams);
+  }
+
+  Future<T> _withTransientRetry<T>(Future<T> Function() action) async {
+    if (!await ConnectivityService.instance.isOnline()) {
+      throw NetworkException(
+        message:
+            'You are offline. Please check your internet connection and try again.',
+      );
+    }
+    Object? lastError;
+    StackTrace? lastStack;
+    for (var attempt = 0; attempt <= _maxTransientRetries; attempt++) {
+      try {
+        return await action();
+      } catch (e, st) {
+        lastError = e;
+        lastStack = st;
+        final retryable = e is SocketException || e is TimeoutException;
+        if (!retryable || attempt >= _maxTransientRetries) {
+          if (e is TimeoutException) {
+            throw NetworkException(
+              message:
+                  'The connection is slow right now. Please try again in a moment.',
+            );
+          }
+          if (e is SocketException) {
+            throw NetworkException(
+              message:
+                  'No internet connection. Please check your connection and try again.',
+            );
+          }
+          Error.throwWithStackTrace(e, st);
+        }
+        await Future.delayed(Duration(milliseconds: 350 * (attempt + 1)));
+      }
+    }
+    if (lastError != null) {
+      Error.throwWithStackTrace(lastError, lastStack ?? StackTrace.current);
+    }
+    throw NetworkException();
   }
 
   Future<Map<String, String>> _headers({
@@ -121,7 +164,7 @@ class ApiClient {
     Map<String, String>? queryParams,
     Map<String, String>? extraHeaders,
   }) async {
-    try {
+    return _withTransientRetry(() async {
       final response = await _http
           .get(
             _uri(path, queryParams),
@@ -129,9 +172,7 @@ class ApiClient {
           )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
-    } on SocketException {
-      throw NetworkException();
-    }
+    });
   }
 
   /// `POST <baseUrl>/<path>` with JSON body.
@@ -140,7 +181,7 @@ class ApiClient {
     Map<String, dynamic>? body,
     Map<String, String>? extraHeaders,
   }) async {
-    try {
+    return _withTransientRetry(() async {
       final response = await _http
           .post(
             _uri(path),
@@ -149,9 +190,7 @@ class ApiClient {
           )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
-    } on SocketException {
-      throw NetworkException();
-    }
+    });
   }
 
   /// `PUT <baseUrl>/<path>` with JSON body.
@@ -160,7 +199,7 @@ class ApiClient {
     Map<String, dynamic>? body,
     Map<String, String>? extraHeaders,
   }) async {
-    try {
+    return _withTransientRetry(() async {
       final response = await _http
           .put(
             _uri(path),
@@ -169,9 +208,7 @@ class ApiClient {
           )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
-    } on SocketException {
-      throw NetworkException();
-    }
+    });
   }
 
   /// `PATCH <baseUrl>/<path>` with JSON body.
@@ -180,7 +217,7 @@ class ApiClient {
     Map<String, dynamic>? body,
     Map<String, String>? extraHeaders,
   }) async {
-    try {
+    return _withTransientRetry(() async {
       final response = await _http
           .patch(
             _uri(path),
@@ -189,15 +226,13 @@ class ApiClient {
           )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
-    } on SocketException {
-      throw NetworkException();
-    }
+    });
   }
 
   /// `DELETE <baseUrl>/<path>`
   Future<dynamic> delete(String path,
       {Map<String, String>? extraHeaders}) async {
-    try {
+    return _withTransientRetry(() async {
       final response = await _http
           .delete(
             _uri(path),
@@ -205,9 +240,7 @@ class ApiClient {
           )
           .timeout(ApiConfig.timeout);
       return _handleResponse(response);
-    } on SocketException {
-      throw NetworkException();
-    }
+    });
   }
 
   /// Multipart `POST` for file uploads.
@@ -222,7 +255,7 @@ class ApiClient {
     Duration? timeout,
     UploadProgressCallback? onSendProgress,
   }) async {
-    try {
+    return _withTransientRetry(() async {
       final request = http.MultipartRequest('POST', _uri(path));
       final token = await getToken();
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
@@ -241,9 +274,7 @@ class ApiClient {
       );
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
-    } on SocketException {
-      throw NetworkException();
-    }
+    });
   }
 
   /// Multipart `POST` from bytes (useful for image picker results).
@@ -257,7 +288,7 @@ class ApiClient {
     Duration? timeout,
     UploadProgressCallback? onSendProgress,
   }) async {
-    try {
+    return _withTransientRetry(() async {
       final request = http.MultipartRequest('POST', _uri(path));
       final token = await getToken();
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
@@ -277,9 +308,7 @@ class ApiClient {
       );
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
-    } on SocketException {
-      throw NetworkException();
-    }
+    });
   }
 
   /// Multipart `POST` from multiple files (as bytes).
@@ -295,7 +324,7 @@ class ApiClient {
     UploadProgressCallback? onSendProgress,
   }) async {
     if (files.isEmpty) return <String, dynamic>{};
-    try {
+    return _withTransientRetry(() async {
       final request = http.MultipartRequest('POST', _uri(path));
       final token = await getToken();
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
@@ -320,9 +349,7 @@ class ApiClient {
       );
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
-    } on SocketException {
-      throw NetworkException();
-    }
+    });
   }
 
   Future<http.StreamedResponse> _sendMultipartRequest(

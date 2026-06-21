@@ -6,6 +6,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../api/api_exceptions.dart';
 import '../models/feed_post_model.dart';
 import '../repositories/feed_repository.dart';
+import '../utils/app_error_handler.dart';
 import '../utils/current_user.dart';
 import 'feed_paging_state.dart';
 
@@ -144,7 +145,12 @@ class FeedController extends ChangeNotifier {
           isInitialLoading: false,
           isLoadingMore: false,
           isOffline: offline,
-          errorMessage: offline ? null : _friendlyError(e),
+          errorMessage: offline
+              ? null
+              : AppErrorHandler.userMessage(
+                  e,
+                  fallback: 'Failed to load feed. Please try again.',
+                ),
           clearError: offline,
         ),
       );
@@ -175,13 +181,6 @@ class FeedController extends ChangeNotifier {
   Future<bool> _isOnline() async {
     final results = await _connectivity.checkConnectivity();
     return !results.contains(ConnectivityResult.none);
-  }
-
-  String _friendlyError(Object e) {
-    if (e is ApiException) {
-      return e.message.isNotEmpty ? e.message : 'Failed to load feed.';
-    }
-    return 'Failed to load feed. Please try again.';
   }
 
   void _setState(FeedPagingState next) {
