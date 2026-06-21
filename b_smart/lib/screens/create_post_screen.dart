@@ -22,6 +22,7 @@ class _CreatePostMediaItem {
   String sourcePath;
   String? croppedPath; // after crop step (images only)
   String? thumbnailPath; // cover for videos
+  Duration? duration;
   Duration? trimStart;
   Duration? trimEnd;
   bool isVideo;
@@ -35,6 +36,7 @@ class _CreatePostMediaItem {
     required this.sourcePath,
     this.croppedPath, // ignore: unused_element_parameter
     this.thumbnailPath,
+    this.duration,
     this.trimStart,
     this.trimEnd,
     required this.isVideo,
@@ -452,6 +454,7 @@ class CreatePostScreen extends StatefulWidget {
 const _shareBlue = Color(0xFF4F6EF7);
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
+  final CreateService _createService = CreateService();
   final ImagePicker _picker = ImagePicker();
   final TextEditingController _captionCtl = TextEditingController();
   final Set<String> _loggedVideoPreviewKeys = {};
@@ -601,6 +604,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         final item = _CreatePostMediaItem(
           sourcePath: m.filePath!,
           thumbnailPath: m.thumbnailPath,
+          duration: m.duration,
           isVideo: m.type == MediaType.video,
           alreadyCropped: alreadyCropped,
           alreadyProcessed: alreadyProcessed,
@@ -642,6 +646,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final item = _CreatePostMediaItem(
         sourcePath: m.filePath!,
         thumbnailPath: m.thumbnailPath,
+        duration: m.duration,
         isVideo: m.type == MediaType.video,
         alreadyCropped: alreadyCropped,
         alreadyProcessed: alreadyProcessed,
@@ -917,11 +922,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             : (item.croppedPath ?? item.sourcePath);
         final file = File(path);
         if (!await file.exists()) continue;
-        final bytes = await file.readAsBytes();
         final isImage = !item.isVideo;
         Uint8List toUpload;
         String ext;
         if (isImage) {
+          final bytes = await file.readAsBytes();
           if (item.alreadyProcessed) {
             toUpload = Uint8List.fromList(bytes);
             ext = path.split('.').last;
@@ -944,8 +949,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             ext = 'jpg';
           }
         } else {
-          toUpload = Uint8List.fromList(bytes);
-          ext = path.split('.').last;
+          final trimmedPath = await _createService.trimVideoForUpload(
+            inputPath: path,
+            trimStart: item.trimStart,
+            trimEnd: item.trimEnd,
+            videoDuration: item.duration,
+          );
+          if (trimmedPath == null) {
+            throw Exception('Failed to trim video before upload');
+          }
+          final uploadPath = trimmedPath;
+          final uploadFile = File(uploadPath);
+          if (!await uploadFile.exists()) {
+            throw Exception('Trimmed video file missing');
+          }
+          final uploadBytes = await uploadFile.readAsBytes();
+          toUpload = Uint8List.fromList(uploadBytes);
+          ext = uploadPath.split('.').last;
         }
         final filename =
             '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode % 100000}.$ext';

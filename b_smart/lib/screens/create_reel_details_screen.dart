@@ -15,6 +15,7 @@ import '../services/notification_service.dart';
 import '../api/users_api.dart';
 import '../config/api_config.dart';
 import '../utils/current_user.dart';
+import '../services/create_service.dart';
 
 class CreateReelDetailsScreen extends StatefulWidget {
   final MediaItem media;
@@ -296,12 +297,22 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final file = File(filePath);
+      final videoPath = await CreateService().trimVideoForUpload(
+        inputPath: filePath,
+        trimStart: widget.trimStart,
+        trimEnd: widget.trimEnd,
+        videoDuration: widget.media.duration,
+      );
+      if (videoPath == null) {
+        throw Exception('Failed to trim video before upload');
+      }
+
+      final file = File(videoPath);
       if (!await file.exists()) {
         throw Exception('File not found');
       }
       final bytes = await file.readAsBytes();
-      final ext = filePath.split('.').last;
+      final ext = videoPath.split('.').last;
       final filename =
           '$userId/${DateTime.now().millisecondsSinceEpoch}_reel.$ext';
       final uploaded =
@@ -358,7 +369,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
           (endMs > startMs) ? ((endMs - startMs) / 1000.0) : durationSec;
 
       final thumbMeta = await _uploadThumbnailForVideo(
-        videoPath: filePath,
+        videoPath: videoPath,
         startMs: startMs,
         endMs: endMs,
       );
