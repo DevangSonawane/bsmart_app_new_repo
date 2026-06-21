@@ -16,6 +16,8 @@ import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 import '../models/media_model.dart';
 import 'tag_people_screen.dart';
+import '../utils/app_navigator.dart';
+import '../services/upload_progress_overlay.dart';
 
 /// Single media item in the create-post flow (select → crop → edit → share).
 class _CreatePostMediaItem {
@@ -914,212 +916,272 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       return;
     }
     setState(() => _isSubmitting = true);
-    try {
-      final processedMedia = <Map<String, dynamic>>[];
-      for (final item in _media) {
-        final path = item.isVideo
-            ? item.sourcePath
-            : (item.croppedPath ?? item.sourcePath);
-        final file = File(path);
-        if (!await file.exists()) continue;
-        final isImage = !item.isVideo;
-        Uint8List toUpload;
-        String ext;
-        if (isImage) {
-          final bytes = await file.readAsBytes();
-          if (item.alreadyProcessed) {
-            toUpload = Uint8List.fromList(bytes);
-            ext = path.split('.').last;
-          } else {
-            final processed =
-                await _processImageBytes(Uint8List.fromList(bytes), item);
-            var jpg = await FlutterImageCompress.compressWithList(
-              processed,
-              quality: 85,
-              format: CompressFormat.jpeg,
-            );
-            if (jpg.length > CreateService.maxImageUploadBytes) {
-              jpg = await FlutterImageCompress.compressWithList(
-                jpg,
-                quality: 70,
+    UploadProgressOverlay.show(message: 'Preparing upload...', progress: 0.0);
+    unawaited(() async {
+      try {
+        final processedMedia = <Map<String, dynamic>>[];
+        final totalSteps = _media.fold<int>(1, (sum, item) {
+          return sum +
+              1 +
+              ((item.isVideo && item.thumbnailPath != null) ? 1 : 0);
+        });
+        var completedSteps = 0;
+
+        void updateProgress(String message, [double stepFraction = 0.0]) {
+          final progress =
+              ((completedSteps + stepFraction) / totalSteps).clamp(0.0, 1.0);
+          UploadProgressOverlay.update(message: message, progress: progress);
+        }
+
+        for (final item in _media) {
+          final path = item.isVideo
+              ? item.sourcePath
+              : (item.croppedPath ?? item.sourcePath);
+          final file = File(path);
+          if (!await file.exists()) continue;
+          final isImage = !item.isVideo;
+          Uint8List toUpload;
+          String ext;
+          if (isImage) {
+            final bytes = await file.readAsBytes();
+            if (item.alreadyProcessed) {
+              toUpload = Uint8List.fromList(bytes);
+              ext = path.split('.').last;
+            } else {
+              final processed =
+                  await _processImageBytes(Uint8List.fromList(bytes), item);
+              var jpg = await FlutterImageCompress.compressWithList(
+                processed,
+                quality: 85,
                 format: CompressFormat.jpeg,
               );
-            }
-            toUpload = Uint8List.fromList(jpg);
-            ext = 'jpg';
-          }
-        } else {
-          final trimmedPath = await _createService.trimVideoForUpload(
-            inputPath: path,
-            trimStart: item.trimStart,
-            trimEnd: item.trimEnd,
-            videoDuration: item.duration,
-          );
-          if (trimmedPath == null) {
-            throw Exception('Failed to trim video before upload');
-          }
-          final uploadPath = trimmedPath;
-          final uploadFile = File(uploadPath);
-          if (!await uploadFile.exists()) {
-            throw Exception('Trimmed video file missing');
-          }
-          final uploadBytes = await uploadFile.readAsBytes();
-          toUpload = Uint8List.fromList(uploadBytes);
-          ext = uploadPath.split('.').last;
-        }
-        final filename =
-            '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode % 100000}.$ext';
-        final uploaded = await UploadApi()
-            .uploadPostBytes(bytes: toUpload, filename: filename);
-        final serverFileName =
-            (uploaded['fileName'] ?? uploaded['filename'] ?? filename)
-                .toString();
-        String? fileUrl = uploaded['fileUrl']?.toString();
-        if (fileUrl != null && fileUrl.isNotEmpty) {
-          fileUrl = fileUrl.replaceAll('\\', '/');
-          final isAbs =
-              fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
-          if (!isAbs) {
-            final base = ApiConfig.baseUrl;
-            final baseUri = Uri.parse(base);
-            final origin =
-                '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
-            if (!fileUrl.startsWith('/')) {
-              if (fileUrl.startsWith('uploads/') || fileUrl.contains('/')) {
-                fileUrl = '/$fileUrl';
-              } else {
-                fileUrl = '/uploads/$fileUrl';
+              if (jpg.length > CreateService.maxImageUploadBytes) {
+                jpg = await FlutterImageCompress.compressWithList(
+                  jpg,
+                  quality: 70,
+                  format: CompressFormat.jpeg,
+                );
               }
+              toUpload = Uint8List.fromList(jpg);
+              ext = 'jpg';
             }
-            fileUrl = '$origin$fileUrl';
-          } else if (fileUrl.startsWith('http://')) {
-            try {
-              final parsed = Uri.parse(fileUrl);
-              fileUrl = Uri(
-                scheme: 'https',
-                host: parsed.host,
-                port: parsed.hasPort ? parsed.port : null,
-                path: parsed.path,
-                query: parsed.query,
-              ).toString();
-            } catch (_) {}
+          } else {
+            final trimmedPath = await _createService.trimVideoForUpload(
+              inputPath: path,
+              trimStart: item.trimStart,
+              trimEnd: item.trimEnd,
+              videoDuration: item.duration,
+            );
+            if (trimmedPath == null) {
+              throw Exception('Failed to trim video before upload');
+            }
+            final uploadPath = trimmedPath;
+            final uploadFile = File(uploadPath);
+            if (!await uploadFile.exists()) {
+              throw Exception('Trimmed video file missing');
+            }
+            final uploadBytes = await uploadFile.readAsBytes();
+            toUpload = Uint8List.fromList(uploadBytes);
+            ext = uploadPath.split('.').last;
           }
-        }
-        final adj = item.adjustments;
-        final css = _cssFrom(item.filter, adj);
-        final aspectLabel = _aspectRatioLabel(item.aspect);
-        String? thumbUrl;
-        String? thumbName;
-        if (item.isVideo && item.thumbnailPath != null) {
-          final thumbFile = File(item.thumbnailPath!);
-          if (await thumbFile.exists()) {
-            final thumbBytes = await thumbFile.readAsBytes();
-            final thumbExt = item.thumbnailPath!.split('.').last;
-            final thumbFilename =
-                '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode % 100000}_thumb.$thumbExt';
-            final thumbUploaded = await UploadApi()
-                .uploadPostBytes(bytes: thumbBytes, filename: thumbFilename);
-            thumbName = (thumbUploaded['fileName'] ??
-                    thumbUploaded['filename'] ??
-                    thumbFilename)
-                .toString();
-            thumbUrl = thumbUploaded['fileUrl']?.toString();
-          }
-        }
-        processedMedia.add({
-          'fileName': serverFileName,
-          'fileUrl': fileUrl,
-          'type': item.isVideo ? 'video' : 'image',
-          if (thumbUrl != null) ...{
-            'thumbnailUrl': thumbUrl,
-            'thumbnail': thumbUrl,
-          },
-          if (thumbName != null) 'thumbnailName': thumbName,
-          'crop': {
-            'mode': 'original',
-            'zoom': 1,
-            'x': 0,
-            'y': 0,
-            'aspect_ratio': aspectLabel,
-          },
-          if (item.trimStart != null || item.trimEnd != null)
-            'trim': {
-              if (item.trimStart != null)
-                'start_ms': item.trimStart!.inMilliseconds,
-              if (item.trimEnd != null) 'end_ms': item.trimEnd!.inMilliseconds,
+          final filename =
+              '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode % 100000}.$ext';
+          final uploaded = await UploadApi().uploadPostBytes(
+            bytes: toUpload,
+            filename: filename,
+            onSendProgress: (sent, total) {
+              updateProgress(
+                item.isVideo ? 'Uploading video...' : 'Uploading photo...',
+                total <= 0 ? 0.0 : sent / total,
+              );
             },
-          'aspect_ratio': aspectLabel,
-          'filter': {
-            'name': item.filter,
-            'css': css,
-          },
-          'adjustments': {
-            'brightness': adj['brightness'],
-            'contrast': adj['contrast'],
-            'saturation': adj['saturate'],
-            'temperature': adj['sepia'],
-            'fade': adj['opacity'],
-            'vignette': adj['vignette'],
-          },
-        });
-      }
-      if (processedMedia.isEmpty) throw Exception('No media to upload');
-
-      final peopleTags = _tagsByIndex.values
-          .expand((list) => list)
-          .map((t) => {
-                'user_id': t.user['id'] ?? t.user['_id'],
-                'username': t.user['username'],
-                'x': t.x,
-                'y': t.y,
-              })
-          .toList();
-
-      final hashtagMatches = RegExp(r'#[a-zA-Z0-9_]+')
-          .allMatches(_captionCtl.text.trim())
-          .map((m) => m.group(0)!)
-          .toList();
-
-      final created = await PostsApi().createPost(
-        media: processedMedia.cast<Map<String, dynamic>>(),
-        caption: _captionCtl.text.trim(),
-        location: _location.isEmpty ? null : _location,
-        tags: hashtagMatches,
-        hideLikesCount: _hideLikes,
-        turnOffCommenting: _turnOffCommenting,
-        hideShareCount: _hideShares,
-        peopleTags: peopleTags.cast<Map<String, dynamic>>(),
-        type: 'post',
-      );
-      if (created.isNotEmpty) {
-        String? pickId(dynamic v) {
-          if (v == null) return null;
-          if (v is Map) return pickId(v['id'] ?? v['_id'] ?? v['post_id']);
-          final s = v.toString().trim();
-          return s.isEmpty ? null : s;
+          );
+          final serverFileName =
+              (uploaded['fileName'] ?? uploaded['filename'] ?? filename)
+                  .toString();
+          String? fileUrl = uploaded['fileUrl']?.toString();
+          if (fileUrl != null && fileUrl.isNotEmpty) {
+            fileUrl = fileUrl.replaceAll('\\', '/');
+            final isAbs =
+                fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
+            if (!isAbs) {
+              final base = ApiConfig.baseUrl;
+              final baseUri = Uri.parse(base);
+              final origin =
+                  '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
+              if (!fileUrl.startsWith('/')) {
+                if (fileUrl.startsWith('uploads/') || fileUrl.contains('/')) {
+                  fileUrl = '/$fileUrl';
+                } else {
+                  fileUrl = '/uploads/$fileUrl';
+                }
+              }
+              fileUrl = '$origin$fileUrl';
+            } else if (fileUrl.startsWith('http://')) {
+              try {
+                final parsed = Uri.parse(fileUrl);
+                fileUrl = Uri(
+                  scheme: 'https',
+                  host: parsed.host,
+                  port: parsed.hasPort ? parsed.port : null,
+                  path: parsed.path,
+                  query: parsed.query,
+                ).toString();
+              } catch (_) {}
+            }
+          }
+          final adj = item.adjustments;
+          final css = _cssFrom(item.filter, adj);
+          final aspectLabel = _aspectRatioLabel(item.aspect);
+          String? thumbUrl;
+          String? thumbName;
+          completedSteps++;
+          updateProgress(
+            item.isVideo ? 'Uploading thumbnail...' : 'Finalizing photo...',
+          );
+          if (item.isVideo && item.thumbnailPath != null) {
+            final thumbFile = File(item.thumbnailPath!);
+            if (await thumbFile.exists()) {
+              final thumbBytes = await thumbFile.readAsBytes();
+              final thumbExt = item.thumbnailPath!.split('.').last;
+              final thumbFilename =
+                  '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode % 100000}_thumb.$thumbExt';
+              final thumbUploaded = await UploadApi().uploadPostBytes(
+                bytes: thumbBytes,
+                filename: thumbFilename,
+                onSendProgress: (sent, total) {
+                  updateProgress(
+                    'Uploading thumbnail...',
+                    total <= 0 ? 0.0 : sent / total,
+                  );
+                },
+              );
+              thumbName = (thumbUploaded['fileName'] ??
+                      thumbUploaded['filename'] ??
+                      thumbFilename)
+                  .toString();
+              thumbUrl = thumbUploaded['fileUrl']?.toString();
+            }
+          }
+          if (item.isVideo && item.thumbnailPath != null) {
+            completedSteps++;
+            updateProgress('Finalizing video...');
+          }
+          processedMedia.add({
+            'fileName': serverFileName,
+            'fileUrl': fileUrl,
+            'type': item.isVideo ? 'video' : 'image',
+            if (thumbUrl != null) ...{
+              'thumbnailUrl': thumbUrl,
+              'thumbnail': thumbUrl,
+            },
+            if (thumbName != null) 'thumbnailName': thumbName,
+            'crop': {
+              'mode': 'original',
+              'zoom': 1,
+              'x': 0,
+              'y': 0,
+              'aspect_ratio': aspectLabel,
+            },
+            if (item.trimStart != null || item.trimEnd != null)
+              'trim': {
+                if (item.trimStart != null)
+                  'start_ms': item.trimStart!.inMilliseconds,
+                if (item.trimEnd != null)
+                  'end_ms': item.trimEnd!.inMilliseconds,
+              },
+            'aspect_ratio': aspectLabel,
+            'filter': {
+              'name': item.filter,
+              'css': css,
+            },
+            'adjustments': {
+              'brightness': adj['brightness'],
+              'contrast': adj['contrast'],
+              'saturation': adj['saturate'],
+              'temperature': adj['sepia'],
+              'fade': adj['opacity'],
+              'vignette': adj['vignette'],
+            },
+          });
         }
+        if (processedMedia.isEmpty) throw Exception('No media to upload');
 
-        final createdId = pickId(created['id'] ??
-            created['_id'] ??
-            created['post'] ??
-            created['data']);
-        // Server is responsible for creating notifications.
+        final peopleTags = _tagsByIndex.values
+            .expand((list) => list)
+            .map((t) => {
+                  'user_id': t.user['id'] ?? t.user['_id'],
+                  'username': t.user['username'],
+                  'x': t.x,
+                  'y': t.y,
+                })
+            .toList();
+
+        final hashtagMatches = RegExp(r'#[a-zA-Z0-9_]+')
+            .allMatches(_captionCtl.text.trim())
+            .map((m) => m.group(0)!)
+            .toList();
+
+        final created = await PostsApi().createPost(
+          media: processedMedia.cast<Map<String, dynamic>>(),
+          caption: _captionCtl.text.trim(),
+          location: _location.isEmpty ? null : _location,
+          tags: hashtagMatches,
+          hideLikesCount: _hideLikes,
+          turnOffCommenting: _turnOffCommenting,
+          hideShareCount: _hideShares,
+          peopleTags: peopleTags.cast<Map<String, dynamic>>(),
+          type: 'post',
+        );
+        updateProgress('Publishing post...');
+        if (created.isNotEmpty) {
+          String? pickId(dynamic v) {
+            if (v == null) return null;
+            if (v is Map) return pickId(v['id'] ?? v['_id'] ?? v['post_id']);
+            final s = v.toString().trim();
+            return s.isEmpty ? null : s;
+          }
+
+          final createdId = pickId(created['id'] ??
+              created['_id'] ??
+              created['post'] ??
+              created['data']);
+          // Server is responsible for creating notifications.
+        }
+        if (created.isNotEmpty) {
+          UploadProgressOverlay.update(
+            message: 'Post shared successfully!',
+            progress: 1.0,
+          );
+          await Future.delayed(const Duration(milliseconds: 900));
+          await UploadProgressOverlay.hide();
+        } else {
+          UploadProgressOverlay.update(
+            message: 'Failed to create post.',
+            progress: 1.0,
+          );
+          await Future.delayed(const Duration(seconds: 2));
+          await UploadProgressOverlay.hide();
+        }
+      } catch (e) {
+        UploadProgressOverlay.update(
+          message: 'Upload failed: $e',
+          progress: null,
+        );
+        await Future.delayed(const Duration(seconds: 2));
+        await UploadProgressOverlay.hide();
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
       }
-      if (created.isNotEmpty && mounted) {
-        Navigator.of(context).pop(true);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Post shared successfully!')));
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to create post.')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+    }());
+    _goHomeAfterStartingUpload();
+  }
+
+  void _goHomeAfterStartingUpload() {
+    final navigator = AppNavigator.state;
+    navigator?.pushNamedAndRemoveUntil('/home', (route) => false);
+    if (navigator == null && mounted) {
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
     }
   }
 

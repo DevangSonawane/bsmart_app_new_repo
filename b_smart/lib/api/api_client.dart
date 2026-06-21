@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -6,6 +7,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/api_config.dart';
 import 'api_exceptions.dart';
+
+typedef UploadProgressCallback = void Function(int sentBytes, int totalBytes);
 
 class MultipartBytesFile {
   final List<int> bytes;
@@ -217,6 +220,7 @@ class ApiClient {
     String fileField = 'file',
     Map<String, String>? fields,
     Duration? timeout,
+    UploadProgressCallback? onSendProgress,
   }) async {
     try {
       final request = http.MultipartRequest('POST', _uri(path));
@@ -230,7 +234,11 @@ class ApiClient {
         filePath,
         contentType: ct,
       ));
-      final streamed = await request.send().timeout(timeout ?? ApiConfig.timeout);
+      final streamed = await _sendMultipartRequest(
+        request,
+        timeout: timeout ?? ApiConfig.timeout,
+        onSendProgress: onSendProgress,
+      );
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
     } on SocketException {
@@ -247,6 +255,7 @@ class ApiClient {
     Map<String, String>? fields,
     Map<String, String>? extraFields,
     Duration? timeout,
+    UploadProgressCallback? onSendProgress,
   }) async {
     try {
       final request = http.MultipartRequest('POST', _uri(path));
@@ -261,7 +270,11 @@ class ApiClient {
         filename: filename,
         contentType: ct,
       ));
-      final streamed = await request.send().timeout(timeout ?? ApiConfig.timeout);
+      final streamed = await _sendMultipartRequest(
+        request,
+        timeout: timeout ?? ApiConfig.timeout,
+        onSendProgress: onSendProgress,
+      );
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
     } on SocketException {
@@ -279,6 +292,7 @@ class ApiClient {
     Map<String, String>? fields,
     Map<String, String>? extraFields,
     Duration? timeout,
+    UploadProgressCallback? onSendProgress,
   }) async {
     if (files.isEmpty) return <String, dynamic>{};
     try {
@@ -299,12 +313,48 @@ class ApiClient {
         ));
       }
 
-      final streamed = await request.send().timeout(timeout ?? ApiConfig.timeout);
+      final streamed = await _sendMultipartRequest(
+        request,
+        timeout: timeout ?? ApiConfig.timeout,
+        onSendProgress: onSendProgress,
+      );
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
     } on SocketException {
       throw NetworkException();
     }
+  }
+
+  Future<http.StreamedResponse> _sendMultipartRequest(
+    http.MultipartRequest request, {
+    required Duration timeout,
+    UploadProgressCallback? onSendProgress,
+  }) async {
+    final totalBytes = request.contentLength;
+    final body = request.finalize();
+    final streamedRequest = http.StreamedRequest(request.method, request.url);
+    streamedRequest.followRedirects = request.followRedirects;
+    streamedRequest.maxRedirects = request.maxRedirects;
+    streamedRequest.persistentConnection = request.persistentConnection;
+    streamedRequest.headers.addAll(request.headers);
+    streamedRequest.contentLength = totalBytes;
+
+    int sentBytes = 0;
+    final progressStream = body.transform(
+      StreamTransformer<List<int>, List<int>>.fromHandlers(
+        handleData: (chunk, sink) {
+          sentBytes += chunk.length;
+          onSendProgress?.call(sentBytes, totalBytes);
+          sink.add(chunk);
+        },
+      ),
+    );
+
+    unawaited(streamedRequest.sink.addStream(progressStream).then((_) {
+      return streamedRequest.sink.close();
+    }));
+
+    return _http.send(streamedRequest).timeout(timeout);
   }
 
   // ── Response handling ──────────────────────────────────────────────────────
@@ -398,7 +448,9 @@ class ApiClient {
     if (n.endsWith('.m4a')) return MediaType('audio', 'mp4');
     if (n.endsWith('.mp3')) return MediaType('audio', 'mpeg');
     if (n.endsWith('.wav')) return MediaType('audio', 'wav');
-    if (n.endsWith('.ogg') || n.endsWith('.oga')) return MediaType('audio', 'ogg');
+    if (n.endsWith('.ogg') || n.endsWith('.oga')) {
+      return MediaType('audio', 'ogg');
+    }
     return null;
   }
 }

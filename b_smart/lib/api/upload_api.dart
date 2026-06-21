@@ -53,6 +53,7 @@ class UploadApi {
     required String filename,
     String fileField = 'file',
     Duration? timeout,
+    UploadProgressCallback? onSendProgress,
   }) async {
     final res = await _client.multipartPostBytes(
       path,
@@ -60,6 +61,7 @@ class UploadApi {
       filename: filename,
       fileField: fileField,
       timeout: timeout,
+      onSendProgress: onSendProgress,
     );
     return (res as Map).cast<String, dynamic>();
   }
@@ -69,12 +71,14 @@ class UploadApi {
     required String filePath,
     String fileField = 'file',
     Duration? timeout,
+    UploadProgressCallback? onSendProgress,
   }) async {
     final res = await _client.multipartPost(
       path,
       filePath: filePath,
       fileField: fileField,
       timeout: timeout,
+      onSendProgress: onSendProgress,
     );
     return (res as Map).cast<String, dynamic>();
   }
@@ -83,12 +87,14 @@ class UploadApi {
   Future<Map<String, dynamic>> uploadStoryBytes({
     required List<int> bytes,
     required String filename,
+    UploadProgressCallback? onSendProgress,
   }) async {
     return _uploadBytes(
       _pathFor('story'),
       bytes: bytes,
       filename: filename,
       timeout: _timeoutForFilename(filename),
+      onSendProgress: onSendProgress,
     );
   }
 
@@ -104,12 +110,14 @@ class UploadApi {
   Future<Map<String, dynamic>> uploadPostBytes({
     required List<int> bytes,
     required String filename,
+    UploadProgressCallback? onSendProgress,
   }) async {
     return _uploadBytes(
       _pathFor('post'),
       bytes: bytes,
       filename: filename,
       timeout: _timeoutForFilename(filename),
+      onSendProgress: onSendProgress,
     );
   }
 
@@ -125,12 +133,14 @@ class UploadApi {
   Future<Map<String, dynamic>> uploadReelBytes({
     required List<int> bytes,
     required String filename,
+    UploadProgressCallback? onSendProgress,
   }) async {
     return _uploadBytes(
       _pathFor('reel'),
       bytes: bytes,
       filename: filename,
       timeout: _timeoutForFilename(filename),
+      onSendProgress: onSendProgress,
     );
   }
 
@@ -146,12 +156,14 @@ class UploadApi {
   Future<Map<String, dynamic>> uploadPromoteBytes({
     required List<int> bytes,
     required String filename,
+    UploadProgressCallback? onSendProgress,
   }) async {
     return _uploadBytes(
       _pathFor('promote'),
       bytes: bytes,
       filename: filename,
       timeout: _timeoutForFilename(filename),
+      onSendProgress: onSendProgress,
     );
   }
 
@@ -167,12 +179,14 @@ class UploadApi {
   Future<Map<String, dynamic>> uploadTweetBytes({
     required List<int> bytes,
     required String filename,
+    UploadProgressCallback? onSendProgress,
   }) async {
     return _uploadBytes(
       _pathFor('tweet'),
       bytes: bytes,
       filename: filename,
       timeout: _timeoutForFilename(filename),
+      onSendProgress: onSendProgress,
     );
   }
 
@@ -200,12 +214,14 @@ class UploadApi {
   Future<Map<String, dynamic>> uploadFileBytes({
     required List<int> bytes,
     required String filename,
+    UploadProgressCallback? onSendProgress,
   }) async {
     return _uploadBytes(
       _genericPath,
       bytes: bytes,
       filename: filename,
       timeout: _timeoutForFilename(filename),
+      onSendProgress: onSendProgress,
     );
   }
 
@@ -216,12 +232,14 @@ class UploadApi {
   Future<Map<String, dynamic>> uploadThumbnailBytes({
     required List<int> bytes,
     required String filename,
+    UploadProgressCallback? onSendProgress,
   }) async {
     return _uploadBytes(
       _pathFor('thumbnail'),
       bytes: bytes,
       filename: filename,
       timeout: _timeoutForFilename(filename),
+      onSendProgress: onSendProgress,
     );
   }
 
@@ -232,12 +250,14 @@ class UploadApi {
   Future<Map<String, dynamic>> uploadAvatarBytes({
     required List<int> bytes,
     required String filename,
+    UploadProgressCallback? onSendProgress,
   }) async {
     return _uploadBytes(
       _pathFor('avatar'),
       bytes: bytes,
       filename: filename,
       timeout: _timeoutForFilename(filename),
+      onSendProgress: onSendProgress,
     );
   }
 }

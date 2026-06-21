@@ -16,6 +16,8 @@ import '../api/users_api.dart';
 import '../config/api_config.dart';
 import '../utils/current_user.dart';
 import '../services/create_service.dart';
+import '../utils/app_navigator.dart';
+import '../services/upload_progress_overlay.dart';
 
 class CreateReelDetailsScreen extends StatefulWidget {
   final MediaItem media;
@@ -232,9 +234,22 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
 
       if (bytes == null || bytes.isEmpty) return null;
 
+      UploadProgressOverlay.update(
+        message: 'Uploading thumbnail...',
+        progress: 0.78,
+      );
       final filename = 'thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final res = await UploadApi()
-          .uploadThumbnailBytes(bytes: bytes, filename: filename);
+      final res = await UploadApi().uploadThumbnailBytes(
+        bytes: bytes,
+        filename: filename,
+        onSendProgress: (sent, total) {
+          final progress = total <= 0 ? 0.78 : 0.78 + ((sent / total) * 0.12);
+          UploadProgressOverlay.update(
+            message: 'Uploading thumbnail...',
+            progress: progress.clamp(0.0, 0.9),
+          );
+        },
+      );
       final rawThumbs = res['thumbnails'];
       if (rawThumbs == null) return null;
       List<Map<String, dynamic>>? thumbs;
@@ -295,170 +310,212 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
     }
 
     setState(() => _isSubmitting = true);
+    UploadProgressOverlay.show(message: 'Preparing upload...', progress: 0.0);
 
-    try {
-      final videoPath = await CreateService().trimVideoForUpload(
-        inputPath: filePath,
-        trimStart: widget.trimStart,
-        trimEnd: widget.trimEnd,
-        videoDuration: widget.media.duration,
-      );
-      if (videoPath == null) {
-        throw Exception('Failed to trim video before upload');
-      }
+    unawaited(() async {
+      try {
+        final videoPath = await CreateService().trimVideoForUpload(
+          inputPath: filePath,
+          trimStart: widget.trimStart,
+          trimEnd: widget.trimEnd,
+          videoDuration: widget.media.duration,
+        );
+        if (videoPath == null) {
+          throw Exception('Failed to trim video before upload');
+        }
 
-      final file = File(videoPath);
-      if (!await file.exists()) {
-        throw Exception('File not found');
-      }
-      final bytes = await file.readAsBytes();
-      final ext = videoPath.split('.').last;
-      final filename =
-          '$userId/${DateTime.now().millisecondsSinceEpoch}_reel.$ext';
-      final uploaded =
-          await UploadApi().uploadReelBytes(bytes: bytes, filename: filename);
-      final serverFileName =
-          (uploaded['fileName'] ?? uploaded['filename'] ?? filename).toString();
-      String? fileUrl = (uploaded['url'] ?? uploaded['fileUrl'])?.toString();
+        final file = File(videoPath);
+        if (!await file.exists()) {
+          throw Exception('File not found');
+        }
+        final bytes = await file.readAsBytes();
+        final ext = videoPath.split('.').last;
+        final filename =
+            '$userId/${DateTime.now().millisecondsSinceEpoch}_reel.$ext';
+        final uploaded = await UploadApi().uploadReelBytes(
+          bytes: bytes,
+          filename: filename,
+          onSendProgress: (sent, total) {
+            final progress = total <= 0 ? 0.0 : (sent / total) * 0.75;
+            UploadProgressOverlay.update(
+              message: 'Uploading reel...',
+              progress: progress,
+            );
+          },
+        );
+        final serverFileName =
+            (uploaded['fileName'] ?? uploaded['filename'] ?? filename)
+                .toString();
+        String? fileUrl = (uploaded['url'] ?? uploaded['fileUrl'])?.toString();
 
-      if (fileUrl != null && fileUrl.isNotEmpty) {
-        fileUrl = fileUrl.replaceAll('\\', '/');
-        final isAbs =
-            fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
-        if (!isAbs) {
-          final base = ApiConfig.baseUrl;
-          final baseUri = Uri.parse(base);
-          final origin =
-              '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
-          if (!fileUrl.startsWith('/')) {
-            if (fileUrl.startsWith('uploads/') || fileUrl.contains('/')) {
-              fileUrl = '/$fileUrl';
-            } else {
-              fileUrl = '/uploads/$fileUrl';
+        if (fileUrl != null && fileUrl.isNotEmpty) {
+          fileUrl = fileUrl.replaceAll('\\', '/');
+          final isAbs =
+              fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
+          if (!isAbs) {
+            final base = ApiConfig.baseUrl;
+            final baseUri = Uri.parse(base);
+            final origin =
+                '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
+            if (!fileUrl.startsWith('/')) {
+              if (fileUrl.startsWith('uploads/') || fileUrl.contains('/')) {
+                fileUrl = '/$fileUrl';
+              } else {
+                fileUrl = '/uploads/$fileUrl';
+              }
             }
+            fileUrl = '$origin$fileUrl';
+          } else if (fileUrl.startsWith('http://')) {
+            try {
+              final parsed = Uri.parse(fileUrl);
+              fileUrl = Uri(
+                scheme: 'https',
+                host: parsed.host,
+                port: parsed.hasPort ? parsed.port : null,
+                path: parsed.path,
+                query: parsed.query,
+              ).toString();
+            } catch (_) {}
           }
-          fileUrl = '$origin$fileUrl';
-        } else if (fileUrl.startsWith('http://')) {
-          try {
-            final parsed = Uri.parse(fileUrl);
-            fileUrl = Uri(
-              scheme: 'https',
-              host: parsed.host,
-              port: parsed.hasPort ? parsed.port : null,
-              path: parsed.path,
-              query: parsed.query,
-            ).toString();
-          } catch (_) {}
+        }
+
+        // React web creates reels via `POST /api/posts/reels` and uses a specific media schema.
+        final Duration videoDuration =
+            widget.media.duration ?? widget.trimEnd ?? Duration.zero;
+        final Duration start = widget.trimStart ?? Duration.zero;
+        final Duration end = widget.trimEnd != null && widget.trimEnd! > start
+            ? widget.trimEnd!
+            : videoDuration;
+
+        final int startMs = start.inMilliseconds;
+        final int endMs = end.inMilliseconds;
+        final double durationSec = videoDuration.inMilliseconds / 1000.0;
+        final double startSec = startMs / 1000.0;
+        final double endSec = endMs / 1000.0;
+        final double finalDurationSec =
+            (endMs > startMs) ? ((endMs - startMs) / 1000.0) : durationSec;
+
+        final thumbMeta = await _uploadThumbnailForVideo(
+          videoPath: videoPath,
+          startMs: startMs,
+          endMs: endMs,
+        );
+        UploadProgressOverlay.update(
+          message: 'Publishing reel...',
+          progress: 0.95,
+        );
+
+        final uploadedThumbs = thumbMeta?['thumbnails'];
+        final double thumbnailTimeSec = (thumbMeta?['thumbnailTimeSec'] is num)
+            ? (thumbMeta?['thumbnailTimeSec'] as num).toDouble()
+            : 0.0;
+
+        final mediaItem = <String, dynamic>{
+          'fileName': serverFileName,
+          if (fileUrl != null && fileUrl.isNotEmpty) 'fileUrl': fileUrl,
+          if (fileUrl != null && fileUrl.isNotEmpty) 'url': fileUrl,
+          'media_type': 'video',
+          'video_meta': <String, dynamic>{
+            'original_length_seconds': durationSec,
+            'selected_start': startSec,
+            'selected_end': endSec,
+            'final_duration': finalDurationSec,
+            'thumbnail_time': thumbnailTimeSec,
+          },
+          'timing_window': <String, dynamic>{
+            'start': startSec,
+            'end': endSec,
+          },
+          if (uploadedThumbs != null) 'thumbnails': uploadedThumbs,
+          'crop_settings': <String, dynamic>{
+            'mode': 'original',
+            'aspect_ratio': 'original',
+            'zoom': 1,
+            'x': 0,
+            'y': 0,
+          },
+        };
+
+        // Extract hashtags
+        final captionText = _captionCtl.text.trim();
+        final tags = RegExp(r'#(\w+)')
+            .allMatches(captionText)
+            .map((m) => m.group(0)!)
+            .toList();
+
+        final peopleTags = _peopleTags
+            .map((t) => <String, dynamic>{
+                  'user_id': t['user_id'],
+                  'username': t['username'],
+                  'x': t['x'],
+                  'y': t['y'],
+                })
+            .toList();
+
+        final created = await ReelsApi().createReel(
+          media: [mediaItem],
+          caption: captionText.isEmpty ? null : captionText,
+          location: _location.isEmpty ? null : _location,
+          tags: tags,
+          peopleTags: peopleTags,
+          hideLikesCount: _hideLikes,
+          turnOffCommenting: _turnOffCommenting,
+        );
+        if (created.isNotEmpty) {
+          UploadProgressOverlay.update(
+            message: 'Publishing reel...',
+            progress: 1.0,
+          );
+        }
+
+        String? pickId(dynamic v) {
+          if (v == null) return null;
+          if (v is Map) return pickId(v['id'] ?? v['_id'] ?? v['reel_id']);
+          final s = v.toString().trim();
+          return s.isEmpty ? null : s;
+        }
+
+        final createdId = pickId(created['id'] ??
+            created['_id'] ??
+            created['reel'] ??
+            created['data']);
+
+        if (created.isNotEmpty) {
+          UploadProgressOverlay.update(
+            message: 'Reel shared successfully!',
+            progress: 1.0,
+          );
+          await Future.delayed(const Duration(milliseconds: 900));
+          await UploadProgressOverlay.hide();
+        } else {
+          UploadProgressOverlay.update(
+            message: 'Failed to create reel.',
+            progress: 1.0,
+          );
+          await Future.delayed(const Duration(seconds: 2));
+          await UploadProgressOverlay.hide();
+        }
+      } catch (e) {
+        UploadProgressOverlay.update(
+          message: 'Upload failed: $e',
+          progress: null,
+        );
+        await Future.delayed(const Duration(seconds: 2));
+        await UploadProgressOverlay.hide();
+      } finally {
+        if (mounted) {
+          setState(() => _isSubmitting = false);
         }
       }
+    }());
+    _goHomeAfterStartingUpload();
+  }
 
-      // React web creates reels via `POST /api/posts/reels` and uses a specific media schema.
-      final Duration videoDuration =
-          widget.media.duration ?? widget.trimEnd ?? Duration.zero;
-      final Duration start = widget.trimStart ?? Duration.zero;
-      final Duration end = widget.trimEnd != null && widget.trimEnd! > start
-          ? widget.trimEnd!
-          : videoDuration;
-
-      final int startMs = start.inMilliseconds;
-      final int endMs = end.inMilliseconds;
-      final double durationSec = videoDuration.inMilliseconds / 1000.0;
-      final double startSec = startMs / 1000.0;
-      final double endSec = endMs / 1000.0;
-      final double finalDurationSec =
-          (endMs > startMs) ? ((endMs - startMs) / 1000.0) : durationSec;
-
-      final thumbMeta = await _uploadThumbnailForVideo(
-        videoPath: videoPath,
-        startMs: startMs,
-        endMs: endMs,
-      );
-
-      final uploadedThumbs = thumbMeta?['thumbnails'];
-      final double thumbnailTimeSec = (thumbMeta?['thumbnailTimeSec'] is num)
-          ? (thumbMeta?['thumbnailTimeSec'] as num).toDouble()
-          : 0.0;
-
-      final mediaItem = <String, dynamic>{
-        'fileName': serverFileName,
-        if (fileUrl != null && fileUrl.isNotEmpty) 'fileUrl': fileUrl,
-        if (fileUrl != null && fileUrl.isNotEmpty) 'url': fileUrl,
-        'media_type': 'video',
-        'video_meta': <String, dynamic>{
-          'original_length_seconds': durationSec,
-          'selected_start': startSec,
-          'selected_end': endSec,
-          'final_duration': finalDurationSec,
-          'thumbnail_time': thumbnailTimeSec,
-        },
-        'timing_window': <String, dynamic>{
-          'start': startSec,
-          'end': endSec,
-        },
-        if (uploadedThumbs != null) 'thumbnails': uploadedThumbs,
-        'crop_settings': <String, dynamic>{
-          'mode': 'original',
-          'aspect_ratio': 'original',
-          'zoom': 1,
-          'x': 0,
-          'y': 0,
-        },
-      };
-
-      // Extract hashtags
-      final captionText = _captionCtl.text.trim();
-      final tags = RegExp(r'#(\w+)')
-          .allMatches(captionText)
-          .map((m) => m.group(0)!)
-          .toList();
-
-      final peopleTags = _peopleTags
-          .map((t) => <String, dynamic>{
-                'user_id': t['user_id'],
-                'username': t['username'],
-                'x': t['x'],
-                'y': t['y'],
-              })
-          .toList();
-
-      final created = await ReelsApi().createReel(
-        media: [mediaItem],
-        caption: captionText.isEmpty ? null : captionText,
-        location: _location.isEmpty ? null : _location,
-        tags: tags,
-        peopleTags: peopleTags,
-        hideLikesCount: _hideLikes,
-        turnOffCommenting: _turnOffCommenting,
-      );
-
-      String? pickId(dynamic v) {
-        if (v == null) return null;
-        if (v is Map) return pickId(v['id'] ?? v['_id'] ?? v['reel_id']);
-        final s = v.toString().trim();
-        return s.isEmpty ? null : s;
-      }
-
-      final createdId = pickId(created['id'] ??
-          created['_id'] ??
-          created['reel'] ??
-          created['data']);
-
-      if (mounted) {
-        Navigator.of(context).pop(true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reel shared successfully!')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
+  void _goHomeAfterStartingUpload() {
+    final navigator = AppNavigator.state;
+    navigator?.pushNamedAndRemoveUntil('/home', (route) => false);
+    if (navigator == null && mounted) {
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
     }
   }
 
