@@ -11,6 +11,7 @@ import '../api/upload_api.dart';
 import '../api/users_api.dart';
 import '../theme/design_tokens.dart';
 import '../utils/url_helper.dart';
+import '../utils/validators.dart';
 import '../widgets/ad_interests_sheet.dart';
 import '../widgets/safe_network_image.dart';
 
@@ -52,6 +53,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   bool _phoneVerified = false;
   int? _ageOnRecord;
   List<String> _interests = const <String>[];
+  String? _emailError;
+  String? _phoneError;
+  String? _websiteError;
 
   @override
   void initState() {
@@ -447,8 +451,31 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   Future<void> _saveAccount() async {
     if (_userId == null || _userId!.isEmpty || _saving) return;
 
+    final emailError = _validateEmail(_emailController.text);
+    final phoneError = _validatePhone(_phoneController.text);
+    final websiteError = _validateWebsite(_websiteController.text);
+    if (emailError != null || phoneError != null || websiteError != null) {
+      setState(() {
+        _emailError = emailError;
+        _phoneError = phoneError;
+        _websiteError = websiteError;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fix the highlighted fields.'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
     try {
+      setState(() {
+        _emailError = null;
+        _phoneError = null;
+        _websiteError = null;
+      });
+
       final updates = <String, dynamic>{
         'full_name': _fullNameController.text.trim(),
         'username': _usernameController.text.trim(),
@@ -550,6 +577,46 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     }
   }
 
+  String? _validateEmail(String value) {
+    final text = value.trim();
+    if (text.isEmpty) return null;
+    final error = Validators.validateEmail(text);
+    if (error != null) {
+      return 'Please enter a valid email address.';
+    }
+    return null;
+  }
+
+  String? _validatePhone(String value) {
+    final text = value.trim();
+    if (text.isEmpty) return null;
+    final digits = text.replaceAll(RegExp(r'[^0-9+]'), '');
+    final digitsOnly = digits.replaceAll(RegExp(r'\D'), '');
+    if (digitsOnly.length < 7 || digitsOnly.length > 15) {
+      return 'Please enter a valid phone number.';
+    }
+    if (digits.startsWith('+') && !RegExp(r'^\+[1-9]\d{1,14}$').hasMatch(digits)) {
+      return 'Please enter a valid phone number.';
+    }
+    return null;
+  }
+
+  String? _validateWebsite(String value) {
+    final text = value.trim();
+    if (text.isEmpty) return null;
+    final uri = Uri.tryParse(text);
+    final hasScheme = uri != null && uri.hasScheme;
+    final hasHost = uri != null && uri.host.isNotEmpty;
+    if (!hasScheme || !hasHost) {
+      return 'Please enter a valid website URL.';
+    }
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') {
+      return 'Please enter a valid website URL.';
+    }
+    return null;
+  }
+
   String _formattedDob() {
     final dob = _dateOfBirth;
     if (dob == null) return 'Select your date of birth';
@@ -625,6 +692,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                     controller: _websiteController,
                     hintText: 'https://www.example.com',
                     keyboardType: TextInputType.url,
+                    errorText: _websiteError,
                   ),
                   _inlineFieldCard(
                     icon: LucideIcons.cake,
@@ -1195,6 +1263,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
           controller: _emailController,
           hintText: 'Enter your email address',
           keyboardType: TextInputType.emailAddress,
+          errorText: _emailError,
           verified: _emailVerified,
           trailing: _emailVerified
               ? const Icon(
@@ -1231,6 +1300,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
           controller: _phoneController,
           hintText: 'Enter your mobile number',
           keyboardType: TextInputType.phone,
+          errorText: _phoneError,
           verified: _phoneVerified,
           trailing: _phoneVerified
               ? const Icon(
@@ -1275,6 +1345,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     bool verified = false,
     ValueChanged<String>? onChanged,
     Widget? trailing,
+    String? errorText,
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -1325,11 +1396,21 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   keyboardType: keyboardType,
                   maxLines: maxLines,
                   minLines: maxLines,
-                  onChanged: onChanged,
+                  onChanged: (value) {
+                    if (onChanged != null) onChanged(value);
+                    if (label == 'Email Address' && _emailError != null) {
+                      setState(() => _emailError = null);
+                    } else if (label == 'Mobile Number' && _phoneError != null) {
+                      setState(() => _phoneError = null);
+                    } else if (label == 'Website' && _websiteError != null) {
+                      setState(() => _websiteError = null);
+                    }
+                  },
                   decoration: InputDecoration(
                     isDense: true,
                     border: InputBorder.none,
                     hintText: hintText,
+                    errorText: errorText,
                     hintStyle: TextStyle(
                       color: hintColor,
                       fontSize: 13,
