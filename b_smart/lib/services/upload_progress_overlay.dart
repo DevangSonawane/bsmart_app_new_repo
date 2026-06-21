@@ -34,80 +34,88 @@ class UploadProgressOverlay {
               builder: (context, progressValue, __) {
                 final isIndeterminate = progressValue == null;
                 final value = progressValue?.clamp(0.0, 1.0);
-                return Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 24,
-                  child: IgnorePointer(
-                    child: Material(
-                      color: Colors.transparent,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 160),
-                        opacity: 1,
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.88),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: Colors.white12),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Colors.black45,
-                                blurRadius: 24,
-                                offset: Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.2,
-                                      color: Color(0xFF0095F6),
+                return Positioned.fill(
+                  child: SafeArea(
+                    top: false,
+                    left: false,
+                    right: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: IgnorePointer(
+                          child: Material(
+                            color: Colors.transparent,
+                            child: AnimatedOpacity(
+                              duration: const Duration(milliseconds: 160),
+                              opacity: 1,
+                              child: Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.88),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: Colors.white12),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Colors.black45,
+                                      blurRadius: 24,
+                                      offset: Offset(0, 10),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      messageValue,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
+                                  ],
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.2,
+                                            color: Color(0xFF0095F6),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            messageValue,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        if (!isIndeterminate && value != null)
+                                          Text(
+                                            '${(value * 100).round()}%',
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(999),
+                                      child: LinearProgressIndicator(
+                                        minHeight: 6,
+                                        value: isIndeterminate ? null : value,
+                                        backgroundColor: Colors.white12,
+                                        valueColor:
+                                            const AlwaysStoppedAnimation<Color>(
+                                          Color(0xFF0095F6),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  if (!isIndeterminate && value != null)
-                                    Text(
-                                      '${(value * 100).round()}%',
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(999),
-                                child: LinearProgressIndicator(
-                                  minHeight: 6,
-                                  value: isIndeterminate ? null : value,
-                                  backgroundColor: Colors.white12,
-                                  valueColor:
-                                      const AlwaysStoppedAnimation<Color>(
-                                    Color(0xFF0095F6),
-                                  ),
+                                  ],
                                 ),
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       ),
