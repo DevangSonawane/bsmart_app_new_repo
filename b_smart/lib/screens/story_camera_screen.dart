@@ -4601,7 +4601,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
 
         var jpg = await FlutterImageCompress.compressWithList(
           bytes,
-          quality: 85,
+          quality: 95,
           format: CompressFormat.jpeg,
         );
         debugPrint(
@@ -4611,7 +4611,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
           debugPrint('⚠️ File too large, re-compressing...');
           jpg = await FlutterImageCompress.compressWithList(
             jpg,
-            quality: 70,
+            quality: 90,
             format: CompressFormat.jpeg,
           );
           debugPrint(
@@ -4895,7 +4895,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
 
         var jpg = await FlutterImageCompress.compressWithList(
           byteData.buffer.asUint8List(),
-          quality: 92,
+          quality: 95,
           format: CompressFormat.jpeg,
         );
 

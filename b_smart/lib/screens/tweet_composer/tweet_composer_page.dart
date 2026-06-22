@@ -93,7 +93,7 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
 
   Future<void> _pickImages() async {
     try {
-      final picked = await _picker.pickMultiImage(imageQuality: 90);
+      final picked = await _picker.pickMultiImage(imageQuality: 100);
       if (picked.isEmpty) return;
       final remaining = 4 - _media.length;
       if (remaining <= 0) return;

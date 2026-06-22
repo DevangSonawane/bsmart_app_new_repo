@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import '../models/media_model.dart';
 import '../models/content_moderation_model.dart';
 import '../services/create_service.dart';
 import '../services/content_moderation_service.dart';
 import 'content_moderation_dialog.dart';
 import '../api/posts_api.dart';
-import '../models/notification_model.dart';
-import '../services/notification_service.dart';
 import '../api/upload_api.dart';
 import '../utils/current_user.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 
@@ -236,22 +232,9 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
 
       Map<String, dynamic> uploadRes;
       if (widget.media.type == MediaType.image) {
-        final bytes = await File(filePath).readAsBytes();
-        var jpg = await FlutterImageCompress.compressWithList(
-          bytes,
-          quality: 85,
-          format: CompressFormat.jpeg,
-        );
-        if (jpg.length > 4 * 1024 * 1024) {
-          jpg = await FlutterImageCompress.compressWithList(
-            jpg,
-            quality: 70,
-            format: CompressFormat.jpeg,
-          );
-        }
-        uploadRes = await UploadApi().uploadPostBytes(
-            bytes: jpg,
-            filename: 'post_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        // Preserve the original file when possible so we do not degrade
+        // quality before it reaches the backend/CDN.
+        uploadRes = await UploadApi().uploadPostFile(filePath);
       } else {
         uploadRes = await UploadApi().uploadPostFile(filePath);
       }

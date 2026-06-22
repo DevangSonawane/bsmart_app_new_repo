@@ -453,6 +453,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   Completer<Size>? _imagePixelSizeCompleter;
   double? _postFixedAspect;
   double? _autoPostAspect;
+  String? _lastPreviewLayoutLogKey;
   ImageStream? _imageStream;
   ImageStreamListener? _imageStreamListener;
   final TransformationController _transformController =
@@ -537,6 +538,43 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       return 9.0 / 16.0;
     }
     return _clampInstagramPostAspect(aspect);
+  }
+
+  void _logPreviewLayout({
+    required String source,
+    double? viewportWidth,
+    double? viewportHeight,
+    double? frameAspect,
+    double? videoAspect,
+    BoxFit? fit,
+  }) {
+    if (!kDebugMode) return;
+    final key = [
+      source,
+      _currentMedia.id,
+      _currentIndex,
+      viewportWidth?.toStringAsFixed(1) ?? 'na',
+      viewportHeight?.toStringAsFixed(1) ?? 'na',
+      frameAspect?.toStringAsFixed(4) ?? 'na',
+      videoAspect?.toStringAsFixed(4) ?? 'na',
+      fit?.toString() ?? 'na',
+    ].join('|');
+    if (_lastPreviewLayoutLogKey == key) return;
+    _lastPreviewLayoutLogKey = key;
+    debugPrint(
+      '[CreateEditPreview] preview layout source=$source '
+      'mediaId=${_currentMedia.id} '
+      'mediaType=${_currentMedia.type.name} '
+      'isPostFlow=${widget.isPostFlow} '
+      'isReelFlow=${widget.isReelFlow} '
+      'viewport=${viewportWidth?.toStringAsFixed(1) ?? 'na'}x${viewportHeight?.toStringAsFixed(1) ?? 'na'} '
+      'frameAspect=${frameAspect?.toStringAsFixed(4) ?? 'na'} '
+      'videoAspect=${videoAspect?.toStringAsFixed(4) ?? 'na'} '
+      'fit=${fit ?? 'na'} '
+      'postFixedAspect=${_postFixedAspect?.toStringAsFixed(4) ?? 'null'} '
+      'autoPostAspect=${_autoPostAspect?.toStringAsFixed(4) ?? 'null'} '
+      'imageAspect=${_imageAspectRatio?.toStringAsFixed(4) ?? 'null'}',
+    );
   }
 
   BoxFit _videoPreviewFit(double videoAspect, double frameAspect) {
@@ -1103,7 +1141,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       final controller =
           VideoPlayerController.file(File(_currentMedia.filePath!));
       _videoController = controller;
-      _videoInit = controller.initialize().then((_) {
+      _videoInit = controller.initialize().then((_) async {
         if (!mounted) return;
         controller.setLooping(true);
         controller.addListener(_handlePreviewVideoTick);
@@ -1123,6 +1161,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         if (widget.isPostFlow) {
           _maybeInitPostAspect(controller.value.aspectRatio);
         }
+        await controller.setVolume(0.0);
         controller.play();
         setState(() => _isPlaying = true);
       });
@@ -1220,6 +1259,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         if (!mounted) return;
         controller.setLooping(true);
         controller.addListener(_handlePreviewVideoTick);
+        controller.setVolume(0.0);
         controller.play();
         setState(() => _isPlaying = true);
       });
@@ -1263,6 +1303,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     if (!_isRouteActive) return;
     _isRouteActive = false;
     if (_videoController?.value.isInitialized == true) {
+      unawaited(_videoController!.setVolume(0.0));
       unawaited(_videoController!.pause());
       _isPlaying = false;
       if (mounted) setState(() {});
@@ -1274,6 +1315,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     if (_isRouteActive) return;
     _isRouteActive = true;
     if (_videoController?.value.isInitialized == true && _isPlaying) {
+      unawaited(_videoController!.setVolume(0.0));
       unawaited(_videoController!.play());
     }
     if (mounted) setState(() {});
@@ -1333,6 +1375,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       }
       if (shouldPlay) {
         // Fire-and-forget; playback state is driven elsewhere.
+        unawaited(c.setVolume(0.0).catchError((_) {}));
         unawaited(c.play().catchError((_) {}));
       }
     });
@@ -1377,6 +1420,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           if (!mounted) return;
           controller.setLooping(true);
           controller.addListener(_handlePreviewVideoTick);
+          controller.setVolume(0.0);
           controller.play();
           setState(() => _isPlaying = true);
         });
@@ -1658,6 +1702,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           if (!mounted) return;
           controller.setLooping(true);
           controller.addListener(_handlePreviewVideoTick);
+          controller.setVolume(0.0);
           controller.play();
           setState(() => _isPlaying = true);
         });
@@ -2339,6 +2384,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     final hasOverlays = _textOverlays.isNotEmpty || _stickerOverlays.isNotEmpty;
     try {
       if (_videoController?.value.isInitialized == true) {
+        await _videoController?.setVolume(0.0);
         await _videoController?.pause();
         if (mounted) {
           setState(() => _isPlaying = false);
@@ -2572,6 +2618,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       }
       // Resume preview only when user comes back from next screen.
       if (_videoController != null && _videoController!.value.isInitialized) {
+        await _videoController!.setVolume(0.0);
         await _videoController!.play();
         if (mounted) {
           setState(() => _isPlaying = true);
@@ -3554,7 +3601,17 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                                                       item,
                                                       i,
                                                     ),
-                                                    child: _buildVideoPreview(),
+                                                    child: LayoutBuilder(
+                                                      builder: (context, constraints) {
+                                                        _logPreviewLayout(
+                                                          source: 'video-page-active',
+                                                          viewportWidth: constraints.maxWidth,
+                                                          viewportHeight: constraints.maxHeight,
+                                                          frameAspect: _postFrameAspect(),
+                                                        );
+                                                        return _buildVideoPreview();
+                                                      },
+                                                    ),
                                                   );
                                                 }
                                                 if (item.filePath == null) {
@@ -3605,7 +3662,17 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                                         else if (_isVideoMedia(_currentMedia))
                                           GestureDetector(
                                             onTap: _openVideoEditorForCurrent,
-                                            child: _buildVideoPreview(),
+                                            child: LayoutBuilder(
+                                              builder: (context, constraints) {
+                                                _logPreviewLayout(
+                                                  source: 'video-single-active',
+                                                  viewportWidth: constraints.maxWidth,
+                                                  viewportHeight: constraints.maxHeight,
+                                                  frameAspect: _postFrameAspect(),
+                                                );
+                                                return _buildVideoPreview();
+                                              },
+                                            ),
                                           )
                                         else
                                           LayoutBuilder(
@@ -4209,7 +4276,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                                           );
                                         }
                                         if (item.filePath == null) {
-                                          return Container(color: Colors.black);
+                                          return Container(
+                                              color: Colors.black);
                                         }
                                         return Image.file(
                                           File(item.filePath!),
@@ -4722,31 +4790,50 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               child: CircularProgressIndicator(color: Colors.white));
         }
         _ensureVideoPlaying(controller);
-        final frameAspect = _postFrameAspect();
         final videoAspect = controller.value.aspectRatio;
-        final fit = widget.isReelFlow
-            ? _videoPreviewFit(videoAspect, frameAspect)
-            : BoxFit.cover;
-        return _applyImageAdjustments(_applySelectedFilter(
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(color: Colors.black),
-              SizedBox.expand(
-                child: FittedBox(
-                  fit: fit,
-                  clipBehavior: Clip.hardEdge,
-                  child: SizedBox(
-                    width: controller.value.size.width,
-                    height: controller.value.size.height,
-                    child: VideoPlayer(controller),
-                  ),
+        final frameAspect = _postFrameAspect();
+        _logPreviewLayout(
+          source: 'video-preview-widget',
+          frameAspect: frameAspect,
+          videoAspect: videoAspect,
+          fit: BoxFit.cover,
+        );
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final viewportW = constraints.maxWidth;
+            final viewportH = constraints.maxHeight;
+            _logPreviewLayout(
+              source: 'video-preview-layout',
+              viewportWidth: viewportW,
+              viewportHeight: viewportH,
+              frameAspect: viewportH > 0 ? viewportW / viewportH : frameAspect,
+              videoAspect: videoAspect,
+              fit: BoxFit.cover,
+            );
+            final videoSize = controller.value.size;
+            final ar = videoSize.width / videoSize.height;
+            final video = ColoredBox(
+              color: Colors.black,
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: ar.isFinite && ar > 0 ? ar : (9 / 16),
+                  child: VideoPlayer(controller),
                 ),
               ),
-            ],
-          ),
-          filterIds: _effectiveFilterIds(_currentMedia),
-        ));
+            );
+            return _applyImageAdjustments(_applySelectedFilter(
+              Stack(
+                fit: StackFit.expand,
+                alignment: Alignment.center,
+                children: [
+                  Container(color: Colors.black),
+                  Positioned.fill(child: video),
+                ],
+              ),
+              filterIds: _effectiveFilterIds(_currentMedia),
+            ));
+          },
+        );
       },
     );
   }
@@ -4759,6 +4846,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       if (!mounted) return;
       if (!controller.value.isInitialized) return;
       if (!controller.value.isPlaying) {
+        controller.setVolume(0.0);
         controller.play();
         setState(() => _isPlaying = true);
       }

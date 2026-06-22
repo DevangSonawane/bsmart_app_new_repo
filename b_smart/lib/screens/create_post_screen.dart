@@ -5,15 +5,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import '../utils/current_user.dart';
 import '../config/api_config.dart';
 import '../api/upload_api.dart';
 import '../api/posts_api.dart';
 import '../services/create_service.dart';
-import '../models/notification_model.dart';
-import '../services/notification_service.dart';
 import '../models/media_model.dart';
 import 'tag_people_screen.dart';
 import '../utils/app_navigator.dart';
@@ -944,26 +941,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           String ext;
           if (isImage) {
             final bytes = await file.readAsBytes();
-            if (item.alreadyProcessed) {
+            final hasImageEdits = !item.alreadyProcessed &&
+                (item.alreadyCropped ||
+                    item.filter != 'Original' ||
+                    item.adjustments.values.any((v) => v != 0));
+            if (!hasImageEdits) {
               toUpload = Uint8List.fromList(bytes);
               ext = path.split('.').last;
             } else {
-              final processed =
+              toUpload =
                   await _processImageBytes(Uint8List.fromList(bytes), item);
-              var jpg = await FlutterImageCompress.compressWithList(
-                processed,
-                quality: 85,
-                format: CompressFormat.jpeg,
-              );
-              if (jpg.length > CreateService.maxImageUploadBytes) {
-                jpg = await FlutterImageCompress.compressWithList(
-                  jpg,
-                  quality: 70,
-                  format: CompressFormat.jpeg,
-                );
-              }
-              toUpload = Uint8List.fromList(jpg);
-              ext = 'jpg';
+              ext = 'png';
             }
           } else {
             final trimmedPath = await _createService.trimVideoForUpload(

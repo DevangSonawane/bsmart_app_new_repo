@@ -1969,7 +1969,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       );
       if (source == null) return;
       final picker = ImagePicker();
-      final xfile = await picker.pickImage(source: source, imageQuality: 85);
+      final xfile = await picker.pickImage(source: source, imageQuality: 100);
       if (xfile == null) return;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
