@@ -927,11 +927,24 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     }
   }
 
-  Future<String?> _normalizePreviewVideoPath(String sourcePath) async {
+  Future<String?> _normalizePreviewVideoPath(
+    String sourcePath, {
+    int? knownRotation,
+  }) async {
     try {
       final input = File(sourcePath);
       if (!await input.exists()) return null;
-      final rotation = await _probeVideoRotation(sourcePath);
+      final rotation =
+          ((knownRotation ?? await _probeVideoRotation(sourcePath)) % 360 + 360) %
+              360;
+      if (kDebugMode) {
+        debugPrint(
+          '[CreateEditPreview] normalize preview video start '
+          'source=$sourcePath '
+          'knownRotation=${knownRotation ?? 'null'} '
+          'resolvedRotation=$rotation',
+        );
+      }
       if (rotation == 0) return null;
       final tempDir = await Directory.systemTemp.createTemp('bsmart_preview_');
       final base = sourcePath.split(Platform.pathSeparator).last;
@@ -957,12 +970,27 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       }
       final session = await FFmpegKit.execute(cmd);
       final returnCode = await session.getReturnCode();
+      final output = await session.getOutput();
+      final logs = await session.getAllLogsAsString();
       if (ReturnCode.isSuccess(returnCode)) {
+        if (kDebugMode) {
+          debugPrint(
+            '[CreateEditPreview] normalize preview video success '
+            'source=$sourcePath '
+            'resolvedRotation=$rotation '
+            'outputPath=$outputPath',
+          );
+        }
         return outputPath;
       }
       debugPrint(
         '[CreateEditPreview] normalize preview video failed '
-        'source=$sourcePath returnCode=$returnCode',
+        'source=$sourcePath '
+        'knownRotation=${knownRotation ?? 'null'} '
+        'resolvedRotation=$rotation '
+        'returnCode=$returnCode '
+        'output=${output ?? ''} '
+        'logs=${logs ?? ''}',
       );
       return null;
     } catch (e) {
@@ -1002,11 +1030,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         );
       }
       if (shouldNormalize) {
-        final normalizedPath = await _normalizePreviewVideoPath(path);
+        final normalizedPath = await _normalizePreviewVideoPath(
+          path,
+          knownRotation: rotation,
+        );
         if (kDebugMode) {
           debugPrint(
             '[CreateEditPreview] video-normalize-check source=$source '
             'path=$path '
+            'rotationCorrection=$rotation '
             'normalizedPath=$normalizedPath',
           );
         }
@@ -5309,17 +5341,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         final controllerAspect = controller.value.aspectRatio;
         final videoAspect = _normalizedVideoAspectFromController(controller);
         final frameAspect = _postFrameAspect();
-        final useCoverForReels =
-            widget.isReelFlow && (videoAspect - frameAspect).abs() <= 0.08;
         _logVideoAspectState(
           source: 'build-video-preview',
           controller: controller,
           path: _currentMedia.filePath,
           frameAspect: frameAspect,
           previewAspect: _previewVideoAspect,
-          fit: useCoverForReels ? BoxFit.cover : BoxFit.contain,
+          fit: widget.isReelFlow ? BoxFit.cover : BoxFit.contain,
           extra:
-              'useCoverForReels=$useCoverForReels videoAspect=${videoAspect.toStringAsFixed(4)}',
+              'reelFlowTexture=${widget.isReelFlow} videoAspect=${videoAspect.toStringAsFixed(4)}',
         );
         _logPreviewLayout(
           source: 'video-preview-widget',
@@ -5327,7 +5357,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           videoAspect: videoAspect,
           controllerAspect: controllerAspect,
           rotationCorrection: controller.value.rotationCorrection,
-          fit: useCoverForReels ? BoxFit.cover : BoxFit.contain,
+          fit: widget.isReelFlow ? BoxFit.cover : BoxFit.contain,
         );
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -5341,44 +5371,20 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               videoAspect: videoAspect,
               controllerAspect: controllerAspect,
               rotationCorrection: controller.value.rotationCorrection,
-              fit: useCoverForReels ? BoxFit.cover : BoxFit.contain,
+              fit: widget.isReelFlow ? BoxFit.cover : BoxFit.contain,
             );
 
-            Widget video;
             final displayAspect =
                 videoAspect.isFinite && videoAspect > 0 ? videoAspect : (9 / 16);
-            if (useCoverForReels) {
-              final frameW = viewportW.isFinite && viewportW > 0 ? viewportW : 1.0;
-              final frameH = viewportH.isFinite && viewportH > 0 ? viewportH : 1.0;
-              final childW = videoAspect >= frameAspect
-                  ? frameH * videoAspect
-                  : frameW;
-              final childH = videoAspect >= frameAspect
-                  ? frameH
-                  : frameW / videoAspect;
-              video = ClipRect(
-                child: ColoredBox(
-                  color: Colors.black,
-                  child: Center(
-                    child: SizedBox(
-                      width: childW,
-                      height: childH,
-                      child: VideoPlayer(controller),
-                    ),
-                  ),
+            final video = ColoredBox(
+              color: Colors.black,
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: displayAspect,
+                  child: VideoPlayer(controller),
                 ),
-              );
-            } else {
-              video = ColoredBox(
-                color: Colors.black,
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: displayAspect,
-                    child: VideoPlayer(controller),
-                  ),
-                ),
-              );
-            }
+              ),
+            );
 
             return _applyImageAdjustments(_applySelectedFilter(
               Stack(

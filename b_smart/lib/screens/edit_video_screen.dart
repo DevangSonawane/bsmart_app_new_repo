@@ -31,6 +31,7 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
   Future<void>? _initFuture;
   bool _isPlaying = false;
   bool _hasInitError = false;
+  String? _lastLayoutLogKey;
 
   Duration _trimStart = Duration.zero;
   Duration _trimEnd = Duration.zero;
@@ -38,6 +39,65 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
   double _endFraction = 1.0;
 
   Duration get _videoDuration => _controller.value.duration;
+
+  Size _videoDisplaySize() {
+    final size = _controller.value.size;
+    final rotation = _controller.value.rotationCorrection;
+    if (rotation == 90 || rotation == 270) {
+      return Size(size.height, size.width);
+    }
+    return size;
+  }
+
+  void _logTrimState({
+    required String source,
+    double? viewportWidth,
+    double? viewportHeight,
+  }) {
+    final value = _controller.value;
+    final size = value.size;
+    final displaySize = _videoDisplaySize();
+    final previewAspect =
+        viewportWidth != null && viewportHeight != null && viewportHeight > 0
+            ? viewportWidth / viewportHeight
+            : null;
+    final displayAspect =
+        displaySize.width > 0 && displaySize.height > 0
+            ? displaySize.width / displaySize.height
+            : null;
+    final key = [
+      source,
+      widget.media.id,
+      viewportWidth?.toStringAsFixed(1) ?? 'na',
+      viewportHeight?.toStringAsFixed(1) ?? 'na',
+      _startFraction.toStringAsFixed(3),
+      _endFraction.toStringAsFixed(3),
+      value.isInitialized.toString(),
+      size.width.toStringAsFixed(1),
+      size.height.toStringAsFixed(1),
+      value.rotationCorrection.toString(),
+      value.aspectRatio.toStringAsFixed(4),
+      displayAspect?.toStringAsFixed(4) ?? 'na',
+    ].join('|');
+    if (_lastLayoutLogKey == key) return;
+    _lastLayoutLogKey = key;
+    debugPrint(
+      '[EditVideo] trim-dbg source=$source '
+      'mediaId=${widget.media.id} '
+      'path=${widget.media.filePath ?? 'null'} '
+      'isInit=${value.isInitialized} '
+      'size=${size.width}x${size.height} '
+      'rotationCorrection=${value.rotationCorrection} '
+      'controllerAspect=${value.aspectRatio.toStringAsFixed(4)} '
+      'displayAspect=${displayAspect?.toStringAsFixed(4) ?? 'null'} '
+      'viewport=${viewportWidth?.toStringAsFixed(1) ?? 'na'}x${viewportHeight?.toStringAsFixed(1) ?? 'na'} '
+      'previewAspect=${previewAspect?.toStringAsFixed(4) ?? 'null'} '
+      'trimStartMs=${_trimStart.inMilliseconds} '
+      'trimEndMs=${_trimEnd.inMilliseconds} '
+      'startFraction=${_startFraction.toStringAsFixed(3)} '
+      'endFraction=${_endFraction.toStringAsFixed(3)}',
+    );
+  }
 
   @override
   void initState() {
@@ -59,6 +119,15 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
         _startFraction = 0.0;
         _endFraction = 1.0;
       });
+      debugPrint(
+        '[EditVideo] init-complete mediaId=${widget.media.id} '
+        'path=$path '
+        'size=${_controller.value.size.width}x${_controller.value.size.height} '
+        'rotationCorrection=${_controller.value.rotationCorrection} '
+        'controllerAspect=${_controller.value.aspectRatio.toStringAsFixed(4)} '
+        'displayAspect=${_videoDisplaySize().aspectRatio.toStringAsFixed(4)} '
+        'durationMs=${_controller.value.duration.inMilliseconds}',
+      );
       _controller.setLooping(true);
       _controller.addListener(_handleTick);
       _controller.play();
@@ -115,6 +184,15 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
       _trimEnd = Duration(milliseconds: (durationMs * _endFraction).round());
     });
 
+    debugPrint(
+      '[EditVideo] trim-range-update mediaId=${widget.media.id} '
+      'startFraction=${_startFraction.toStringAsFixed(3)} '
+      'endFraction=${_endFraction.toStringAsFixed(3)} '
+      'trimStartMs=${_trimStart.inMilliseconds} '
+      'trimEndMs=${_trimEnd.inMilliseconds} '
+      'durationMs=$durationMs',
+    );
+
     if (_controller.value.position < _trimStart ||
         _controller.value.position > _trimEnd) {
       _controller.seekTo(_trimStart);
@@ -123,6 +201,13 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
 
   Future<void> _saveTrimAndClose() async {
     if (!_controller.value.isInitialized) return;
+    debugPrint(
+      '[EditVideo] save-and-close mediaId=${widget.media.id} '
+      'trimStartMs=${_trimStart.inMilliseconds} '
+      'trimEndMs=${_trimEnd.inMilliseconds} '
+      'durationMs=${_videoDuration.inMilliseconds} '
+      'outputPath=null',
+    );
     Navigator.of(context).pop(
       VideoEditResult(
         trimStart: _trimStart,
@@ -163,61 +248,69 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
                   }
 
                   final duration = _videoDuration;
+                  final displaySize = _videoDisplaySize();
                   return Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const SizedBox(height: 8),
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Center(
-                            child: AspectRatio(
-                              aspectRatio: 9 / 16,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    Container(color: Colors.black),
-                                    FittedBox(
-                                      fit: BoxFit.cover,
-                                      child: SizedBox(
-                                        width: _controller.value.size.width,
-                                        height: _controller.value.size.height,
-                                        child: VideoPlayer(_controller),
+                          padding: const EdgeInsets.symmetric(horizontal: 0),
+                          child: ClipRect(
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Container(color: Colors.black),
+                                Positioned.fill(
+                                  child: FittedBox(
+                                    fit: BoxFit.cover,
+                                    alignment: Alignment.center,
+                                    child: SizedBox(
+                                      width: displaySize.width,
+                                      height: displaySize.height,
+                                      child: VideoPlayer(_controller),
                                       ),
                                     ),
-                                    Positioned(
-                                      left: 16,
-                                      right: 16,
-                                      top: 16,
-                                      child: IgnorePointer(
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 8,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.45),
-                                            borderRadius:
-                                                BorderRadius.circular(999),
-                                          ),
-                                          child: const Text(
-                                            'Trim only',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
+                                  ),
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    _logTrimState(
+                                      source: 'trim-preview-layout',
+                                      viewportWidth: constraints.maxWidth,
+                                      viewportHeight: constraints.maxHeight,
+                                    );
+                                    return const SizedBox.shrink();
+                                  },
+                                ),
+                                Positioned(
+                                  left: 16,
+                                  right: 16,
+                                  top: 16,
+                                  child: IgnorePointer(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.45),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                      ),
+                                      child: const Text(
+                                        'Trim only',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
                         ),
