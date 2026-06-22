@@ -1275,7 +1275,7 @@ class _ReelsScreenState extends State<ReelsScreen>
               duration: const Duration(milliseconds: 240),
               curve: Curves.easeInOutCubic,
               left: 16,
-              right: isDesktop ? 14 : 78,
+              right: isDesktop ? 14 : 56,
               bottom: isDesktop ? infoBottomDesktop : infoBottomMobile,
               child: hasBottomText
                   ? ConstrainedBox(
@@ -1828,7 +1828,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget _buildBottomInfo(Reel reel) {
     final isOwn =
         _currentUserId != null && reel.userId.trim() == _currentUserId;
-    final canShowFollow = reel.userId.trim().isNotEmpty && !isOwn;
+    final canShowFollow =
+        reel.userId.trim().isNotEmpty && reel.userId.trim() != _currentUserId;
     final isExpanded = _captionExpanded[reel.id] ?? false;
     final caption = (reel.caption ?? '').trim();
     final hasCaption = caption.isNotEmpty;
@@ -1846,9 +1847,8 @@ class _ReelsScreenState extends State<ReelsScreen>
           SizedBox(
             height: 44,
             child: LayoutBuilder(
-            builder: (context, constraints) {
+              builder: (context, constraints) {
                 const gapAfterAvatar = 10.0;
-                const gapBeforeFollow = 6.0;
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -1891,35 +1891,45 @@ class _ReelsScreenState extends State<ReelsScreen>
                         ),
                       ),
                     ),
+                    const Spacer(),
                     if (canShowFollow) ...[
-                      const SizedBox(width: gapBeforeFollow),
                       GestureDetector(
                         onTap: _isFollowLoading
                             ? null
                             : () => unawaited(_toggleFollow()),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                reel.isFollowing
-                                    ? LucideIcons.userCheck
-                                    : LucideIcons.userPlus,
-                                size: 16,
-                                color: Colors.white,
-                              ),
+                              if (_isFollowLoading)
+                                const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  reel.isFollowing
+                                      ? LucideIcons.userCheck
+                                      : LucideIcons.userPlus,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
                               const SizedBox(width: 4),
                               Text(
                                 _isFollowLoading
                                     ? '...'
-                                    : (reel.isFollowing
-                                        ? 'Following'
-                                        : 'Follow'),
+                                    : (reel.isFollowing ? 'Following' : 'Follow'),
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontWeight: FontWeight.w600,
                                   fontSize: 13,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ],
@@ -1955,11 +1965,10 @@ class _ReelsScreenState extends State<ReelsScreen>
       children: [
         SizedBox(
           height: 44,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              const gapAfterAvatar = 10.0;
-              const gapBeforeFollow = 6.0;
-              return Row(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const gapAfterAvatar = 10.0;
+                return Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   InkWell(
@@ -2001,35 +2010,45 @@ class _ReelsScreenState extends State<ReelsScreen>
                       ),
                     ),
                   ),
+                  const Spacer(),
                   if (canShowFollow) ...[
-                    const SizedBox(width: gapBeforeFollow),
                     GestureDetector(
                       onTap: _isFollowLoading
                           ? null
                           : () => unawaited(_toggleFollow()),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              reel.isFollowing
-                                  ? LucideIcons.userCheck
-                                  : LucideIcons.userPlus,
-                              size: 16,
-                              color: Colors.white,
-                            ),
+                            if (_isFollowLoading)
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            else
+                              Icon(
+                                reel.isFollowing
+                                    ? LucideIcons.userCheck
+                                    : LucideIcons.userPlus,
+                                size: 16,
+                                color: Colors.white,
+                              ),
                             const SizedBox(width: 4),
                             Text(
                               _isFollowLoading
                                   ? '...'
-                                  : (reel.isFollowing
-                                      ? 'Following'
-                                      : 'Follow'),
+                                  : (reel.isFollowing ? 'Following' : 'Follow'),
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontWeight: FontWeight.w600,
                                 fontSize: 13,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],

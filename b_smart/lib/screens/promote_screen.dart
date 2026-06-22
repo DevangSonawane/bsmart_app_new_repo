@@ -1694,18 +1694,10 @@ class _SmoothVideoProgressBarState extends State<_SmoothVideoProgressBar>
 
 class _PromoteUsernamePill extends StatelessWidget {
   final Map<String, dynamic> item;
-  final bool showFollow;
-  final bool isFollowing;
-  final bool isFollowLoading;
-  final VoidCallback? onFollowTap;
   final VoidCallback? onTap;
 
   const _PromoteUsernamePill({
     required this.item,
-    this.showFollow = false,
-    this.isFollowing = false,
-    this.isFollowLoading = false,
-    this.onFollowTap,
     this.onTap,
   });
 
@@ -1785,49 +1777,6 @@ class _PromoteUsernamePill extends StatelessWidget {
               ),
             ),
           ),
-          if (showFollow) ...[
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: isFollowLoading ? null : onFollowTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (isFollowLoading)
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    else
-                      Icon(
-                        isFollowing
-                            ? LucideIcons.userCheck
-                            : LucideIcons.userPlus,
-                        size: 16,
-                        color: Colors.white,
-                      ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isFollowLoading
-                          ? '...'
-                          : (isFollowing ? 'Following' : 'Follow'),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          ],
         ],
       ),
     );
