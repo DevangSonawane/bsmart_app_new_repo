@@ -373,6 +373,77 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
     return s.isEmpty ? null : s;
   }
 
+  Future<void> _showCaptionSheet(String caption) async {
+    final trimmed = caption.trim();
+    if (trimmed.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (ctx) {
+        final media = MediaQuery.of(ctx);
+        final maxHeight = media.size.height * 0.72;
+        return SafeArea(
+          top: false,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: Material(
+                color: const Color(0xFF121212),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                      child: Row(
+                        children: [
+                          const Text(
+                            'Caption',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(LucideIcons.x,
+                                color: Colors.white),
+                            onPressed: () => Navigator.of(ctx).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                        child: Text(
+                          trimmed,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _openSearch() {
     Navigator.of(context).pushNamed('/search');
   }
@@ -779,7 +850,11 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
               final productsPanelHeight =
                   productsToggleHeight + productsListHeight;
               final infoBottomPadding =
-                  bottomSystemInset + 12.0 + productsPanelHeight + 12.0;
+                  bottomSystemInset + productsPanelHeight;
+              final showFollow = uid.isNotEmpty &&
+                  (_myUserId == null ||
+                      _myUserId!.isEmpty ||
+                      uid != _myUserId);
               return Stack(
                 fit: StackFit.expand,
                 clipBehavior: Clip.none,
@@ -964,51 +1039,177 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
                     child: Padding(
                       padding: EdgeInsets.only(
                         left: 16,
-                        right: 92,
+                        right: 54,
                         bottom: infoBottomPadding,
                       ),
                       child: Align(
                         alignment: Alignment.bottomLeft,
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 240),
+                          constraints: const BoxConstraints(maxHeight: 260),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _PromoteUsernamePill(
-                                item: item,
-                                isFollowing: _followByUserId[uid] == true,
-                                isFollowLoading:
-                                    _followLoadingUserIds.contains(uid),
-                                showFollow: uid.isNotEmpty &&
-                                    (_myUserId == null ||
-                                        _myUserId!.isEmpty ||
-                                        uid != _myUserId),
-                                onTap: () {
-                                  final route = _promoteProfileRoute(item);
-                                  if (route == null) return;
-                                  Navigator.of(context).pushNamed(route);
-                                },
-                                onFollowTap: () => _toggleFollow(index),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: _PromoteUsernamePill(
+                                      item: item,
+                                      onTap: () {
+                                        final route =
+                                            _promoteProfileRoute(item);
+                                        if (route == null) return;
+                                        Navigator.of(context).pushNamed(route);
+                                      },
+                                    ),
+                                  ),
+                                  if (showFollow) ...[
+                                    const SizedBox(width: 10),
+                                    GestureDetector(
+                                      onTap: _followLoadingUserIds
+                                              .contains(uid)
+                                          ? null
+                                          : () => _toggleFollow(index),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 4),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (_followLoadingUserIds
+                                                .contains(uid))
+                                              const SizedBox(
+                                                width: 14,
+                                                height: 14,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                          Color>(Colors.white),
+                                                ),
+                                              )
+                                            else
+                                              Icon(
+                                                _followByUserId[uid] == true
+                                                    ? LucideIcons.userCheck
+                                                    : LucideIcons.userPlus,
+                                                size: 16,
+                                                color: Colors.white,
+                                              ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              _followLoadingUserIds.contains(uid)
+                                                  ? '...'
+                                                  : (_followByUserId[uid] == true
+                                                      ? 'Following'
+                                                      : 'Follow'),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                               if (caption.isNotEmpty) ...[
                                 const SizedBox(height: 8),
-                                Text(
-                                  caption,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    height: 1.25,
-                                    shadows: [
-                                      Shadow(
-                                        color: Colors.black45,
-                                        offset: Offset(0, 1),
-                                        blurRadius: 2,
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        caption,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          height: 1.25,
+                                          shadows: [
+                                            Shadow(
+                                              color: Colors.black45,
+                                              offset: Offset(0, 1),
+                                              blurRadius: 2,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    if (caption.isNotEmpty &&
+                                        caption.trim().split(RegExp(r'\s+')).length > 3) ...[
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () => _showCaptionSheet(caption),
+                                        child: const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 4,
+                                          ),
+                                          child: Text(
+                                            'Read more',
+                                            style: TextStyle(
+                                              color: Color(0xCCFFFFFF),
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ],
-                                  ),
+                                    if (products.isNotEmpty) ...[
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        onTap: () {
+                                          setState(() {
+                                            _productsOpenByIndex[index] =
+                                                !productsOpen;
+                                          });
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withValues(
+                                                alpha: 0.30),
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                            border: Border.all(
+                                              color: Colors.white.withValues(
+                                                  alpha: 0.20),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                LucideIcons.shoppingBag,
+                                                size: 14,
+                                                color: Colors.white,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                productsOpen
+                                                    ? 'Hide Products'
+                                                    : '${products.length} Product${products.length > 1 ? 's' : ''}',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ],
                               if (tags.isNotEmpty) ...[
@@ -1073,48 +1274,6 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _productsOpenByIndex[index] = !productsOpen;
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.30),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.20),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      LucideIcons.shoppingBag,
-                                      size: 14,
-                                      color: Colors.white,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      productsOpen
-                                          ? 'Hide Products'
-                                          : '${products.length} Product${products.length > 1 ? 's' : ''}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
                           AnimatedOpacity(
                             duration: const Duration(milliseconds: 220),
                             opacity: productsOpen ? 1 : 0,
