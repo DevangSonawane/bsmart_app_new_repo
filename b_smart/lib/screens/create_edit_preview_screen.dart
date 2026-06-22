@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -455,6 +456,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   Completer<Size>? _imagePixelSizeCompleter;
   double? _postFixedAspect;
   double? _autoPostAspect;
+  double? _previewVideoAspect;
   String? _lastPreviewLayoutLogKey;
   ImageStream? _imageStream;
   ImageStreamListener? _imageStreamListener;
@@ -583,22 +585,131 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     try {
       final cmd =
           'ffprobe -v error -select_streams v:0 '
-          '-show_entries stream=width,height,codec_name,profile,pix_fmt:stream_tags=rotate '
-          '-of default=nw=1:nk=1 "$path"';
+          '-show_entries stream=width,height,sample_aspect_ratio,display_aspect_ratio,codec_name,profile,pix_fmt:stream_tags=rotate '
+          '-of json "$path"';
       final session = await FFmpegKit.execute(cmd);
       final returnCode = await session.getReturnCode();
       final output = await session.getOutput();
       final logs = await session.getAllLogsAsString();
-      final buffer = [
-        if (output != null) output,
-        if (logs?.isNotEmpty ?? false) logs,
-      ].join('\n');
       if (!ReturnCode.isSuccess(returnCode)) {
         return 'ffprobe_failed=$returnCode';
       }
-      return buffer.replaceAll('\n', ' | ');
+      final buffer = [
+        if (output != null && output.isNotEmpty) output,
+        if (logs?.isNotEmpty ?? false) logs,
+      ].join('\n');
+      final decoded = jsonDecode(buffer);
+      if (decoded is! Map<String, dynamic>) {
+        return buffer.replaceAll('\n', ' | ');
+      }
+      final streams = decoded['streams'];
+      if (streams is! List || streams.isEmpty || streams.first is! Map) {
+        return buffer.replaceAll('\n', ' | ');
+      }
+      final stream = Map<String, dynamic>.from(streams.first as Map);
+      final tags = stream['tags'];
+      String? rotate;
+      if (tags is Map && tags['rotate'] != null) {
+        rotate = tags['rotate'].toString();
+      }
+      return [
+        'width=${stream['width']}',
+        'height=${stream['height']}',
+        'sar=${stream['sample_aspect_ratio']}',
+        'dar=${stream['display_aspect_ratio']}',
+        'rotate=${rotate ?? '0'}',
+      ].join(' | ');
     } catch (e) {
       return 'ffprobe_error=$e';
+    }
+  }
+
+  double? _parseAspectRatio(String? value) {
+    if (value == null || value.isEmpty || value == '0:1' || value == '0/1') {
+      return null;
+    }
+    final sep = value.contains(':') ? ':' : (value.contains('/') ? '/' : null);
+    if (sep == null) return double.tryParse(value);
+    final parts = value.split(sep);
+    if (parts.length != 2) return null;
+    final num = double.tryParse(parts[0].trim());
+    final den = double.tryParse(parts[1].trim());
+    if (num == null || den == null || den == 0) return null;
+    final ratio = num / den;
+    if (!ratio.isFinite || ratio <= 0) return null;
+    return ratio;
+  }
+
+  Future<double> _probePreviewVideoAspect(
+    String path,
+    VideoPlayerController controller,
+  ) async {
+    double fallback = controller.value.aspectRatio;
+    if (!fallback.isFinite || fallback <= 0) fallback = 9 / 16;
+
+    try {
+      final cmd =
+          'ffprobe -v error -select_streams v:0 '
+          '-show_entries stream=width,height,sample_aspect_ratio,display_aspect_ratio:stream_tags=rotate '
+          '-of json "$path"';
+      final session = await FFmpegKit.execute(cmd);
+      final returnCode = await session.getReturnCode();
+      final output = await session.getOutput();
+      final logs = await session.getAllLogsAsString();
+      if (!ReturnCode.isSuccess(returnCode)) return fallback;
+
+      final buffer = [
+        if (output != null && output.isNotEmpty) output,
+        if (logs?.isNotEmpty ?? false) logs,
+      ].join('\n');
+      if (buffer.trim().isEmpty) return fallback;
+      final decoded = jsonDecode(buffer);
+      if (decoded is! Map<String, dynamic>) return fallback;
+      final streams = decoded['streams'];
+      if (streams is! List || streams.isEmpty || streams.first is! Map) {
+        return fallback;
+      }
+      final stream = Map<String, dynamic>.from(streams.first as Map);
+      final width = (stream['width'] as num?)?.toDouble();
+      final height = (stream['height'] as num?)?.toDouble();
+      if (width == null || height == null || width <= 0 || height <= 0) {
+        return fallback;
+      }
+
+      final tags = stream['tags'];
+      final rotateRaw = tags is Map ? tags['rotate']?.toString() : null;
+      final rotation = int.tryParse(rotateRaw ?? '') ?? 0;
+      final normalizedRotation = ((rotation % 360) + 360) % 360;
+
+      final sar = _parseAspectRatio(
+        stream['sample_aspect_ratio']?.toString(),
+      );
+      final dar = _parseAspectRatio(
+        stream['display_aspect_ratio']?.toString(),
+      );
+
+      double aspect;
+      if (dar != null) {
+        aspect = dar;
+      } else {
+        final effectiveW =
+            (normalizedRotation == 90 || normalizedRotation == 270)
+                ? height
+                : width;
+        final effectiveH =
+            (normalizedRotation == 90 || normalizedRotation == 270)
+                ? width
+                : height;
+        aspect = effectiveW / effectiveH;
+        if (sar != null && sar > 0) {
+          aspect *= sar;
+        }
+      }
+
+      if (!aspect.isFinite || aspect <= 0) return fallback;
+      return aspect;
+    } catch (_) {
+      return fallback;
     }
   }
 
@@ -729,8 +840,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                 'isReelFlow=${widget.isReelFlow}',
               );
             }
+            _previewVideoAspect = await _probePreviewVideoAspect(
+              normalizedPath,
+              normalizedController,
+            );
             if (widget.isPostFlow) {
-              _maybeInitPostAspect(normalizedController.value.aspectRatio);
+              _maybeInitPostAspect(_previewVideoAspect ?? normalizedController.value.aspectRatio);
             }
             await normalizedController.setVolume(0.0);
             await _logVideoSourceDiagnostics(
@@ -759,8 +874,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           'isReelFlow=${widget.isReelFlow}',
         );
       }
+      _previewVideoAspect = await _probePreviewVideoAspect(path, controller);
       if (widget.isPostFlow) {
-        _maybeInitPostAspect(controller.value.aspectRatio);
+        _maybeInitPostAspect(_previewVideoAspect ?? controller.value.aspectRatio);
       }
       await controller.setVolume(0.0);
       await _logVideoSourceDiagnostics(source, controller, path);
@@ -4941,13 +5057,13 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               child: CircularProgressIndicator(color: Colors.white));
         }
         _ensureVideoPlaying(controller);
-        final videoAspect = controller.value.aspectRatio;
+        final videoAspect = _previewVideoAspect ?? controller.value.aspectRatio;
         final frameAspect = _postFrameAspect();
         _logPreviewLayout(
           source: 'video-preview-widget',
           frameAspect: frameAspect,
           videoAspect: videoAspect,
-          fit: BoxFit.cover,
+          fit: BoxFit.contain,
         );
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -4959,12 +5075,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               viewportHeight: viewportH,
               frameAspect: viewportH > 0 ? viewportW / viewportH : frameAspect,
               videoAspect: videoAspect,
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
             );
+
+            Widget video;
             final displayAspect = videoAspect.isFinite && videoAspect > 0
                 ? videoAspect
                 : (9 / 16);
-            final video = ColoredBox(
+            video = ColoredBox(
               color: Colors.black,
               child: Center(
                 child: AspectRatio(
@@ -4973,6 +5091,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                 ),
               ),
             );
+
             return _applyImageAdjustments(_applySelectedFilter(
               Stack(
                 fit: StackFit.expand,
