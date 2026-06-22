@@ -1179,9 +1179,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget _buildVideoCard({required bool isDesktop}) {
     final current = _reels[_currentIndex];
     const actionsBottomMobile = 40.0;
-    const progressOverlayHeight = 40.0;
-    const captionToProgressGap = 1.0;
-    const minimalBottomPadding = progressOverlayHeight + captionToProgressGap;
+    const minimalBottomPadding = 28.0;
     final caption = (current.caption ?? '').trim();
     final hasBottomText = caption.isNotEmpty || current.hashtags.isNotEmpty;
     final infoBottomMobile = minimalBottomPadding;
@@ -2094,9 +2092,10 @@ class _ReelsScreenState extends State<ReelsScreen>
                   ],
                 ],
               );
-            },
+              },
+            ),
           ),
-        ),
+        buildAudioLine(),
         const SizedBox(height: 8),
         if (caption.isNotEmpty)
           Text.rich(
@@ -2135,7 +2134,6 @@ class _ReelsScreenState extends State<ReelsScreen>
             maxLines: isExpanded ? 3 : 2,
             overflow: TextOverflow.ellipsis,
           ),
-        buildAudioLine(),
         if (reel.hashtags.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
