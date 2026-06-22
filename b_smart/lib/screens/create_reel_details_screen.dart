@@ -10,8 +10,6 @@ import '../models/media_model.dart';
 import '../services/supabase_service.dart';
 import '../api/upload_api.dart';
 import '../api/reels_api.dart';
-import '../models/notification_model.dart';
-import '../services/notification_service.dart';
 import '../api/users_api.dart';
 import '../config/api_config.dart';
 import '../utils/current_user.dart';
@@ -436,7 +434,6 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
           },
         };
 
-        // Extract hashtags
         final captionText = _captionCtl.text.trim();
         final tags = RegExp(r'#(\w+)')
             .allMatches(captionText)
@@ -461,40 +458,20 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
           hideLikesCount: _hideLikes,
           turnOffCommenting: _turnOffCommenting,
         );
-        if (created.isNotEmpty) {
-          UploadProgressOverlay.update(
-            message: 'Publishing reel...',
-            progress: 1.0,
-          );
-        }
-
-        String? pickId(dynamic v) {
-          if (v == null) return null;
-          if (v is Map) return pickId(v['id'] ?? v['_id'] ?? v['reel_id']);
-          final s = v.toString().trim();
-          return s.isEmpty ? null : s;
-        }
-
-        final createdId = pickId(created['id'] ??
-            created['_id'] ??
-            created['reel'] ??
-            created['data']);
 
         if (created.isNotEmpty) {
           UploadProgressOverlay.update(
             message: 'Reel shared successfully!',
             progress: 1.0,
           );
-          await Future.delayed(const Duration(milliseconds: 900));
-          await UploadProgressOverlay.hide();
         } else {
           UploadProgressOverlay.update(
             message: 'Failed to create reel.',
             progress: 1.0,
           );
-          await Future.delayed(const Duration(seconds: 2));
-          await UploadProgressOverlay.hide();
         }
+        await Future.delayed(const Duration(milliseconds: 900));
+        await UploadProgressOverlay.hide();
       } catch (e) {
         UploadProgressOverlay.update(
           message: 'Upload failed: $e',
@@ -508,13 +485,11 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         }
       }
     }());
-    _goHomeAfterStartingUpload();
-  }
 
-  void _goHomeAfterStartingUpload() {
     final navigator = AppNavigator.state;
-    navigator?.pushNamedAndRemoveUntil('/home', (route) => false);
-    if (navigator == null && mounted) {
+    if (navigator != null) {
+      navigator.pushNamedAndRemoveUntil('/home', (route) => false);
+    } else if (mounted) {
       Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
     }
   }
