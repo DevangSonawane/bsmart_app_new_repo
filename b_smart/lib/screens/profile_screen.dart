@@ -2383,7 +2383,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ? _absoluteReelUrl(thumbRaw)
             : null;
         return GestureDetector(
-          onTap: () => _showPostDetail(r.id),
+          onTap: () => Navigator.of(context).pushNamed(
+            '/reels',
+            arguments: <String, dynamic>{'initialReelId': r.id},
+          ),
           child: Transform.scale(
             scale: 1.01,
             child: Stack(
