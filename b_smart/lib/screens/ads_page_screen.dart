@@ -2558,7 +2558,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     // Slightly higher so the column doesn't sit too low.
     final actionsBottom = 132.0 + widget.bottomInset;
     // Keep the bottom info overlay above the CTA buttons.
-    final infoBottom = (ctaBottom + 28.0).clamp(0.0, double.infinity);
+    final infoBottom = (ctaBottom + 40.0).clamp(0.0, double.infinity);
     final media = Container(
       color: Colors.black,
       child: _isInitialized && _controller != null && _isVideoAd
@@ -2987,9 +2987,9 @@ class _AdVideoItemState extends State<AdVideoItem>
                     ],
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Padding(
-                  padding: const EdgeInsets.only(left: 42),
+                  padding: const EdgeInsets.only(left: 34),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -2999,110 +2999,102 @@ class _AdVideoItemState extends State<AdVideoItem>
                         final caption =
                             (widget.ad.caption ?? widget.ad.description).trim();
                         final words = caption.trim().split(RegExp(r'\s+'));
-                        final isLong = caption.isNotEmpty && words.length > 8;
+                        final isLong = caption.isNotEmpty && words.length > 3;
                         final preview =
-                            isLong ? words.take(8).join(' ') : caption;
+                            isLong ? words.take(2).join(' ') : caption;
                         if (caption.isEmpty && cat.isEmpty) {
                           return const SizedBox.shrink();
                         }
                         return SizedBox(
                           height: 38,
-                          child: IgnorePointer(
-                            ignoring: _ctaVisible,
-                            child: AnimatedOpacity(
-                              opacity: _ctaVisible ? 0 : 1,
-                              duration: const Duration(milliseconds: 160),
-                              curve: Curves.easeInOut,
-                              child: Row(
-                                children: [
-                                  Text(
-                                    'Sponsored',
+                          child: Row(
+                            children: [
+                              Text(
+                                'Sponsored',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.65),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (cat.isNotEmpty) ...[
+                                Text(
+                                  ' • ',
+                                  style: TextStyle(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.55),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Flexible(
+                                  child: Text(
+                                    cat,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.65),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.75),
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                  if (cat.isNotEmpty) ...[
-                                    Text(
-                                      ' • ',
-                                      style: TextStyle(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.55),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Flexible(
-                                      child: Text(
-                                        cat,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.75),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
+                                ),
+                              ],
+                              if (caption.isNotEmpty) ...[
+                                Text(
+                                  ' • ',
+                                  style: TextStyle(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.55),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          preview,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            height: 1.2,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                  if (caption.isNotEmpty) ...[
-                                    Text(
-                                      ' • ',
-                                      style: TextStyle(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.55),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Flexible(
+                                      if (isLong) ...[
+                                        const SizedBox(width: 8),
+                                        GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onTap: () => unawaited(
+                                            _showCaptionSheet(caption),
+                                          ),
+                                          child: const Padding(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 6,
+                                            ),
                                             child: Text(
-                                              preview,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: Colors.white,
+                                              'Read more',
+                                              style: TextStyle(
+                                                color: Color(0xCCFFFFFF),
                                                 fontSize: 13,
-                                                height: 1.2,
+                                                fontWeight: FontWeight.w800,
                                               ),
                                             ),
                                           ),
-                                          if (isLong) ...[
-                                            const SizedBox(width: 8),
-                                            GestureDetector(
-                                              behavior: HitTestBehavior.opaque,
-                                              onTap: () => unawaited(
-                                                _showCaptionSheet(caption),
-                                              ),
-                                              child: const Padding(
-                                                padding: EdgeInsets.symmetric(
-                                                  horizontal: 6,
-                                                  vertical: 6,
-                                                ),
-                                                child: Text(
-                                                  'Read more',
-                                                  style: TextStyle(
-                                                    color: Color(0xCCFFFFFF),
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         );
                       }),
