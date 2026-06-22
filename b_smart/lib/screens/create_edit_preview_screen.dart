@@ -5169,13 +5169,16 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         final videoAspect = _normalizedVideoAspectFromController(controller);
         final effectiveSize = _effectiveVideoSize(controller);
         final frameAspect = _postFrameAspect();
+        final reelPreviewFit = widget.isReelFlow
+            ? _videoPreviewFit(videoAspect, frameAspect)
+            : BoxFit.contain;
         _logVideoAspectState(
           source: 'build-video-preview',
           controller: controller,
           path: _currentMedia.filePath,
           frameAspect: frameAspect,
           previewAspect: _previewVideoAspect,
-          fit: widget.isReelFlow ? BoxFit.cover : BoxFit.contain,
+          fit: reelPreviewFit,
           extra:
               'reelFlowTexture=${widget.isReelFlow} '
               'videoAspect=${videoAspect.toStringAsFixed(4)} '
@@ -5187,15 +5190,21 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           videoAspect: videoAspect,
           controllerAspect: controllerAspect,
           rotationCorrection: controller.value.rotationCorrection,
-          fit: widget.isReelFlow ? BoxFit.cover : BoxFit.contain,
+          fit: reelPreviewFit,
         );
         return LayoutBuilder(
           builder: (context, constraints) {
             final viewportW = constraints.maxWidth;
             final viewportH = constraints.maxHeight;
             final rotation = controller.value.rotationCorrection;
+            final layoutFrameAspect =
+                viewportH > 0 ? viewportW / viewportH : frameAspect;
+            final layoutFit = widget.isReelFlow
+                ? _videoPreviewFit(videoAspect, layoutFrameAspect)
+                : BoxFit.contain;
             final rotatedPreviewScale =
-                (rotation == 90 || rotation == 270) &&
+                layoutFit == BoxFit.cover &&
+                        (rotation == 90 || rotation == 270) &&
                         viewportW.isFinite &&
                         viewportH.isFinite &&
                         viewportW > 0 &&
@@ -5206,16 +5215,16 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               source: 'video-preview-layout',
               viewportWidth: viewportW,
               viewportHeight: viewportH,
-              frameAspect: viewportH > 0 ? viewportW / viewportH : frameAspect,
+              frameAspect: layoutFrameAspect,
               videoAspect: videoAspect,
               controllerAspect: controllerAspect,
               rotationCorrection: controller.value.rotationCorrection,
-              fit: widget.isReelFlow ? BoxFit.cover : BoxFit.contain,
+              fit: layoutFit,
             );
 
             final displayAspect =
                 videoAspect.isFinite && videoAspect > 0 ? videoAspect : (9 / 16);
-            final video = widget.isReelFlow
+            final video = widget.isReelFlow && layoutFit == BoxFit.cover
                 ? ClipRect(
                     child: ColoredBox(
                       color: Colors.black,
