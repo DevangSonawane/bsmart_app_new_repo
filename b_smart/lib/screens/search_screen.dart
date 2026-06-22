@@ -652,7 +652,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final showTabs = _query.trim().isNotEmpty && _hasResults;
     final filteredUsers = (_activeTab == 'all' || _activeTab == 'people')
         ? _users
@@ -666,74 +665,69 @@ class _SearchScreenState extends State<SearchScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: AnimatedPadding(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          padding: EdgeInsets.only(bottom: bottomInset),
-          child: Column(
-            children: [
-              _buildSearchBar(context),
-              if (showTabs) _buildTabs(),
-              Expanded(
-                child: _query.trim().isEmpty
-                    ? _buildHistory()
-                    : _loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : !_hasResults
-                            ? Center(
-                                child: Text('No results for "$_query"'),
-                              )
-                            : ListView(
-                                children: [
-                                  if (filteredUsers.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: Column(
-                                        children: filteredUsers
-                                            .map(_buildUserRow)
-                                            .toList(),
-                                      ),
+        child: Column(
+          children: [
+            _buildSearchBar(context),
+            if (showTabs) _buildTabs(),
+            Expanded(
+              child: _query.trim().isEmpty
+                  ? _buildHistory()
+                  : _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : !_hasResults
+                          ? Center(
+                              child: Text('No results for "$_query"'),
+                            )
+                          : ListView(
+                              children: [
+                                if (filteredUsers.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Column(
+                                      children: filteredUsers
+                                          .map(_buildUserRow)
+                                          .toList(),
                                     ),
-                                  _buildGridSection(
-                                    'Posts',
-                                    filteredPosts,
-                                    onLoadMore: () => _loadMore('posts'),
-                                    canLoadMore:
-                                        _posts.length < (_totals['posts'] ?? 0),
-                                    isLoadingMore:
-                                        _loadingMore['posts'] == true,
-                                    isReel: false,
                                   ),
-                                  _buildGridSection(
-                                    'Reels',
-                                    filteredReels,
-                                    onLoadMore: () => _loadMore('reels'),
-                                    canLoadMore:
-                                        _reels.length < (_totals['reels'] ?? 0),
-                                    isLoadingMore:
-                                        _loadingMore['reels'] == true,
-                                    isReel: true,
+                                _buildGridSection(
+                                  'Posts',
+                                  filteredPosts,
+                                  onLoadMore: () => _loadMore('posts'),
+                                  canLoadMore:
+                                      _posts.length < (_totals['posts'] ?? 0),
+                                  isLoadingMore:
+                                      _loadingMore['posts'] == true,
+                                  isReel: false,
+                                ),
+                                _buildGridSection(
+                                  'Reels',
+                                  filteredReels,
+                                  onLoadMore: () => _loadMore('reels'),
+                                  canLoadMore:
+                                      _reels.length < (_totals['reels'] ?? 0),
+                                  isLoadingMore:
+                                      _loadingMore['reels'] == true,
+                                  isReel: true,
+                                ),
+                                if (filteredUsers.isNotEmpty &&
+                                    _users.length < (_totals['users'] ?? 0))
+                                  TextButton(
+                                    onPressed: _loadingMore['users'] == true
+                                        ? null
+                                        : () => _loadMore('users'),
+                                    child: _loadingMore['users'] == true
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          )
+                                        : const Text('Load more people'),
                                   ),
-                                  if (filteredUsers.isNotEmpty &&
-                                      _users.length < (_totals['users'] ?? 0))
-                                    TextButton(
-                                      onPressed: _loadingMore['users'] == true
-                                          ? null
-                                          : () => _loadMore('users'),
-                                      child: _loadingMore['users'] == true
-                                          ? const SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(
-                                                  strokeWidth: 2),
-                                            )
-                                          : const Text('Load more people'),
-                                    ),
-                                ],
-                              ),
-              ),
-            ],
-          ),
+                              ],
+                            ),
+            ),
+          ],
         ),
       ),
     );
