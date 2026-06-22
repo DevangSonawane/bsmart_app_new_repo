@@ -627,17 +627,58 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     );
   }
 
+  Future<int> _probeVideoRotation(String path) async {
+    try {
+      final cmd =
+          'ffprobe -v error -select_streams v:0 '
+          '-show_entries stream_tags=rotate '
+          '-of default=nw=1:nk=1 "$path"';
+      final session = await FFmpegKit.execute(cmd);
+      final returnCode = await session.getReturnCode();
+      final output = await session.getOutput();
+      final logs = await session.getAllLogsAsString();
+      final buffer = [
+        if (output != null) output,
+        if (logs?.isNotEmpty ?? false) logs,
+      ].join('\n');
+      if (!ReturnCode.isSuccess(returnCode)) return 0;
+      final match = RegExp(r'(-?\d+)').firstMatch(buffer);
+      if (match == null) return 0;
+      final raw = int.tryParse(match.group(1) ?? '') ?? 0;
+      return ((raw % 360) + 360) % 360;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Future<String?> _normalizePreviewVideoPath(String sourcePath) async {
     try {
       final input = File(sourcePath);
       if (!await input.exists()) return null;
+      final rotation = await _probeVideoRotation(sourcePath);
+      if (rotation == 0) return null;
       final tempDir = await Directory.systemTemp.createTemp('bsmart_preview_');
       final base = sourcePath.split(Platform.pathSeparator).last;
       final stem = base.contains('.') ? base.substring(0, base.lastIndexOf('.')) : base;
       final outputPath = '${tempDir.path}/${stem}_normalized.mp4';
-      final cmd =
-          '-y -i "$sourcePath" -c copy -map 0 -metadata:s:v:0 rotate=0 '
-          '-movflags +faststart "$outputPath"';
+      late final String cmd;
+      if (rotation == 90) {
+        cmd =
+            '-y -i "$sourcePath" -vf "transpose=1" -c:a copy '
+            '-metadata:s:v:0 rotate=0 -movflags +faststart "$outputPath"';
+      } else if (rotation == 270) {
+        cmd =
+            '-y -i "$sourcePath" -vf "transpose=2" -c:a copy '
+            '-metadata:s:v:0 rotate=0 -movflags +faststart "$outputPath"';
+      } else if (rotation == 180) {
+        cmd =
+            '-y -i "$sourcePath" -vf "transpose=2,transpose=2" -c:a copy '
+            '-metadata:s:v:0 rotate=0 -movflags +faststart "$outputPath"';
+      } else {
+        cmd =
+            '-y -i "$sourcePath" -c copy -metadata:s:v:0 rotate=0 '
+            '-movflags +faststart "$outputPath"';
+      }
       final session = await FFmpegKit.execute(cmd);
       final returnCode = await session.getReturnCode();
       if (ReturnCode.isSuccess(returnCode)) {
@@ -663,9 +704,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     _videoInit = controller.initialize().then((_) async {
       if (!mounted) return;
       final rotation = controller.value.rotationCorrection;
-      final size = controller.value.size;
-      final shouldNormalize =
-          (rotation == 90 || rotation == 270) && size.width < size.height;
+      final shouldNormalize = rotation == 90 || rotation == 270;
       if (shouldNormalize) {
         final normalizedPath = await _normalizePreviewVideoPath(path);
         if (normalizedPath != null && normalizedPath != path) {
