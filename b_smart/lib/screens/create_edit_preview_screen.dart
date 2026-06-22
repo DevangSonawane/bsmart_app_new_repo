@@ -490,13 +490,32 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     return aspect.clamp(maxPortrait, minLandscape);
   }
 
+  double _normalizedVideoAspectFromController(
+    VideoPlayerController controller,
+  ) {
+    final value = controller.value;
+    final size = value.size;
+    if (!value.isInitialized || size.width <= 0 || size.height <= 0) {
+      return 1.0;
+    }
+
+    final rotation = ((value.rotationCorrection % 360) + 360) % 360;
+    final isRotated = rotation == 90 || rotation == 270;
+    final aspect =
+        isRotated ? (size.height / size.width) : (size.width / size.height);
+    if (!aspect.isFinite || aspect <= 0) {
+      return 1.0;
+    }
+    return aspect;
+  }
+
   double _postFrameAspect() {
     bool hasAspect = true;
     double aspect = 1.0;
     if (widget.media.type == app_models.MediaType.video) {
       final controller = _videoController;
       if (controller != null && controller.value.isInitialized) {
-        aspect = controller.value.aspectRatio;
+        aspect = _normalizedVideoAspectFromController(controller);
       } else {
         hasAspect = false;
       }
@@ -513,7 +532,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       if (_isVideoMedia(_currentMedia)) {
         final controller = _videoController;
         final vAspect = controller != null && controller.value.isInitialized
-            ? controller.value.aspectRatio
+            ? _normalizedVideoAspectFromController(controller)
             : aspect;
         if ((vAspect - 1.0).abs() < 0.05) {
           return 1.0;
@@ -550,6 +569,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     double? viewportHeight,
     double? frameAspect,
     double? videoAspect,
+    double? controllerAspect,
+    int? rotationCorrection,
     BoxFit? fit,
   }) {
     if (!kDebugMode) return;
@@ -561,6 +582,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       viewportHeight?.toStringAsFixed(1) ?? 'na',
       frameAspect?.toStringAsFixed(4) ?? 'na',
       videoAspect?.toStringAsFixed(4) ?? 'na',
+      controllerAspect?.toStringAsFixed(4) ?? 'na',
+      rotationCorrection?.toString() ?? 'na',
       fit?.toString() ?? 'na',
     ].join('|');
     if (_lastPreviewLayoutLogKey == key) return;
@@ -574,11 +597,36 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       'viewport=${viewportWidth?.toStringAsFixed(1) ?? 'na'}x${viewportHeight?.toStringAsFixed(1) ?? 'na'} '
       'frameAspect=${frameAspect?.toStringAsFixed(4) ?? 'na'} '
       'videoAspect=${videoAspect?.toStringAsFixed(4) ?? 'na'} '
+      'controllerAspect=${controllerAspect?.toStringAsFixed(4) ?? 'na'} '
+      'rotationCorrection=${rotationCorrection?.toString() ?? 'na'} '
       'fit=${fit ?? 'na'} '
       'postFixedAspect=${_postFixedAspect?.toStringAsFixed(4) ?? 'null'} '
       'autoPostAspect=${_autoPostAspect?.toStringAsFixed(4) ?? 'null'} '
       'imageAspect=${_imageAspectRatio?.toStringAsFixed(4) ?? 'null'}',
     );
+  }
+
+  int _parseRotationValue(dynamic raw) {
+    if (raw == null) return 0;
+    final parsed = int.tryParse(raw.toString()) ?? 0;
+    return ((parsed % 360) + 360) % 360;
+  }
+
+  int _extractProbeRotation(Map<String, dynamic> stream) {
+    final tags = stream['tags'];
+    final tagRotation = tags is Map ? _parseRotationValue(tags['rotate']) : 0;
+    if (tagRotation != 0) return tagRotation;
+
+    final sideData = stream['side_data_list'];
+    if (sideData is List) {
+      for (final entry in sideData) {
+        if (entry is! Map) continue;
+        final rotation = _parseRotationValue(entry['rotation']);
+        if (rotation != 0) return rotation;
+      }
+    }
+
+    return 0;
   }
 
   Future<String> _probeVideoMetadata(String path) async {
@@ -594,30 +642,37 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       if (!ReturnCode.isSuccess(returnCode)) {
         return 'ffprobe_failed=$returnCode';
       }
-      final buffer = [
-        if (output != null && output.isNotEmpty) output,
-        if (logs?.isNotEmpty ?? false) logs,
-      ].join('\n');
+      final buffer = (output != null && output.trim().isNotEmpty)
+          ? output
+          : (logs ?? '');
+      if (buffer.trim().isEmpty) {
+        return 'ffprobe_empty';
+      }
       final decoded = jsonDecode(buffer);
       if (decoded is! Map<String, dynamic>) {
-        return buffer.replaceAll('\n', ' | ');
+        return [
+          if (output?.trim().isNotEmpty ?? false) output!.replaceAll('\n', ' | '),
+          if (logs?.trim().isNotEmpty ?? false) logs!.replaceAll('\n', ' | '),
+        ].join(' | ');
       }
       final streams = decoded['streams'];
       if (streams is! List || streams.isEmpty || streams.first is! Map) {
-        return buffer.replaceAll('\n', ' | ');
+        return [
+          if (output?.trim().isNotEmpty ?? false) output!.replaceAll('\n', ' | '),
+          if (logs?.trim().isNotEmpty ?? false) logs!.replaceAll('\n', ' | '),
+        ].join(' | ');
       }
       final stream = Map<String, dynamic>.from(streams.first as Map);
       final tags = stream['tags'];
-      String? rotate;
-      if (tags is Map && tags['rotate'] != null) {
-        rotate = tags['rotate'].toString();
-      }
+      final rawRotate = tags is Map ? tags['rotate']?.toString() : null;
       return [
         'width=${stream['width']}',
         'height=${stream['height']}',
         'sar=${stream['sample_aspect_ratio']}',
         'dar=${stream['display_aspect_ratio']}',
-        'rotate=${rotate ?? '0'}',
+        'rotateTag=${rawRotate ?? '0'}',
+        'rotate=${_extractProbeRotation(stream)}',
+        'sideData=${stream['side_data_list']}',
       ].join(' | ');
     } catch (e) {
       return 'ffprobe_error=$e';
@@ -658,10 +713,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       final logs = await session.getAllLogsAsString();
       if (!ReturnCode.isSuccess(returnCode)) return fallback;
 
-      final buffer = [
-        if (output != null && output.isNotEmpty) output,
-        if (logs?.isNotEmpty ?? false) logs,
-      ].join('\n');
+      final buffer = (output != null && output.trim().isNotEmpty)
+          ? output
+          : (logs ?? '');
       if (buffer.trim().isEmpty) return fallback;
       final decoded = jsonDecode(buffer);
       if (decoded is! Map<String, dynamic>) return fallback;
@@ -676,10 +730,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         return fallback;
       }
 
-      final tags = stream['tags'];
-      final rotateRaw = tags is Map ? tags['rotate']?.toString() : null;
-      final rotation = int.tryParse(rotateRaw ?? '') ?? 0;
-      final normalizedRotation = ((rotation % 360) + 360) % 360;
+      final normalizedRotation = _extractProbeRotation(stream);
 
       final sar = _parseAspectRatio(
         stream['sample_aspect_ratio']?.toString(),
@@ -717,22 +768,22 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     String source,
     VideoPlayerController controller,
     String path,
-  ) async {
+    {double? previewAspect, double? frameAspect}) async {
     if (!kDebugMode) return;
     final size = controller.value.size;
     final rotation = controller.value.rotationCorrection;
-    final effectiveWidth =
-        (rotation == 90 || rotation == 270) ? size.height : size.width;
-    final effectiveHeight =
-        (rotation == 90 || rotation == 270) ? size.width : size.height;
+    final controllerAspect = controller.value.aspectRatio;
+    final displayAspect = _normalizedVideoAspectFromController(controller);
     final metadata = await _probeVideoMetadata(path);
     debugPrint(
       '[CreateEditPreview] video source diagnostics source=$source '
       'path=$path '
       'size=${size.width}x${size.height} '
-      'effectiveSize=${effectiveWidth}x${effectiveHeight} '
-      'aspect=${controller.value.aspectRatio} '
+      'aspect=$controllerAspect '
+      'displayAspect=$displayAspect '
       'rotationCorrection=$rotation '
+      'previewAspect=${previewAspect?.toStringAsFixed(4) ?? 'null'} '
+      'frameAspect=${frameAspect?.toStringAsFixed(4) ?? 'null'} '
       'durationMs=${controller.value.duration.inMilliseconds} '
       'metadata={$metadata}',
     );
@@ -742,17 +793,30 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     try {
       final cmd =
           'ffprobe -v error -select_streams v:0 '
-          '-show_entries stream_tags=rotate '
-          '-of default=nw=1:nk=1 "$path"';
+          '-show_entries stream=width,height,sample_aspect_ratio,display_aspect_ratio,side_data_list:stream_tags=rotate '
+          '-of json "$path"';
       final session = await FFmpegKit.execute(cmd);
       final returnCode = await session.getReturnCode();
       final output = await session.getOutput();
       final logs = await session.getAllLogsAsString();
-      final buffer = [
-        if (output != null) output,
-        if (logs?.isNotEmpty ?? false) logs,
-      ].join('\n');
       if (!ReturnCode.isSuccess(returnCode)) return 0;
+      final buffer = (output != null && output.trim().isNotEmpty)
+          ? output
+          : (logs ?? '');
+      if (buffer.trim().isEmpty) return 0;
+      try {
+        final decoded = jsonDecode(buffer);
+        if (decoded is Map<String, dynamic>) {
+          final streams = decoded['streams'];
+          if (streams is List && streams.isNotEmpty && streams.first is Map) {
+            return _extractProbeRotation(
+              Map<String, dynamic>.from(streams.first as Map),
+            );
+          }
+        }
+      } catch (_) {
+        // Fall back to legacy regexp parsing below.
+      }
       final match = RegExp(r'(-?\d+)').firstMatch(buffer);
       if (match == null) return 0;
       final raw = int.tryParse(match.group(1) ?? '') ?? 0;
@@ -833,6 +897,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                 '[CreateEditPreview] video init path=$normalizedPath '
                 'size=${normalizedController.value.size.width}x${normalizedController.value.size.height} '
                 'aspect=${normalizedController.value.aspectRatio} '
+                'displayAspect=${_normalizedVideoAspectFromController(normalizedController)} '
+                'rotationCorrection=${normalizedController.value.rotationCorrection} '
                 'durationMs=${normalizedController.value.duration.inMilliseconds} '
                 'trimStartMs=${_trimStart?.inMilliseconds ?? 0} '
                 'trimEndMs=${_trimEnd?.inMilliseconds ?? normalizedController.value.duration.inMilliseconds} '
@@ -845,13 +911,17 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               normalizedController,
             );
             if (widget.isPostFlow) {
-              _maybeInitPostAspect(_previewVideoAspect ?? normalizedController.value.aspectRatio);
+              _maybeInitPostAspect(
+                _normalizedVideoAspectFromController(normalizedController),
+              );
             }
             await normalizedController.setVolume(0.0);
             await _logVideoSourceDiagnostics(
               '${source}_normalized',
               normalizedController,
               normalizedPath,
+              previewAspect: _previewVideoAspect,
+              frameAspect: _postFrameAspect(),
             );
             normalizedController.play();
             setState(() => _isPlaying = true);
@@ -867,6 +937,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           '[CreateEditPreview] video init path=$path '
           'size=${controller.value.size.width}x${controller.value.size.height} '
           'aspect=${controller.value.aspectRatio} '
+          'displayAspect=${_normalizedVideoAspectFromController(controller)} '
+          'rotationCorrection=${controller.value.rotationCorrection} '
           'durationMs=${controller.value.duration.inMilliseconds} '
           'trimStartMs=${_trimStart?.inMilliseconds ?? 0} '
           'trimEndMs=${_trimEnd?.inMilliseconds ?? controller.value.duration.inMilliseconds} '
@@ -876,10 +948,18 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       }
       _previewVideoAspect = await _probePreviewVideoAspect(path, controller);
       if (widget.isPostFlow) {
-        _maybeInitPostAspect(_previewVideoAspect ?? controller.value.aspectRatio);
+        _maybeInitPostAspect(
+          _normalizedVideoAspectFromController(controller),
+        );
       }
       await controller.setVolume(0.0);
-      await _logVideoSourceDiagnostics(source, controller, path);
+      await _logVideoSourceDiagnostics(
+        source,
+        controller,
+        path,
+        previewAspect: _previewVideoAspect,
+        frameAspect: _postFrameAspect(),
+      );
       controller.play();
       setState(() => _isPlaying = true);
     });
@@ -2634,6 +2714,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       'controllerReady=${controller?.value.isInitialized == true} '
       'controllerSize=${controller?.value.size.width ?? 0}x${controller?.value.size.height ?? 0} '
       'controllerAspect=${controller?.value.aspectRatio ?? 0} '
+      'displayAspect=${controller != null && controller.value.isInitialized ? _normalizedVideoAspectFromController(controller) : 0} '
+      'rotationCorrection=${controller?.value.rotationCorrection ?? 0} '
       'frameAspect=$frameAspect '
       'trimStartMs=${_trimStart?.inMilliseconds ?? 0} '
       'trimEndMs=${_trimEnd?.inMilliseconds ?? 0} '
@@ -2694,12 +2776,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         }
       }
       if (isVideo && controller != null && controller.value.isInitialized) {
+        final displayAspect = _normalizedVideoAspectFromController(controller);
         debugPrint(
           '[CreateEditPreview] reel video geometry '
           'size=${controller.value.size.width}x${controller.value.size.height} '
           'aspect=${controller.value.aspectRatio} '
+          'displayAspect=$displayAspect '
+          'rotationCorrection=${controller.value.rotationCorrection} '
           'frameAspect=$frameAspect '
-          'fit=${widget.isReelFlow ? _videoPreviewFit(controller.value.aspectRatio, frameAspect) : BoxFit.cover}',
+          'fit=${widget.isReelFlow ? _videoPreviewFit(displayAspect, frameAspect) : BoxFit.cover}',
         );
       }
       if (!usedComposite && !isVideo && filePath != null) {
@@ -5057,12 +5142,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               child: CircularProgressIndicator(color: Colors.white));
         }
         _ensureVideoPlaying(controller);
-        final videoAspect = _previewVideoAspect ?? controller.value.aspectRatio;
+        final controllerAspect = controller.value.aspectRatio;
+        final videoAspect = _normalizedVideoAspectFromController(controller);
         final frameAspect = _postFrameAspect();
         _logPreviewLayout(
           source: 'video-preview-widget',
           frameAspect: frameAspect,
           videoAspect: videoAspect,
+          controllerAspect: controllerAspect,
+          rotationCorrection: controller.value.rotationCorrection,
           fit: BoxFit.contain,
         );
         return LayoutBuilder(
@@ -5075,6 +5163,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               viewportHeight: viewportH,
               frameAspect: viewportH > 0 ? viewportW / viewportH : frameAspect,
               videoAspect: videoAspect,
+              controllerAspect: controllerAspect,
+              rotationCorrection: controller.value.rotationCorrection,
               fit: BoxFit.contain,
             );
 
