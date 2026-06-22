@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:image_picker/image_picker.dart';
@@ -577,6 +579,157 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     );
   }
 
+  Future<String> _probeVideoMetadata(String path) async {
+    try {
+      final cmd =
+          'ffprobe -v error -select_streams v:0 '
+          '-show_entries stream=width,height,codec_name,profile,pix_fmt:stream_tags=rotate '
+          '-of default=nw=1:nk=1 "$path"';
+      final session = await FFmpegKit.execute(cmd);
+      final returnCode = await session.getReturnCode();
+      final output = await session.getOutput();
+      final logs = await session.getAllLogsAsString();
+      final buffer = [
+        if (output != null) output,
+        if (logs?.isNotEmpty ?? false) logs,
+      ].join('\n');
+      if (!ReturnCode.isSuccess(returnCode)) {
+        return 'ffprobe_failed=$returnCode';
+      }
+      return buffer.replaceAll('\n', ' | ');
+    } catch (e) {
+      return 'ffprobe_error=$e';
+    }
+  }
+
+  Future<void> _logVideoSourceDiagnostics(
+    String source,
+    VideoPlayerController controller,
+    String path,
+  ) async {
+    if (!kDebugMode) return;
+    final size = controller.value.size;
+    final rotation = controller.value.rotationCorrection;
+    final effectiveWidth =
+        (rotation == 90 || rotation == 270) ? size.height : size.width;
+    final effectiveHeight =
+        (rotation == 90 || rotation == 270) ? size.width : size.height;
+    final metadata = await _probeVideoMetadata(path);
+    debugPrint(
+      '[CreateEditPreview] video source diagnostics source=$source '
+      'path=$path '
+      'size=${size.width}x${size.height} '
+      'effectiveSize=${effectiveWidth}x${effectiveHeight} '
+      'aspect=${controller.value.aspectRatio} '
+      'rotationCorrection=$rotation '
+      'durationMs=${controller.value.duration.inMilliseconds} '
+      'metadata={$metadata}',
+    );
+  }
+
+  Future<String?> _normalizePreviewVideoPath(String sourcePath) async {
+    try {
+      final input = File(sourcePath);
+      if (!await input.exists()) return null;
+      final tempDir = await Directory.systemTemp.createTemp('bsmart_preview_');
+      final base = sourcePath.split(Platform.pathSeparator).last;
+      final stem = base.contains('.') ? base.substring(0, base.lastIndexOf('.')) : base;
+      final outputPath = '${tempDir.path}/${stem}_normalized.mp4';
+      final cmd =
+          '-y -i "$sourcePath" -c copy -map 0 -metadata:s:v:0 rotate=0 '
+          '-movflags +faststart "$outputPath"';
+      final session = await FFmpegKit.execute(cmd);
+      final returnCode = await session.getReturnCode();
+      if (ReturnCode.isSuccess(returnCode)) {
+        return outputPath;
+      }
+      debugPrint(
+        '[CreateEditPreview] normalize preview video failed '
+        'source=$sourcePath returnCode=$returnCode',
+      );
+      return null;
+    } catch (e) {
+      debugPrint('[CreateEditPreview] normalize preview video error: $e');
+      return null;
+    }
+  }
+
+  Future<void> _startPreviewVideoController({
+    required String path,
+    required String source,
+  }) async {
+    final controller = VideoPlayerController.file(File(path));
+    _videoController = controller;
+    _videoInit = controller.initialize().then((_) async {
+      if (!mounted) return;
+      final rotation = controller.value.rotationCorrection;
+      final size = controller.value.size;
+      final shouldNormalize =
+          (rotation == 90 || rotation == 270) && size.width < size.height;
+      if (shouldNormalize) {
+        final normalizedPath = await _normalizePreviewVideoPath(path);
+        if (normalizedPath != null && normalizedPath != path) {
+          await controller.dispose();
+          final normalizedController =
+              VideoPlayerController.file(File(normalizedPath));
+          _videoController = normalizedController;
+          _videoInit = normalizedController.initialize().then((_) async {
+            if (!mounted) return;
+            normalizedController.setLooping(true);
+            normalizedController.addListener(_handlePreviewVideoTick);
+            if (!_hasLoggedVideoGeometry) {
+              _hasLoggedVideoGeometry = true;
+              debugPrint(
+                '[CreateEditPreview] video init path=$normalizedPath '
+                'size=${normalizedController.value.size.width}x${normalizedController.value.size.height} '
+                'aspect=${normalizedController.value.aspectRatio} '
+                'durationMs=${normalizedController.value.duration.inMilliseconds} '
+                'trimStartMs=${_trimStart?.inMilliseconds ?? 0} '
+                'trimEndMs=${_trimEnd?.inMilliseconds ?? normalizedController.value.duration.inMilliseconds} '
+                'isPostFlow=${widget.isPostFlow} '
+                'isReelFlow=${widget.isReelFlow}',
+              );
+            }
+            if (widget.isPostFlow) {
+              _maybeInitPostAspect(normalizedController.value.aspectRatio);
+            }
+            await normalizedController.setVolume(0.0);
+            await _logVideoSourceDiagnostics(
+              '${source}_normalized',
+              normalizedController,
+              normalizedPath,
+            );
+            normalizedController.play();
+            setState(() => _isPlaying = true);
+          });
+          return;
+        }
+      }
+      controller.setLooping(true);
+      controller.addListener(_handlePreviewVideoTick);
+      if (!_hasLoggedVideoGeometry) {
+        _hasLoggedVideoGeometry = true;
+        debugPrint(
+          '[CreateEditPreview] video init path=$path '
+          'size=${controller.value.size.width}x${controller.value.size.height} '
+          'aspect=${controller.value.aspectRatio} '
+          'durationMs=${controller.value.duration.inMilliseconds} '
+          'trimStartMs=${_trimStart?.inMilliseconds ?? 0} '
+          'trimEndMs=${_trimEnd?.inMilliseconds ?? controller.value.duration.inMilliseconds} '
+          'isPostFlow=${widget.isPostFlow} '
+          'isReelFlow=${widget.isReelFlow}',
+        );
+      }
+      if (widget.isPostFlow) {
+        _maybeInitPostAspect(controller.value.aspectRatio);
+      }
+      await controller.setVolume(0.0);
+      await _logVideoSourceDiagnostics(source, controller, path);
+      controller.play();
+      setState(() => _isPlaying = true);
+    });
+  }
+
   BoxFit _videoPreviewFit(double videoAspect, double frameAspect) {
     if (videoAspect.isNaN || videoAspect.isInfinite || videoAspect <= 0) {
       return BoxFit.contain;
@@ -1138,33 +1291,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       }
     }
     if (_isVideoMedia(_currentMedia) && _currentMedia.filePath != null) {
-      final controller =
-          VideoPlayerController.file(File(_currentMedia.filePath!));
-      _videoController = controller;
-      _videoInit = controller.initialize().then((_) async {
-        if (!mounted) return;
-        controller.setLooping(true);
-        controller.addListener(_handlePreviewVideoTick);
-        if (!_hasLoggedVideoGeometry) {
-          _hasLoggedVideoGeometry = true;
-          debugPrint(
-            '[CreateEditPreview] video init path=${_currentMedia.filePath} '
-            'size=${controller.value.size.width}x${controller.value.size.height} '
-            'aspect=${controller.value.aspectRatio} '
-            'durationMs=${controller.value.duration.inMilliseconds} '
-            'trimStartMs=${_trimStart?.inMilliseconds ?? 0} '
-            'trimEndMs=${_trimEnd?.inMilliseconds ?? controller.value.duration.inMilliseconds} '
-            'isPostFlow=${widget.isPostFlow} '
-            'isReelFlow=${widget.isReelFlow}',
-          );
-        }
-        if (widget.isPostFlow) {
-          _maybeInitPostAspect(controller.value.aspectRatio);
-        }
-        await controller.setVolume(0.0);
-        controller.play();
-        setState(() => _isPlaying = true);
-      });
+      unawaited(_startPreviewVideoController(
+        path: _currentMedia.filePath!,
+        source: 'initState',
+      ));
     } else if (!_isVideoMedia(_currentMedia) &&
         _currentMedia.filePath != null) {
       final provider = FileImage(File(_currentMedia.filePath!));
@@ -1253,16 +1383,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     _primeTextEditorBackground();
 
     if (_isVideoMedia(media) && media.filePath != null) {
-      final controller = VideoPlayerController.file(File(media.filePath!));
-      _videoController = controller;
-      _videoInit = controller.initialize().then((_) {
-        if (!mounted) return;
-        controller.setLooping(true);
-        controller.addListener(_handlePreviewVideoTick);
-        controller.setVolume(0.0);
-        controller.play();
-        setState(() => _isPlaying = true);
-      });
+      unawaited(_startPreviewVideoController(
+        path: media.filePath!,
+        source: 'setCurrentMedia',
+      ));
     } else if (!_isVideoMedia(media) && media.filePath != null) {
       final provider = FileImage(File(media.filePath!));
       final stream2 = provider.resolve(const ImageConfiguration());
@@ -1414,16 +1538,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           createdAt: _currentMedia.createdAt,
         );
         _currentMedia = newMedia;
-        final controller = VideoPlayerController.file(File(newMedia.filePath!));
-        _videoController = controller;
-        _videoInit = controller.initialize().then((_) {
-          if (!mounted) return;
-          controller.setLooping(true);
-          controller.addListener(_handlePreviewVideoTick);
-          controller.setVolume(0.0);
-          controller.play();
-          setState(() => _isPlaying = true);
-        });
+        unawaited(_startPreviewVideoController(
+          path: newMedia.filePath!,
+          source: 'openVideoEditorNewOutput',
+        ));
         setState(
             () {}); // Trigger immediate rebuild to show loading for the NEW future
       } else {
@@ -1696,16 +1814,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         _videoController?.removeListener(_handlePreviewVideoTick);
         await _videoController?.dispose();
         _videoController = null;
-        final controller = VideoPlayerController.file(File(updated.filePath!));
-        _videoController = controller;
-        _videoInit = controller.initialize().then((_) {
-          if (!mounted) return;
-          controller.setLooping(true);
-          controller.addListener(_handlePreviewVideoTick);
-          controller.setVolume(0.0);
-          controller.play();
-          setState(() => _isPlaying = true);
-        });
+        unawaited(_startPreviewVideoController(
+          path: updated.filePath!,
+          source: 'openPerVideoEditorOutput',
+        ));
       }
     }
   }
@@ -4810,13 +4922,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               videoAspect: videoAspect,
               fit: BoxFit.cover,
             );
-            final videoSize = controller.value.size;
-            final ar = videoSize.width / videoSize.height;
+            final displayAspect = videoAspect.isFinite && videoAspect > 0
+                ? videoAspect
+                : (9 / 16);
             final video = ColoredBox(
               color: Colors.black,
               child: Center(
                 child: AspectRatio(
-                  aspectRatio: ar.isFinite && ar > 0 ? ar : (9 / 16),
+                  aspectRatio: displayAspect,
                   child: VideoPlayer(controller),
                 ),
               ),
