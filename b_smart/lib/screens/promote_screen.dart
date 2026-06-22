@@ -48,6 +48,7 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
   final Map<int, bool> _productsOpenByIndex = <int, bool>{};
   String? _myUserId;
   double _cachedBottomInset = 0;
+  bool _userPaused = false;
   String _searchInput = '';
   bool _searchOpen = false;
   bool _searchLoading = false;
@@ -219,7 +220,6 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
     _searchFocusNode.dispose();
     _searchScrollController.dispose();
     for (final entry in _controllers.entries) {
-      final idx = entry.key;
       final c = entry.value;
       try {
         c.pause();
@@ -271,12 +271,38 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
     if (controller == null) return;
     if (!controller.value.isInitialized) return;
     unawaited(controller.setVolume(_isMuted ? 0.0 : 1.0));
+    if (_userPaused) {
+      unawaited(controller.pause());
+      return;
+    }
     unawaited(controller.play());
+  }
+
+  Future<void> _togglePlayPause() async {
+    final controller = _controllers[_currentIndex];
+    if (controller == null) return;
+    if (!controller.value.isInitialized) return;
+
+    try {
+      if (controller.value.isPlaying) {
+        _userPaused = true;
+        await controller.pause();
+      } else {
+        _userPaused = false;
+        await controller.setVolume(_isMuted ? 0.0 : 1.0);
+        await controller.play();
+      }
+    } catch (_) {
+      return;
+    }
+
+    if (mounted) setState(() {});
   }
 
   void _onPageChanged(int idx) {
     setState(() {
       _currentIndex = idx;
+      _userPaused = false;
     });
     _initControllerForIndex(idx);
     _disposeFarControllers(idx);
@@ -730,72 +756,76 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
                     left: 0,
                     right: 0,
                     bottom: bottomSystemInset,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (thumbSrc.isNotEmpty)
-                          CachedNetworkImage(
-                            imageUrl: thumbSrc,
-                            fit: BoxFit.cover,
-                            httpHeaders:
-                                UrlHelper.shouldAttachAuthHeader(thumbSrc)
-                                    ? _mediaHeaders
-                                    : null,
-                            placeholder: (_, __) => const ColoredBox(
-                              color: Colors.black,
-                            ),
-                            errorWidget: (_, __, ___) => const ColoredBox(
-                              color: Colors.black,
-                            ),
-                          )
-                        else
-                          const ColoredBox(color: Colors.black),
-                        if (controller != null &&
-                            controller.value.isInitialized)
-                          () {
-                            final ar = controller.value.aspectRatio;
-                            final target = 9 / 16;
-                            final isNineSixteen = ar.isFinite &&
-                                ar > 0 &&
-                                (ar - target).abs() < 0.06;
-                            if (isNineSixteen) {
-                              return ClipRect(
-                                child: FittedBox(
-                                  fit: BoxFit.cover,
-                                  child: SizedBox(
-                                    width: controller.value.size.width,
-                                    height: controller.value.size.height,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _togglePlayPause,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (thumbSrc.isNotEmpty)
+                            CachedNetworkImage(
+                              imageUrl: thumbSrc,
+                              fit: BoxFit.cover,
+                              httpHeaders:
+                                  UrlHelper.shouldAttachAuthHeader(thumbSrc)
+                                      ? _mediaHeaders
+                                      : null,
+                              placeholder: (_, __) => const ColoredBox(
+                                color: Colors.black,
+                              ),
+                              errorWidget: (_, __, ___) => const ColoredBox(
+                                color: Colors.black,
+                              ),
+                            )
+                          else
+                            const ColoredBox(color: Colors.black),
+                          if (controller != null &&
+                              controller.value.isInitialized)
+                            () {
+                              final ar = controller.value.aspectRatio;
+                              final target = 9 / 16;
+                              final isNineSixteen = ar.isFinite &&
+                                  ar > 0 &&
+                                  (ar - target).abs() < 0.06;
+                              if (isNineSixteen) {
+                                return ClipRect(
+                                  child: FittedBox(
+                                    fit: BoxFit.cover,
+                                    child: SizedBox(
+                                      width: controller.value.size.width,
+                                      height: controller.value.size.height,
+                                      child: VideoPlayer(controller),
+                                    ),
+                                  ),
+                                );
+                              }
+                              return ColoredBox(
+                                color: Colors.black,
+                                child: Center(
+                                  child: AspectRatio(
+                                    aspectRatio: ar,
                                     child: VideoPlayer(controller),
                                   ),
                                 ),
                               );
-                            }
-                            return ColoredBox(
-                              color: Colors.black,
+                            }(),
+                          if (controller == null ||
+                              !controller.value.isInitialized)
+                            const ColoredBox(
+                              color: Colors.transparent,
                               child: Center(
-                                child: AspectRatio(
-                                  aspectRatio: ar,
-                                  child: VideoPlayer(controller),
-                                ),
-                              ),
-                            );
-                          }(),
-                        if (controller == null ||
-                            !controller.value.isInitialized)
-                          const ColoredBox(
-                            color: Colors.transparent,
-                            child: Center(
-                              child: SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.2,
-                                  color: Colors.white70,
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: Colors.white70,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   // Gradient overlay
