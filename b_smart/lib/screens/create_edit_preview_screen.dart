@@ -1,13 +1,10 @@
 import 'dart:io';
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:image_picker/image_picker.dart';
@@ -698,93 +695,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     );
   }
 
-  int _parseRotationValue(dynamic raw) {
-    if (raw == null) return 0;
-    final parsed = int.tryParse(raw.toString()) ?? 0;
-    return ((parsed % 360) + 360) % 360;
-  }
-
-  int _extractProbeRotation(Map<String, dynamic> stream) {
-    final tags = stream['tags'];
-    final tagRotation = tags is Map ? _parseRotationValue(tags['rotate']) : 0;
-    if (tagRotation != 0) return tagRotation;
-
-    final sideData = stream['side_data_list'];
-    if (sideData is List) {
-      for (final entry in sideData) {
-        if (entry is! Map) continue;
-        final rotation = _parseRotationValue(entry['rotation']);
-        if (rotation != 0) return rotation;
-      }
-    }
-
-    return 0;
-  }
-
   Future<String> _probeVideoMetadata(String path) async {
-    try {
-      final cmd =
-          'ffprobe -v error -select_streams v:0 '
-          '-show_entries stream=width,height,sample_aspect_ratio,display_aspect_ratio,codec_name,profile,pix_fmt:stream_tags=rotate '
-          '-of json "$path"';
-      final session = await FFmpegKit.execute(cmd);
-      final returnCode = await session.getReturnCode();
-      final output = await session.getOutput();
-      final logs = await session.getAllLogsAsString();
-      if (!ReturnCode.isSuccess(returnCode)) {
-        return 'ffprobe_failed=$returnCode';
-      }
-      final buffer = (output != null && output.trim().isNotEmpty)
-          ? output
-          : (logs ?? '');
-      if (buffer.trim().isEmpty) {
-        return 'ffprobe_empty';
-      }
-      final decoded = jsonDecode(buffer);
-      if (decoded is! Map<String, dynamic>) {
-        return [
-          if (output?.trim().isNotEmpty ?? false) output!.replaceAll('\n', ' | '),
-          if (logs?.trim().isNotEmpty ?? false) logs!.replaceAll('\n', ' | '),
-        ].join(' | ');
-      }
-      final streams = decoded['streams'];
-      if (streams is! List || streams.isEmpty || streams.first is! Map) {
-        return [
-          if (output?.trim().isNotEmpty ?? false) output!.replaceAll('\n', ' | '),
-          if (logs?.trim().isNotEmpty ?? false) logs!.replaceAll('\n', ' | '),
-        ].join(' | ');
-      }
-      final stream = Map<String, dynamic>.from(streams.first as Map);
-      final tags = stream['tags'];
-      final rawRotate = tags is Map ? tags['rotate']?.toString() : null;
-      return [
-        'width=${stream['width']}',
-        'height=${stream['height']}',
-        'sar=${stream['sample_aspect_ratio']}',
-        'dar=${stream['display_aspect_ratio']}',
-        'rotateTag=${rawRotate ?? '0'}',
-        'rotate=${_extractProbeRotation(stream)}',
-        'sideData=${stream['side_data_list']}',
-      ].join(' | ');
-    } catch (e) {
-      return 'ffprobe_error=$e';
-    }
-  }
-
-  double? _parseAspectRatio(String? value) {
-    if (value == null || value.isEmpty || value == '0:1' || value == '0/1') {
-      return null;
-    }
-    final sep = value.contains(':') ? ':' : (value.contains('/') ? '/' : null);
-    if (sep == null) return double.tryParse(value);
-    final parts = value.split(sep);
-    if (parts.length != 2) return null;
-    final num = double.tryParse(parts[0].trim());
-    final den = double.tryParse(parts[1].trim());
-    if (num == null || den == null || den == 0) return null;
-    final ratio = num / den;
-    if (!ratio.isFinite || ratio <= 0) return null;
-    return ratio;
+    return 'ffprobe_disabled_in_preview';
   }
 
   Future<double> _probePreviewVideoAspect(
@@ -793,85 +705,17 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   ) async {
     double fallback = controller.value.aspectRatio;
     if (!fallback.isFinite || fallback <= 0) fallback = 9 / 16;
-
-    try {
-      final cmd =
-          'ffprobe -v error -select_streams v:0 '
-          '-show_entries stream=width,height,sample_aspect_ratio,display_aspect_ratio:stream_tags=rotate '
-          '-of json "$path"';
-      final session = await FFmpegKit.execute(cmd);
-      final returnCode = await session.getReturnCode();
-      final output = await session.getOutput();
-      final logs = await session.getAllLogsAsString();
-      if (!ReturnCode.isSuccess(returnCode)) return fallback;
-
-      final buffer = (output != null && output.trim().isNotEmpty)
-          ? output
-          : (logs ?? '');
-      if (buffer.trim().isEmpty) return fallback;
-      final decoded = jsonDecode(buffer);
-      if (decoded is! Map<String, dynamic>) return fallback;
-      final streams = decoded['streams'];
-      if (streams is! List || streams.isEmpty || streams.first is! Map) {
-        return fallback;
-      }
-      final stream = Map<String, dynamic>.from(streams.first as Map);
-      final width = (stream['width'] as num?)?.toDouble();
-      final height = (stream['height'] as num?)?.toDouble();
-      if (width == null || height == null || width <= 0 || height <= 0) {
-        return fallback;
-      }
-
-      final normalizedRotation = _extractProbeRotation(stream);
-
-      final sar = _parseAspectRatio(
-        stream['sample_aspect_ratio']?.toString(),
+    final normalized = _normalizedVideoAspectFromController(controller);
+    if (kDebugMode) {
+      debugPrint(
+        '[CreateEditPreview] video-probe-aspect-skipped path=$path '
+        'controllerAspect=${controller.value.aspectRatio.toStringAsFixed(4)} '
+        'normalizedAspect=${normalized.toStringAsFixed(4)} '
+        'fallback=${fallback.toStringAsFixed(4)}',
       );
-      final dar = _parseAspectRatio(
-        stream['display_aspect_ratio']?.toString(),
-      );
-
-      double aspect;
-      if (dar != null) {
-        aspect = dar;
-      } else {
-        final effectiveW =
-            (normalizedRotation == 90 || normalizedRotation == 270)
-                ? height
-                : width;
-        final effectiveH =
-            (normalizedRotation == 90 || normalizedRotation == 270)
-                ? width
-                : height;
-        aspect = effectiveW / effectiveH;
-        if (sar != null && sar > 0) {
-          aspect *= sar;
-        }
-      }
-
-      if (!aspect.isFinite || aspect <= 0) return fallback;
-      if (kDebugMode) {
-        debugPrint(
-          '[CreateEditPreview] video-probe-aspect path=$path '
-          'width=$width '
-          'height=$height '
-          'sar=${sar?.toStringAsFixed(4) ?? 'null'} '
-          'dar=${dar?.toStringAsFixed(4) ?? 'null'} '
-          'rotation=$normalizedRotation '
-          'resolvedAspect=${aspect.toStringAsFixed(4)} '
-          'fallback=${fallback.toStringAsFixed(4)}',
-        );
-      }
-      return aspect;
-    } catch (_) {
-      if (kDebugMode) {
-        debugPrint(
-          '[CreateEditPreview] video-probe-aspect-failed path=$path '
-          'fallback=${fallback.toStringAsFixed(4)}',
-        );
-      }
-      return fallback;
     }
+    if (normalized.isFinite && normalized > 0) return normalized;
+    return fallback;
   }
 
   Future<void> _logVideoSourceDiagnostics(
@@ -2798,6 +2642,19 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           );
         }
       }
+      if (!widget.isPostFlow && isVideo) {
+        final cover = _coverPathFor(_currentMedia);
+        if (cover != null && cover.isNotEmpty) {
+          nextMedia = app_models.MediaItem(
+            id: _currentMedia.id,
+            type: _currentMedia.type,
+            filePath: _currentMedia.filePath,
+            thumbnailPath: cover,
+            duration: _currentMedia.duration,
+            createdAt: _currentMedia.createdAt,
+          );
+        }
+      }
       if (isVideo && controller != null && controller.value.isInitialized) {
         final displayAspect = _normalizedVideoAspectFromController(controller);
         debugPrint(
@@ -2880,6 +2737,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       if (!mounted) return;
       final processedList =
           widget.isPostFlow ? await _buildProcessedMediaList() : null;
+      if (!mounted) return;
       final globalFilterName = _filterNameForId(_selectedFilter);
       final perMediaFilterNames = <String, String>{};
       final listForFilters = _mediaList;

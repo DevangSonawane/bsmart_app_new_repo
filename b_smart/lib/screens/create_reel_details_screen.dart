@@ -13,7 +13,6 @@ import '../api/reels_api.dart';
 import '../api/users_api.dart';
 import '../config/api_config.dart';
 import '../utils/current_user.dart';
-import '../services/create_service.dart';
 import '../utils/app_navigator.dart';
 import '../services/upload_progress_overlay.dart';
 
@@ -97,8 +96,16 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         'musicVolume=${widget.musicVolume}',
       );
     }
-    if (media.type == MediaType.video && media.filePath != null) {
-      _coverPreviewFuture = _buildCoverPreviewBytes(media.filePath!);
+    if (media.type == MediaType.video) {
+      final thumbPath = media.thumbnailPath;
+      if (thumbPath != null && thumbPath.isNotEmpty) {
+        _selectedThumbnailPath = thumbPath;
+      }
+      if (media.filePath != null) {
+        _coverPreviewFuture = _buildCoverPreviewBytes(media.filePath!);
+      } else {
+        _coverPreviewFuture = Future<Uint8List?>.value(null);
+      }
     }
   }
 
@@ -176,6 +183,13 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
           if (bytes.isNotEmpty) return bytes;
         }
       }
+      final videoFile = File(videoPath);
+      if (!await videoFile.exists()) {
+        debugPrint(
+          '[ReelDetails] cover preview skipped missing videoPath=$videoPath',
+        );
+        return null;
+      }
       final bytes = await VideoThumbnail.thumbnailData(
         video: videoPath,
         imageFormat: ImageFormat.JPEG,
@@ -187,8 +201,8 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         'bytes=${bytes?.length ?? 0}',
       );
       return bytes;
-    } catch (_) {
-      debugPrint('[ReelDetails] cover preview failed for $videoPath');
+    } catch (e) {
+      debugPrint('[ReelDetails] cover preview failed for $videoPath error=$e');
       return null;
     }
   }
@@ -312,15 +326,21 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
 
     unawaited(() async {
       try {
-        final videoPath = await CreateService().trimVideoForUpload(
-          inputPath: filePath,
-          trimStart: widget.trimStart,
-          trimEnd: widget.trimEnd,
-          videoDuration: widget.media.duration,
+        final start = widget.trimStart ?? Duration.zero;
+        final requestedEnd = widget.trimEnd;
+        final hasTrimWindow = start > Duration.zero ||
+            (requestedEnd != null &&
+                widget.media.duration != null &&
+                requestedEnd < widget.media.duration!);
+        final videoPath = filePath;
+        debugPrint(
+          '[ReelDetails] upload source resolved originalPath=$filePath '
+          'uploadPath=$videoPath '
+          'hasTrimWindow=$hasTrimWindow '
+          'trimStartMs=${start.inMilliseconds} '
+          'trimEndMs=${requestedEnd?.inMilliseconds ?? 0} '
+          'strategy=metadata_only',
         );
-        if (videoPath == null) {
-          throw Exception('Failed to trim video before upload');
-        }
 
         final file = File(videoPath);
         if (!await file.exists()) {
@@ -380,7 +400,6 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         // React web creates reels via `POST /api/posts/reels` and uses a specific media schema.
         final Duration videoDuration =
             widget.media.duration ?? widget.trimEnd ?? Duration.zero;
-        final Duration start = widget.trimStart ?? Duration.zero;
         final Duration end = widget.trimEnd != null && widget.trimEnd! > start
             ? widget.trimEnd!
             : videoDuration;

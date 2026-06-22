@@ -18,6 +18,9 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+    configurations.configureEach {
+        resolutionStrategy.force("com.antonkarpenko:ffmpeg-kit-full-gpl:2.0.0")
+    }
 }
 
 tasks.register<Delete>("clean") {
