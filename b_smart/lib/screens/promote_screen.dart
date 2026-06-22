@@ -50,6 +50,8 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
   String? _myUserId;
   double _cachedBottomInset = 0;
   bool _userPaused = false;
+  bool _showPlaybackIndicator = false;
+  Timer? _playbackIndicatorTimer;
   String _searchInput = '';
   bool _searchOpen = false;
   bool _searchLoading = false;
@@ -217,6 +219,7 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
   @override
   void dispose() {
     _pageController.dispose();
+    _playbackIndicatorTimer?.cancel();
     _searchDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -309,13 +312,29 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
       return;
     }
 
+    _showPlaybackToggleIndicator();
     if (mounted) setState(() {});
+  }
+
+  void _showPlaybackToggleIndicator() {
+    _playbackIndicatorTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _showPlaybackIndicator = true;
+    });
+    _playbackIndicatorTimer = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      setState(() {
+        _showPlaybackIndicator = false;
+      });
+    });
   }
 
   void _onPageChanged(int idx) {
     setState(() {
       _currentIndex = idx;
       _userPaused = false;
+      _showPlaybackIndicator = false;
     });
     for (final entry in _controllers.entries) {
       if (entry.key == idx) continue;
@@ -938,6 +957,37 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2.2,
                                     color: Colors.white70,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (_showPlaybackIndicator &&
+                              controller != null &&
+                              controller.value.isInitialized)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: Center(
+                                  child: Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.45,
+                                      ),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.18,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      controller.value.isPlaying
+                                          ? Icons.pause_rounded
+                                          : LucideIcons.play,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
                                   ),
                                 ),
                               ),
