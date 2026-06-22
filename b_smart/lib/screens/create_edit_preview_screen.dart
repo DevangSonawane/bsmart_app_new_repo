@@ -494,19 +494,25 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     VideoPlayerController controller,
   ) {
     final value = controller.value;
-    final size = value.size;
-    if (!value.isInitialized || size.width <= 0 || size.height <= 0) {
+    if (!value.isInitialized) {
       return 1.0;
     }
 
-    final rotation = ((value.rotationCorrection % 360) + 360) % 360;
-    final isRotated = rotation == 90 || rotation == 270;
-    final aspect =
-        isRotated ? (size.height / size.width) : (size.width / size.height);
-    if (!aspect.isFinite || aspect <= 0) {
+    final controllerAspect = value.aspectRatio;
+    if (controllerAspect.isFinite && controllerAspect > 0) {
+      return controllerAspect;
+    }
+
+    final size = value.size;
+    if (size.width <= 0 || size.height <= 0) {
       return 1.0;
     }
-    return aspect;
+
+    final fallbackAspect = size.width / size.height;
+    if (!fallbackAspect.isFinite || fallbackAspect <= 0) {
+      return 1.0;
+    }
+    return fallbackAspect;
   }
 
   double _postFrameAspect() {
@@ -5145,13 +5151,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         final controllerAspect = controller.value.aspectRatio;
         final videoAspect = _normalizedVideoAspectFromController(controller);
         final frameAspect = _postFrameAspect();
+        final useCoverForReels =
+            widget.isReelFlow && (videoAspect - frameAspect).abs() <= 0.08;
         _logPreviewLayout(
           source: 'video-preview-widget',
           frameAspect: frameAspect,
           videoAspect: videoAspect,
           controllerAspect: controllerAspect,
           rotationCorrection: controller.value.rotationCorrection,
-          fit: BoxFit.contain,
+          fit: useCoverForReels ? BoxFit.cover : BoxFit.contain,
         );
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -5165,22 +5173,44 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               videoAspect: videoAspect,
               controllerAspect: controllerAspect,
               rotationCorrection: controller.value.rotationCorrection,
-              fit: BoxFit.contain,
+              fit: useCoverForReels ? BoxFit.cover : BoxFit.contain,
             );
 
             Widget video;
-            final displayAspect = videoAspect.isFinite && videoAspect > 0
-                ? videoAspect
-                : (9 / 16);
-            video = ColoredBox(
-              color: Colors.black,
-              child: Center(
-                child: AspectRatio(
-                  aspectRatio: displayAspect,
-                  child: VideoPlayer(controller),
+            final displayAspect =
+                videoAspect.isFinite && videoAspect > 0 ? videoAspect : (9 / 16);
+            if (useCoverForReels) {
+              final frameW = viewportW.isFinite && viewportW > 0 ? viewportW : 1.0;
+              final frameH = viewportH.isFinite && viewportH > 0 ? viewportH : 1.0;
+              final childW = videoAspect >= frameAspect
+                  ? frameH * videoAspect
+                  : frameW;
+              final childH = videoAspect >= frameAspect
+                  ? frameH
+                  : frameW / videoAspect;
+              video = ClipRect(
+                child: ColoredBox(
+                  color: Colors.black,
+                  child: Center(
+                    child: SizedBox(
+                      width: childW,
+                      height: childH,
+                      child: VideoPlayer(controller),
+                    ),
+                  ),
                 ),
-              ),
-            );
+              );
+            } else {
+              video = ColoredBox(
+                color: Colors.black,
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: displayAspect,
+                    child: VideoPlayer(controller),
+                  ),
+                ),
+              );
+            }
 
             return _applyImageAdjustments(_applySelectedFilter(
               Stack(
