@@ -1834,6 +1834,39 @@ class _ReelsScreenState extends State<ReelsScreen>
     final caption = (reel.caption ?? '').trim();
     final hasCaption = caption.isNotEmpty;
     final hasHashtags = reel.hashtags.isNotEmpty;
+    Widget buildAudioLine() {
+      final audioLabel = (reel.audioTitle?.trim().isNotEmpty ?? false)
+          ? reel.audioTitle!.trim()
+          : 'Original Audio';
+      final audioArtist = (reel.audioArtist?.trim().isNotEmpty ?? false)
+          ? reel.audioArtist!.trim()
+          : reel.userName;
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Icon(
+              LucideIcons.music2,
+              size: 11,
+              color: Colors.white.withValues(alpha: 0.78),
+            ),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Text(
+                '$audioLabel · $audioArtist',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     if (!hasCaption && !hasHashtags) {
       const usernameStyle = TextStyle(
         color: Colors.white,
@@ -1887,7 +1920,8 @@ class _ReelsScreenState extends State<ReelsScreen>
                           reel.userName,
                           style: usernameStyle,
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          overflow: TextOverflow.visible,
                         ),
                       ),
                     ),
@@ -1942,6 +1976,7 @@ class _ReelsScreenState extends State<ReelsScreen>
               },
             ),
           ),
+          buildAudioLine(),
           // Keep layout height stable even when there's no caption, and align
           // the username row with the mute button on the action rail.
           const SizedBox(height: 26),
@@ -2006,7 +2041,8 @@ class _ReelsScreenState extends State<ReelsScreen>
                         reel.userName,
                         style: usernameStyle,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        overflow: TextOverflow.visible,
                       ),
                     ),
                   ),
@@ -2099,6 +2135,7 @@ class _ReelsScreenState extends State<ReelsScreen>
             maxLines: isExpanded ? 3 : 2,
             overflow: TextOverflow.ellipsis,
           ),
+        buildAudioLine(),
         if (reel.hashtags.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
