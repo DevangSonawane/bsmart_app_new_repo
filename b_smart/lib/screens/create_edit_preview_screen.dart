@@ -483,6 +483,41 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
 
   _ZoomPanImageViewState? get _zoomPanState => _zoomPanKey.currentState;
 
+  void _logVideoAspectState({
+    required String source,
+    VideoPlayerController? controller,
+    String? path,
+    double? frameAspect,
+    double? previewAspect,
+    BoxFit? fit,
+    String? extra,
+  }) {
+    if (!kDebugMode) return;
+    final value = controller?.value;
+    final size = value?.size;
+    final controllerAspect = value?.aspectRatio;
+    final displayAspect = controller != null && value != null && value.isInitialized
+        ? _normalizedVideoAspectFromController(controller)
+        : null;
+    debugPrint(
+      '[CreateEditPreview] aspect-dbg source=$source '
+      'path=${path ?? _currentMedia.filePath ?? 'null'} '
+      'mediaId=${_currentMedia.id} '
+      'mediaType=${_currentMedia.type.name} '
+      'isPostFlow=${widget.isPostFlow} '
+      'isReelFlow=${widget.isReelFlow} '
+      'controllerReady=${value?.isInitialized == true} '
+      'size=${size?.width ?? 0}x${size?.height ?? 0} '
+      'controllerAspect=${controllerAspect?.toStringAsFixed(4) ?? 'null'} '
+      'displayAspect=${displayAspect?.toStringAsFixed(4) ?? 'null'} '
+      'rotationCorrection=${value?.rotationCorrection ?? 0} '
+      'previewAspect=${previewAspect?.toStringAsFixed(4) ?? _previewVideoAspect?.toStringAsFixed(4) ?? 'null'} '
+      'frameAspect=${frameAspect?.toStringAsFixed(4) ?? 'null'} '
+      'fit=${fit?.toString() ?? 'null'} '
+      '${extra ?? ''}',
+    );
+  }
+
   double _clampInstagramPostAspect(double aspect) {
     if (aspect.isNaN || aspect.isInfinite || aspect <= 0) return 1.0;
     const minLandscape = 1.91;
@@ -500,6 +535,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
 
     final controllerAspect = value.aspectRatio;
     if (controllerAspect.isFinite && controllerAspect > 0) {
+      if (kDebugMode) {
+        debugPrint(
+          '[CreateEditPreview] controller-aspect source=${_currentMedia.filePath ?? 'null'} '
+          'size=${value.size.width}x${value.size.height} '
+          'aspect=${controllerAspect.toStringAsFixed(4)} '
+          'rotationCorrection=${value.rotationCorrection} '
+          'returned=controller.aspectRatio',
+        );
+      }
       return controllerAspect;
     }
 
@@ -511,6 +555,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     final fallbackAspect = size.width / size.height;
     if (!fallbackAspect.isFinite || fallbackAspect <= 0) {
       return 1.0;
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[CreateEditPreview] controller-aspect-fallback source=${_currentMedia.filePath ?? 'null'} '
+        'size=${size.width}x${size.height} '
+        'fallbackAspect=${fallbackAspect.toStringAsFixed(4)} '
+        'rotationCorrection=${value.rotationCorrection}',
+      );
     }
     return fallbackAspect;
   }
@@ -560,13 +612,38 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       final next = _autoPostAspectFor(aspect);
       _autoPostAspect = next;
       _postFixedAspect = next;
+      if (kDebugMode) {
+        debugPrint(
+          '[CreateEditPreview] post-aspect-init source=${_currentMedia.filePath ?? 'null'} '
+          'aspect=${aspect.toStringAsFixed(4)} '
+          'next=${next.toStringAsFixed(4)} '
+          'hasAspect=$hasAspect '
+          'imageAspect=${_imageAspectRatio?.toStringAsFixed(4) ?? 'null'} '
+          'previewAspect=${_previewVideoAspect?.toStringAsFixed(4) ?? 'null'}',
+        );
+      }
       return next;
     }
     if (widget.isReelFlow) {
       // Reel flow: lock the edit frame to 9:16 and letterbox when needed.
+      if (kDebugMode) {
+        debugPrint(
+          '[CreateEditPreview] reel-frame source=${_currentMedia.filePath ?? 'null'} '
+          'aspect=${aspect.toStringAsFixed(4)} '
+          'frame=9:16',
+        );
+      }
       return 9.0 / 16.0;
     }
-    return _clampInstagramPostAspect(aspect);
+    final out = _clampInstagramPostAspect(aspect);
+    if (kDebugMode) {
+      debugPrint(
+        '[CreateEditPreview] post-aspect-clamped source=${_currentMedia.filePath ?? 'null'} '
+        'input=${aspect.toStringAsFixed(4)} '
+        'output=${out.toStringAsFixed(4)}',
+      );
+    }
+    return out;
   }
 
   void _logPreviewLayout({
@@ -764,8 +841,26 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       }
 
       if (!aspect.isFinite || aspect <= 0) return fallback;
+      if (kDebugMode) {
+        debugPrint(
+          '[CreateEditPreview] video-probe-aspect path=$path '
+          'width=$width '
+          'height=$height '
+          'sar=${sar?.toStringAsFixed(4) ?? 'null'} '
+          'dar=${dar?.toStringAsFixed(4) ?? 'null'} '
+          'rotation=$normalizedRotation '
+          'resolvedAspect=${aspect.toStringAsFixed(4)} '
+          'fallback=${fallback.toStringAsFixed(4)}',
+        );
+      }
       return aspect;
     } catch (_) {
+      if (kDebugMode) {
+        debugPrint(
+          '[CreateEditPreview] video-probe-aspect-failed path=$path '
+          'fallback=${fallback.toStringAsFixed(4)}',
+        );
+      }
       return fallback;
     }
   }
@@ -880,14 +975,41 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     required String path,
     required String source,
   }) async {
+    if (kDebugMode) {
+      debugPrint(
+        '[CreateEditPreview] video-init-start source=$source '
+        'path=$path '
+        'mediaId=${_currentMedia.id} '
+        'isPostFlow=${widget.isPostFlow} '
+        'isReelFlow=${widget.isReelFlow}',
+      );
+    }
     final controller = VideoPlayerController.file(File(path));
     _videoController = controller;
     _videoInit = controller.initialize().then((_) async {
       if (!mounted) return;
       final rotation = controller.value.rotationCorrection;
       final shouldNormalize = rotation == 90 || rotation == 270;
+      if (kDebugMode) {
+        debugPrint(
+          '[CreateEditPreview] video-init-precheck source=$source '
+          'path=$path '
+          'rotationCorrection=$rotation '
+          'shouldNormalize=$shouldNormalize '
+          'size=${controller.value.size.width}x${controller.value.size.height} '
+          'controllerAspect=${controller.value.aspectRatio} '
+          'displayAspect=${_normalizedVideoAspectFromController(controller)}',
+        );
+      }
       if (shouldNormalize) {
         final normalizedPath = await _normalizePreviewVideoPath(path);
+        if (kDebugMode) {
+          debugPrint(
+            '[CreateEditPreview] video-normalize-check source=$source '
+            'path=$path '
+            'normalizedPath=$normalizedPath',
+          );
+        }
         if (normalizedPath != null && normalizedPath != path) {
           await controller.dispose();
           final normalizedController =
@@ -915,6 +1037,20 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
             _previewVideoAspect = await _probePreviewVideoAspect(
               normalizedPath,
               normalizedController,
+            );
+            _logVideoAspectState(
+              source: '$source:normalized',
+              controller: normalizedController,
+              path: normalizedPath,
+              frameAspect: _postFrameAspect(),
+              previewAspect: _previewVideoAspect,
+              fit: widget.isReelFlow
+                  ? _videoPreviewFit(
+                      _normalizedVideoAspectFromController(normalizedController),
+                      _postFrameAspect(),
+                    )
+                  : BoxFit.contain,
+              extra: 'normalized=true',
             );
             if (widget.isPostFlow) {
               _maybeInitPostAspect(
@@ -953,6 +1089,20 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         );
       }
       _previewVideoAspect = await _probePreviewVideoAspect(path, controller);
+      _logVideoAspectState(
+        source: '$source:initialized',
+        controller: controller,
+        path: path,
+        frameAspect: _postFrameAspect(),
+        previewAspect: _previewVideoAspect,
+        fit: widget.isReelFlow
+            ? _videoPreviewFit(
+                _normalizedVideoAspectFromController(controller),
+                _postFrameAspect(),
+              )
+            : BoxFit.contain,
+        extra: 'normalized=false',
+      );
       if (widget.isPostFlow) {
         _maybeInitPostAspect(
           _normalizedVideoAspectFromController(controller),
@@ -2711,6 +2861,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     if (_isProceedingToNext) return;
     final controller = _videoController;
     final frameAspect = _postFrameAspect();
+    _logVideoAspectState(
+      source: 'proceed-to-next',
+      controller: controller,
+      path: _currentMedia.filePath,
+      frameAspect: frameAspect,
+      previewAspect: _previewVideoAspect,
+      extra: 'isProceedingToNext=$_isProceedingToNext',
+    );
     debugPrint(
       '[CreateEditPreview] next tapped mediaId=${_currentMedia.id} '
       'mediaPath=${_currentMedia.filePath} '
@@ -5153,6 +5311,16 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         final frameAspect = _postFrameAspect();
         final useCoverForReels =
             widget.isReelFlow && (videoAspect - frameAspect).abs() <= 0.08;
+        _logVideoAspectState(
+          source: 'build-video-preview',
+          controller: controller,
+          path: _currentMedia.filePath,
+          frameAspect: frameAspect,
+          previewAspect: _previewVideoAspect,
+          fit: useCoverForReels ? BoxFit.cover : BoxFit.contain,
+          extra:
+              'useCoverForReels=$useCoverForReels videoAspect=${videoAspect.toStringAsFixed(4)}',
+        );
         _logPreviewLayout(
           source: 'video-preview-widget',
           frameAspect: frameAspect,
