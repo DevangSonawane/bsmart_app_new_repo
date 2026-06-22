@@ -5193,6 +5193,15 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           builder: (context, constraints) {
             final viewportW = constraints.maxWidth;
             final viewportH = constraints.maxHeight;
+            final rotation = controller.value.rotationCorrection;
+            final rotatedPreviewScale =
+                (rotation == 90 || rotation == 270) &&
+                        viewportW.isFinite &&
+                        viewportH.isFinite &&
+                        viewportW > 0 &&
+                        viewportH > 0
+                    ? (viewportW / viewportH).clamp(0.5, 1.0)
+                    : 1.0;
             _logPreviewLayout(
               source: 'video-preview-layout',
               viewportWidth: viewportW,
@@ -5214,10 +5223,13 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                         fit: BoxFit.cover,
                         alignment: Alignment.center,
                         clipBehavior: Clip.hardEdge,
-                        child: SizedBox(
-                          width: effectiveSize.width,
-                          height: effectiveSize.height,
-                          child: VideoPlayer(controller),
+                        child: Transform.scale(
+                          scale: rotatedPreviewScale,
+                          child: SizedBox(
+                            width: effectiveSize.width,
+                            height: effectiveSize.height,
+                            child: VideoPlayer(controller),
+                          ),
                         ),
                       ),
                     ),
