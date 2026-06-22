@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/api_client.dart';
 import '../theme/design_tokens.dart';
 import '../services/promote_service.dart';
+import '../services/video_pool.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
 import 'external_link_screen.dart';
 import '../api/promote_reels_api.dart';
@@ -72,6 +73,7 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
   void initState() {
     super.initState();
     _searchScrollController.addListener(_onSearchScroll);
+    unawaited(VideoPool.instance.pauseActive());
     unawaited(() async {
       _myUserId = await CurrentUser.id;
       if (mounted) setState(() {});
@@ -270,6 +272,11 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
     final controller = _controllers[_currentIndex];
     if (controller == null) return;
     if (!controller.value.isInitialized) return;
+    for (final entry in _controllers.entries) {
+      if (entry.key == _currentIndex) continue;
+      unawaited(entry.value.pause());
+      unawaited(entry.value.setVolume(0.0));
+    }
     unawaited(controller.setVolume(_isMuted ? 0.0 : 1.0));
     if (_userPaused) {
       unawaited(controller.pause());
@@ -287,8 +294,14 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
       if (controller.value.isPlaying) {
         _userPaused = true;
         await controller.pause();
+        await controller.setVolume(0.0);
       } else {
         _userPaused = false;
+        for (final entry in _controllers.entries) {
+          if (entry.key == _currentIndex) continue;
+          await entry.value.pause();
+          await entry.value.setVolume(0.0);
+        }
         await controller.setVolume(_isMuted ? 0.0 : 1.0);
         await controller.play();
       }
@@ -304,6 +317,11 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
       _currentIndex = idx;
       _userPaused = false;
     });
+    for (final entry in _controllers.entries) {
+      if (entry.key == idx) continue;
+      unawaited(entry.value.pause());
+      unawaited(entry.value.setVolume(0.0));
+    }
     _initControllerForIndex(idx);
     _disposeFarControllers(idx);
     final c = _controllers[idx];
@@ -328,6 +346,31 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
     return n.toString();
+  }
+
+  String? _promoteProfileRoute(Map<String, dynamic> item) {
+    final userId = _toId(item['userId'] ?? item['user_id']);
+    if (userId.isEmpty) return null;
+    final role = (_safeString(item['role']) ??
+            _safeString(item['userRole']) ??
+            _safeString(item['user_role']) ??
+            _safeString(item['accountType']) ??
+            _safeString(item['account_type']) ??
+            _safeString(item['type']) ??
+            '')
+        .toLowerCase()
+        .trim();
+    final isVendor = role == 'vendor' ||
+        role == 'business' ||
+        role == 'brand' ||
+        role == 'company' ||
+        role == 'advertiser';
+    return isVendor ? '/vendor/$userId/public' : '/profile/$userId';
+  }
+
+  String? _safeString(dynamic value) {
+    final s = (value ?? '').toString().trim();
+    return s.isEmpty ? null : s;
   }
 
   void _openSearch() {
@@ -941,6 +984,11 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
                                     (_myUserId == null ||
                                         _myUserId!.isEmpty ||
                                         uid != _myUserId),
+                                onTap: () {
+                                  final route = _promoteProfileRoute(item);
+                                  if (route == null) return;
+                                  Navigator.of(context).pushNamed(route);
+                                },
                                 onFollowTap: () => _toggleFollow(index),
                               ),
                               if (caption.isNotEmpty) ...[
@@ -1491,6 +1539,7 @@ class _PromoteUsernamePill extends StatelessWidget {
   final bool isFollowing;
   final bool isFollowLoading;
   final VoidCallback? onFollowTap;
+  final VoidCallback? onTap;
 
   const _PromoteUsernamePill({
     required this.item,
@@ -1498,6 +1547,7 @@ class _PromoteUsernamePill extends StatelessWidget {
     this.isFollowing = false,
     this.isFollowLoading = false,
     this.onFollowTap,
+    this.onTap,
   });
 
   String _safeLabel(dynamic v) {
@@ -1518,7 +1568,7 @@ class _PromoteUsernamePill extends StatelessWidget {
         (item['avatarUrl'] ?? item['avatar_url'] ?? '').toString().trim();
     final displayName = _safeLabel(item['username'] ?? item['brandName']);
     final initial = _initial(displayName);
-    return SizedBox(
+    final content = SizedBox(
       height: 36,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1526,8 +1576,7 @@ class _PromoteUsernamePill extends StatelessWidget {
           SizedBox(
             width: 34,
             height: 34,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+            child: ClipOval(
               child: avatarUrl.isNotEmpty
                   ? CachedNetworkImage(
                       imageUrl: avatarUrl,
@@ -1622,6 +1671,13 @@ class _PromoteUsernamePill extends StatelessWidget {
           ],
         ],
       ),
+    );
+
+    if (onTap == null) return content;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: content,
     );
   }
 }
