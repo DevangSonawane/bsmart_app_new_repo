@@ -2996,52 +2996,15 @@ class _AdVideoItemState extends State<AdVideoItem>
                     children: [
                       Builder(builder: (context) {
                         final cat = widget.ad.category?.trim() ?? '';
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Sponsored',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.65),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            if (cat.isNotEmpty) ...[
-                              Text(
-                                ' • ',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.55),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Flexible(
-                                child: Text(
-                                  cat,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.75),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        );
-                      }),
-                      Builder(builder: (context) {
                         final caption =
                             (widget.ad.caption ?? widget.ad.description).trim();
-                        if (caption.isEmpty) {
-                          return const SizedBox.shrink();
-                        }
                         final words = caption.trim().split(RegExp(r'\s+'));
-                        final isLong = words.length > 8;
+                        final isLong = caption.isNotEmpty && words.length > 8;
                         final preview =
                             isLong ? words.take(8).join(' ') : caption;
+                        if (caption.isEmpty && cat.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
                         return SizedBox(
                           height: 38,
                           child: IgnorePointer(
@@ -3050,47 +3013,94 @@ class _AdVideoItemState extends State<AdVideoItem>
                               opacity: _ctaVisible ? 0 : 1,
                               duration: const Duration(milliseconds: 160),
                               curve: Curves.easeInOut,
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Row(
-                                  children: [
-                                    Expanded(
+                              child: Row(
+                                children: [
+                                  Text(
+                                    'Sponsored',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.65),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  if (cat.isNotEmpty) ...[
+                                    Text(
+                                      ' • ',
+                                      style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.55),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Flexible(
                                       child: Text(
-                                        preview,
+                                        cat,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          height: 1.4,
+                                        style: TextStyle(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.75),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
                                         ),
                                       ),
                                     ),
-                                    if (isLong) ...[
-                                      const SizedBox(width: 8),
-                                      GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onTap: () => unawaited(
-                                          _showCaptionSheet(caption),
-                                        ),
-                                        child: const Padding(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 6,
-                                          ),
-                                          child: Text(
-                                            'Read more',
-                                            style: TextStyle(
-                                              color: Color(0xCCFFFFFF),
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w800,
+                                  ],
+                                  if (caption.isNotEmpty) ...[
+                                    Text(
+                                      ' • ',
+                                      style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.55),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              preview,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 13,
+                                                height: 1.2,
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                          if (isLong) ...[
+                                            const SizedBox(width: 8),
+                                            GestureDetector(
+                                              behavior: HitTestBehavior.opaque,
+                                              onTap: () => unawaited(
+                                                _showCaptionSheet(caption),
+                                              ),
+                                              child: const Padding(
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 6,
+                                                ),
+                                                child: Text(
+                                                  'Read more',
+                                                  style: TextStyle(
+                                                    color: Color(0xCCFFFFFF),
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
-                                    ],
+                                    ),
                                   ],
-                                ),
+                                ],
                               ),
                             ),
                           ),
