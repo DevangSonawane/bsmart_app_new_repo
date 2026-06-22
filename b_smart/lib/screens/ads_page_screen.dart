@@ -2871,7 +2871,7 @@ class _AdVideoItemState extends State<AdVideoItem>
           // 5. Bottom Info Overlay
           Positioned(
             left: 16,
-            right: 92,
+            right: 44,
             bottom: infoBottom,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2920,7 +2920,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 8),
                             if (widget.ad.totalBudgetCoins > 0)
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -2949,40 +2949,41 @@ class _AdVideoItemState extends State<AdVideoItem>
                                   ],
                                 ),
                               ),
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              onTap: _isFollowLoading ? null : _toggleFollow,
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 12),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      _isFollowing
-                                          ? LucideIcons.userCheck
-                                          : LucideIcons.userPlus,
-                                      size: 16,
-                                      color: Colors.white,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      _isFollowLoading
-                                          ? '...'
-                                          : (_isFollowing
-                                              ? 'Following'
-                                              : 'Follow'),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13,
+                            const SizedBox(width: 8),
+                            if (_adProfileId(widget.ad) != null)
+                              GestureDetector(
+                                onTap: _isFollowLoading ? null : _toggleFollow,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 12),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _isFollowing
+                                            ? LucideIcons.userCheck
+                                            : LucideIcons.userPlus,
+                                        size: 16,
                                         color: Colors.white,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _isFollowLoading
+                                            ? '...'
+                                            : (_isFollowing
+                                                ? 'Following'
+                                                : 'Follow'),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
                           ],
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
