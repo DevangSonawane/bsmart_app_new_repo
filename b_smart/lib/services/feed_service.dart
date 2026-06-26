@@ -7,6 +7,7 @@ import '../models/feed_post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
 import '../utils/url_helper.dart';
+import 'story_cache.dart';
 import 'supabase_service.dart';
 
 class FeedService {
@@ -1761,6 +1762,28 @@ class FeedService {
           : (m['durationSec'] as int?);
       final rawId = m['_id'] ?? m['id'];
       final id = rawId == null ? '' : rawId.toString();
+      final cachedLiked = _boolFromAny(
+            m['liked'] ??
+                m['is_liked'] ??
+                m['liked_by_me'] ??
+                m['is_liked_by_me'],
+          ) ??
+          _boolFromAny(
+            StoryCache.getById(id)?['liked'] ??
+                StoryCache.getById(id)?['is_liked'] ??
+                StoryCache.getById(id)?['liked_by_me'] ??
+                StoryCache.getById(id)?['is_liked_by_me'],
+          );
+      final cachedPayload = <String, dynamic>{
+        ...m,
+        if (cachedLiked != null) ...{
+          'liked': cachedLiked,
+          'is_liked': cachedLiked,
+          'liked_by_me': cachedLiked,
+          'is_liked_by_me': cachedLiked,
+        },
+      };
+      StoryCache.putById(id, cachedPayload);
       debugPrint(
         '[FeedService] story item storyId=$storyId itemId=$id '
         'mediaType=${mediaType.name} mediaUrl=$mediaUrl thumbnailUrl=$thumbnailUrl rawMediaType=${rawMedia.runtimeType} '
@@ -1799,6 +1822,18 @@ class FeedService {
   /// Mark an item as viewed.
   Future<void> markItemViewed(String itemId) async {
     await _storiesApi.viewItem(itemId);
+  }
+
+  bool? _boolFromAny(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized.isEmpty) return null;
+      if (['true', '1', 'yes', 'y'].contains(normalized)) return true;
+      if (['false', '0', 'no', 'n'].contains(normalized)) return false;
+    }
+    return null;
   }
 
   // Get current user for profile icon

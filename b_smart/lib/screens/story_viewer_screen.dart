@@ -178,6 +178,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     }
 
     final currentStory = currentGroup.stories[_currentStoryIndex];
+    _syncLikedStateForStory(currentStory);
     _logStoryDebug(
       'startAutoPlay currentStory id=${currentStory.id} type=${currentStory.mediaType} '
       'url=${currentStory.mediaUrl} texts=${currentStory.texts?.length ?? 0} '
@@ -842,6 +843,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         _progress = 0.0;
         _offlineRetryAttempts = 0;
       });
+      if (items.isNotEmpty) {
+        _syncLikedStateForStory(items.first);
+      }
       _startAutoPlay();
     } catch (_) {
       _logStoryDebug('fetchGroupItems failed storyId=$sid');
@@ -1327,7 +1331,67 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   bool _isCurrentStoryLiked() {
     final story = _currentStory();
     if (story == null) return false;
-    return _likedItemIds.contains(story.id);
+    if (_likedItemIds.contains(story.id)) return true;
+    final cachedLiked = _cachedLikeStateForStory(story);
+    return cachedLiked ?? false;
+  }
+
+  bool? _boolFromAny(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized.isEmpty) return null;
+      if (['true', '1', 'yes', 'y'].contains(normalized)) return true;
+      if (['false', '0', 'no', 'n'].contains(normalized)) return false;
+    }
+    return null;
+  }
+
+  int? _intFromAny(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim());
+    return null;
+  }
+
+  bool? _cachedLikeStateForStory(Story story) {
+    final normalizedUrl = story.mediaUrl.isNotEmpty
+        ? UrlHelper.normalizeUrl(story.mediaUrl)
+        : '';
+    final cached = StoryCache.getById(story.id) ??
+        (normalizedUrl.isNotEmpty ? StoryCache.get(normalizedUrl) : null);
+    if (cached == null) return null;
+    return _boolFromAny(
+      cached['liked'] ??
+          cached['is_liked'] ??
+          cached['liked_by_me'] ??
+          cached['is_liked_by_me'],
+    );
+  }
+
+  void _syncLikedStateForStory(Story? story) {
+    if (story == null) return;
+    final cachedLiked = _cachedLikeStateForStory(story);
+    if (cachedLiked == null) return;
+    if (cachedLiked) {
+      _likedItemIds.add(story.id);
+    } else {
+      _likedItemIds.remove(story.id);
+    }
+  }
+
+  void _updateStoryLikeCache(String itemId, bool liked, int? likesCount) {
+    final existing = StoryCache.getById(itemId) ?? const <String, dynamic>{};
+    StoryCache.putById(itemId, <String, dynamic>{
+      ...existing,
+      'liked': liked,
+      'is_liked': liked,
+      'liked_by_me': liked,
+      'is_liked_by_me': liked,
+      if (likesCount != null) 'likes_count': likesCount,
+      if (likesCount != null) 'likesCount': likesCount,
+    });
   }
 
   Future<void> _toggleStoryLike() async {
@@ -1357,7 +1421,14 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     try {
       final res = await _storiesApi.likeItem(itemId);
       if (!mounted) return;
-      final likedNow = res['liked'] as bool? ?? !liked;
+      final likedNow =
+          _boolFromAny(res['liked']) ??
+              _boolFromAny(res['liked_by_me']) ??
+              _boolFromAny(res['is_liked']) ??
+              _boolFromAny(res['is_liked_by_me']) ??
+              !liked;
+      final likesCount = _intFromAny(res['likes_count'] ?? res['likesCount']);
+      _updateStoryLikeCache(itemId, likedNow, likesCount);
       setState(() {
         if (likedNow) {
           _likedItemIds.add(itemId);
