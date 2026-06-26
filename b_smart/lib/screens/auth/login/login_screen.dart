@@ -99,6 +99,17 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  Color _fieldFillColor(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Theme.of(context).brightness == Brightness.dark
+        ? scheme.surfaceContainerHighest.withValues(alpha: 0.55)
+        : Colors.white;
+  }
+
+  Color _fieldTextColor(BuildContext context) {
+    return Theme.of(context).colorScheme.onSurface;
+  }
+
   Future<void> _showOtpDialog({
     required String identifier,
     required String password,
@@ -171,6 +182,7 @@ class _LoginScreenState extends State<LoginScreen>
                   const SizedBox(height: 12),
                   TextField(
                     controller: otpController,
+                    style: TextStyle(color: _fieldTextColor(context)),
                     keyboardType: TextInputType.number,
                     maxLength: 6,
                     textAlign: TextAlign.center,
@@ -178,6 +190,8 @@ class _LoginScreenState extends State<LoginScreen>
                       hintText: '000000',
                       counterText: '',
                       errorText: localError,
+                      filled: true,
+                      fillColor: _fieldFillColor(context),
                     ),
                     onChanged: (v) {
                       final digits = v.replaceAll(RegExp(r'\\D'), '');
@@ -305,11 +319,13 @@ class _LoginScreenState extends State<LoginScreen>
                       const SizedBox(height: 32),
                       TextFormField(
                         controller: _identifierController,
-                        style: const TextStyle(color: InstagramTheme.textBlack),
-                        decoration: const InputDecoration(
+                        style: TextStyle(color: _fieldTextColor(context)),
+                        decoration: InputDecoration(
                           labelText: 'Identity',
                           hintText: 'Email, Phone, or Username',
-                          prefixIcon: Icon(LucideIcons.user),
+                          prefixIcon: const Icon(LucideIcons.user),
+                          filled: true,
+                          fillColor: _fieldFillColor(context),
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
@@ -323,7 +339,7 @@ class _LoginScreenState extends State<LoginScreen>
                       TextFormField(
                         controller: _passwordController,
                         obscureText: !_isPasswordVisible,
-                        style: const TextStyle(color: InstagramTheme.textBlack),
+                        style: TextStyle(color: _fieldTextColor(context)),
                         decoration: InputDecoration(
                           labelText: 'Password',
                           hintText: 'Enter your password',

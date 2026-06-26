@@ -232,10 +232,20 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
                     // Full Name (Optional)
                     TextFormField(
                       controller: _fullNameController,
-                      style: const TextStyle(color: InstagramTheme.textBlack),
-                      decoration: const InputDecoration(
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      decoration: InputDecoration(
                         labelText: 'Full Name (Optional)',
-                        prefixIcon: Icon(LucideIcons.user),
+                        prefixIcon: const Icon(LucideIcons.user),
+                        filled: true,
+                        fillColor:
+                            Theme.of(context).brightness == Brightness.dark
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest
+                                    .withValues(alpha: 0.55)
+                                : Colors.white,
                       ),
                       validator: (value) =>
                           Validators.validateFullName(value, required: false),
@@ -245,7 +255,9 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
                     // Username
                     TextFormField(
                       controller: _usernameController,
-                      style: const TextStyle(color: InstagramTheme.textBlack),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
                       decoration: InputDecoration(
                         labelText: 'Username',
                         prefixIcon: const Icon(LucideIcons.mail),
@@ -263,7 +275,8 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
                             : _usernameController.text.trim().isNotEmpty
                                 ? Icon(
                                     _isUsernameAvailable
-                                        ? LucideIcons.circleCheck                                        : LucideIcons.x,
+                                        ? LucideIcons.circleCheck
+                                        : LucideIcons.x,
                                     color: _isUsernameAvailable
                                         ? InstagramTheme.successGreen
                                         : InstagramTheme.errorRed,
@@ -286,14 +299,17 @@ class _SignupAccountSetupScreenState extends State<SignupAccountSetupScreen> {
                       TextFormField(
                         controller: _passwordController,
                         obscureText: !_isPasswordVisible,
-                        style: const TextStyle(color: InstagramTheme.textBlack),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                         decoration: InputDecoration(
                           labelText: 'Password',
                           prefixIcon: const Icon(LucideIcons.lock),
                           suffixIcon: IconButton(
                             icon: Icon(
                               _isPasswordVisible
-                                  ? LucideIcons.eye                                  : LucideIcons.eyeOff,
+                                  ? LucideIcons.eye
+                                  : LucideIcons.eyeOff,
                               color: InstagramTheme.textGrey,
                             ),
                             onPressed: () {

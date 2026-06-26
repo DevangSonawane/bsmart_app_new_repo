@@ -49,7 +49,6 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   bool _advancedOpen = false;
   bool _showEmojiPicker = false;
   bool _isSubmitting = false;
-  bool _soundOn = true;
   Map<String, dynamic>? _currentUserProfile;
   final List<Map<String, dynamic>> _peopleTags = [];
   String? _draggingTagId;
@@ -923,6 +922,7 @@ class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
   VideoPlayerController? _controller;
   late double _posMs;
   bool _seeking = false;
+  bool _soundOn = false;
 
   int get _durationMs {
     final d = _controller?.value.duration.inMilliseconds ?? 0;
@@ -938,7 +938,7 @@ class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
     controller.initialize().then((_) async {
       if (!mounted) return;
       await controller.setLooping(true);
-      await controller.setVolume(0.0);
+      await controller.setVolume(_soundOn ? 1.0 : 0.0);
       await controller.pause();
       _posMs = _posMs.clamp(0, _durationMs).toDouble();
       try {
@@ -965,6 +965,14 @@ class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
       }
     } catch (_) {}
     if (mounted) setState(() => _seeking = false);
+  }
+
+  void _toggleSound() {
+    setState(() => _soundOn = !_soundOn);
+    final controller = _controller;
+    if (controller != null && controller.value.isInitialized) {
+      unawaited(controller.setVolume(_soundOn ? 1.0 : 0.0));
+    }
   }
 
   Future<void> _useThisFrame() async {
@@ -1005,6 +1013,14 @@ class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
                 onPressed: () => Navigator.pop(context),
               ),
               actions: [
+                IconButton(
+                  tooltip: _soundOn ? 'Mute' : 'Unmute',
+                  icon: Icon(
+                    _soundOn ? Icons.volume_up : Icons.volume_off,
+                    color: Colors.white,
+                  ),
+                  onPressed: _toggleSound,
+                ),
                 TextButton(
                   onPressed: _useThisFrame,
                   child: const Text('Use',
@@ -1016,11 +1032,16 @@ class _VideoFramePickerSheetState extends State<_VideoFramePickerSheet> {
             Expanded(
               child: Center(
                 child: c != null && c.value.isInitialized
-                    ? AspectRatio(
-                        aspectRatio: c.value.aspectRatio == 0
-                            ? (9 / 16)
-                            : c.value.aspectRatio,
-                        child: VideoPlayer(c),
+                    ? Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: c.value.aspectRatio == 0
+                                ? (9 / 16)
+                                : c.value.aspectRatio,
+                            child: VideoPlayer(c),
+                          ),
+                        ],
                       )
                     : const CircularProgressIndicator(),
               ),

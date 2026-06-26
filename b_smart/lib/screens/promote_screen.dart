@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/api_client.dart';
 import '../theme/design_tokens.dart';
 import '../services/promote_service.dart';
+import '../services/media_playback_registry.dart';
 import '../services/video_pool.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
 import 'external_link_screen.dart';
@@ -29,7 +30,8 @@ class PromoteScreen extends StatefulWidget {
   State<PromoteScreen> createState() => _PromoteScreenState();
 }
 
-class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
+class _PromoteScreenState extends State<PromoteScreen>
+    with RouteAware, WidgetsBindingObserver {
   PageRoute<dynamic>? _subscribedRoute;
   bool _isRouteActive = true;
 
@@ -74,8 +76,10 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _searchScrollController.addListener(_onSearchScroll);
     unawaited(VideoPool.instance.pauseActive());
+    MediaPlaybackRegistry.instance.register('promote-screen', _pauseAllMedia);
     unawaited(() async {
       _myUserId = await CurrentUser.id;
       if (mounted) setState(() {});
@@ -218,6 +222,8 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    MediaPlaybackRegistry.instance.unregister('promote-screen');
     _pageController.dispose();
     _playbackIndicatorTimer?.cancel();
     _searchDebounce?.cancel();
@@ -243,7 +249,7 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
   void didPushNext() {
     if (!_isRouteActive) return;
     _isRouteActive = false;
-    _syncPlaybackState();
+    unawaited(MediaPlaybackRegistry.instance.pauseAll());
     if (mounted) setState(() {});
   }
 
@@ -253,6 +259,12 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
     _isRouteActive = true;
     _syncPlaybackState();
     if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) return;
+    unawaited(MediaPlaybackRegistry.instance.pauseAll());
   }
 
   @override
@@ -286,6 +298,15 @@ class _PromoteScreenState extends State<PromoteScreen> with RouteAware {
       return;
     }
     unawaited(controller.play());
+  }
+
+  Future<void> _pauseAllMedia() async {
+    for (final controller in _controllers.values) {
+      try {
+        await controller.pause();
+        await controller.setVolume(0.0);
+      } catch (_) {}
+    }
   }
 
   Future<void> _togglePlayPause() async {

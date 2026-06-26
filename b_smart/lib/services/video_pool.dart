@@ -14,7 +14,7 @@ class VideoPool extends ChangeNotifier {
   final List<String> _warmOrder = <String>[];
   static const int _maxSlots = 3;
   String? _activeId;
-  bool _muted = true;
+  bool _muted = false;
   String? _cachedToken;
   DateTime? _tokenFetchedAt;
 
@@ -26,7 +26,7 @@ class VideoPool extends ChangeNotifier {
     _cachedToken = null;
     _tokenFetchedAt = null;
     await disposeAll();
-    _muted = true;
+    _muted = false;
   }
 
   VideoPlayerController? peek(String id) {

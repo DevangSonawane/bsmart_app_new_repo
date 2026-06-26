@@ -52,10 +52,23 @@ class _AuthCallbackScreenState extends State<AuthCallbackScreen> {
       final user = await _authService.fetchCurrentUser();
       if (!mounted) return;
       if (user != null) {
+        final role = (user.role ?? '').trim().toLowerCase();
+        if (role == 'vendor' || role == 'advertiser' || role == 'ads') {
+          await _authService.logout();
+          if (!mounted) return;
+          setState(() {
+            _message =
+                'This account is for vendors/ads. Please use the web app to sign in.';
+            _loading = false;
+          });
+          return;
+        }
         await SessionResetService.instance.clearUserSessionState();
         if (user.id.isNotEmpty) {
+          // ignore: use_build_context_synchronously
           StoreProvider.of<AppState>(context).dispatch(SetAuthenticated(user.id));
         }
+        // ignore: use_build_context_synchronously
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const HomeDashboard()),
           (route) => false,

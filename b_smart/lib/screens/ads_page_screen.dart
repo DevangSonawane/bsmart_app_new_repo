@@ -14,6 +14,7 @@ import '../api/api_exceptions.dart';
 import '../models/ad_model.dart';
 import '../models/ad_category_model.dart';
 import '../services/ads_service.dart';
+import '../services/media_playback_registry.dart';
 import '../services/supabase_service.dart';
 import '../utils/app_error_handler.dart';
 import '../state/feed_actions.dart';
@@ -49,7 +50,8 @@ class AdsPageScreen extends StatefulWidget {
   State<AdsPageScreen> createState() => _AdsPageScreenState();
 }
 
-class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
+class _AdsPageScreenState extends State<AdsPageScreen>
+    with RouteAware, WidgetsBindingObserver {
   final AdsService _adsService = AdsService();
   static const bool _showViewRecordedPopupEnabled = false; // React parity
   static final Set<String> _sessionViewedAdIds = <String>{};
@@ -149,6 +151,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Cache the bottom inset from the window directly at init time.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -180,6 +183,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _keyboardFocusNode.dispose();
     _pageController.dispose();
     _searchDebounce?.cancel();
@@ -197,6 +201,7 @@ class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
   void didPushNext() {
     if (!_isRouteActive) return;
     _isRouteActive = false;
+    unawaited(MediaPlaybackRegistry.instance.pauseAll());
     if (mounted) setState(() {});
   }
 
@@ -205,6 +210,12 @@ class _AdsPageScreenState extends State<AdsPageScreen> with RouteAware {
     if (_isRouteActive) return;
     _isRouteActive = true;
     if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) return;
+    unawaited(MediaPlaybackRegistry.instance.pauseAll());
   }
 
   Future<void> _init() async {
@@ -1515,6 +1526,7 @@ class _AdVideoItemState extends State<AdVideoItem>
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   bool _isOffline = false;
   int _offlineRetryAttempts = 0;
+  String? _registeredPauseId;
 
   // Compatibility accessors for hot-reload safety (older kernels referenced these).
   Timer? get _watchTimer => _watchGateTimer;
@@ -1679,6 +1691,7 @@ class _AdVideoItemState extends State<AdVideoItem>
     _likesCount = widget.ad.likesCount;
     _lastPopupVisible = widget.popupVisibility.isVisible;
     widget.popupVisibility.addListener(_onPopupVisibilityChanged);
+    _registerPauseHook();
     _listenConnectivity();
     _loadMediaHeaders();
     unawaited(_loadFollowState());
@@ -1734,6 +1747,8 @@ class _AdVideoItemState extends State<AdVideoItem>
       widget.popupVisibility.addListener(_onPopupVisibilityChanged);
     }
     if (oldWidget.ad.id != widget.ad.id) {
+      _unregisterPauseHook(oldWidget.ad.id);
+      _registerPauseHook();
       _isLiked = widget.ad.isLikedByMe;
       _isSaved = widget.ad.isSavedByMe;
       _likesCount = widget.ad.likesCount;
@@ -1789,7 +1804,35 @@ class _AdVideoItemState extends State<AdVideoItem>
     _watchProgressController.dispose();
     _ctaTimer?.cancel();
     widget.popupVisibility.removeListener(_onPopupVisibilityChanged);
+    _unregisterPauseHook(_registeredPauseId);
     super.dispose();
+  }
+
+  void _registerPauseHook() {
+    final id = 'ad:${widget.ad.id.trim()}';
+    if (id.trim().isEmpty) return;
+    _registeredPauseId = id;
+    MediaPlaybackRegistry.instance.register(id, () async {
+      await _pauseForBoundary();
+    });
+  }
+
+  void _unregisterPauseHook(String? id) {
+    final raw = id?.trim();
+    if (raw == null || raw.isEmpty) return;
+    final key = raw.startsWith('ad:') ? raw : 'ad:$raw';
+    MediaPlaybackRegistry.instance.unregister(key);
+    if (_registeredPauseId == key) {
+      _registeredPauseId = null;
+    }
+  }
+
+  Future<void> _pauseForBoundary() async {
+    _userPaused = true;
+    await _safeSetVolume(0);
+    await _safePause();
+    _setWatchProgressRunning(false);
+    _stopCtaCountdown(accumulate: true);
   }
 
   void _onPopupVisibilityChanged() {

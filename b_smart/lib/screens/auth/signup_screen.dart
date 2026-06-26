@@ -242,21 +242,30 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
-  InputDecoration _fieldDecoration({
+  InputDecoration _fieldDecoration(
+    BuildContext context, {
     required String labelText,
     required String hintText,
     required IconData icon,
     Widget? suffixIcon,
     String? helperText,
   }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final fillColor = isDark
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55)
+        : Colors.white;
+    final mutedColor = theme.colorScheme.onSurfaceVariant;
     return InputDecoration(
       labelText: labelText,
       hintText: hintText,
-      prefixIcon: Icon(icon),
+      labelStyle: TextStyle(color: mutedColor),
+      hintStyle: TextStyle(color: mutedColor),
+      prefixIcon: Icon(icon, color: mutedColor),
       suffixIcon: suffixIcon,
       helperText: helperText,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: fillColor,
       contentPadding: const EdgeInsets.symmetric(
         horizontal: 16,
         vertical: 18,
@@ -408,7 +417,11 @@ class _SignupScreenState extends State<SignupScreen> {
                       const SizedBox(height: 28),
                       TextFormField(
                         controller: _nameController,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                         decoration: _fieldDecoration(
+                          context,
                           labelText: 'Full Name',
                           hintText: 'John Doe',
                           icon: LucideIcons.user,
@@ -420,7 +433,11 @@ class _SignupScreenState extends State<SignupScreen> {
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
                         autovalidateMode: AutovalidateMode.onUserInteraction,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                         decoration: _fieldDecoration(
+                          context,
                           labelText: 'Email Address',
                           hintText: 'john@example.com',
                           icon: LucideIcons.mail,
@@ -465,7 +482,11 @@ class _SignupScreenState extends State<SignupScreen> {
                         controller: _phoneController,
                         keyboardType: TextInputType.phone,
                         autovalidateMode: AutovalidateMode.onUserInteraction,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                         decoration: _fieldDecoration(
+                          context,
                           labelText: 'Phone Number',
                           hintText: '+1 234 567 890',
                           icon: LucideIcons.phone,
@@ -509,7 +530,11 @@ class _SignupScreenState extends State<SignupScreen> {
                       TextFormField(
                         controller: _usernameController,
                         autovalidateMode: AutovalidateMode.onUserInteraction,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                         decoration: _fieldDecoration(
+                          context,
                           labelText: 'Username',
                           hintText: 'johndoe',
                           icon: LucideIcons.atSign,
@@ -553,7 +578,11 @@ class _SignupScreenState extends State<SignupScreen> {
                       TextFormField(
                         controller: _passwordController,
                         obscureText: true,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                         decoration: _fieldDecoration(
+                          context,
                           labelText: 'Password',
                           hintText: '••••••••',
                           icon: LucideIcons.keyRound,
@@ -564,7 +593,11 @@ class _SignupScreenState extends State<SignupScreen> {
                       TextFormField(
                         controller: _confirmController,
                         obscureText: true,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                         decoration: _fieldDecoration(
+                          context,
                           labelText: 'Confirm Password',
                           hintText: '••••••••',
                           icon: LucideIcons.keyRound,

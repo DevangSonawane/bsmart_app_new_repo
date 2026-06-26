@@ -18,6 +18,17 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = false;
   String? _error;
 
+  Color _fieldFillColor(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Theme.of(context).brightness == Brightness.dark
+        ? scheme.surfaceContainerHighest.withValues(alpha: 0.55)
+        : Colors.white;
+  }
+
+  TextStyle _fieldTextStyle(BuildContext context) {
+    return TextStyle(color: Theme.of(context).colorScheme.onSurface);
+  }
+
   Future<void> _login() async {
     setState(() {
       _loading = true;
@@ -29,6 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = identifier.contains('@')
           ? await AuthService().loginWithEmail(identifier, password)
           : await AuthService().loginWithUsername(identifier, password);
+      if (!mounted) return;
       // Dispatch to store
       StoreProvider.of<AppState>(context).dispatch(SetAuthenticated(user.id));
     } catch (e, st) {
@@ -58,15 +70,24 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             TextField(
               controller: _identifierController,
+              style: _fieldTextStyle(context),
               decoration: const InputDecoration(
                 labelText: 'Username',
                 hintText: 'Email, Phone, or Username',
+              ).copyWith(
+                filled: true,
+                fillColor: _fieldFillColor(context),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _passwordController,
-              decoration: const InputDecoration(labelText: 'Password'),
+              style: _fieldTextStyle(context),
+              decoration: InputDecoration(
+                labelText: 'Password',
+                filled: true,
+                fillColor: _fieldFillColor(context),
+              ),
               obscureText: true,
             ),
             const SizedBox(height: 20),

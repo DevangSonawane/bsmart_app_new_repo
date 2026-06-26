@@ -13,6 +13,7 @@ import 'package:video_player/video_player.dart';
 import '../api/api_client.dart';
 import '../config/api_config.dart';
 import '../models/reel_model.dart';
+import '../services/media_playback_registry.dart';
 import '../services/reels_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
@@ -33,7 +34,7 @@ class ReelsScreen extends StatefulWidget {
 }
 
 class _ReelsScreenState extends State<ReelsScreen>
-    with AutomaticKeepAliveClientMixin, RouteAware {
+    with AutomaticKeepAliveClientMixin, RouteAware, WidgetsBindingObserver {
   final ReelsService _reelsService = ReelsService();
   final SupabaseService _supabase = SupabaseService();
   final PageController _pageController = PageController();
@@ -116,6 +117,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    MediaPlaybackRegistry.instance.register('reels-screen', _pauseAllMedia);
     _pageController.addListener(_onPageScrollForAudioGate);
     _listenConnectivity();
     unawaited(_loadCurrentUserId());
@@ -214,6 +217,8 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    MediaPlaybackRegistry.instance.unregister('reels-screen');
     _navigationUnlockTimer?.cancel();
     _connectivitySub?.cancel();
     _keyboardFocusNode.dispose();
@@ -307,10 +312,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (!_isRouteActive) return;
     _isRouteActive = false;
     _audioGateOpen = false;
-    for (final controller in _videoControllers.values) {
-      unawaited(_setControllerVolumeSafely(controller, 0));
-      unawaited(controller.pause());
-    }
+    unawaited(MediaPlaybackRegistry.instance.pauseAll());
     if (mounted) setState(() {});
   }
 
@@ -325,6 +327,12 @@ class _ReelsScreenState extends State<ReelsScreen>
         await _activateCurrentReelPlayback();
       }).catchError((_) {});
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) return;
+    unawaited(MediaPlaybackRegistry.instance.pauseAll());
   }
 
   Future<void> _loadReels() async {
@@ -396,6 +404,16 @@ class _ReelsScreenState extends State<ReelsScreen>
     }
     _videoControllers.clear();
     _controllerSetupInProgress.clear();
+  }
+
+  Future<void> _pauseAllMedia() async {
+    _audioGateOpen = false;
+    for (final controller in _videoControllers.values) {
+      try {
+        await _setControllerVolumeSafely(controller, 0);
+        await controller.pause();
+      } catch (_) {}
+    }
   }
 
   VideoPlayerController? _controllerForIndex(int index) =>

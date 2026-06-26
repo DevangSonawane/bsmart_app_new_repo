@@ -20,6 +20,7 @@ class ProfileHeader extends StatelessWidget {
   final bool isVendor;
   final bool isValidated;
   final bool isFollowing;
+  final bool isRequested;
   final bool canMessage;
   final bool isFavorite;
   final bool isSuggestionsOpen;
@@ -51,6 +52,7 @@ class ProfileHeader extends StatelessWidget {
     this.isVendor = false,
     this.isValidated = false,
     this.isFollowing = false,
+    this.isRequested = false,
     this.canMessage = true,
     this.isFavorite = false,
     this.isSuggestionsOpen = false,
@@ -397,6 +399,8 @@ class ProfileHeader extends StatelessWidget {
   }
 
   Widget _followButton({required VoidCallback? onTap}) {
+    final isPending = isRequested;
+    final showFollowing = isFollowing && !isPending;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -407,10 +411,13 @@ class ProfileHeader extends StatelessWidget {
           curve: Curves.easeInOut,
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            gradient: isFollowing ? null : DesignTokens.instaGradient,
-            color: isFollowing ? Colors.grey.withValues(alpha: 0.15) : null,
+            gradient:
+                showFollowing || isPending ? null : DesignTokens.instaGradient,
+            color: showFollowing || isPending
+                ? Colors.grey.withValues(alpha: 0.15)
+                : null,
             borderRadius: const BorderRadius.all(Radius.circular(10)),
-            border: isFollowing
+            border: (showFollowing || isPending)
                 ? Border.all(color: Colors.grey.withValues(alpha: 0.25))
                 : null,
           ),
@@ -418,10 +425,15 @@ class ProfileHeader extends StatelessWidget {
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
             child: Text(
-              isFollowing ? 'Following' : 'Follow',
-              key: ValueKey<bool>(isFollowing),
+              isPending
+                  ? 'Requested'
+                  : (showFollowing ? 'Following' : 'Follow'),
+              key: ValueKey<String>(isPending
+                  ? 'requested'
+                  : (showFollowing ? 'following' : 'follow')),
               style: TextStyle(
-                color: isFollowing ? Colors.grey : Colors.white,
+                color:
+                    (showFollowing || isPending) ? Colors.grey : Colors.white,
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),

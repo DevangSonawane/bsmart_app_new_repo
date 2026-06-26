@@ -3,6 +3,7 @@ class AuthUser {
   final String username;
   final String? email;
   final String? phone;
+  final String? role;
   final String? fullName;
   final DateTime? dateOfBirth;
   final bool isUnder18;
@@ -17,6 +18,7 @@ class AuthUser {
     required this.username,
     this.email,
     this.phone,
+    this.role,
     this.fullName,
     this.dateOfBirth,
     required this.isUnder18,
@@ -33,6 +35,7 @@ class AuthUser {
       username: json['username'] as String,
       email: json['email'] as String?,
       phone: json['phone'] as String?,
+      role: json['role'] as String?,
       fullName: json['full_name'] as String?,
       dateOfBirth: json['date_of_birth'] != null
           ? DateTime.parse(json['date_of_birth'] as String)
@@ -52,6 +55,7 @@ class AuthUser {
       'username': username,
       'email': email,
       'phone': phone,
+      'role': role,
       'full_name': fullName,
       'date_of_birth': dateOfBirth?.toIso8601String(),
       'is_under_18': isUnder18,
@@ -68,6 +72,7 @@ class AuthUser {
     String? username,
     String? email,
     String? phone,
+    String? role,
     String? fullName,
     DateTime? dateOfBirth,
     bool? isUnder18,
@@ -82,6 +87,7 @@ class AuthUser {
       username: username ?? this.username,
       email: email ?? this.email,
       phone: phone ?? this.phone,
+      role: role ?? this.role,
       fullName: fullName ?? this.fullName,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       isUnder18: isUnder18 ?? this.isUnder18,

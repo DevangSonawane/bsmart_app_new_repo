@@ -15,6 +15,52 @@ class StoriesApi {
 
   String _path(String suffix) => '$_basePath$suffix';
 
+  void _log(String message) {
+    // ignore: avoid_print
+    print('[StoriesApi] $message');
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return value.cast<String, dynamic>();
+    return const <String, dynamic>{};
+  }
+
+  Map<String, dynamic> _unwrapResponseMap(Map<String, dynamic> value) {
+    Map<String, dynamic> current = value;
+    while (true) {
+      final dynamic nested =
+          current['data'] ?? current['result'] ?? current['summary'];
+      if (nested is Map) {
+        final next = nested.cast<String, dynamic>();
+        if (next.isEmpty || identical(next, current)) break;
+        current = <String, dynamic>{...current, ...next};
+        continue;
+      }
+      break;
+    }
+    return current;
+  }
+
+  List<Map<String, dynamic>> _extractViewerList(dynamic source) {
+    if (source is List) {
+      return source
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+    }
+    if (source is Map) {
+      final map = source.cast<String, dynamic>();
+      for (final key in const ['viewers', 'views', 'items', 'data', 'result']) {
+        final nested = map[key];
+        if (nested == null) continue;
+        final extracted = _extractViewerList(nested);
+        if (extracted.isNotEmpty) return extracted;
+      }
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
   /// GET /api/stories/user/{userId}
   /// Returns a list of Story documents (not items). Used by highlights picker.
   Future<List<Map<String, dynamic>>> userStories(String userId) async {
@@ -98,30 +144,62 @@ class StoriesApi {
     await _client.post(_path('/stories/items/$itemId/view'));
   }
 
+  /// POST /api/stories/items/{itemId}/like
+  /// Toggles like/unlike for a story item.
+  Future<Map<String, dynamic>> likeItem(String itemId) async {
+    final res = await _client.post(_path('/stories/items/$itemId/like'));
+    if (res is Map) {
+      final map = Map<String, dynamic>.from(res);
+      final nested =
+          map['data'] ?? map['result'] ?? map['story'] ?? map['item'];
+      if (nested is Map) {
+        return <String, dynamic>{...map, ...Map<String, dynamic>.from(nested)};
+      }
+      return map;
+    }
+    return const <String, dynamic>{};
+  }
+
   /// GET /api/stories/items/{itemId}/views
   /// Returns the owner-only viewers summary for a single story item.
   Future<Map<String, dynamic>> viewSummary(String itemId) async {
+    _log('viewSummary request itemId=$itemId');
     final res = await _client.get(_path('/stories/items/$itemId/views'));
+    _log('viewSummary responseType=${res.runtimeType}');
     if (res is Map) {
-      return res.cast<String, dynamic>();
+      final map = _unwrapResponseMap(res.cast<String, dynamic>());
+      _log(
+        'viewSummary keys=${map.keys.toList()} total=${map['total_views']} unique=${map['unique_viewers']} viewersType=${map['viewers']?.runtimeType}',
+      );
+      return map;
     }
     if (res is List) {
+      _log('viewSummary listResponse length=${res.length}');
       return <String, dynamic>{'viewers': res};
     }
+    _log('viewSummary empty/non-map response');
     return const <String, dynamic>{};
   }
 
   /// Compatibility helper that returns only the viewer list for a story item.
   Future<List<Map<String, dynamic>>> viewers(String itemId) async {
     final summary = await viewSummary(itemId);
-    final dynamic list = summary['viewers'];
-    if (list is List) {
-      return list
-          .whereType<Map>()
-          .map((e) => e.cast<String, dynamic>())
-          .toList();
-    }
-    return const <Map<String, dynamic>>[];
+    final data = _asMap(summary['data']);
+    final result = _asMap(summary['result']);
+    final meta = _asMap(summary['summary']);
+    final dynamic list = summary['viewers'] ??
+        summary['views'] ??
+        data['viewers'] ??
+        data['views'] ??
+        result['viewers'] ??
+        result['views'] ??
+        meta['viewers'] ??
+        meta['views'];
+    final viewers = _extractViewerList(list);
+    _log(
+      'viewers parsed itemId=$itemId count=${viewers.length} listType=${list.runtimeType} summaryKeys=${summary.keys.toList()}',
+    );
+    return viewers;
   }
 
   Future<List<Map<String, dynamic>>> archive() async {

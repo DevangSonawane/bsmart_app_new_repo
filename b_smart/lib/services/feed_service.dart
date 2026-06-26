@@ -1591,6 +1591,36 @@ class FeedService {
     return StoryMediaType.image;
   }
 
+  String _resolveStoryUserName(
+    Map<String, dynamic>? user,
+    Map<String, dynamic>? fallback,
+  ) {
+    String? pick(dynamic value) {
+      final text = value?.toString().trim();
+      return (text == null || text.isEmpty) ? null : text;
+    }
+
+    final candidates = <dynamic>[
+      user?['username'],
+      user?['user_name'],
+      user?['full_name'],
+      user?['name'],
+      user?['display_name'],
+      user?['handle'],
+      fallback?['username'],
+      fallback?['user_name'],
+      fallback?['full_name'],
+      fallback?['name'],
+      fallback?['display_name'],
+      fallback?['handle'],
+    ];
+    for (final candidate in candidates) {
+      final resolved = pick(candidate);
+      if (resolved != null) return resolved;
+    }
+    return 'User';
+  }
+
   // Get stories for online users
   List<StoryGroup> getStories() {
     return [];
@@ -1624,7 +1654,7 @@ class FeedService {
         userId: previewUserId.isNotEmpty
             ? previewUserId
             : (user['_id'] as String?) ?? (user['id'] as String?) ?? 'unknown',
-        userName: (user['username'] as String?) ?? 'User',
+        userName: _resolveStoryUserName(user, preview),
         userAvatar: user['avatar_url'] as String?,
         isOnline: true,
         isCloseFriend: false,
@@ -1640,7 +1670,7 @@ class FeedService {
                       : (user['_id'] as String?) ??
                           (user['id'] as String?) ??
                           '',
-                  userName: (user['username'] as String?) ?? 'User',
+                  userName: _resolveStoryUserName(user, preview),
                   userAvatar: user['avatar_url'] as String?,
                   mediaUrl: mediaUrl,
                   thumbnailUrl: thumbnailUrl.isEmpty ? null : thumbnailUrl,
@@ -1739,7 +1769,14 @@ class FeedService {
       return Story(
         id: id.isNotEmpty ? id : 'item',
         userId: (m['user_id'] as String?) ?? '',
-        userName: ownerUserName ?? '',
+        userName: (ownerUserName != null && ownerUserName.trim().isNotEmpty)
+            ? ownerUserName.trim()
+            : _resolveStoryUserName(
+                (m['user'] is Map)
+                    ? Map<String, dynamic>.from(m['user'] as Map)
+                    : null,
+                m,
+              ),
         userAvatar: ownerAvatar,
         mediaUrl: mediaUrl,
         thumbnailUrl: thumbnailUrl.isEmpty ? null : thumbnailUrl,

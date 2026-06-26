@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:video_player/video_player.dart';
 import '../models/story_model.dart';
+import '../utils/current_user.dart';
 import '../services/feed_service.dart';
 import '../services/story_cache.dart';
 import '../utils/timezone_service.dart';
@@ -37,9 +38,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   bool _paused = false;
   bool _waitingForMedia = false;
   String? _pendingStoryId;
-  final TextEditingController _messageController = TextEditingController();
   final FeedService _feedService = FeedService();
+  final StoriesApi _storiesApi = StoriesApi();
   final Set<String> _viewedItemIds = <String>{};
+  final Set<String> _likedItemIds = <String>{};
   VideoPlayerController? _videoCtl;
   Future<void>? _initVideo;
   Map<String, String>? _videoHeaders;
@@ -51,6 +53,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   bool _isOffline = false;
   int _offlineRetryAttempts = 0;
+  String? _currentUserId;
 
   void _logStoryDebug(String message) {
     debugPrint('[StoryViewer] $message');
@@ -81,6 +84,12 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
           _videoHeaders = {'Authorization': 'Bearer $token'};
         });
       }
+    });
+    CurrentUser.id.then((id) {
+      if (!mounted) return;
+      setState(() {
+        _currentUserId = id?.trim().isNotEmpty == true ? id!.trim() : null;
+      });
     });
     _startAutoPlay();
   }
@@ -130,6 +139,16 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     _storyController.dispose();
     _videoCtl?.dispose();
     super.dispose();
+  }
+
+  bool _canShowReplyBar(Story? story) {
+    if (story == null) return false;
+    final currentUserId = _currentUserId?.trim();
+    final ownerId = story.userId.trim();
+    return currentUserId != null &&
+        currentUserId.isNotEmpty &&
+        ownerId.isNotEmpty &&
+        currentUserId == ownerId;
   }
 
   void _startAutoPlay() {
@@ -353,6 +372,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         ? currentGroup.stories[
             _currentStoryIndex.clamp(0, currentGroup.stories.length - 1)]
         : null;
+    final currentAuthorName = _currentStoryAuthorName();
     final groupStoryId = currentGroup.storyId ?? '';
     _logStoryDebug(
       'build group=$_currentGroupIndex storyId=$groupStoryId stories=${currentGroup.stories.length} '
@@ -563,8 +583,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                         radius: 18,
                                         backgroundColor: Colors.blue,
                                         child: Text(
-                                          currentGroup.userName.isNotEmpty
-                                              ? currentGroup.userName[0]
+                                          currentAuthorName.isNotEmpty
+                                              ? currentAuthorName[0]
                                                   .toUpperCase()
                                               : '?',
                                           style: const TextStyle(
@@ -577,7 +597,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            currentGroup.userName,
+                                            currentAuthorName,
                                             style: const TextStyle(
                                               color: Colors.white,
                                               fontWeight: FontWeight.bold,
@@ -609,7 +629,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                     PopupMenuItem(
                                       value: 'mute',
                                       child: Text(
-                                          'Mute ${currentGroup.userName}\'s story'),
+                                          'Mute ${currentAuthorName}\'s story'),
                                     ),
                                     if (currentGroup.isCloseFriend)
                                       const PopupMenuItem(
@@ -677,44 +697,54 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   Widget _buildBottomBar() {
+    final story = _currentStory();
+    final canLike = story != null &&
+        (_currentUserId == null || _currentUserId != story.userId);
+    final showReplyBar = _canShowReplyBar(story);
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 10, 6, 0),
       child: Row(
         children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.22),
+          if (showReplyBar) ...[
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.22),
+                  ),
                 ),
-              ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 2,
-              ),
-              child: TextField(
-                controller: _messageController,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 2,
                 ),
-                cursorColor: Colors.white,
-                decoration: const InputDecoration(
-                  hintText: 'Send message',
-                  hintStyle: TextStyle(color: Colors.white54),
-                  border: InputBorder.none,
-                  isDense: true,
+                child: const TextField(
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  cursorColor: Colors.white,
+                  decoration: InputDecoration(
+                    hintText: 'Send message',
+                    hintStyle: TextStyle(color: Colors.white54),
+                    border: InputBorder.none,
+                    isDense: true,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
+            const SizedBox(width: 10),
+          ],
           IconButton(
-            onPressed: () {},
-            icon: const Icon(LucideIcons.heart, color: Colors.white),
+            onPressed: canLike ? _toggleStoryLike : null,
+            icon: Icon(
+              _isCurrentStoryLiked() ? Icons.favorite : LucideIcons.heart,
+              color: _isCurrentStoryLiked()
+                  ? Colors.redAccent
+                  : (canLike ? Colors.white : Colors.white38),
+            ),
           ),
           IconButton(
             onPressed: () {},
@@ -1274,6 +1304,80 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         ]),
       ),
     );
+  }
+
+  Story? _currentStory() {
+    if (widget.storyGroups.isEmpty) return null;
+    final group = widget.storyGroups[_currentGroupIndex];
+    if (group.stories.isEmpty) return null;
+    final idx = _currentStoryIndex.clamp(0, group.stories.length - 1);
+    return group.stories[idx];
+  }
+
+  String _currentStoryAuthorName() {
+    final groupName = widget.storyGroups.isEmpty
+        ? ''
+        : widget.storyGroups[_currentGroupIndex].userName.trim();
+    if (groupName.isNotEmpty) return groupName;
+    final storyName = _currentStory()?.userName.trim() ?? '';
+    if (storyName.isNotEmpty) return storyName;
+    return 'User';
+  }
+
+  bool _isCurrentStoryLiked() {
+    final story = _currentStory();
+    if (story == null) return false;
+    return _likedItemIds.contains(story.id);
+  }
+
+  Future<void> _toggleStoryLike() async {
+    final story = _currentStory();
+    if (story == null) return;
+    if (_currentUserId != null && _currentUserId == story.userId) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to like stories')),
+      );
+      return;
+    }
+
+    final itemId = story.id.trim();
+    if (itemId.isEmpty) return;
+    final liked = _likedItemIds.contains(itemId);
+    setState(() {
+      if (liked) {
+        _likedItemIds.remove(itemId);
+      } else {
+        _likedItemIds.add(itemId);
+      }
+    });
+
+    try {
+      final res = await _storiesApi.likeItem(itemId);
+      if (!mounted) return;
+      final likedNow = res['liked'] as bool? ?? !liked;
+      setState(() {
+        if (likedNow) {
+          _likedItemIds.add(itemId);
+        } else {
+          _likedItemIds.remove(itemId);
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        if (liked) {
+          _likedItemIds.add(itemId);
+        } else {
+          _likedItemIds.remove(itemId);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to like story')),
+      );
+    }
   }
 
   String _formatTimestamp(DateTime date) {

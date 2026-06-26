@@ -26,9 +26,25 @@ class AuthLoginOutcome {
   });
 }
 
+class RestrictedLoginException implements Exception {
+  final String message;
+  const RestrictedLoginException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class AuthService {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
+
+  static const Set<String> _restrictedLoginRoles = {
+    'vendor',
+    'advertiser',
+    'ads',
+  };
+  static const String _restrictedLoginMessage =
+      'This account is for vendors/ads. Please use the web app to sign in.';
 
   final AuthApi _authApi = AuthApi();
   final ApiClient _apiClient = ApiClient();
@@ -134,7 +150,16 @@ class AuthService {
           'Backend did not return app token after Google login. Response keys: ${data.keys.join(', ')}',
         );
       }
+
+      final currentUser = await fetchCurrentUser();
+      if (_isRestrictedLoginRole(currentUser?.role)) {
+        await _clearRestrictedLoginState();
+        throw const RestrictedLoginException(_restrictedLoginMessage);
+      }
+
       return token;
+    } on RestrictedLoginException {
+      rethrow;
     } on ApiException catch (e) {
       throw Exception(
         'Google login failed at backend exchange (HTTP ${e.statusCode}): ${e.message}',
@@ -322,6 +347,12 @@ class AuthService {
         clientTimezoneOffsetMinutes: timezone.offsetMinutes,
       );
 
+      final role = _extractRole(data);
+      if (_isRestrictedLoginRole(role)) {
+        await _clearRestrictedLoginState();
+        throw const RestrictedLoginException(_restrictedLoginMessage);
+      }
+
       final requires2fa = data['requires_2fa'] == true;
       if (requires2fa) {
         return AuthLoginOutcome(
@@ -331,12 +362,14 @@ class AuthService {
         );
       }
 
-      final user = data['user'] as Map<String, dynamic>? ?? {};
+      final user = _normalizeUserMap(data);
       unawaited(PushService().syncTokenWithBackend());
       return AuthLoginOutcome(
         requires2fa: false,
         user: _userFromApiMap(user),
       );
+    } on RestrictedLoginException {
+      rethrow;
     } on ApiException catch (e) {
       throw Exception('Login failed: ${e.message}');
     } catch (e) {
@@ -353,11 +386,20 @@ class AuthService {
         clientTimezoneName: timezone.name,
         clientTimezoneOffsetMinutes: timezone.offsetMinutes,
       );
+
+      final role = _extractRole(data);
+      if (_isRestrictedLoginRole(role)) {
+        await _clearRestrictedLoginState();
+        throw const RestrictedLoginException(_restrictedLoginMessage);
+      }
+
       if (data['requires_2fa'] == true) {
         throw Exception('OTP required to complete login.');
       }
-      final user = data['user'] as Map<String, dynamic>? ?? {};
+      final user = _normalizeUserMap(data);
       return _userFromApiMap(user);
+    } on RestrictedLoginException {
+      rethrow;
     } on ApiException catch (e) {
       throw Exception('Login failed: ${e.message}');
     } catch (e) {
@@ -380,11 +422,20 @@ class AuthService {
         clientTimezoneName: timezone.name,
         clientTimezoneOffsetMinutes: timezone.offsetMinutes,
       );
+
+      final role = _extractRole(data);
+      if (_isRestrictedLoginRole(role)) {
+        await _clearRestrictedLoginState();
+        throw const RestrictedLoginException(_restrictedLoginMessage);
+      }
+
       if (data['requires_2fa'] == true) {
         throw Exception('OTP required to complete login.');
       }
-      final user = data['user'] as Map<String, dynamic>? ?? {};
+      final user = _normalizeUserMap(data);
       return _userFromApiMap(user);
+    } on RestrictedLoginException {
+      rethrow;
     } on ApiException catch (e) {
       throw Exception('Login failed: ${e.message}');
     } catch (e) {
@@ -406,7 +457,7 @@ class AuthService {
   Future<model.AuthUser?> fetchCurrentUser() async {
     try {
       final data = await _authApi.me();
-      return _userFromApiMap(data);
+      return _userFromApiMap(_normalizeUserMap(data));
     } catch (_) {
       return null;
     }
@@ -454,6 +505,7 @@ class AuthService {
       username: user['username'] as String? ?? 'user',
       email: user['email'] as String?,
       phone: user['phone'] as String?,
+      role: _extractRole(user),
       fullName: user['full_name'] as String?,
       dateOfBirth: user['date_of_birth'] != null
           ? DateTime.tryParse(user['date_of_birth'] as String)
@@ -469,6 +521,44 @@ class AuthService {
           ? DateTime.parse(user['updatedAt'] as String)
           : DateTime.now(),
     );
+  }
+
+  Map<String, dynamic> _normalizeUserMap(Map<String, dynamic> raw) {
+    if (raw['user'] is Map) {
+      return Map<String, dynamic>.from(raw['user'] as Map);
+    }
+    if (raw['data'] is Map) {
+      final data = Map<String, dynamic>.from(raw['data'] as Map);
+      if (data['user'] is Map) {
+        return Map<String, dynamic>.from(data['user'] as Map);
+      }
+      return data;
+    }
+    return raw;
+  }
+
+  String? _extractRole(Map<String, dynamic> data) {
+    final raw = data['role'] ??
+        data['user_role'] ??
+        data['userRole'] ??
+        (data['user'] is Map ? (data['user'] as Map)['role'] : null) ??
+        (data['user'] is Map ? (data['user'] as Map)['user_role'] : null) ??
+        (data['user'] is Map ? (data['user'] as Map)['userRole'] : null);
+    final role = raw?.toString().trim().toLowerCase();
+    return role == null || role.isEmpty ? null : role;
+  }
+
+  bool _isRestrictedLoginRole(String? role) {
+    return role != null && _restrictedLoginRoles.contains(role);
+  }
+
+  Future<void> _clearRestrictedLoginState() async {
+    try {
+      await _apiClient.clearToken();
+    } catch (_) {}
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
   }
 
   /// Internal password used for Google-based accounts so we can integrate

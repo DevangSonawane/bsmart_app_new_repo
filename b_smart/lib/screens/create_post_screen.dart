@@ -1631,20 +1631,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 22),
-                    TextField(
-                      controller: _captionCtl,
-                      maxLines: 4,
-                      style: TextStyle(color: fg, fontSize: 16),
-                      decoration: InputDecoration(
-                        hintText: 'Add a caption...',
-                        hintStyle: TextStyle(color: muted, fontSize: 16),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         pillButton(

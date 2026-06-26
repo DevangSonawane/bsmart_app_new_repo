@@ -15,6 +15,7 @@ import 'package:vector_math/vector_math_64.dart' as vector_math;
 import 'package:photo_manager/photo_manager.dart';
 import '../models/media_model.dart' as app_models;
 import '../services/create_service.dart';
+import '../services/video_audio_session.dart';
 import 'create_post_screen.dart';
 import 'create_reel_details_screen.dart';
 import 'edit_video_screen.dart';
@@ -416,6 +417,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   String? _selectedMusic;
   double _musicVolume = 0.5;
   bool _showMusicControls = false;
+  bool _previewMuted = false;
   VideoPlayerController? _videoController;
   Future<void>? _videoInit;
   bool _isPlaying = false;
@@ -493,9 +495,10 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     final value = controller?.value;
     final size = value?.size;
     final controllerAspect = value?.aspectRatio;
-    final displayAspect = controller != null && value != null && value.isInitialized
-        ? _normalizedVideoAspectFromController(controller)
-        : null;
+    final displayAspect =
+        controller != null && value != null && value.isInitialized
+            ? _normalizedVideoAspectFromController(controller)
+            : null;
     debugPrint(
       '[CreateEditPreview] aspect-dbg source=$source '
       'path=${path ?? _currentMedia.filePath ?? 'null'} '
@@ -719,10 +722,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   }
 
   Future<void> _logVideoSourceDiagnostics(
-    String source,
-    VideoPlayerController controller,
-    String path,
-    {double? previewAspect, double? frameAspect}) async {
+      String source, VideoPlayerController controller, String path,
+      {double? previewAspect, double? frameAspect}) async {
     if (!kDebugMode) return;
     final size = controller.value.size;
     final rotation = controller.value.rotationCorrection;
@@ -811,7 +812,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           _normalizedVideoAspectFromController(controller),
         );
       }
-      await controller.setVolume(0.0);
+      await controller.setVolume(_previewPlaybackVolume());
+      await VideoAudioSession.instance.activate(controller);
       await _logVideoSourceDiagnostics(
         source,
         controller,
@@ -998,6 +1000,53 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       );
     }
     return out;
+  }
+
+  double _previewPlaybackVolume() {
+    return _previewMuted ? 0.0 : 1.0;
+  }
+
+  void _togglePreviewMute() {
+    setState(() => _previewMuted = !_previewMuted);
+    final controller = _videoController;
+    if (controller != null && controller.value.isInitialized) {
+      unawaited(controller.setVolume(_previewPlaybackVolume()));
+    }
+  }
+
+  Future<void> _pausePreviewPlayback() async {
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) return;
+    await controller.setVolume(_previewPlaybackVolume());
+    await controller.pause();
+    if (mounted) {
+      setState(() => _isPlaying = false);
+    } else {
+      _isPlaying = false;
+    }
+  }
+
+  Future<void> _stopPreviewPlayback() async {
+    final controller = _videoController;
+    if (controller == null) return;
+    _videoController?.removeListener(_handlePreviewVideoTick);
+    VideoAudioSession.instance.release(controller);
+    try {
+      if (controller.value.isInitialized) {
+        await controller.setVolume(0.0);
+        await controller.pause();
+      }
+    } catch (_) {}
+    await controller.dispose();
+    if (identical(_videoController, controller)) {
+      _videoController = null;
+      _videoInit = null;
+    }
+    if (mounted) {
+      setState(() => _isPlaying = false);
+    } else {
+      _isPlaying = false;
+    }
   }
 
   List<double> _buildAdjustmentMatrix({
@@ -1360,6 +1409,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   @override
   void initState() {
     super.initState();
+    _previewMuted = widget.isReelFlow;
     _trashAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -1435,6 +1485,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     _transformController.dispose();
     _trashAnimController.dispose();
     _videoController?.removeListener(_handlePreviewVideoTick);
+    if (_videoController != null) {
+      VideoAudioSession.instance.release(_videoController!);
+    }
     _videoController?.dispose();
     _isSeeking = false;
     final stream = _imageStream;
@@ -1453,6 +1506,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     if (_currentMedia.id == media.id && _currentIndex == index) return;
     _isSeeking = false;
     _videoController?.removeListener(_handlePreviewVideoTick);
+    if (_videoController != null) {
+      VideoAudioSession.instance.release(_videoController!);
+    }
     await _videoController?.dispose();
     _videoController = null;
     _videoInit = null;
@@ -1521,7 +1577,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     if (!_isRouteActive) return;
     _isRouteActive = false;
     if (_videoController?.value.isInitialized == true) {
-      unawaited(_videoController!.setVolume(0.0));
+      unawaited(_videoController!.setVolume(_previewPlaybackVolume()));
       unawaited(_videoController!.pause());
       _isPlaying = false;
       if (mounted) setState(() {});
@@ -1532,8 +1588,16 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   void didPopNext() {
     if (_isRouteActive) return;
     _isRouteActive = true;
+    if (_videoController == null &&
+        _currentMedia.filePath != null &&
+        _isVideoMedia(_currentMedia)) {
+      unawaited(_startPreviewVideoController(
+        path: _currentMedia.filePath!,
+        source: 'didPopNext',
+      ));
+    }
     if (_videoController?.value.isInitialized == true && _isPlaying) {
-      unawaited(_videoController!.setVolume(0.0));
+      unawaited(_videoController!.setVolume(_previewPlaybackVolume()));
       unawaited(_videoController!.play());
     }
     if (mounted) setState(() {});
@@ -1593,7 +1657,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       }
       if (shouldPlay) {
         // Fire-and-forget; playback state is driven elsewhere.
-        unawaited(c.setVolume(0.0).catchError((_) {}));
+        unawaited(c.setVolume(_previewPlaybackVolume()).catchError((_) {}));
+        unawaited(VideoAudioSession.instance.activate(c));
         unawaited(c.play().catchError((_) {}));
       }
     });
@@ -1602,8 +1667,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   // ── Navigate to EditVideoScreen and capture the returned trim values
   Future<void> _openVideoEditor() async {
     // Pause preview while editing
-    _videoController?.pause();
-    setState(() => _isPlaying = false);
+    await _pausePreviewPlayback();
 
     final result = await Navigator.of(context).push<VideoEditResult>(
       MaterialPageRoute(
@@ -1621,6 +1685,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       if (result.outputPath != null && result.outputPath!.isNotEmpty) {
         _isSeeking = false;
         _videoController?.removeListener(_handlePreviewVideoTick);
+        if (_videoController != null) {
+          VideoAudioSession.instance.release(_videoController!);
+        }
         await _videoController?.dispose();
         _videoController = null;
         final newMedia = app_models.MediaItem(
@@ -1852,6 +1919,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     int index,
   ) async {
     if (media.filePath == null) return;
+    await _pausePreviewPlayback();
     final result = await Navigator.of(context).push<_PerVideoEditResult>(
       MaterialPageRoute(
         builder: (_) => _PerVideoEditPage(
@@ -1906,6 +1974,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       if (_currentIndex == index && _isVideoMedia(updated)) {
         _isSeeking = false;
         _videoController?.removeListener(_handlePreviewVideoTick);
+        if (_videoController != null) {
+          VideoAudioSession.instance.release(_videoController!);
+        }
         await _videoController?.dispose();
         _videoController = null;
         unawaited(_startPreviewVideoController(
@@ -2562,6 +2633,11 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
   // ── Proceed to post details, passing trim values along
   Future<void> _proceedToPostDetails() async {
     if (_isProceedingToNext) return;
+    if (!widget.isPostFlow) {
+      await _stopPreviewPlayback();
+    } else {
+      await _pausePreviewPlayback();
+    }
     final controller = _videoController;
     final frameAspect = _postFrameAspect();
     _logVideoAspectState(
@@ -2599,14 +2675,6 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     final isVideo = _currentMedia.type == app_models.MediaType.video;
     final hasOverlays = _textOverlays.isNotEmpty || _stickerOverlays.isNotEmpty;
     try {
-      if (_videoController?.value.isInitialized == true) {
-        await _videoController?.setVolume(0.0);
-        await _videoController?.pause();
-        if (mounted) {
-          setState(() => _isPlaying = false);
-        }
-      }
-
       app_models.MediaItem nextMedia = _currentMedia;
       double nextAspect = 1.0;
       bool usedComposite = false;
@@ -2851,7 +2919,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       }
       // Resume preview only when user comes back from next screen.
       if (_videoController != null && _videoController!.value.isInitialized) {
-        await _videoController!.setVolume(0.0);
+        await _videoController!.setVolume(_previewPlaybackVolume());
         await _videoController!.play();
         if (mounted) {
           setState(() => _isPlaying = true);
@@ -3835,12 +3903,19 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                                                       i,
                                                     ),
                                                     child: LayoutBuilder(
-                                                      builder: (context, constraints) {
+                                                      builder: (context,
+                                                          constraints) {
                                                         _logPreviewLayout(
-                                                          source: 'video-page-active',
-                                                          viewportWidth: constraints.maxWidth,
-                                                          viewportHeight: constraints.maxHeight,
-                                                          frameAspect: _postFrameAspect(),
+                                                          source:
+                                                              'video-page-active',
+                                                          viewportWidth:
+                                                              constraints
+                                                                  .maxWidth,
+                                                          viewportHeight:
+                                                              constraints
+                                                                  .maxHeight,
+                                                          frameAspect:
+                                                              _postFrameAspect(),
                                                         );
                                                         return _buildVideoPreview();
                                                       },
@@ -3899,9 +3974,12 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                                               builder: (context, constraints) {
                                                 _logPreviewLayout(
                                                   source: 'video-single-active',
-                                                  viewportWidth: constraints.maxWidth,
-                                                  viewportHeight: constraints.maxHeight,
-                                                  frameAspect: _postFrameAspect(),
+                                                  viewportWidth:
+                                                      constraints.maxWidth,
+                                                  viewportHeight:
+                                                      constraints.maxHeight,
+                                                  frameAspect:
+                                                      _postFrameAspect(),
                                                 );
                                                 return _buildVideoPreview();
                                               },
@@ -4509,8 +4587,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                                           );
                                         }
                                         if (item.filePath == null) {
-                                          return Container(
-                                              color: Colors.black);
+                                          return Container(color: Colors.black);
                                         }
                                         return Image.file(
                                           File(item.filePath!),
@@ -5037,8 +5114,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
           frameAspect: frameAspect,
           previewAspect: _previewVideoAspect,
           fit: reelPreviewFit,
-          extra:
-              'reelFlowTexture=${widget.isReelFlow} '
+          extra: 'reelFlowTexture=${widget.isReelFlow} '
               'videoAspect=${videoAspect.toStringAsFixed(4)} '
               'effectiveSize=${effectiveSize.width.toStringAsFixed(1)}x${effectiveSize.height.toStringAsFixed(1)}',
         );
@@ -5060,15 +5136,14 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
             final layoutFit = widget.isReelFlow
                 ? _videoPreviewFit(videoAspect, layoutFrameAspect)
                 : BoxFit.contain;
-            final rotatedPreviewScale =
-                layoutFit == BoxFit.cover &&
-                        (rotation == 90 || rotation == 270) &&
-                        viewportW.isFinite &&
-                        viewportH.isFinite &&
-                        viewportW > 0 &&
-                        viewportH > 0
-                    ? (viewportW / viewportH).clamp(0.5, 1.0)
-                    : 1.0;
+            final rotatedPreviewScale = layoutFit == BoxFit.cover &&
+                    (rotation == 90 || rotation == 270) &&
+                    viewportW.isFinite &&
+                    viewportH.isFinite &&
+                    viewportW > 0 &&
+                    viewportH > 0
+                ? (viewportW / viewportH).clamp(0.5, 1.0)
+                : 1.0;
             _logPreviewLayout(
               source: 'video-preview-layout',
               viewportWidth: viewportW,
@@ -5080,8 +5155,9 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
               fit: layoutFit,
             );
 
-            final displayAspect =
-                videoAspect.isFinite && videoAspect > 0 ? videoAspect : (9 / 16);
+            final displayAspect = videoAspect.isFinite && videoAspect > 0
+                ? videoAspect
+                : (9 / 16);
             final video = widget.isReelFlow && layoutFit == BoxFit.cover
                 ? ClipRect(
                     child: ColoredBox(
@@ -5118,6 +5194,26 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
                 children: [
                   Container(color: Colors.black),
                   Positioned.fill(child: video),
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: SafeArea(
+                      child: Material(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          tooltip: _previewMuted ? 'Unmute' : 'Mute',
+                          onPressed: _togglePreviewMute,
+                          icon: Icon(
+                            _previewMuted
+                                ? Icons.volume_off_outlined
+                                : Icons.volume_up_outlined,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
               filterIds: _effectiveFilterIds(_currentMedia),
@@ -5137,7 +5233,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       if (!identical(controller, _videoController)) return;
       if (!controller.value.isInitialized) return;
       if (!controller.value.isPlaying) {
-        controller.setVolume(0.0);
+        controller.setVolume(_previewPlaybackVolume());
+        unawaited(VideoAudioSession.instance.activate(controller));
         controller.play();
         setState(() => _isPlaying = true);
       }

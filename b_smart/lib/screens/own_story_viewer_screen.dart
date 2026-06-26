@@ -40,13 +40,16 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   double _dragStartX = 0;
   bool _controlsTap = false;
   bool _sheetOpen = false;
-  bool _commentingEnabled = true;
   late List<Story> _stories;
   final FeedService _feedService = FeedService();
   int _analyticsRequestSerial = 0;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   bool _isOffline = false;
   int _offlineRetryAttempts = 0;
+
+  void _logViewerDebug(String message) {
+    debugPrint('[OwnStoryViewer] $message');
+  }
 
   String? _currentStoryItemId() {
     if (_stories.isEmpty || _index < 0 || _index >= _stories.length) {
@@ -181,7 +184,11 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   Future<void> _loadAnalyticsIfNeeded() async {
     final itemId = _currentStoryItemId();
     final requestId = ++_analyticsRequestSerial;
+    _logViewerDebug(
+      'loadAnalytics start itemId=$itemId requestId=$requestId index=$_index storyCount=${_stories.length}',
+    );
     if (itemId == null) {
+      _logViewerDebug('loadAnalytics skipped because itemId is null');
       if (mounted) {
         setState(() {
           _viewerSummary = const {};
@@ -198,22 +205,23 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         });
       }
       final summary = await StoriesApi().viewSummary(itemId);
+      _logViewerDebug(
+        'loadAnalytics response itemId=$itemId keys=${summary.keys.toList()} viewersType=${summary['viewers']?.runtimeType} total=${summary['total_views']} unique=${summary['unique_viewers']}',
+      );
       if (!mounted) return;
       if (requestId != _analyticsRequestSerial) return;
       if (_currentStoryItemId() != itemId) return;
       setState(() {
         _viewerSummary = summary;
-        final dynamic viewers = summary['viewers'];
-        _viewers = viewers is List
-            ? viewers
-                .whereType<Map>()
-                .map((e) => e.cast<String, dynamic>())
-                .toList()
-            : const [];
+        _viewers = _viewersFromSummary(summary);
         _loadingViewers = false;
       });
+      _logViewerDebug(
+        'loadAnalytics parsed itemId=$itemId viewers=${_viewers.length} status=${_viewerStatusText()}',
+      );
     } catch (_) {
       // ignore analytics errors for UI
+      _logViewerDebug('loadAnalytics failed itemId=$itemId');
       if (mounted) {
         setState(() {
           if (requestId == _analyticsRequestSerial) {
@@ -232,6 +240,77 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     if (raw is int) return raw;
     if (raw is num) return raw.toInt();
     return int.tryParse(raw?.toString() ?? '');
+  }
+
+  Map<String, dynamic> _viewerUser(Map<String, dynamic> viewer) {
+    final nested = viewer['viewer'];
+    if (nested is Map) return Map<String, dynamic>.from(nested);
+    return viewer;
+  }
+
+  List<Map<String, dynamic>> _viewersFromSummary(dynamic summary) {
+    final dynamic raw = summary is Map
+        ? summary['viewers'] ??
+            summary['views'] ??
+            summary['data'] ??
+            summary['result'] ??
+            summary['summary']
+        : summary;
+    if (raw is List) {
+      return raw
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+    }
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      for (final key in const ['viewers', 'views', 'items', 'data', 'result']) {
+        final nested = map[key];
+        if (nested == null) continue;
+        final extracted = _viewersFromSummary(nested);
+        if (extracted.isNotEmpty) return extracted;
+      }
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  String _viewerId(Map<String, dynamic> viewer) {
+    final user = _viewerUser(viewer);
+    final candidates = <dynamic>[
+      user['_id'],
+      user['id'],
+      user['user_id'],
+      user['userId'],
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  String _viewerName(Map<String, dynamic> viewer) {
+    final user = _viewerUser(viewer);
+    final candidates = <dynamic>[
+      user['username'],
+      user['user_name'],
+      user['full_name'],
+      user['name'],
+      user['display_name'],
+      user['handle'],
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return 'Viewer';
+  }
+
+  String? _viewerAvatar(Map<String, dynamic> viewer) {
+    final user = _viewerUser(viewer);
+    final avatar = user['avatar_url'] ?? user['avatar'] ?? user['profile_pic'];
+    final value = avatar?.toString().trim();
+    return (value == null || value.isEmpty) ? null : value;
   }
 
   String _viewerStatusText() {
@@ -326,6 +405,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     _sheetOpen = true;
     _timer?.cancel();
     final itemId = _currentStoryItemId();
+    _logViewerDebug(
+      'openViewers start itemId=$itemId cachedViewers=${_viewers.length} cachedKeys=${_viewerSummary.keys.toList()}',
+    );
     if (mounted) {
       setState(() {
         _loadingViewers = true;
@@ -337,9 +419,13 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       isScrollControlled: true,
       builder: (ctx) {
         if (itemId == null) {
+          _logViewerDebug('openViewers builder itemId null');
           return _buildEmptyViewers();
         }
         if (_viewers.isNotEmpty && _viewerSummary['item_id'] == itemId) {
+          _logViewerDebug(
+            'openViewers using cached viewers itemId=$itemId count=${_viewers.length}',
+          );
           return _buildViewersSheet(_viewers);
         }
         return FutureBuilder<Map<String, dynamic>>(
@@ -355,17 +441,19 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
               ));
             }
             if (snapshot.hasError) {
+              _logViewerDebug(
+                'openViewers future error itemId=$itemId error=${snapshot.error}',
+              );
               return _buildEmptyViewers();
             }
             final summary = snapshot.data ?? const <String, dynamic>{};
-            final dynamic rawViewers = summary['viewers'];
-            final viewers = rawViewers is List
-                ? rawViewers
-                    .whereType<Map>()
-                    .map((e) => e.cast<String, dynamic>())
-                    .toList()
-                : const <Map<String, dynamic>>[];
+            final viewers = _viewersFromSummary(summary);
+            _logViewerDebug(
+              'openViewers response itemId=$itemId keys=${summary.keys.toList()} viewers=${viewers.length} rawType=${summary['viewers']?.runtimeType}',
+            );
             if (viewers.isEmpty) {
+              _logViewerDebug(
+                  'openViewers no viewers extracted itemId=$itemId');
               return _buildEmptyViewers();
             }
             _viewers = viewers;
@@ -897,26 +985,6 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                           );
                         },
                       ),
-                      _buildMoreAction(
-                        label: _commentingEnabled
-                            ? 'Turn off commenting'
-                            : 'Turn on commenting',
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          if (!mounted) return;
-                          setState(
-                              () => _commentingEnabled = !_commentingEnabled);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                _commentingEnabled
-                                    ? 'Commenting turned on'
-                                    : 'Commenting turned off',
-                              ),
-                            ),
-                          );
-                        },
-                      ),
                     ],
                   ),
                 ),
@@ -1391,6 +1459,9 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     final isNextPreviewVideo = nextStory?.mediaType == StoryMediaType.video ||
         _isVideoUrl(nextPreviewUrl);
     final countText = '${_viewerCountForCurrentItem() ?? viewers.length}';
+    _logViewerDebug(
+      'buildViewersSheet itemId=${_currentStoryItemId()} countText=$countText viewers=${viewers.length} summaryKeys=${_viewerSummary.keys.toList()}',
+    );
     const previewW = 64.0;
     const previewH = 92.0;
     final previewScale = (previewW / 360.0).clamp(0.14, 0.22);
@@ -1682,10 +1753,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                               const Divider(height: 1, color: Colors.white10),
                           itemBuilder: (_, i) {
                             final v = viewers[i];
-                            final name =
-                                (v['username'] ?? v['full_name'] ?? 'Viewer')
-                                    .toString();
-                            final avatar = v['avatar_url'] as String?;
+                            final name = _viewerName(v);
+                            final avatar = _viewerAvatar(v);
                             return Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 8),
@@ -1754,8 +1823,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         initialChildSize: 0.6,
         minChildSize: 0.4,
         maxChildSize: 0.95,
-        builder: (ctx, scroll) => FutureBuilder<List<Map<String, dynamic>>>(
-          future: StoriesApi().viewers(itemId),
+        builder: (ctx, scroll) => FutureBuilder<Map<String, dynamic>>(
+          future: StoriesApi().viewSummary(itemId),
           builder: (ctx, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
@@ -1773,11 +1842,12 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                 ),
               );
             }
-            final viewers = snapshot.data ?? const [];
+            final summary = snapshot.data ?? const <String, dynamic>{};
+            final viewers = _viewersFromSummary(summary);
             _viewers = viewers;
             final totalViews = viewers.length;
             final uniqueUsers = viewers
-                .map((v) => (v['user_id'] ?? v['id'] ?? '').toString())
+                .map((v) => _viewerId(v))
                 .where((id) => id.isNotEmpty)
                 .toSet()
                 .length;
@@ -1800,9 +1870,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                     const Text('No viewers yet')
                   else
                     ...viewers.take(20).map((v) {
-                      final name = (v['username'] ?? v['full_name'] ?? 'Viewer')
-                          .toString();
-                      final avatar = v['avatar_url'] as String?;
+                      final name = _viewerName(v);
+                      final avatar = _viewerAvatar(v);
                       final viewedAtRaw =
                           v['viewedAt'] as String? ?? v['createdAt'] as String?;
                       DateTime? viewedAt;
@@ -2364,27 +2433,6 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const SizedBox(height: 12),
-                          if (_commentingEnabled) ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.35),
-                                borderRadius: BorderRadius.circular(22),
-                              ),
-                              child: Row(
-                                children: [
-                                  Text('Say something...',
-                                      style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.6),
-                                          fontSize: 13)),
-                                  const Spacer(),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
                           Row(
                             children: [
                               GestureDetector(
@@ -2420,15 +2468,13 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                                     onTap: _openMentionPicker,
                                   ),
                                   const SizedBox(width: 12),
-                                  const _ActionItem(
-                                      icon: LucideIcons.send, label: 'Send'),
+                                  _ActionItem(
+                                    icon: Icons.more_horiz,
+                                    label: 'More',
+                                    onTap: _openMoreMenu,
+                                  ),
                                 ],
                               ),
-                              const SizedBox(width: 12),
-                              _ActionItem(
-                                  icon: Icons.more_horiz,
-                                  label: 'More',
-                                  onTap: _openMoreMenu),
                             ],
                           ),
                         ],

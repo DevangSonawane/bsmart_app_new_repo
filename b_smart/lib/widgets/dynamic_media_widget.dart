@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 
 import '../api/api_client.dart';
 import '../services/media_aspect_cache.dart';
+import '../services/media_playback_registry.dart';
 import '../services/video_pool.dart';
 import '../utils/url_helper.dart';
 import 'safe_network_image.dart';
@@ -64,6 +65,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   VideoPlayerController? _videoCtl;
   bool _loadingVideo = false;
   bool _videoFailed = false;
+  String? _registeredPauseId;
 
   bool get _hasVideoFilter {
     if (!widget.isVideo) return false;
@@ -334,6 +336,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
             ? MediaAspectCache.instance.get(widget.thumbnailUrl!)
             : null);
     _ratio ??= widget.initialAspectRatio;
+    _registerPauseHook();
     _primeRatio();
     if (_cachedAuthHeaders.isEmpty) {
       ensureAuthHeaders().then((_) {
@@ -350,6 +353,10 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   @override
   void didUpdateWidget(covariant DynamicMediaWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.id != widget.id) {
+      _unregisterPauseHook(oldWidget.id);
+      _registerPauseHook();
+    }
     final urlChanged = oldWidget.url != widget.url ||
         oldWidget.thumbnailUrl != widget.thumbnailUrl ||
         oldWidget.initialAspectRatio != widget.initialAspectRatio;
@@ -504,7 +511,28 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   @override
   void dispose() {
     _disposeVideo();
+    _unregisterPauseHook(_registeredPauseId);
     super.dispose();
+  }
+
+  void _registerPauseHook() {
+    final rawId = widget.id.trim();
+    if (rawId.isEmpty) return;
+    final key = 'feed:$rawId';
+    _registeredPauseId = key;
+    MediaPlaybackRegistry.instance.register(key, () async {
+      await VideoPool.instance.pauseIf(rawId);
+    });
+  }
+
+  void _unregisterPauseHook(String? id) {
+    final raw = id?.trim();
+    if (raw == null || raw.isEmpty) return;
+    final key = raw.startsWith('feed:') ? raw : 'feed:$raw';
+    MediaPlaybackRegistry.instance.unregister(key);
+    if (_registeredPauseId == key) {
+      _registeredPauseId = null;
+    }
   }
 
   @override

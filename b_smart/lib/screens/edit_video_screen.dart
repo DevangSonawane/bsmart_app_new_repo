@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/media_model.dart';
+import '../services/video_audio_session.dart';
 
 class VideoEditResult {
   final Duration trimStart;
@@ -111,7 +113,7 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
     }
 
     _controller = VideoPlayerController.file(File(path));
-    _initFuture = _controller.initialize().then((_) {
+    _initFuture = _controller.initialize().then((_) async {
       if (!mounted) return;
       setState(() {
         _trimStart = Duration.zero;
@@ -130,6 +132,8 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
       );
       _controller.setLooping(true);
       _controller.addListener(_handleTick);
+      await VideoAudioSession.instance.activate(_controller);
+      await _controller.setVolume(0.0);
       _controller.play();
       _isPlaying = true;
     });
@@ -138,6 +142,7 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
   @override
   void dispose() {
     _controller.removeListener(_handleTick);
+    VideoAudioSession.instance.release(_controller);
     _controller.dispose();
     super.dispose();
   }
@@ -165,6 +170,8 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
       if (_isPlaying) {
         _controller.pause();
       } else {
+        unawaited(VideoAudioSession.instance.activate(_controller));
+        unawaited(_controller.setVolume(0.0));
         _controller.play();
       }
       _isPlaying = !_isPlaying;

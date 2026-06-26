@@ -109,7 +109,7 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
 
     try {
       final session = await _authService.signupWithGoogle();
-      print('session> $session');
+      debugPrint('session> $session');
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
@@ -221,11 +221,21 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          style: const TextStyle(color: InstagramTheme.textBlack),
-                          decoration: const InputDecoration(
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                          decoration: InputDecoration(
                             labelText: 'Email',
                             hintText: 'Enter your email',
-                            prefixIcon: Icon(LucideIcons.mail),
+                            prefixIcon: const Icon(LucideIcons.mail),
+                            filled: true,
+                            fillColor:
+                                Theme.of(context).brightness == Brightness.dark
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest
+                                        .withValues(alpha: 0.55)
+                                    : Colors.white,
                           ),
                           validator: Validators.validateEmail,
                         ),
@@ -233,7 +243,9 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
                         TextFormField(
                           controller: _passwordController,
                           obscureText: !_isPasswordVisible,
-                          style: const TextStyle(color: InstagramTheme.textBlack),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
                           decoration: InputDecoration(
                             labelText: 'Password',
                             hintText: 'Create a password',
@@ -257,11 +269,21 @@ class _SignupIdentifierScreenState extends State<SignupIdentifierScreen>
                         TextFormField(
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,
-                          style: const TextStyle(color: InstagramTheme.textBlack),
-                          decoration: const InputDecoration(
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                          decoration: InputDecoration(
                             labelText: 'Phone Number',
                             hintText: '+1234567890',
-                            prefixIcon: Icon(LucideIcons.phone),
+                            prefixIcon: const Icon(LucideIcons.phone),
+                            filled: true,
+                            fillColor:
+                                Theme.of(context).brightness == Brightness.dark
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest
+                                        .withValues(alpha: 0.55)
+                                    : Colors.white,
                           ),
                           validator: Validators.validatePhone,
                         ),

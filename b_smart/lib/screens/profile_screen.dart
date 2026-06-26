@@ -31,6 +31,7 @@ import '../api/api_exceptions.dart';
 import '../api/chat_api.dart';
 import '../api/notification_preferences_api.dart';
 import '../api/privacy_api.dart';
+import '../api/follow_requests_api.dart';
 import '../config/api_config.dart';
 import '../services/feed_service.dart';
 import '../services/auth/auth_service.dart';
@@ -73,6 +74,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final AdsService _adsService = AdsService();
   final UsersApi _usersApi = UsersApi();
   final FollowsApi _followsApi = FollowsApi();
+  final FollowRequestsApi _followRequestsApi = FollowRequestsApi();
   final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
   Map<String, dynamic>? _profile;
   List<FeedPost> _posts = [];
@@ -85,6 +87,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _usedCache = false;
   bool _hasError = false;
   bool _followLoading = false;
+  bool _followRequested = false;
   final ReelsService _reelsService = ReelsService();
   final StoriesApi _storiesApi = StoriesApi();
   List<Reel> _userReels = [];
@@ -246,6 +249,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
         error.body?['privacy_blocked'] == true;
   }
 
+  bool _isPrivateAccount(Map<String, dynamic>? profile) {
+    if (profile == null) return false;
+    final raw = profile['is_private'] ??
+        profile['isPrivate'] ??
+        profile['private'] ??
+        profile['private_account'] ??
+        profile['isPrivateAccount'];
+    return _parseBoolLike(raw) ?? false;
+  }
+
+  bool _isFollowRequested(Map<String, dynamic>? profile) {
+    if (profile == null) return false;
+    final rawStatus = (profile['requestStatus'] ??
+            profile['request_status'] ??
+            profile['followRequestStatus'] ??
+            profile['follow_request_status'] ??
+            profile['status'])
+        ?.toString()
+        .trim()
+        .toLowerCase();
+    if (rawStatus == 'pending' || rawStatus == 'requested') return true;
+    final rawBool = profile['is_requested'] ??
+        profile['requested'] ??
+        profile['follow_request_pending'] ??
+        profile['followRequestPending'];
+    return _parseBoolLike(rawBool) ?? false;
+  }
+
   bool _isFollowingViewer(Map<String, dynamic>? profile) {
     if (profile == null) return false;
     final direct = profile['is_followed_by_me'] ??
@@ -304,7 +335,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       'privacy_blocked': true,
     };
   }
-
 
   Future<void> _shareProfile(Map<String, dynamic>? profile) async {
     if (profile == null) return;
@@ -571,7 +601,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ? 'Tap + to choose interests.'
                           : 'No interests yet.',
                       style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.65),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -638,8 +669,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: Container(
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                  color: tileBorderColor, width: 1),
+                              border:
+                                  Border.all(color: tileBorderColor, width: 1),
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(13),
@@ -1129,7 +1160,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     Map<String, dynamic>? profile;
     try {
-      profile = isMe ? await AuthApi().me() : await _usersApi.getUserProfile(targetId);
+      profile = isMe
+          ? await AuthApi().me()
+          : await _usersApi.getUserProfile(targetId);
     } on ForbiddenException catch (e) {
       if (_isPrivacyBlockedError(e)) {
         final preview = _privateProfileFallback(e.body, targetId);
@@ -1196,16 +1229,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
         walletFuture,
       ]);
 
-      rawPosts = (results[0] as List).whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
-      rawSaved = (results[1] as List).whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
-      rawTagged = (results[2] as List).whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+      rawPosts = (results[0] as List)
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+      rawSaved = (results[1] as List)
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+      rawTagged = (results[2] as List)
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
       content = results[3] as Map<String, dynamic>?;
       walletBalance = results[4] as int;
     } catch (_) {
       // Keep whatever we already have cached; privacy gating still applies below.
     }
 
-    final privacyRestricted = _parsePrivacyRestricted(content?['privacy_restricted']);
+    final privacyRestricted =
+        _parsePrivacyRestricted(content?['privacy_restricted']);
     final postsRestricted = privacyRestricted['posts'] == true;
     final pulseRestricted = privacyRestricted['pulse'] == true;
     if (mounted) {
@@ -1651,6 +1694,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final finalFollowing = followingCount ?? 0;
 
     bool isFollowedByMe = false;
+    bool isFollowRequested = false;
 
     if (meId != null && meId.isNotEmpty) {
       // Prioritize server-provided follow status if available
@@ -1664,6 +1708,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
       } else {
         try {
           isFollowedByMe = await _svc.isFollowing(meId, targetId);
+        } catch (_) {}
+      }
+      if (!isMe && targetId.isNotEmpty) {
+        try {
+          final status = await _followsApi.checkFollowStatus(targetId);
+          final statusFollowed = _parseBoolLike(status['is_following'] ??
+                  status['isFollowing'] ??
+                  status['followed'] ??
+                  status['is_followed_by_me'] ??
+                  status['followed_by_me']) ??
+              false;
+          final statusRequested = _isFollowRequested(status);
+          if (statusFollowed) {
+            isFollowedByMe = true;
+            isFollowRequested = false;
+          } else if (statusRequested) {
+            isFollowedByMe = false;
+            isFollowRequested = true;
+          }
         } catch (_) {}
       }
     }
@@ -1692,6 +1755,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ...?profile, // 3. Override with fresh API profile data (if success)
         if (vendorInfo != null) 'vendor': vendorInfo,
         'is_followed_by_me': isFollowedByMe,
+        'is_requested': isFollowRequested,
+        'request_status': isFollowRequested ? 'pending' : null,
         'posts_count': finalPostsCount,
         'followers_count': finalFollowers,
         'following_count': finalFollowing,
@@ -1760,6 +1825,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       setState(() {
         _profile = merged;
+        _followRequested = isFollowRequested;
         _posts = posts;
         _saved = saved;
         _tagged = tagged;
@@ -1864,11 +1930,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ? userGroups
           : await Future.wait(
               stories.map((story) async {
-                final storyId = (story['_id'] ?? story['id'])?.toString().trim() ?? '';
+                final storyId =
+                    (story['_id'] ?? story['id'])?.toString().trim() ?? '';
                 if (storyId.isEmpty) return null;
                 final items = await _feedService.fetchStoryItems(
                   storyId,
-                  ownerUserName: (profile['username'] as String?)?.trim() ?? 'user',
+                  ownerUserName:
+                      (profile['username'] as String?)?.trim() ?? 'user',
                   ownerAvatar: profile['avatar_url'] as String?,
                 );
                 if (items.isEmpty) return null;
@@ -2134,9 +2202,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final meId = await CurrentUser.id;
     final targetId = widget.userId;
     if (meId == null || targetId == null) return;
+    final currentProfile = _profile;
+    final currentFollowing = (currentProfile?['is_followed_by_me'] as bool?) ??
+        (currentProfile?['isFollowing'] as bool?) ??
+        false;
+    final currentRequested = _isFollowRequested(currentProfile);
+    final isPrivate = _isPrivateAccount(currentProfile);
+    if (currentRequested && !currentFollowing) {
+      _followLoading = true;
+      if (mounted) {
+        setState(() {
+          _followRequested = true;
+        });
+      }
+      bool cancelled = false;
+      try {
+        await _followRequestsApi.cancelFollowRequest(targetId);
+        cancelled = true;
+      } catch (_) {
+        cancelled = false;
+      }
+      if (mounted) {
+        setState(() {
+          _followRequested = !cancelled;
+          _profile = {
+            ...?_profile,
+            'is_followed_by_me': false,
+            'is_requested': !cancelled,
+            'request_status': !cancelled ? 'pending' : null,
+          };
+        });
+      }
+      if (cancelled && mounted) {
+        final store = StoreProvider.of<AppState>(context);
+        store.dispatch(UpdateUserFollowed(targetId, false));
+      }
+      _followLoading = false;
+      return;
+    }
     _followLoading = true;
-    final current = (_profile?['is_followed_by_me'] as bool?) ?? false;
-    final next = !current;
+    final next = !currentFollowing;
     int followersCount = tryReadInt(_profile, const [
           'followers_count',
           'followersCount',
@@ -2145,45 +2250,128 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ]) ??
         0;
     final delta = next ? 1 : -1;
-    final nextFollowers =
-        ((followersCount + delta).toDouble().clamp(0, double.maxFinite))
-            .toInt();
 
     if (mounted) {
       setState(() {
+        _followRequested = currentRequested;
         _profile = {
           ...?_profile,
-          'is_followed_by_me': next,
-          'followers_count': nextFollowers,
+          'is_followed_by_me': currentFollowing,
+          'is_requested': currentRequested,
+          'request_status': currentRequested ? 'pending' : null,
+          'followers_count': followersCount,
         };
       });
     }
 
-    final success = next
-        ? await _svc.followUser(targetId)
-        : await _svc.unfollowUser(targetId);
+    Map<String, dynamic>? response;
+    bool success = false;
+    if (next) {
+      try {
+        response = await _followsApi.follow(targetId);
+        success = true;
+      } catch (_) {
+        try {
+          response = await _followsApi.followById(targetId);
+          success = true;
+        } catch (_) {
+          success = false;
+        }
+      }
+    } else {
+      try {
+        response = await _followsApi.unfollow(targetId);
+        success = true;
+      } catch (_) {
+        success = false;
+      }
+    }
 
+    bool? responseFollowed;
+    bool responseRequested = false;
+    if (response != null) {
+      responseFollowed = _parseBoolLike(
+        response['followed'] ??
+            response['is_following'] ??
+            response['isFollowing'] ??
+            response['is_followed_by_me'] ??
+            response['followed_by_me'],
+      );
+      final rawRequestStatus = (response['requestStatus'] ??
+              response['request_status'] ??
+              response['followRequestStatus'] ??
+              response['follow_request_status'] ??
+              response['status'])
+          ?.toString()
+          .trim()
+          .toLowerCase();
+      responseRequested = rawRequestStatus == 'pending' ||
+          rawRequestStatus == 'requested' ||
+          _parseBoolLike(response['is_requested'] ??
+                  response['requested'] ??
+                  response['follow_request_pending']) ==
+              true;
+    }
+
+    bool nextFollowed = false;
+    bool nextRequested = false;
     if (success) {
+      nextFollowed = next
+          ? (responseFollowed ??
+              (!isPrivate && responseRequested == false ? true : false))
+          : false;
+      nextRequested = next && !nextFollowed && (responseRequested || isPrivate);
+      final nextFollowers = nextRequested
+          ? followersCount
+          : (next
+              ? followersCount + 1
+              : (followersCount - 1 < 0 ? 0 : followersCount - 1));
       if (mounted) {
-        // Update global "My Profile" state for following count
-        final store = StoreProvider.of<AppState>(context);
-        store.dispatch(AdjustFollowingCount(delta));
+        if (nextRequested) {
+          setState(() {
+            _followRequested = true;
+            _profile = {
+              ...?_profile,
+              'is_followed_by_me': false,
+              'is_requested': true,
+              'request_status': 'pending',
+              'followers_count': followersCount,
+            };
+          });
+        } else {
+          // Update global "My Profile" state for following count
+          final store = StoreProvider.of<AppState>(context);
+          store.dispatch(AdjustFollowingCount(delta));
+          setState(() {
+            _followRequested = false;
+            _profile = {
+              ...?_profile,
+              'is_followed_by_me': nextFollowed,
+              'is_requested': false,
+              'request_status': null,
+              'followers_count': nextFollowers,
+            };
+          });
+        }
       }
     } else {
       if (mounted) {
         setState(() {
+          _followRequested = currentRequested;
           _profile = {
             ...?_profile,
-            'is_followed_by_me': current,
+            'is_followed_by_me': currentFollowing,
+            'is_requested': currentRequested,
+            'request_status': currentRequested ? 'pending' : null,
             'followers_count': followersCount,
           };
         });
       }
     }
 
-    if (success && mounted) {
+    if (success && mounted && !nextRequested) {
       final store = StoreProvider.of<AppState>(context);
-      store.dispatch(UpdateUserFollowed(targetId, next));
+      store.dispatch(UpdateUserFollowed(targetId, nextFollowed));
       try {
         final serverFollowers = await _svc.getFollowersCount(targetId);
         if (mounted) {
@@ -2616,7 +2804,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         if (_profileBlocked && !isMe) {
           final privateUser = _privateProfilePreview ?? displayProfile;
-          final username = (privateUser?['username'] as String?)?.trim() ?? 'user';
+          final username =
+              (privateUser?['username'] as String?)?.trim() ?? 'user';
           final fullName = (privateUser?['full_name'] as String?)?.trim();
           final avatar = (privateUser?['avatar_url'] as String?)?.trim();
           return Scaffold(
@@ -2634,13 +2823,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     CircleAvatar(
                       radius: 42,
-                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      backgroundColor:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       backgroundImage: (avatar != null && avatar.isNotEmpty)
                           ? NetworkImage(avatar)
                           : null,
                       child: (avatar == null || avatar.isEmpty)
                           ? Text(
-                              username.isNotEmpty ? username[0].toUpperCase() : 'U',
+                              username.isNotEmpty
+                                  ? username[0].toUpperCase()
+                                  : 'U',
                               style: const TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w700,
@@ -3052,6 +3244,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       SliverToBoxAdapter(
                         child: (() {
                           final canMessage = _canMessageProfile(displayProfile);
+                          final isRequested = _followRequested ||
+                              _isFollowRequested(displayProfile);
 
                           return ProfileHeader(
                             username: username,
@@ -3067,6 +3261,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             isVendor: isVendor,
                             isValidated: isValidated,
                             isFollowing: _isFollowingViewer(displayProfile),
+                            isRequested: isRequested,
                             canMessage: canMessage,
                             isFavorite: _isFavoriteProfile,
                             isSuggestionsOpen:

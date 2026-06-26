@@ -217,18 +217,26 @@ class _SignupVerificationScreenState extends State<SignupVerificationScreen> {
                       controller: _otpController,
                       keyboardType: TextInputType.number,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: InstagramTheme.textBlack,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 8,
                       ),
                       maxLength: 6,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Enter OTP',
                         hintText: '000000',
                         counterText: '',
-                        prefixIcon: Icon(LucideIcons.lock),
+                        prefixIcon: const Icon(LucideIcons.lock),
+                        filled: true,
+                        fillColor:
+                            Theme.of(context).brightness == Brightness.dark
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest
+                                    .withValues(alpha: 0.55)
+                                : Colors.white,
                       ),
                       validator: Validators.validateOTP,
                       onChanged: (value) {

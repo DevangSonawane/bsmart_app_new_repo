@@ -10,6 +10,7 @@ import 'package:redux/redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../services/feed_service.dart';
 import '../services/notification_service.dart';
+import '../services/media_playback_registry.dart';
 import '../services/supabase_service.dart';
 import '../services/wallet_service.dart';
 import '../services/video_pool.dart';
@@ -590,6 +591,11 @@ class _HomeDashboardState extends State<HomeDashboard>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    MediaPlaybackRegistry.instance.register('home-dashboard', () async {
+      _activeFeedPostId = null;
+      _activeFeedPostIdListenable.value = null;
+      await VideoPool.instance.pauseActive();
+    });
     _notificationSub = _notificationService.getNotificationsStream().listen(
       (notifications) {
         if (!mounted) return;
@@ -1287,7 +1293,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     _isRouteActive = false;
     _activeFeedPostId = null;
     _activeFeedPostIdListenable.value = null;
-    unawaited(VideoPool.instance.pauseActive());
+    unawaited(MediaPlaybackRegistry.instance.pauseAll());
     if (mounted) setState(() {});
   }
 
@@ -1307,6 +1313,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   void dispose() {
     VisibilityDetectorController.instance.updateInterval =
         const Duration(milliseconds: 500);
+    MediaPlaybackRegistry.instance.unregister('home-dashboard');
     _notificationSub?.cancel();
     _notificationRefreshTimer?.cancel();
     _activeFeedDebounce?.cancel();
@@ -1326,7 +1333,10 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) return;
+    if (state != AppLifecycleState.resumed) {
+      unawaited(MediaPlaybackRegistry.instance.pauseAll());
+      return;
+    }
     if (!mounted) return;
     if (_currentIndex != 0) return;
     unawaited(_refreshUnreadNotificationCount());
@@ -2701,6 +2711,9 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   void _setTabIndex(int idx,
       {required bool userInitiated, required bool fromSwipe}) {
+    if (idx == 2 || idx == 5 || idx != _currentIndex) {
+      unawaited(MediaPlaybackRegistry.instance.pauseAll());
+    }
     if (idx == 2) {
       _pendingHomeRefreshAfterRoute = true;
       if (_isVendor) {
@@ -2734,12 +2747,6 @@ class _HomeDashboardState extends State<HomeDashboard>
             await _reelsService.fetchReels(limit: 20, offset: 0);
           } catch (_) {}
         }());
-      }
-      // Pause any in-feed video audio while switching away from Home.
-      if (wasOnHome) {
-        _activeFeedPostId = null;
-        _activeFeedPostIdListenable.value = null;
-        unawaited(VideoPool.instance.pauseActive());
       }
       setState(() {
         _currentIndex = idx;

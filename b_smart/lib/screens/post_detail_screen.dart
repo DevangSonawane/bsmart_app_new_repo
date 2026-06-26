@@ -68,6 +68,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   StreamSubscription<CommentChangeEvent>? _commentSyncSub;
   String _likesSummaryText = '';
   String? _likesSummaryUserId;
+  final Set<String> _likedCommentIds = <String>{};
 
   bool _isReelPost() {
     final post = _post;
@@ -225,6 +226,56 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return v == 'true' || v == '1';
     }
     return false;
+  }
+
+  int _commentLikesCount(Map<String, dynamic> comment) {
+    final value = comment['likes_count'] ??
+        comment['likesCount'] ??
+        comment['like_count'] ??
+        comment['likeCount'] ??
+        comment['likes'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  bool _isCommentLiked(Map<String, dynamic> comment) {
+    final cid = _commentId(comment);
+    if (cid.isNotEmpty && _likedCommentIds.contains(cid)) return true;
+    return _asBool(comment['is_liked_by_me']) ||
+        _asBool(comment['liked_by_me']) ||
+        _asBool(comment['liked']) ||
+        _asBool(comment['is_liked']);
+  }
+
+  void _syncLikedCommentIdsFromState() {
+    _likedCommentIds.clear();
+    void collect(Map<String, dynamic> comment) {
+      final cid = _commentId(comment);
+      if (cid.isNotEmpty && _isCommentLiked(comment)) {
+        _likedCommentIds.add(cid);
+      }
+    }
+
+    for (final comment in _comments) {
+      collect(comment);
+    }
+    for (final replies in _replies.values) {
+      for (final reply in replies) {
+        collect(reply);
+      }
+    }
+  }
+
+  void _applyLikeState(Map<String, dynamic> comment, bool liked) {
+    comment['is_liked_by_me'] = liked;
+    comment['liked_by_me'] = liked;
+    comment['liked'] = liked;
+    comment['is_liked'] = liked;
+    final current = _commentLikesCount(comment);
+    comment['likes_count'] =
+        liked ? current + 1 : (current - 1 < 0 ? 0 : current - 1);
   }
 
   @override
@@ -418,6 +469,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _replies
           ..clear()
           ..addAll(seededReplies);
+        _syncLikedCommentIdsFromState();
         _isLiked = isLiked;
         _isSaved = isSaved;
         _loadingPost = false;
@@ -630,6 +682,152 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     if (!mounted) return;
     setState(() => _expandedComments.add(cid));
+  }
+
+  Future<void> _toggleCommentLike(Map<String, dynamic> comment, int index,
+      {String? parentId, bool isReply = false, int? replyIndex}) async {
+    final id = _commentId(comment);
+    if (id.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to like comments')),
+      );
+      return;
+    }
+
+    final liked = _isCommentLiked(comment);
+    final prevLiked = liked;
+    final prevCount = _commentLikesCount(comment);
+
+    setState(() {
+      if (liked) {
+        _likedCommentIds.remove(id);
+      } else {
+        _likedCommentIds.add(id);
+      }
+      final updated = Map<String, dynamic>.from(comment);
+      _applyLikeState(updated, !liked);
+      if (isReply && parentId != null && replyIndex != null) {
+        final list = _replies[parentId];
+        if (list != null &&
+            replyIndex >= 0 &&
+            replyIndex < list.length &&
+            _commentId(list[replyIndex]) == id) {
+          list[replyIndex] = updated;
+        }
+      } else if (!isReply && index >= 0 && index < _comments.length) {
+        _comments[index] = updated;
+      }
+    });
+
+    try {
+      final res = liked
+          ? await _svc.unlikeComment(
+              id,
+              isTweet: _isTweet,
+              throwOnError: true,
+            )
+          : await _svc.likeComment(
+              id,
+              isTweet: _isTweet,
+              throwOnError: true,
+            );
+      if (res == null || !mounted) return;
+      setState(() {
+        final latest = Map<String, dynamic>.from(comment);
+        final likedNow = res['liked'] as bool? ?? !liked;
+        latest['is_liked_by_me'] = likedNow;
+        latest['liked_by_me'] = likedNow;
+        latest['liked'] = likedNow;
+        latest['is_liked'] = likedNow;
+        if (res.containsKey('likes_count')) {
+          latest['likes_count'] = tryParseInt(res['likes_count']) ??
+              latest['likes_count'] ??
+              prevCount;
+        } else {
+          latest['likes_count'] = likedNow
+              ? prevCount + 1
+              : (prevCount - 1 < 0 ? 0 : prevCount - 1);
+        }
+        if (likedNow) {
+          _likedCommentIds.add(id);
+        } else {
+          _likedCommentIds.remove(id);
+        }
+        _svc.setCommentLikeOverride(id, likedNow);
+        if (isReply && parentId != null && replyIndex != null) {
+          final list = _replies[parentId];
+          if (list != null &&
+              replyIndex >= 0 &&
+              replyIndex < list.length &&
+              _commentId(list[replyIndex]) == id) {
+            list[replyIndex] = latest;
+          }
+        } else if (!isReply && index >= 0 && index < _comments.length) {
+          _comments[index] = latest;
+        }
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        final reverted = Map<String, dynamic>.from(comment);
+        reverted['likes_count'] = prevCount;
+        reverted['is_liked_by_me'] = prevLiked;
+        reverted['liked_by_me'] = prevLiked;
+        reverted['liked'] = prevLiked;
+        reverted['is_liked'] = prevLiked;
+        if (prevLiked) {
+          _likedCommentIds.add(id);
+        } else {
+          _likedCommentIds.remove(id);
+        }
+        if (isReply && parentId != null && replyIndex != null) {
+          final list = _replies[parentId];
+          if (list != null &&
+              replyIndex >= 0 &&
+              replyIndex < list.length &&
+              _commentId(list[replyIndex]) == id) {
+            list[replyIndex] = reverted;
+          }
+        } else if (!isReply && index >= 0 && index < _comments.length) {
+          _comments[index] = reverted;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to like comment: ${e.message}')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        final reverted = Map<String, dynamic>.from(comment);
+        reverted['likes_count'] = prevCount;
+        reverted['is_liked_by_me'] = prevLiked;
+        reverted['liked_by_me'] = prevLiked;
+        reverted['liked'] = prevLiked;
+        reverted['is_liked'] = prevLiked;
+        if (prevLiked) {
+          _likedCommentIds.add(id);
+        } else {
+          _likedCommentIds.remove(id);
+        }
+        if (isReply && parentId != null && replyIndex != null) {
+          final list = _replies[parentId];
+          if (list != null &&
+              replyIndex >= 0 &&
+              replyIndex < list.length &&
+              _commentId(list[replyIndex]) == id) {
+            list[replyIndex] = reverted;
+          }
+        } else if (!isReply && index >= 0 && index < _comments.length) {
+          _comments[index] = reverted;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to like comment')),
+      );
+    }
   }
 
   void _startReplyTo(String commentId, String username) {
@@ -1202,16 +1400,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   String? _firstLikeUserId(List<Map<String, dynamic>> users) {
     for (final user in users) {
-      final direct = (user['id'] ?? user['_id'] ?? user['user_id'] ?? user['userId'])
-          ?.toString()
-          .trim();
+      final direct =
+          (user['id'] ?? user['_id'] ?? user['user_id'] ?? user['userId'])
+              ?.toString()
+              .trim();
       if (direct != null && direct.isNotEmpty) return direct;
       final nested = user['user'];
       if (nested is Map) {
-        final nestedId =
-            (nested['id'] ?? nested['_id'] ?? nested['user_id'] ?? nested['userId'])
-                ?.toString()
-                .trim();
+        final nestedId = (nested['id'] ??
+                nested['_id'] ??
+                nested['user_id'] ??
+                nested['userId'])
+            ?.toString()
+            .trim();
         if (nestedId != null && nestedId.isNotEmpty) return nestedId;
       }
     }
@@ -2009,11 +2210,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                         ),
                                       ),
                                       IconButton(
-                                          icon: Icon(LucideIcons.heart,
-                                              size: 14, color: secondaryText),
-                                          onPressed: () {},
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints()),
+                                        icon: Icon(
+                                          _isCommentLiked(c)
+                                              ? Icons.favorite
+                                              : LucideIcons.heart,
+                                          size: 14,
+                                          color: _isCommentLiked(c)
+                                              ? Colors.red
+                                              : secondaryText,
+                                        ),
+                                        onPressed: () => _toggleCommentLike(
+                                          c,
+                                          _comments.indexOf(c),
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
                                     ],
                                   ),
                                   if (hasReplies) ...[
@@ -2080,6 +2292,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                   r['createdAt'] ??
                                                   '')
                                               .toString();
+                                          final rLiked = _isCommentLiked(r);
+                                          final rLikesCount = tryParseInt(
+                                                r['likes_count'] ??
+                                                    r['likesCount'] ??
+                                                    r['likes'],
+                                              ) ??
+                                              ((r['likes'] is List)
+                                                  ? (r['likes'] as List).length
+                                                  : 0);
                                           return Padding(
                                             padding: const EdgeInsets.only(
                                                 bottom: 10),
@@ -2148,6 +2369,45 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                       ),
                                                     ],
                                                   ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    IconButton(
+                                                      icon: Icon(
+                                                        rLiked
+                                                            ? Icons.favorite
+                                                            : LucideIcons.heart,
+                                                        size: 13,
+                                                        color: rLiked
+                                                            ? Colors.red
+                                                            : secondaryText,
+                                                      ),
+                                                      onPressed: () =>
+                                                          _toggleCommentLike(
+                                                        r,
+                                                        0,
+                                                        parentId: cid,
+                                                        isReply: true,
+                                                        replyIndex:
+                                                            loadedReplies
+                                                                .indexOf(r),
+                                                      ),
+                                                      padding: EdgeInsets.zero,
+                                                      constraints:
+                                                          const BoxConstraints(),
+                                                    ),
+                                                    if (rLikesCount > 0)
+                                                      Text(
+                                                        '$rLikesCount',
+                                                        style: TextStyle(
+                                                            fontSize: 10,
+                                                            color:
+                                                                secondaryText),
+                                                      ),
+                                                  ],
                                                 ),
                                               ],
                                             ),

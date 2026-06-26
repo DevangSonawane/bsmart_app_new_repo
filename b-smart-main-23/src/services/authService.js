@@ -4,7 +4,15 @@ import { unregisterPush } from './pushService';
 
 const authService = {
   login: async (credentials) => {
+    const safeCredentials = {
+      ...credentials,
+      password: credentials?.password ? '[REDACTED]' : credentials?.password,
+    };
+    console.log('[Auth] Login request payload:', safeCredentials);
+
     const response = await api.post('/auth/login', credentials);
+    console.log('[Auth] Login response payload:', response?.data);
+
     const user = response?.data?.user || {}
     if (user?.is_active === false) {
       localStorage.removeItem('token');
