@@ -7,7 +7,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/api_client.dart';
 import '../api/posts_api.dart';
 import '../api/reels_api.dart';
+import '../models/feed_post_model.dart';
 import '../utils/url_helper.dart';
+import '../screens/post_detail_screen.dart';
 import '../widgets/post_detail_modal.dart';
 import 'search_screen.dart';
 
@@ -119,7 +121,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
       }
       final thumb = _extractMediaUrl(item);
       if (thumb.isEmpty) continue;
-      out.add(_ExploreItem.post(id: id, thumbnailUrl: thumb));
+      out.add(_ExploreItem.post(id: id, thumbnailUrl: thumb, raw: item));
     }
     return out;
   }
@@ -181,6 +183,18 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
     return false;
   }
 
+  bool _isAdPost(Map<String, dynamic> item) {
+    final itemType =
+        (item['item_type'] ?? item['itemType'] ?? '').toString().toLowerCase();
+    if (itemType == 'ad') return true;
+    if (item['vendor_id'] != null || item['vendorId'] != null) return true;
+    if (item['total_budget_coins'] != null ||
+        item['totalBudgetCoins'] != null) {
+      return true;
+    }
+    return false;
+  }
+
   List<_ExploreItem> _dedupeById(List<_ExploreItem> items) {
     if (items.isEmpty) return const [];
     final seen = <String>{};
@@ -213,7 +227,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
       if (id.isEmpty) continue;
       final thumb = _extractReelThumb(item);
       if (thumb.isEmpty) continue;
-      out.add(_ExploreItem.reel(id: id, thumbnailUrl: thumb));
+      out.add(_ExploreItem.reel(id: id, thumbnailUrl: thumb, raw: item));
     }
     return out;
   }
@@ -343,11 +357,28 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
     return '';
   }
 
-  void _showPostDetail(String postId) {
+  void _showPostDetail(Map<String, dynamic> item) {
+    final postId = (item['_id'] ?? item['id'] ?? item['post_id'] ?? item['postId'])
+            ?.toString()
+            .trim() ??
+        '';
     if (postId.isEmpty) return;
+    if (_isAdPost(item)) {
+      Navigator.of(context).pushNamed('/ad/$postId');
+      return;
+    }
     final isMobile = MediaQuery.sizeOf(context).width < 600;
+    final initialPost = FeedPost.fromJson(item);
     if (isMobile) {
-      Navigator.of(context).pushNamed('/post/$postId');
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PostDetailScreen(
+            postId: postId,
+            initialPost: initialPost,
+            isTweet: initialPost.isTweet,
+          ),
+        ),
+      );
     } else {
       showDialog(
         context: context,
@@ -358,6 +389,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: PostDetailModal(
             postId: postId,
+            initialPost: item,
             onClose: () => Navigator.of(ctx).pop(),
           ),
         ),
@@ -463,12 +495,13 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
             return GestureDetector(
               onTap: () {
                 if (item.kind == _ExploreKind.reel) {
+                  final reelId = item.id;
                   Navigator.of(context).pushNamed(
                     '/reels',
-                    arguments: {'initialReelId': item.id},
+                    arguments: {'initialReelId': reelId},
                   );
                 } else {
-                  _showPostDetail(item.id);
+                  _showPostDetail(item.raw);
                 }
               },
               child: Transform.scale(
@@ -533,32 +566,38 @@ class _ExploreItem {
   final String id;
   final _ExploreKind kind;
   final String thumbnailUrl;
+  final Map<String, dynamic> raw;
 
   const _ExploreItem._({
     required this.id,
     required this.kind,
     required this.thumbnailUrl,
+    required this.raw,
   });
 
   factory _ExploreItem.post({
     required String id,
     required String thumbnailUrl,
+    required Map<String, dynamic> raw,
   }) {
     return _ExploreItem._(
       id: id,
       kind: _ExploreKind.post,
       thumbnailUrl: UrlHelper.absoluteUrl(thumbnailUrl),
+      raw: raw,
     );
   }
 
   factory _ExploreItem.reel({
     required String id,
     required String thumbnailUrl,
+    required Map<String, dynamic> raw,
   }) {
     return _ExploreItem._(
       id: id,
       kind: _ExploreKind.reel,
       thumbnailUrl: UrlHelper.absoluteUrl(thumbnailUrl),
+      raw: raw,
     );
   }
 }

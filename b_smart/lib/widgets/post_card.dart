@@ -135,6 +135,18 @@ class _PostCardState extends State<PostCard> {
       (widget.post.mediaType == PostMediaType.video ||
           widget.post.mediaType == PostMediaType.reel);
 
+  double _aspectRatioForIndex(int index) {
+    final perMedia = widget.post.mediaAspectRatios;
+    if (perMedia != null && index >= 0 && index < perMedia.length) {
+      final ratio = perMedia[index];
+      if (ratio != null && ratio > 0) return ratio;
+    }
+    if (widget.post.aspectRatio != null && widget.post.aspectRatio! > 0) {
+      return widget.post.aspectRatio!;
+    }
+    return 4 / 5;
+  }
+
   @override
   void dispose() {
     VideoPool.instance.removeListener(_syncMutedState);
@@ -275,7 +287,6 @@ class _PostCardState extends State<PostCard> {
     }
     final mediaUrls = post.mediaUrls;
     final isCarousel = _isCarousel;
-    final aspect = post.aspectRatio ?? 4 / 5;
     final mediaFilters = post.mediaFilters;
     final mediaAdjustments = post.mediaAdjustments;
     String? filterForIndex(int index) {
@@ -312,7 +323,7 @@ class _PostCardState extends State<PostCard> {
           children: [
             if (mediaUrls.isEmpty)
               AspectRatio(
-                aspectRatio: aspect,
+                aspectRatio: _aspectRatioForIndex(_mediaIndex),
                 child: const ColoredBox(
                   color: Colors.black12,
                   child: Center(
@@ -353,65 +364,70 @@ class _PostCardState extends State<PostCard> {
                       },
                     )
             else
-              AspectRatio(
-                aspectRatio: aspect,
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: mediaUrls.length,
-                  onPageChanged: (i) {
-                    setState(() => _mediaIndex = i);
-                  },
-                  itemBuilder: (context, i) {
-                    final url = mediaUrls[i];
-                    final isVideo = _isVideoUrl(url);
-                    return GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onDoubleTap: _handleDoubleTap,
-                      onTap: () {
-                        if (_showPeopleTags) {
-                          setState(() => _showPeopleTags = false);
-                          return;
-                        }
-                        widget.onComment?.call();
-                      },
-                      onLongPress: _togglePeopleTags,
-                      child: activeListenable == null
-                          ? RepaintBoundary(
-                              child: DynamicMediaWidget(
-                                id: '${post.id}_$i',
-                                url: url,
-                                thumbnailUrl: post.thumbnailUrl,
-                                isVideo: isVideo,
-                                isActive: widget.isActive &&
-                                    tabActive &&
-                                    _mediaIndex == i,
-                                initialAspectRatio: post.aspectRatio,
-                                filterName: filterForIndex(i),
-                                adjustments: adjustmentsForIndex(i),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                child: AspectRatio(
+                  aspectRatio: _aspectRatioForIndex(_mediaIndex),
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: mediaUrls.length,
+                    onPageChanged: (i) {
+                      setState(() => _mediaIndex = i);
+                    },
+                    itemBuilder: (context, i) {
+                      final url = mediaUrls[i];
+                      final isVideo = _isVideoUrl(url);
+                      final itemAspect = _aspectRatioForIndex(i);
+                      return GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onDoubleTap: _handleDoubleTap,
+                        onTap: () {
+                          if (_showPeopleTags) {
+                            setState(() => _showPeopleTags = false);
+                            return;
+                          }
+                          widget.onComment?.call();
+                        },
+                        onLongPress: _togglePeopleTags,
+                        child: activeListenable == null
+                            ? RepaintBoundary(
+                                child: DynamicMediaWidget(
+                                  id: '${post.id}_$i',
+                                  url: url,
+                                  thumbnailUrl: post.thumbnailUrl,
+                                  isVideo: isVideo,
+                                  isActive: widget.isActive &&
+                                      tabActive &&
+                                      _mediaIndex == i,
+                                  initialAspectRatio: itemAspect,
+                                  filterName: filterForIndex(i),
+                                  adjustments: adjustmentsForIndex(i),
+                                ),
+                              )
+                            : ValueListenableBuilder<String?>(
+                                valueListenable: activeListenable,
+                                builder: (context, activeId, _) {
+                                  final isActive = activeId == post.id &&
+                                      tabActive &&
+                                      _mediaIndex == i;
+                                  return RepaintBoundary(
+                                    child: DynamicMediaWidget(
+                                      id: '${post.id}_$i',
+                                      url: url,
+                                      thumbnailUrl: post.thumbnailUrl,
+                                      isVideo: isVideo,
+                                      isActive: isActive,
+                                      initialAspectRatio: itemAspect,
+                                      filterName: filterForIndex(i),
+                                      adjustments: adjustmentsForIndex(i),
+                                    ),
+                                  );
+                                },
                               ),
-                            )
-                          : ValueListenableBuilder<String?>(
-                              valueListenable: activeListenable,
-                              builder: (context, activeId, _) {
-                                final isActive = activeId == post.id &&
-                                    tabActive &&
-                                    _mediaIndex == i;
-                                return RepaintBoundary(
-                                  child: DynamicMediaWidget(
-                                    id: '${post.id}_$i',
-                                    url: url,
-                                    thumbnailUrl: post.thumbnailUrl,
-                                    isVideo: isVideo,
-                                    isActive: isActive,
-                                    initialAspectRatio: post.aspectRatio,
-                                    filterName: filterForIndex(i),
-                                    adjustments: adjustmentsForIndex(i),
-                                  ),
-                                );
-                              },
-                            ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
             if (isCarousel)

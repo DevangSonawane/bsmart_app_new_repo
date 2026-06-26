@@ -6,8 +6,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/search_api.dart';
 import '../api/privacy_api.dart';
+import '../models/feed_post_model.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
+import '../screens/post_detail_screen.dart';
 import '../widgets/post_detail_modal.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -111,6 +113,28 @@ class _SearchScreenState extends State<SearchScreen> {
       return true;
     }
     if (item.containsKey('active') && parseBool(item['active']) == false) {
+      return true;
+    }
+    return false;
+  }
+
+  String _userProfileRoute(Map<String, dynamic> user) {
+    final uid = (user['_id'] ?? user['id'] ?? user['user_id'])
+            ?.toString()
+            .trim() ??
+        '';
+    if (uid.isEmpty) return '';
+    final role = (user['role'] ?? '').toString().toLowerCase();
+    return role == 'vendor' ? '/vendor/$uid/public' : '/profile/$uid';
+  }
+
+  bool _isAdPost(Map<String, dynamic> item) {
+    final itemType =
+        (item['item_type'] ?? item['itemType'] ?? '').toString().toLowerCase();
+    if (itemType == 'ad') return true;
+    if (item['vendor_id'] != null || item['vendorId'] != null) return true;
+    if (item['total_budget_coins'] != null ||
+        item['totalBudgetCoins'] != null) {
       return true;
     }
     return false;
@@ -323,11 +347,28 @@ class _SearchScreenState extends State<SearchScreen> {
   bool get _hasResults =>
       _users.isNotEmpty || _posts.isNotEmpty || _reels.isNotEmpty;
 
-  void _showPostDetail(String postId) {
+  void _showPostDetail(Map<String, dynamic> item) {
+    final postId = (item['_id'] ?? item['id'] ?? item['post_id'] ?? item['postId'])
+            ?.toString()
+            .trim() ??
+        '';
     if (postId.isEmpty) return;
+    if (_isAdPost(item)) {
+      Navigator.of(context).pushNamed('/ad/$postId');
+      return;
+    }
     final isMobile = MediaQuery.sizeOf(context).width < 600;
+    final initialPost = FeedPost.fromJson(item);
     if (isMobile) {
-      Navigator.of(context).pushNamed('/post/$postId');
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PostDetailScreen(
+            postId: postId,
+            initialPost: initialPost,
+            isTweet: initialPost.isTweet,
+          ),
+        ),
+      );
     } else {
       showDialog(
         context: context,
@@ -338,6 +379,7 @@ class _SearchScreenState extends State<SearchScreen> {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: PostDetailModal(
             postId: postId,
+            initialPost: item,
             onClose: () => Navigator.of(ctx).pop(),
           ),
         ),
@@ -544,7 +586,12 @@ class _SearchScreenState extends State<SearchScreen> {
     final role = (user['role'] ?? '').toString().toLowerCase();
     return ListTile(
       onTap: uid.isNotEmpty
-          ? () => Navigator.of(context).pushNamed('/profile/$uid')
+          ? () {
+              final route = _userProfileRoute(user);
+              if (route.isNotEmpty) {
+                Navigator.of(context).pushNamed(route);
+              }
+            }
           : null,
       leading: CircleAvatar(
         backgroundImage: avatar.trim().isNotEmpty ? NetworkImage(avatar) : null,
@@ -608,16 +655,19 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
             itemBuilder: (context, index) {
               final item = items[index];
-              final id = (item['_id'] ?? item['id'])?.toString() ?? '';
               final thumb = _extractMediaUrl(item);
               return GestureDetector(
                 onTap: isReel
-                    ? () => Navigator.of(context).pushNamed(
+                    ? () {
+                        final id =
+                            (item['_id'] ?? item['id'])?.toString() ?? '';
+                        Navigator.of(context).pushNamed(
                           '/reels',
                           arguments:
                               id.isNotEmpty ? {'initialReelId': id} : null,
-                        )
-                    : () => _showPostDetail(id),
+                        );
+                      }
+                    : () => _showPostDetail(item),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Container(

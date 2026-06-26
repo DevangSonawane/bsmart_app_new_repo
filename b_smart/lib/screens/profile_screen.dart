@@ -549,6 +549,73 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _buildPrivateProfileWall(
+    BuildContext context, {
+    required String username,
+    String? fullName,
+    String? subtitle,
+  }) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.60);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: theme.colorScheme.surfaceContainerHighest,
+                border: Border.all(
+                  color: theme.dividerColor.withValues(alpha: 0.55),
+                ),
+              ),
+              child: Icon(
+                LucideIcons.lock,
+                size: 30,
+                color: muted,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'This account is private',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: theme.colorScheme.onSurface,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              fullName != null && fullName.isNotEmpty
+                  ? '@$username · $fullName'
+                  : '@$username',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: muted,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              subtitle ??
+                  'Follow request must be accepted to view photos, reels, highlights, and posts.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: muted,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFavoriteCategoryStrip(
     BuildContext context, {
     required String profileUserId,
@@ -2807,7 +2874,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final username =
               (privateUser?['username'] as String?)?.trim() ?? 'user';
           final fullName = (privateUser?['full_name'] as String?)?.trim();
-          final avatar = (privateUser?['avatar_url'] as String?)?.trim();
           return Scaffold(
             backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             appBar: AppBar(
@@ -2815,70 +2881,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               foregroundColor: Theme.of(context).colorScheme.onSurface,
               title: Text(username),
             ),
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircleAvatar(
-                      radius: 42,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
-                      backgroundImage: (avatar != null && avatar.isNotEmpty)
-                          ? NetworkImage(avatar)
-                          : null,
-                      child: (avatar == null || avatar.isEmpty)
-                          ? Text(
-                              username.isNotEmpty
-                                  ? username[0].toUpperCase()
-                                  : 'U',
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            )
-                          : null,
-                    ),
-                    const SizedBox(height: 18),
-                    Text(
-                      'This account is private',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      fullName != null && fullName.isNotEmpty
-                          ? '@$username · $fullName'
-                          : '@$username',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.65),
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Follow them to see their posts, stories, and profile content.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.60),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            body: _buildPrivateProfileWall(
+              context,
+              username: username,
+              fullName: fullName,
+              subtitle:
+                  'Follow them to see their posts, stories, and profile content.',
             ),
           );
         }
@@ -2955,9 +2963,153 @@ class _ProfileScreenState extends State<ProfileScreen> {
             (displayProfile?['isVerified'] as bool?) ??
             (displayProfile?['is_verified'] as bool?) ??
             false;
+        final isPrivateProfile = _isPrivateAccount(displayProfile);
+        final isFollowingViewer = _isFollowingViewer(displayProfile);
+        final contentLocked = !isMe &&
+            (_profileBlocked || (isPrivateProfile && !isFollowingViewer));
 
         final theme = Theme.of(context);
         final fgColor = theme.colorScheme.onSurface;
+
+        if (contentLocked) {
+          return Scaffold(
+            backgroundColor: theme.scaffoldBackgroundColor,
+            appBar: AppBar(
+              automaticallyImplyLeading: !isMe,
+              backgroundColor: theme.appBarTheme.backgroundColor,
+              foregroundColor: theme.appBarTheme.foregroundColor,
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      username,
+                      style: TextStyle(color: fgColor),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  SvgPicture.string(
+                    _verifiedBadgeSvg,
+                    width: 20,
+                    height: 20,
+                    colorFilter: const ColorFilter.mode(
+                        Color(0xFF3B82F6), BlendMode.srcIn),
+                  ),
+                ],
+              ),
+              actions: [
+                if (isMe) ...[
+                  IconButton(
+                    icon: Icon(LucideIcons.squarePlus, color: fgColor),
+                    onPressed: _openCreatePostFlow,
+                  ),
+                  IconButton(
+                    icon: Icon(LucideIcons.menu, color: fgColor),
+                    onPressed: () => Navigator.of(context).pushNamed('/settings'),
+                  ),
+                ],
+              ],
+            ),
+            body: RefreshIndicator(
+              onRefresh: _load,
+              notificationPredicate: (notification) => true,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.zero,
+                children: [
+                  ProfileHeader(
+                    username: username,
+                    fullName: fullName,
+                    bio: bio,
+                    avatarUrl: avatar,
+                    avatarHeaders: _reelImageHeaders,
+                    posts: postsCount,
+                    followers: followers,
+                    following: following,
+                    ads: _vendorAds.length,
+                    isMe: isMe,
+                    isVendor: isVendor,
+                    isValidated: isValidated,
+                    isFollowing: isFollowingViewer,
+                    isRequested:
+                        _followRequested || _isFollowRequested(displayProfile),
+                    canMessage: _canMessageProfile(displayProfile),
+                    isFavorite: _isFavoriteProfile,
+                    isSuggestionsOpen: isMe ? _showFollowSuggestions : false,
+                    hasStory: false,
+                    onEdit: isMe ? _onEdit : null,
+                    onFollow: isMe ? null : _onFollow,
+                    onShare: () => _shareProfile(displayProfile),
+                    onFavorite: profileUserId.isEmpty
+                        ? null
+                        : () {
+                            final next = !_isFavoriteProfile;
+                            setState(() => _isFavoriteProfile = next);
+                            if (!next) return;
+                            unawaited(() async {
+                              await _loadAdInterests(
+                                profileUserId,
+                                force: true,
+                              );
+                              if (!mounted) return;
+                              if (!_isFavoriteProfile) return;
+                              if (_interestsLoadedForUserId !=
+                                  profileUserId.trim()) {
+                                return;
+                              }
+                              _applyBannersForInterests(_adInterests);
+                            }());
+                          },
+                    onMore: () => _showProfileMoreActions(displayProfile),
+                    onMessage: isMe
+                        ? _openMessaging
+                        : (_canMessageProfile(displayProfile)
+                            ? _openMessaging
+                            : null),
+                    onUser: isMe ? _toggleFollowSuggestions : null,
+                    onAvatarTap: null,
+                    onAvatarEdit: isMe && !_avatarUploading
+                        ? _showAvatarOptionsSheet
+                        : null,
+                    onFollowersTap: profileUserId.isNotEmpty
+                        ? () => FollowListScreen.open(
+                              context,
+                              userId: profileUserId,
+                              username: username,
+                              mode: FollowListMode.followers,
+                              isOwnProfile: isMe,
+                              initialFollowersCount: followers,
+                              initialFollowingCount: following,
+                            )
+                        : null,
+                    onFollowingTap: profileUserId.isNotEmpty
+                        ? () => FollowListScreen.open(
+                              context,
+                              userId: profileUserId,
+                              username: username,
+                              mode: FollowListMode.following,
+                              isOwnProfile: isMe,
+                              initialFollowersCount: followers,
+                              initialFollowingCount: following,
+                            )
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildPrivateProfileWall(
+                    context,
+                    username: username,
+                    fullName: fullName,
+                    subtitle:
+                        'Follow request must be accepted to view photos, reels, highlights, and posts.',
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
 
         bool hasRenderableGridMedia(FeedPost p) {
           final thumb = UrlHelper.normalizeUrl((p.thumbnailUrl ?? '').trim());

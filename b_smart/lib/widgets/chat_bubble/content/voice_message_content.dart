@@ -26,23 +26,43 @@ class VoiceMessageContent extends StatefulWidget {
 class _VoiceMessageContentState extends State<VoiceMessageContent> {
   final AudioPlayer _player = AudioPlayer();
   StreamSubscription<PlayerState>? _playerStateSub;
-  Timer? _playbackTimer;
+  StreamSubscription<Duration>? _positionSub;
   bool _isPlaying = false;
-  int _currentSeconds = 0;
+  bool _isLoading = false;
+  bool _loadFailed = false;
+  bool _isPrepared = false;
+  bool _pendingPlayAfterLoad = false;
+  Duration _position = Duration.zero;
   late int _resolvedDuration;
+  Future<void>? _prepareFuture;
 
   @override
   void initState() {
     super.initState();
     _resolvedDuration = max(1, widget.totalDurationSeconds);
+    _positionSub = _player.positionStream.listen((position) {
+      if (!mounted) return;
+      setState(() => _position = position);
+    });
     _playerStateSub = _player.playerStateStream.listen((state) {
+      final loading = state.processingState == ProcessingState.loading ||
+          state.processingState == ProcessingState.buffering;
+      if (mounted && loading != _isLoading) {
+        setState(() => _isLoading = loading);
+      }
+      if (mounted) {
+        final playing = state.playing &&
+            state.processingState != ProcessingState.completed;
+        if (playing != _isPlaying) {
+          setState(() => _isPlaying = playing);
+        }
+      }
       if (state.processingState == ProcessingState.completed) {
-        _playbackTimer?.cancel();
         _player.seek(Duration.zero);
         if (mounted) {
           setState(() {
             _isPlaying = false;
-            _currentSeconds = 0;
+            _position = Duration.zero;
           });
         }
       }
@@ -57,31 +77,75 @@ class _VoiceMessageContentState extends State<VoiceMessageContent> {
         oldWidget.totalDurationSeconds == widget.totalDurationSeconds) {
       return;
     }
-    _playbackTimer?.cancel();
+    _prepareFuture = null;
     _isPlaying = false;
-    _currentSeconds = 0;
+    _isLoading = false;
+    _loadFailed = false;
+    _isPrepared = false;
+    _pendingPlayAfterLoad = false;
+    _position = Duration.zero;
     _resolvedDuration = max(1, widget.totalDurationSeconds);
     unawaited(_init());
   }
 
   Future<void> _init() async {
+    await _prepareAudio();
+  }
+
+  Future<void> _prepareAudio() async {
+    if (_isPrepared) return;
     final url = widget.audioUrl.trim();
     if (url.isEmpty) return;
+    final existing = _prepareFuture;
+    if (existing != null) {
+      return existing;
+    }
+    final future = _doPrepareAudio(url);
+    _prepareFuture = future;
     try {
+      await future;
+    } finally {
+      if (identical(_prepareFuture, future)) {
+        _prepareFuture = null;
+      }
+    }
+  }
+
+  Future<void> _doPrepareAudio(String url) async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _loadFailed = false;
+      });
+    }
+    try {
+      await _player.stop();
       await _player.setUrl(url);
       final d = _player.duration;
       if (d != null && d.inSeconds > 0 && mounted) {
         setState(() => _resolvedDuration = d.inSeconds);
       }
+      _isPrepared = true;
     } catch (_) {
-      // ignore
+      _isPrepared = false;
+      if (mounted) {
+        setState(() => _loadFailed = true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      if (_pendingPlayAfterLoad) {
+        _pendingPlayAfterLoad = false;
+        unawaited(_togglePlayPause());
+      }
     }
   }
 
   @override
   void dispose() {
-    _playbackTimer?.cancel();
     _playerStateSub?.cancel();
+    _positionSub?.cancel();
     unawaited(_player.dispose());
     super.dispose();
   }
@@ -92,31 +156,36 @@ class _VoiceMessageContentState extends State<VoiceMessageContent> {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
-  void _startPlaybackTimer() {
-    _playbackTimer?.cancel();
-    _playbackTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      if (!mounted) return;
-      setState(() => _currentSeconds = _player.position.inSeconds);
-    });
-  }
-
   Future<void> _togglePlayPause() async {
     if (widget.audioUrl.trim().isEmpty) return;
+    if (_loadFailed) {
+      await _prepareAudio();
+      if (_loadFailed) return;
+    }
     if (_isPlaying) {
       await _player.pause();
-      _playbackTimer?.cancel();
       if (mounted) setState(() => _isPlaying = false);
       return;
     }
 
+    if (_isLoading && !_isPrepared) {
+      _pendingPlayAfterLoad = true;
+      return;
+    }
+
+    if (!_isPrepared) {
+      _pendingPlayAfterLoad = true;
+      await _prepareAudio();
+      if (!mounted || _loadFailed || !_isPrepared) return;
+    }
+
     final dur = max(1, _resolvedDuration);
-    if (_currentSeconds >= dur) {
+    if (_position.inMilliseconds >= dur * 1000) {
       await _player.seek(Duration.zero);
-      if (mounted) setState(() => _currentSeconds = 0);
+      if (mounted) setState(() => _position = Duration.zero);
     }
 
     await _player.play();
-    _startPlaybackTimer();
     if (mounted) setState(() => _isPlaying = true);
   }
 
@@ -124,7 +193,7 @@ class _VoiceMessageContentState extends State<VoiceMessageContent> {
     final dur = max(1, _resolvedDuration);
     final target = (fraction.clamp(0.0, 1.0) * dur).round();
     await _player.seek(Duration(seconds: target));
-    if (mounted) setState(() => _currentSeconds = target);
+    if (mounted) setState(() => _position = Duration(seconds: target));
   }
 
   @override
@@ -133,9 +202,10 @@ class _VoiceMessageContentState extends State<VoiceMessageContent> {
     final colors = theme.colors;
     final cs = Theme.of(context).colorScheme;
 
-    final progress =
-        (_currentSeconds / max(1, _resolvedDuration)).clamp(0.0, 1.0);
-    final currentLabel = _formatDuration(_currentSeconds);
+    final totalMs = max(1, _resolvedDuration * 1000);
+    final currentMs = _position.inMilliseconds.clamp(0, totalMs);
+    final progress = (currentMs / totalMs).clamp(0.0, 1.0);
+    final currentLabel = _formatDuration(currentMs ~/ 1000);
     final totalLabel = _formatDuration(_resolvedDuration);
     final timeLabel = _isPlaying ? '$currentLabel / $totalLabel' : totalLabel;
 
@@ -232,10 +302,25 @@ class _VoiceMessageContentState extends State<VoiceMessageContent> {
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
-            child: Icon(
-              _isPlaying ? LucideIcons.pause : LucideIcons.play,
-              size: 18,
-              color: iconColor,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: _isLoading && !_isPlaying
+                  ? SizedBox(
+                      key: const ValueKey('loading'),
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(iconColor),
+                      ),
+                    )
+                  : Icon(
+                      _isPlaying ? LucideIcons.pause : LucideIcons.play,
+                      key: ValueKey(_isPlaying),
+                      size: 18,
+                      color: iconColor,
+                    ),
             ),
           ),
         );

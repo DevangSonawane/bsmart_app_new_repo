@@ -21,12 +21,14 @@ import '../widgets/share_content_modal.dart';
 /// Modal matching React PostDetailModal: image left, details + comments right.
 class PostDetailModal extends StatefulWidget {
   final String postId;
+  final Map<String, dynamic>? initialPost;
   final VoidCallback? onClose;
   final bool isTweet;
 
   const PostDetailModal({
     super.key,
     required this.postId,
+    this.initialPost,
     this.onClose,
     this.isTweet = false,
   });
@@ -339,11 +341,74 @@ class _PostDetailModalState extends State<PostDetailModal> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loadingPost = true;
-      _loadingComments = true;
-    });
-    final post = await _svc.getPostById(widget.postId, isTweet: _isTweet);
+    final initial = widget.initialPost;
+    Map<String, dynamic>? eagerPost = _post;
+    Map<String, dynamic>? eagerUser = _postUser;
+    bool eagerLiked = _isLiked;
+    bool eagerSaved = _isSaved;
+    int eagerLikeCount = _likeCount;
+
+    if (eagerPost == null && initial != null) {
+      eagerPost = Map<String, dynamic>.from(initial);
+      final normalizedUser = _extractUserMap(eagerPost['user']) ??
+          _extractUserMap(eagerPost['users']) ??
+          _extractUserMap(eagerPost['user_id']) ??
+          <String, dynamic>{};
+      final userId = _extractId(normalizedUser) ??
+          _extractId(eagerPost['user_id']) ??
+          _extractId(eagerPost['user']) ??
+          _extractId(eagerPost['users']);
+      if (userId != null && userId.isNotEmpty) {
+        normalizedUser['id'] = userId;
+        normalizedUser['_id'] = userId;
+      }
+      normalizedUser['username'] = (normalizedUser['username'] ??
+              eagerPost['username'] ??
+              eagerPost['user_name'] ??
+              eagerPost['full_name'])
+          ?.toString()
+          .trim();
+      normalizedUser['full_name'] = (normalizedUser['full_name'] ??
+              eagerPost['full_name'] ??
+              eagerPost['fullName'])
+          ?.toString()
+          .trim();
+      normalizedUser['avatar_url'] = (normalizedUser['avatar_url'] ??
+              eagerPost['avatar_url'] ??
+              eagerPost['userAvatar'] ??
+              eagerPost['avatar'])
+          ?.toString()
+          .trim();
+      eagerUser = normalizedUser;
+      eagerLiked = _extractLikedFlag(eagerPost) ?? eagerLiked;
+      eagerSaved = _asBool(eagerPost['is_saved_by_me']) ||
+          _asBool(eagerPost['saved_by_me']);
+      eagerLikeCount = _extractLikesCount(eagerPost) ?? eagerLikeCount;
+      final itemType =
+          (eagerPost['item_type'] ?? eagerPost['itemType'] ?? '')
+              .toString()
+              .toLowerCase();
+      if (itemType == 'tweet') _isTweet = true;
+    }
+
+    if (mounted) {
+      setState(() {
+        if (eagerPost != null) {
+          _post = eagerPost;
+          _postUser = eagerUser;
+          _isLiked = eagerLiked;
+          _isSaved = eagerSaved;
+          _likeCount = eagerLikeCount;
+          _loadingPost = false;
+        } else {
+          _loadingPost = true;
+        }
+        _loadingComments = true;
+      });
+    }
+
+    final fetchedPost = await _svc.getPostById(widget.postId, isTweet: _isTweet);
+    final post = fetchedPost ?? _post;
     if (post == null || !mounted) {
       if (mounted) setState(() => _loadingPost = false);
       return;

@@ -501,6 +501,7 @@ class FeedService {
           final List<String> mediaUrls = [];
           final List<String?> mediaFilters = [];
           final List<Map<String, int>> mediaAdjustments = [];
+          final List<double?> mediaAspectRatios = [];
           for (final m in media) {
             String? url;
             Map<String, dynamic>? map;
@@ -533,9 +534,51 @@ class FeedService {
             if (map != null) {
               mediaFilters.add(_parseFilterName(map));
               mediaAdjustments.add(_parseAdjustments(map));
+              final rawAr = map['aspect_ratio'] ??
+                  map['aspectRatio'] ??
+                  (map['crop'] is Map
+                      ? (map['crop'] as Map)['aspect_ratio']
+                      : null) ??
+                  (map['crop'] is Map
+                      ? (map['crop'] as Map)['aspectRatio']
+                      : null) ??
+                  (map['crop_settings'] is Map
+                      ? (map['crop_settings'] as Map)['aspect_ratio']
+                      : null) ??
+                  (map['crop_settings'] is Map
+                      ? (map['crop_settings'] as Map)['aspectRatio']
+                      : null) ??
+                  (map['width'] is num && map['height'] is num
+                      ? ((map['width'] as num).toDouble() /
+                          (map['height'] as num).toDouble())
+                      : null);
+              double? parsedAr;
+              if (rawAr is num) {
+                final v = rawAr.toDouble();
+                parsedAr = v > 0 ? v : null;
+              } else if (rawAr is String) {
+                final s = rawAr.trim();
+                if (s.isNotEmpty) {
+                  if (s.contains(':') || s.contains('/')) {
+                    final parts = s.split(RegExp(r'[:/]'));
+                    if (parts.length >= 2) {
+                      final a = double.tryParse(parts[0].trim());
+                      final b = double.tryParse(parts[1].trim());
+                      if (a != null && b != null && a > 0 && b > 0) {
+                        parsedAr = a / b;
+                      }
+                    }
+                  }
+                  parsedAr ??= double.tryParse(s);
+                }
+              }
+              mediaAspectRatios.add(
+                parsedAr != null && parsedAr > 0 ? parsedAr : null,
+              );
             } else {
               mediaFilters.add(null);
               mediaAdjustments.add(const {});
+              mediaAspectRatios.add(null);
             }
           }
           if (mediaUrls.isEmpty) {
@@ -914,6 +957,8 @@ class FeedService {
             mediaUrls: mediaUrls,
             thumbnailUrl: bustedThumb,
             aspectRatio: aspectRatio,
+            mediaAspectRatios:
+                mediaAspectRatios.isEmpty ? null : mediaAspectRatios,
             mediaFilters: mediaFilters.isEmpty ? null : mediaFilters,
             mediaAdjustments:
                 mediaAdjustments.isEmpty ? null : mediaAdjustments,

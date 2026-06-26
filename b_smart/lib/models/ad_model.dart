@@ -454,7 +454,10 @@ class Ad {
 
     final name = media['fileName']?.toString().trim();
     if (name != null && name.isNotEmpty && !_isPlaceholderToken(name)) {
-      return '${_apiOrigin()}/uploads/$name';
+      final cleaned = name
+          .replaceFirst(RegExp(r'^/?uploads/+'), '')
+          .replaceFirst(RegExp(r'^/+'), '');
+      return '${_apiOrigin()}/uploads/$cleaned';
     }
     return null;
   }
@@ -533,11 +536,7 @@ class Ad {
   }
 
   static String _apiOrigin() {
-    var base = ApiConfig.baseUrl.trim().replaceAll(RegExp(r'\/+$'), '');
-    if (base.toLowerCase().endsWith('/api')) {
-      base = base.substring(0, base.length - 4);
-    }
-    return base;
+    return ApiConfig.baseUrl.trim().replaceAll(RegExp(r'\/+$'), '');
   }
 }
 

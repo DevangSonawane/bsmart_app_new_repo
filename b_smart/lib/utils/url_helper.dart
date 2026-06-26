@@ -158,6 +158,11 @@ class UrlHelper {
     u = _repairScheme(u);
     if (_isPlaceholderToken(u) || _hasPlaceholderPathToken(u)) return '';
 
+    // Collapse duplicated uploads segments that can appear when a backend
+    // path already includes `uploads/` and a caller prefixes it again.
+    u = u.replaceFirst('/uploads/uploads/', '/uploads/');
+    u = u.replaceFirst('uploads/uploads/', 'uploads/');
+
     // If it's a relative path and doesn't have a folder prefix, add uploads
     if (!u.startsWith('http') &&
         !u.startsWith('/') &&

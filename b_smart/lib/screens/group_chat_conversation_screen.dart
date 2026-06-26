@@ -13,6 +13,9 @@ import 'package:flutter_chat_ui/flutter_chat_ui.dart';
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
 import '../api/users_api.dart';
+import '../api/posts_api.dart';
+import '../api/reels_api.dart';
+import '../services/chat_socket_service.dart';
 import '../services/chat_unread_service.dart';
 import '../services/ads_service.dart';
 import '../services/chat_media_auto_save_service.dart';
@@ -24,6 +27,7 @@ import '../widgets/safe_network_image.dart';
 import '../widgets/post_detail_modal.dart';
 import '../widgets/voice_recorder_sheet.dart';
 import '../widgets/chat_bubble/models.dart';
+import '../widgets/chat_bubble/content/image_message_content.dart';
 import '../widgets/chat_bubble/content/voice_message_content.dart';
 import 'group_chat_info_screen.dart';
 
@@ -45,6 +49,7 @@ class GroupChatConversationScreen extends StatefulWidget {
 class _GroupChatConversationScreenState
     extends State<GroupChatConversationScreen> with WidgetsBindingObserver {
   final _chatApi = ChatApi();
+  final _chatSocket = ChatSocketService();
   final _usersApi = UsersApi();
   final _scrollController = ScrollController();
   final _inputController = TextEditingController();
@@ -77,11 +82,19 @@ class _GroupChatConversationScreenState
   int _pendingNewCount = 0;
   Timer? _scrollPinTimer;
   int _scrollPinAttempts = 0;
+  SocketHandler? _onSocketNewMessage;
+  SocketHandler? _onSocketMessageSeenUpdate;
+  SocketHandler? _onSocketMessageRemoved;
+  SocketHandler? _onSocketReactionUpdate;
 
   final Map<String, double> _sharedPreviewAspectRatios = <String, double>{};
   final Set<String> _resolvingSharedPreviewAspectRatioUrls = <String>{};
   final Map<String, String> _sharedAdPreviewById = <String, String>{};
+  final Map<String, String> _sharedPostPreviewById = <String, String>{};
+  final Map<String, String> _sharedReelPreviewById = <String, String>{};
   final Set<String> _loadingSharedAdIds = <String>{};
+  final Set<String> _loadingSharedPostIds = <String>{};
+  final Set<String> _loadingSharedReelIds = <String>{};
   late final VoidCallback _mediaPrefsListener;
 
   static const int _pageLimit = 20;
@@ -494,6 +507,22 @@ class _GroupChatConversationScreenState
 
   @override
   void dispose() {
+    final convId = _effectiveConversationId();
+    if (convId.isNotEmpty) {
+      _chatSocket.leaveRoom(convId);
+    }
+    if (_onSocketNewMessage != null) {
+      _chatSocket.off('new-message', _onSocketNewMessage!);
+    }
+    if (_onSocketMessageSeenUpdate != null) {
+      _chatSocket.off('message-seen-update', _onSocketMessageSeenUpdate!);
+    }
+    if (_onSocketMessageRemoved != null) {
+      _chatSocket.off('message-removed', _onSocketMessageRemoved!);
+    }
+    if (_onSocketReactionUpdate != null) {
+      _chatSocket.off('message-reaction-update', _onSocketReactionUpdate!);
+    }
     WidgetsBinding.instance.removeObserver(this);
     _stopPolling();
     _scrollPinTimer?.cancel();
@@ -816,6 +845,26 @@ class _GroupChatConversationScreenState
     return null;
   }
 
+  String? _seenAtRaw(Map<String, dynamic>? message) {
+    if (message == null) return null;
+    final raw = (message['seenAt'] ?? message['seen_at'])?.toString().trim();
+    return (raw != null && raw.isNotEmpty) ? raw : null;
+  }
+
+  String _formatSeenAgo(String? dateValue) {
+    if (dateValue == null || dateValue.trim().isEmpty) return 'Seen';
+    final parsed = DateTime.tryParse(dateValue);
+    if (parsed == null) return 'Seen';
+    final diff = DateTime.now().difference(parsed);
+    final minutes = max(1, diff.inMinutes);
+    if (minutes < 60) return 'Seen ${minutes}m ago';
+    final hours = minutes ~/ 60;
+    if (hours < 24) return 'Seen ${hours}h ago';
+    final days = hours ~/ 24;
+    if (days < 7) return 'Seen ${days}d ago';
+    return 'Seen ${DateFormat('d MMM', 'en_IN').format(parsed)}';
+  }
+
   String? _readReceiptLabelForMessage(
     String messageId, {
     required BuildContext context,
@@ -833,7 +882,25 @@ class _GroupChatConversationScreenState
     if (senderId == null || senderId != uid) return null;
     final seenBy = raw['seenBy'];
     if (seenBy is! List || seenBy.isEmpty) return null;
-    return 'Seen';
+    final latestSeenOwnMessage = _latestSeenOwnMessage();
+    if (latestSeenOwnMessage == null ||
+        _messageId(latestSeenOwnMessage) != messageId) {
+      return null;
+    }
+    return _formatSeenAgo(_seenAtRaw(raw));
+  }
+
+  Map<String, dynamic>? _latestSeenOwnMessage() {
+    final uid = (_currentUserId ?? '').trim();
+    if (uid.isEmpty) return null;
+    for (var index = _messages.length - 1; index >= 0; index -= 1) {
+      final message = _messages[index];
+      if (message['isDeleted'] == true) continue;
+      if (_senderIdForMessage(message) != uid) continue;
+      final seenBy = message['seenBy'];
+      if (seenBy is List && seenBy.isNotEmpty) return message;
+    }
+    return null;
   }
 
   String _timeLabelFor(types.Message message) {
@@ -890,7 +957,109 @@ class _GroupChatConversationScreenState
     final uid = await CurrentUser.id;
     if (!mounted) return;
     setState(() => _currentUserId = uid);
+    await _initSocket();
     await _load(page: 1, replace: true);
+  }
+
+  Future<void> _initSocket() async {
+    final token = await ApiClient().getToken();
+    if (token == null || token.trim().isEmpty) return;
+    final uid = (_currentUserId ?? '').trim();
+    _chatSocket.connect(token: token, userId: uid.isEmpty ? null : uid);
+
+    final convId = _effectiveConversationId();
+    if (convId.isNotEmpty) {
+      _chatSocket.joinRoom(convId);
+    }
+
+    _onSocketNewMessage ??= (data) {
+      if (data is! Map) return;
+      final map = Map<String, dynamic>.from(data);
+      final conversationId =
+          (map['conversationId'] ?? map['conversation_id'])?.toString().trim();
+      if (conversationId == null || conversationId.isEmpty) return;
+      if (conversationId != _effectiveConversationId()) return;
+      unawaited(_refreshLatest());
+    };
+    _chatSocket.on('new-message', _onSocketNewMessage!);
+
+    _onSocketMessageSeenUpdate ??= (data) {
+      if (data is! Map) return;
+      final map = Map<String, dynamic>.from(data);
+      final conversationId =
+          (map['conversationId'] ?? map['conversation_id'])?.toString().trim();
+      if (conversationId == null || conversationId.isEmpty) return;
+      if (conversationId != _effectiveConversationId()) return;
+      final messageId =
+          (map['messageId'] ?? map['message_id'] ?? map['_id'] ?? map['id'])
+              ?.toString()
+              .trim();
+      if (messageId == null || messageId.isEmpty) return;
+      final seenUserId =
+          (map['userId'] ?? map['user_id'] ?? map['seenBy'])?.toString().trim();
+      final seenAt = (map['seenAt'] ?? map['seen_at'])?.toString().trim();
+      if (!mounted) return;
+      setState(() {
+        _messages = _messages.map((message) {
+          if (_messageId(message) != messageId) return message;
+          final next = Map<String, dynamic>.from(message);
+          final seenBy = next['seenBy'];
+          if (seenBy is List && seenUserId != null && seenUserId.isNotEmpty) {
+            final ids = <String>{
+              for (final entry in seenBy)
+                entry is Map
+                    ? (entry['_id'] ?? entry['id'] ?? entry['user_id'])
+                        ?.toString() ??
+                        ''
+                    : entry?.toString() ?? '',
+            }..remove('');
+            if (!ids.contains(seenUserId)) {
+              next['seenBy'] = [
+                ...seenBy,
+                {'_id': seenUserId},
+              ];
+            }
+          }
+          if (seenAt != null && seenAt.isNotEmpty) {
+            next['seenAt'] = seenAt;
+            next['seen_at'] = seenAt;
+          }
+          return next;
+        }).toList();
+      });
+      unawaited(_refreshLatest());
+    };
+    _chatSocket.on('message-seen-update', _onSocketMessageSeenUpdate!);
+
+    _onSocketMessageRemoved ??= (data) {
+      if (data is! Map) return;
+      final map = Map<String, dynamic>.from(data);
+      final conversationId =
+          (map['conversationId'] ?? map['conversation_id'])?.toString().trim();
+      if (conversationId == null || conversationId.isEmpty) return;
+      if (conversationId != _effectiveConversationId()) return;
+      final messageId =
+          (map['messageId'] ?? map['message_id'] ?? map['_id'] ?? map['id'])
+              ?.toString()
+              .trim();
+      if (messageId == null || messageId.isEmpty) return;
+      if (!mounted) return;
+      setState(() {
+        _messages = _messages.where((m) => _messageId(m) != messageId).toList();
+      });
+    };
+    _chatSocket.on('message-removed', _onSocketMessageRemoved!);
+
+    _onSocketReactionUpdate ??= (data) {
+      if (data is! Map) return;
+      final map = Map<String, dynamic>.from(data);
+      final conversationId =
+          (map['conversationId'] ?? map['conversation_id'])?.toString().trim();
+      if (conversationId == null || conversationId.isEmpty) return;
+      if (conversationId != _effectiveConversationId()) return;
+      unawaited(_refreshLatest());
+    };
+    _chatSocket.on('message-reaction-update', _onSocketReactionUpdate!);
   }
 
   Map<String, dynamic>? _otherParticipant() {
@@ -1660,6 +1829,7 @@ class _GroupChatConversationScreenState
                             bottomRight: Radius.circular(mine ? 8 : 22),
                           );
                           final raw = _rawMessageById(message.id);
+                          final shared = raw == null ? null : _sharedContentFor(raw);
                           final reaction = raw == null
                               ? const <ChatReaction>[]
                               : _reactionBadgesFor(raw);
@@ -1673,7 +1843,10 @@ class _GroupChatConversationScreenState
                           Widget footer = const SizedBox.shrink();
                           if (reactionLabel != null || seenLabel != null) {
                             footer = Padding(
-                              padding: const EdgeInsets.only(top: 2),
+                              padding: const EdgeInsets.only(
+                                top: 2,
+                                right: 6,
+                              ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: mine
@@ -1732,6 +1905,20 @@ class _GroupChatConversationScreenState
                             );
                           }
 
+                          if (shared != null &&
+                              _hasRenderableSharedContent(shared)) {
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: mine
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
+                              children: [
+                                _sharedContentCard(shared, mine),
+                                footer,
+                              ],
+                            );
+                          }
+
                           return Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: mine
@@ -1781,9 +1968,11 @@ class _GroupChatConversationScreenState
                               }
                               _reactToMessage(raw, '❤️');
                             },
-                            child: ImageMessage(
-                              message: image,
-                              messageWidth: messageWidth,
+                            child: ImageMessageContent(
+                              urls: [UrlHelper.normalizeUrl(image.uri)],
+                              caption: '',
+                              isOutgoing: image.author.id ==
+                                  (_currentUserId ?? '').trim(),
                             ),
                           );
                         },
@@ -2594,6 +2783,12 @@ class _GroupChatConversationScreenState
     return null;
   }
 
+  bool _hasRenderableSharedContent(Map<String, dynamic> shared) {
+    final resolved = _resolveSharedContent(shared);
+    if (resolved.type.isNotEmpty && resolved.id.isNotEmpty) return true;
+    return _sharedShareUrl(shared).isNotEmpty;
+  }
+
   String _sharedContentType(Map<String, dynamic> shared) {
     final raw = (shared['contentType'] ?? shared['content_type'] ?? '')
         .toString()
@@ -2700,6 +2895,220 @@ class _GroupChatConversationScreenState
           setState(() {
             _sharedAdPreviewById[id] = '';
             _loadingSharedAdIds.remove(id);
+          });
+        });
+      }
+    }());
+  }
+
+  void _ensureSharedReelPreview(String reelId) {
+    final id = reelId.trim();
+    if (id.isEmpty) return;
+    if (_sharedReelPreviewById.containsKey(id)) return;
+    if (_loadingSharedReelIds.contains(id)) return;
+    _loadingSharedReelIds.add(id);
+
+    unawaited(() async {
+      try {
+        final reel = await ReelsApi().getReel(id);
+        final url = _extractReelPreviewUrl(reel);
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _sharedReelPreviewById[id] = url;
+            _loadingSharedReelIds.remove(id);
+          });
+        });
+      } catch (_) {
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _sharedReelPreviewById[id] = '';
+            _loadingSharedReelIds.remove(id);
+          });
+        });
+      }
+    }());
+  }
+
+  Map<String, dynamic> _unwrapSharedPayload(dynamic raw) {
+    if (raw is! Map) return const <String, dynamic>{};
+    final map = Map<String, dynamic>.from(raw);
+    final candidates = [
+      map['data'],
+      map['reel'],
+      map['post'],
+      map['item'],
+      map['result'],
+    ];
+    for (final candidate in candidates) {
+      if (candidate is Map) {
+        return Map<String, dynamic>.from(candidate);
+      }
+    }
+    return map;
+  }
+
+  bool _isVideoLikeUrl(String url) {
+    final u = url.trim().toLowerCase();
+    return u.endsWith('.m3u8') ||
+        u.contains('.m3u8?') ||
+        u.endsWith('.mp4') ||
+        u.contains('.mp4?') ||
+        u.endsWith('.mov') ||
+        u.endsWith('.m4v') ||
+        u.endsWith('.webm') ||
+        u.endsWith('.mkv');
+  }
+
+  String _extractReelPreviewUrl(dynamic raw) {
+    final reel = _unwrapSharedPayload(raw);
+    String norm(dynamic v) =>
+        UrlHelper.normalizeUrl((v ?? '').toString().trim());
+
+    String nestedThumbnailUrl(dynamic thumbnail) {
+      if (thumbnail is String) return norm(thumbnail);
+      if (thumbnail is Map) {
+        final t = Map<String, dynamic>.from(thumbnail);
+        final candidates = [
+          t['fileUrl'],
+          t['file_url'],
+          t['url'],
+          t['path'],
+          t['image'],
+          t['imageUrl'],
+          t['thumbnailUrl'],
+          t['thumbnail_url'],
+        ];
+        for (final candidate in candidates) {
+          final url = norm(candidate);
+          if (url.isNotEmpty && !_isVideoLikeUrl(url)) return url;
+        }
+      }
+      return '';
+    }
+
+    String? firstImageUrl(dynamic media) {
+      if (media is Map) return firstImageUrl([media]);
+      if (media is! List) return null;
+      for (final item in media) {
+        if (item is String) {
+          final url = norm(item);
+          if (url.isNotEmpty && !_isVideoLikeUrl(url)) return url;
+          continue;
+        }
+        if (item is! Map) continue;
+        final m = Map<String, dynamic>.from(item);
+
+        final nestedThumb = nestedThumbnailUrl(m['thumbnail']);
+        if (nestedThumb.isNotEmpty) return nestedThumb;
+
+        final thumbKeys = [
+          m['thumbnailUrl'],
+          m['thumbnail_url'],
+          m['thumbUrl'],
+          m['thumb_url'],
+          m['thumb'],
+          m['thumbnail'],
+          m['previewUrl'],
+          m['preview_url'],
+          m['imageUrl'],
+          m['image_url'],
+          m['poster'],
+          m['cover'],
+        ];
+        for (final candidate in thumbKeys) {
+          final url = norm(candidate);
+          if (url.isNotEmpty && !_isVideoLikeUrl(url)) return url;
+        }
+
+        final thumbs = m['thumbnails'] ?? m['thumbs'];
+        if (thumbs is List) {
+          for (final tRaw in thumbs) {
+            final url = nestedThumbnailUrl(tRaw);
+            if (url.isNotEmpty && !_isVideoLikeUrl(url)) return url;
+          }
+        }
+
+        final mediaType = (m['media_type'] ?? m['type'] ?? m['mediaType'] ?? '')
+            .toString()
+            .toLowerCase()
+            .trim();
+        final fileUrl = norm(
+          m['fileUrl'] ?? m['file_url'] ?? m['url'] ?? m['path'],
+        );
+        if (fileUrl.isNotEmpty &&
+            (mediaType.contains('image') || !_isVideoLikeUrl(fileUrl)) &&
+            !_isVideoLikeUrl(fileUrl)) {
+          return fileUrl;
+        }
+      }
+      return null;
+    }
+
+    final directFields = [
+      reel['thumbnailUrl'],
+      reel['thumbnail_url'],
+      reel['thumbUrl'],
+      reel['thumb_url'],
+      reel['thumb'],
+      reel['thumbnail'],
+      reel['previewUrl'],
+      reel['preview_url'],
+      reel['poster'],
+      reel['posterUrl'],
+      reel['poster_url'],
+      reel['cover'],
+      reel['coverUrl'],
+      reel['cover_url'],
+      reel['imageUrl'],
+      reel['image_url'],
+    ];
+    for (final candidate in directFields) {
+      final url = norm(candidate);
+      if (url.isNotEmpty && !_isVideoLikeUrl(url)) return url;
+    }
+
+    final media = reel['media'] ??
+        reel['mediaUrls'] ??
+        reel['media_urls'] ??
+        reel['medias'] ??
+        reel['items'] ??
+        reel['assets'];
+    final fromMedia = firstImageUrl(media);
+    if (fromMedia != null && fromMedia.isNotEmpty) return fromMedia;
+
+    return '';
+  }
+
+  void _ensureSharedPostPreview(String postId) {
+    final id = postId.trim();
+    if (id.isEmpty) return;
+    if (_sharedPostPreviewById.containsKey(id)) return;
+    if (_loadingSharedPostIds.contains(id)) return;
+    _loadingSharedPostIds.add(id);
+
+    unawaited(() async {
+      try {
+        final post = await PostsApi().getPost(id);
+        final url = _sharedPreviewUrl(post);
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _sharedPostPreviewById[id] = url;
+            _loadingSharedPostIds.remove(id);
+          });
+        });
+      } catch (_) {
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _sharedPostPreviewById[id] = '';
+            _loadingSharedPostIds.remove(id);
           });
         });
       }
@@ -2963,6 +3372,22 @@ class _GroupChatConversationScreenState
     final creator = _sharedCreatorName(shared);
     final creatorAvatar = _sharedCreatorAvatar(shared);
     var preview = _sharedPreviewUrl(shared);
+    if (preview.isEmpty && (type == 'post' || type == 'tweet')) {
+      final cached = _sharedPostPreviewById[resolved.id]?.trim() ?? '';
+      if (cached.isNotEmpty) {
+        preview = cached;
+      } else {
+        _ensureSharedPostPreview(resolved.id);
+      }
+    }
+    if (preview.isEmpty && type == 'reel') {
+      final cached = _sharedReelPreviewById[resolved.id]?.trim() ?? '';
+      if (cached.isNotEmpty) {
+        preview = cached;
+      } else {
+        _ensureSharedReelPreview(resolved.id);
+      }
+    }
     if (preview.isEmpty && type == 'ad') {
       final cached = _sharedAdPreviewById[resolved.id]?.trim() ?? '';
       if (cached.isNotEmpty) {
@@ -3188,6 +3613,53 @@ class _GroupChatConversationScreenState
             u.contains('.bmp?');
       }
 
+      Widget reelFallback(double height) {
+        return Container(
+          height: height,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.34),
+                Colors.black.withValues(alpha: 0.72),
+              ],
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.20),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Open shared $contentLabel',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
       return LayoutBuilder(
         builder: (context, constraints) {
           final availableWidth = constraints.maxWidth.isFinite
@@ -3215,10 +3687,12 @@ class _GroupChatConversationScreenState
                         'Loading $contentLabel…',
                         height: height,
                       ),
-                      errorWidget: previewPlaceholder(
-                        '$contentLabel preview unavailable',
-                        height: height,
-                      ),
+                      errorWidget: type == 'reel'
+                          ? reelFallback(height)
+                          : previewPlaceholder(
+                              '$contentLabel preview unavailable',
+                              height: height,
+                            ),
                     )
                   : previewPlaceholder(
                       'Open shared $contentLabel',

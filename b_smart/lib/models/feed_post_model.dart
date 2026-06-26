@@ -19,6 +19,7 @@ class FeedPost {
   final List<String> mediaUrls;
   final String? thumbnailUrl;
   final double? aspectRatio;
+  final List<double?>? mediaAspectRatios;
   final List<String?>? mediaFilters;
   final List<Map<String, int>>? mediaAdjustments;
   final String? caption;
@@ -64,6 +65,7 @@ class FeedPost {
     required this.mediaUrls,
     this.thumbnailUrl,
     this.aspectRatio,
+    this.mediaAspectRatios,
     this.mediaFilters,
     this.mediaAdjustments,
     this.caption,
@@ -178,6 +180,31 @@ class FeedPost {
 
     final mediaFilters = <String?>[];
     final mediaAdjustments = <Map<String, int>>[];
+    final mediaAspectRatios = <double?>[];
+    double? parseAspectRatio(dynamic raw) {
+      if (raw == null) return null;
+      if (raw is num) {
+        final v = raw.toDouble();
+        return v > 0 ? v : null;
+      }
+      if (raw is String) {
+        final s = raw.trim();
+        if (s.isEmpty) return null;
+        if (s.contains(':') || s.contains('/')) {
+          final parts = s.split(RegExp(r'[:/]'));
+          if (parts.length >= 2) {
+            final a = double.tryParse(parts[0].trim());
+            final b = double.tryParse(parts[1].trim());
+            if (a != null && b != null && a > 0 && b > 0) {
+              return a / b;
+            }
+          }
+        }
+        final v = double.tryParse(s);
+        return (v != null && v > 0) ? v : null;
+      }
+      return null;
+    }
     final mediaListForFilters =
         json['media'] as List? ?? json['mediaUrls'] as List?;
     if (mediaListForFilters != null) {
@@ -233,9 +260,38 @@ class FeedPost {
           } else {
             mediaAdjustments.add(const {});
           }
+
+          final rawAr = item['aspect_ratio'] ??
+              item['aspectRatio'] ??
+              (item['crop'] is Map
+                  ? (item['crop'] as Map)['aspect_ratio']
+                  : null) ??
+              (item['crop'] is Map
+                  ? (item['crop'] as Map)['aspectRatio']
+                  : null) ??
+              (item['crop_settings'] is Map
+                  ? (item['crop_settings'] as Map)['aspect_ratio']
+                  : null) ??
+              (item['crop_settings'] is Map
+                  ? (item['crop_settings'] as Map)['aspectRatio']
+                  : null) ??
+              item['width'] ??
+              item['height'];
+          if (rawAr is Map) {
+            mediaAspectRatios.add(parseAspectRatio(
+              rawAr['aspect_ratio'] ?? rawAr['aspectRatio'],
+            ));
+          } else if (item['width'] is num && item['height'] is num) {
+            final w = (item['width'] as num).toDouble();
+            final h = (item['height'] as num).toDouble();
+            mediaAspectRatios.add(w > 0 && h > 0 ? w / h : null);
+          } else {
+            mediaAspectRatios.add(parseAspectRatio(rawAr));
+          }
         } else {
           mediaFilters.add(null);
           mediaAdjustments.add(const {});
+          mediaAspectRatios.add(null);
         }
       }
     }
@@ -285,6 +341,7 @@ class FeedPost {
       aspectRatio: json['aspectRatio'] != null
           ? double.tryParse(json['aspectRatio'].toString())
           : null,
+      mediaAspectRatios: mediaAspectRatios.isEmpty ? null : mediaAspectRatios,
       mediaFilters: mediaFilters.isEmpty ? null : mediaFilters,
       mediaAdjustments: mediaAdjustments.isEmpty ? null : mediaAdjustments,
       caption: (json['caption'] ?? json['content']) as String?,
@@ -368,6 +425,7 @@ class FeedPost {
     List<String>? mediaUrls,
     String? thumbnailUrl,
     double? aspectRatio,
+    List<double?>? mediaAspectRatios,
     List<String?>? mediaFilters,
     List<Map<String, int>>? mediaAdjustments,
     String? caption,
@@ -412,6 +470,7 @@ class FeedPost {
       mediaUrls: mediaUrls ?? this.mediaUrls,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
       aspectRatio: aspectRatio ?? this.aspectRatio,
+      mediaAspectRatios: mediaAspectRatios ?? this.mediaAspectRatios,
       mediaFilters: mediaFilters ?? this.mediaFilters,
       mediaAdjustments: mediaAdjustments ?? this.mediaAdjustments,
       caption: caption ?? this.caption,
