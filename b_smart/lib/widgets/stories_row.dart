@@ -30,8 +30,6 @@ class StoriesRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     return SizedBox(
       height: 100,
       child: ListView.separated(
@@ -235,19 +233,19 @@ class _StoryRing extends StatelessWidget {
           shape: BoxShape.circle,
           gradient: gradient,
         ),
-        padding: const EdgeInsets.all(3),
+        padding: const EdgeInsets.all(1),
         child: inner,
       );
     }
     return Container(
       width: 64,
       height: 64,
-      padding: const EdgeInsets.all(3),
+      padding: const EdgeInsets.all(1),
       decoration: const BoxDecoration(shape: BoxShape.circle),
       child: CustomPaint(
         painter: _DottedCirclePainter(
           color: ringColor,
-          strokeWidth: 2,
+          strokeWidth: 0.75,
           dashLength: 4,
           gap: 3,
         ),

@@ -650,7 +650,7 @@ class _StoryAvatarRing extends StatelessWidget {
         ? Colors.white24
         : Colors.grey.shade400;
     return Container(
-      padding: const EdgeInsets.all(3),
+      padding: const EdgeInsets.all(1),
       decoration: hasStory
           ? const BoxDecoration(
               shape: BoxShape.circle,
@@ -665,12 +665,12 @@ class _StoryAvatarRing extends StatelessWidget {
           : CustomPaint(
               painter: _DottedCirclePainter(
                 color: ringColor,
-                strokeWidth: 2,
+                strokeWidth: 0.75,
                 dashLength: 4,
                 gap: 3,
               ),
               child: Padding(
-                padding: const EdgeInsets.all(3),
+                padding: const EdgeInsets.all(1),
                 child: child,
               ),
             ),
