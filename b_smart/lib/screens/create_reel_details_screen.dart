@@ -430,7 +430,13 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
           'fileName': serverFileName,
           if (fileUrl != null && fileUrl.isNotEmpty) 'fileUrl': fileUrl,
           if (fileUrl != null && fileUrl.isNotEmpty) 'url': fileUrl,
+          // Keep both naming styles so the backend can consume either the
+          // documented contract or the existing reel/ad payload shape.
+          'type': 'video',
           'media_type': 'video',
+          'videoLength': durationSec,
+          'totalLenght': durationSec,
+          'thumbail-time': thumbnailTimeSec,
           'video_meta': <String, dynamic>{
             'original_length_seconds': durationSec,
             'selected_start': startSec,
@@ -438,11 +444,28 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
             'final_duration': finalDurationSec,
             'thumbnail_time': thumbnailTimeSec,
           },
+          'timing': <String, dynamic>{
+            'start': startSec,
+            'end': endSec,
+          },
           'timing_window': <String, dynamic>{
             'start': startSec,
             'end': endSec,
           },
-          if (uploadedThumbs != null) 'thumbnails': uploadedThumbs,
+          if (uploadedThumbs != null && uploadedThumbs.isNotEmpty) ...{
+            'thumbnail': uploadedThumbs,
+            'thumbnails': uploadedThumbs,
+            'thumbnailUrl': uploadedThumbs.first['fileUrl'] ??
+                uploadedThumbs.first['url'] ??
+                uploadedThumbs.first['file_url'],
+          },
+          'crop': <String, dynamic>{
+            'mode': 'original',
+            'aspect_ratio': 'original',
+            'zoom': 1,
+            'x': 0,
+            'y': 0,
+          },
           'crop_settings': <String, dynamic>{
             'mode': 'original',
             'aspect_ratio': 'original',

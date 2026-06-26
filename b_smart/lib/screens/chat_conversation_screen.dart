@@ -10,7 +10,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
 import 'package:flutter_chat_ui/flutter_chat_ui.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api/chat_api.dart';
 import '../api/api_client.dart';
@@ -26,13 +25,8 @@ import '../utils/app_error_handler.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/post_detail_modal.dart';
 import '../widgets/voice_recorder_sheet.dart';
-import '../widgets/chat_bubble/chat_bubble_shell.dart';
 import '../widgets/chat_bubble/models.dart';
-import '../widgets/chat_bubble/content/document_message_content.dart';
-import '../widgets/chat_bubble/content/text_message_content.dart';
-import '../widgets/chat_bubble/content/image_message_content.dart';
 import '../widgets/chat_bubble/content/voice_message_content.dart';
-import '../widgets/chat_bubble/content/tap_to_load_media_preview.dart';
 
 class ChatConversationScreen extends StatefulWidget {
   final String conversationId;
@@ -106,7 +100,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     _conversation = widget.initialConversation;
     _mediaPrefsListener = () {
       if (!mounted) return;
-      setState(() => _dataSaverMode = _autoSaveService.dataSaverModeNotifier.value);
+      setState(
+          () => _dataSaverMode = _autoSaveService.dataSaverModeNotifier.value);
     };
     _autoSaveService.dataSaverModeNotifier.addListener(_mediaPrefsListener);
     _init();
@@ -266,6 +261,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             id: id,
             author: author,
             createdAt: createdAt == 0 ? null : createdAt,
+            showStatus: false,
             text: 'Message unsent',
           ),
         );
@@ -291,6 +287,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             author: author,
             createdAt: createdAt == 0 ? null : createdAt,
             duration: Duration(seconds: totalSecs.clamp(0, 60 * 60)),
+            showStatus: false,
             name: 'voice',
             size: 0,
             mimeType: mediaTypeLower.startsWith('audio/')
@@ -312,6 +309,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             id: id,
             author: author,
             createdAt: createdAt == 0 ? null : createdAt,
+            showStatus: false,
             mimeType: mediaTypeLower.isNotEmpty ? mediaTypeLower : null,
             name: _documentTitleFor(m),
             size: 0,
@@ -327,6 +325,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             id: id,
             author: author,
             createdAt: createdAt == 0 ? null : createdAt,
+            showStatus: false,
             name: 'image',
             size: 0,
             uri: UrlHelper.normalizeUrl(mediaUrl),
@@ -340,6 +339,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
           id: id,
           author: author,
           createdAt: createdAt == 0 ? null : createdAt,
+          showStatus: false,
           text: text,
         ),
       );
@@ -365,18 +365,48 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   Widget _chatStatusBuilder(types.Message message,
       {required BuildContext context}) {
+    final raw = _rawMessageById(message.id);
+    final reaction =
+        raw == null ? const <ChatReaction>[] : _reactionBadgesFor(raw);
+    final reactionLabel = reaction.isNotEmpty ? reaction.first.label : null;
     final label = _readReceiptLabelForMessage(message.id, context: context);
-    if (label == null) return const SizedBox.shrink();
+    if (reactionLabel == null && label == null) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Text(
-        label,
-        textAlign: TextAlign.right,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.48),
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
+      padding: const EdgeInsets.only(top: 1),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (label != null)
+            Text(
+              label,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: cs.onSurface.withValues(alpha: 0.48),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          if (label != null && reactionLabel != null) const SizedBox(height: 2),
+          if (reactionLabel != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                reactionLabel,
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  color: cs.onSurface.withValues(alpha: 0.78),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -418,6 +448,39 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     return null;
   }
 
+  String? _seenAtRaw(Map<String, dynamic>? message) {
+    if (message == null) return null;
+    final raw = (message['seenAt'] ?? message['seen_at'])?.toString().trim();
+    return (raw != null && raw.isNotEmpty) ? raw : null;
+  }
+
+  String _formatSeenAgo(String? dateValue) {
+    if (dateValue == null || dateValue.trim().isEmpty) return 'Seen';
+    final parsed = DateTime.tryParse(dateValue);
+    if (parsed == null) return 'Seen';
+    final diff = DateTime.now().difference(parsed);
+    final minutes = max(1, diff.inMinutes);
+    if (minutes < 60) return 'Seen ${minutes}m ago';
+    final hours = minutes ~/ 60;
+    if (hours < 24) return 'Seen ${hours}h ago';
+    final days = hours ~/ 24;
+    if (days < 7) return 'Seen ${days}d ago';
+    return 'Seen ${DateFormat('d MMM', 'en_IN').format(parsed)}';
+  }
+
+  Map<String, dynamic>? _latestSeenOwnMessage(String otherUserId) {
+    final uid = (_currentUserId ?? '').trim();
+    final other = otherUserId.trim();
+    if (uid.isEmpty || other.isEmpty) return null;
+    for (var index = _messages.length - 1; index >= 0; index -= 1) {
+      final message = _messages[index];
+      if (message['isDeleted'] == true) continue;
+      if (_senderIdForMessage(message) != uid) continue;
+      if (_hasSeen(message, other)) return message;
+    }
+    return null;
+  }
+
   String? _readReceiptLabelForMessage(
     String messageId, {
     required BuildContext context,
@@ -425,18 +488,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     if (!_allowOwnReadReceipts) return null;
     final raw = _rawMessageById(messageId);
     if (raw == null) return null;
-    final uid = (_currentUserId ?? '').trim();
-    if (uid.isEmpty) return null;
-    final sender = raw['sender'];
-    final senderId = (sender is Map
-            ? (sender['_id'] ?? sender['id'] ?? sender['user_id'])
-            : sender)
-        ?.toString()
-        .trim();
-    if (senderId == null || senderId != uid) return null;
-    final seenBy = raw['seenBy'];
-    if (seenBy is! List || seenBy.isEmpty) return null;
-    return 'Seen';
+    final otherId = _otherParticipantId();
+    final latestSeen = _latestSeenOwnMessage(otherId);
+    if (latestSeen == null || _messageId(latestSeen) != messageId) return null;
+    return _formatSeenAgo(_seenAtRaw(raw));
   }
 
   bool _shallowMapEquals(Map<String, dynamic> a, Map<String, dynamic> b) {
@@ -844,7 +899,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     }
   }
 
-  Future<void> _autoSaveIncomingMedia(List<Map<String, dynamic>> messages) async {
+  Future<void> _autoSaveIncomingMedia(
+      List<Map<String, dynamic>> messages) async {
     final uid = (_currentUserId ?? '').trim();
     if (uid.isEmpty) return;
     await _autoSaveService.maybeAutoSaveMessages(
@@ -1211,9 +1267,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   }
 
   String _documentSubtitleFor(Map<String, dynamic> message) {
-    final mime = (message['mimeType'] ?? message['mime_type'] ?? '')
-        .toString()
-        .trim();
+    final mime =
+        (message['mimeType'] ?? message['mime_type'] ?? '').toString().trim();
     if (mime.isNotEmpty) return mime;
     final url = _mediaUrlFor(message).toLowerCase();
     if (url.endsWith('.pdf') || url.contains('.pdf?')) return 'PDF document';
@@ -1270,104 +1325,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final tB = _createdAtMillis(b);
     if (tA == 0 || tB == 0) return true;
     return (tB - tA).abs() <= const Duration(minutes: 2).inMilliseconds;
-  }
-
-  Widget _chatImageFrame({
-    required String url,
-    required double maxWidth,
-    double? fixedHeight,
-  }) {
-    if (fixedHeight != null) {
-      // Used inside carousels: enforce a consistent viewport.
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: SizedBox(
-          width: maxWidth,
-          height: fixedHeight,
-          child: SafeNetworkImage(
-            url: url,
-            width: maxWidth,
-            height: fixedHeight,
-            fit: BoxFit.cover,
-            assumeRaster: true,
-          ),
-        ),
-      );
-    }
-
-    // Standalone image messages: preserve original aspect ratio with no
-    // letterboxing/background frame (like Instagram DMs).
-    return _AspectPreservingChatImage(
-      url: url,
-      maxWidth: maxWidth,
-      maxHeight: 420,
-    );
-  }
-
-  Widget _albumBubble({
-    required Map<String, dynamic> message,
-    required bool mine,
-    required Map<String, dynamic>? senderMap,
-    required List<String> urls,
-    required ChatBubbleGroupPosition groupPosition,
-    required bool showTail,
-    required EdgeInsets outerPadding,
-  }) {
-    final isDeleted = message['isDeleted'] == true;
-    final timeText = _messageTimeText(message);
-
-    final reactionsRaw = message['reactions'];
-    final reactions = (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
-    final uid = _currentUserId ?? '';
-    final own = uid.isEmpty ? null : _ownReactionFor(message, uid);
-    final primaryEmoji = (own?['emoji']?.toString().trim().isNotEmpty == true)
-        ? own!['emoji'].toString().trim()
-        : (reactions.isNotEmpty
-            ? (reactions.first['emoji']?.toString().trim() ?? '')
-            : '');
-
-    final shell = ChatBubbleShell(
-      isOutgoing: mine,
-      isGroup: false,
-      reply: null,
-      isSelected: false,
-      bareContent: true,
-      showTail: false,
-      groupPosition: groupPosition,
-      timestampText: timeText,
-      deliveryStatus: _deliveryStatusFor(message, mine: mine),
-      reactions: (!isDeleted && reactions.isNotEmpty && primaryEmoji.isNotEmpty)
-          ? [
-              ChatReaction(
-                emoji: primaryEmoji,
-                count: reactions.length,
-                isMine: own != null,
-              )
-            ]
-          : const [],
-      onDoubleTap: () => _reactToMessage(message, '❤️'),
-      onLongPress: () => _showMessageActions(context, message, mine: mine),
-      child: ImageMessageContent(
-        urls: urls.map((e) => UrlHelper.normalizeUrl(e)).toList(),
-        caption: '',
-        isOutgoing: mine,
-        onTap: () => _openImageViewer(
-          urls.map((e) => UrlHelper.normalizeUrl(e)).toList(),
-          initialIndex: 0,
-        ),
-      ),
-    );
-
-    return _SwipeToReply(
-      onReply: () => _setReplyTo(message),
-      child: Padding(
-        padding: outerPadding,
-        child: shell,
-      ),
-    );
   }
 
   Future<void> _pickAndSendImages({required bool fromCamera}) async {
@@ -1576,7 +1533,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  if (showOtherOnlineStatus && _otherOnline && otherId.isNotEmpty)
+                  if (showOtherOnlineStatus &&
+                      _otherOnline &&
+                      otherId.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
                       child: Text(
@@ -1662,127 +1621,201 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         isAttachmentUploading: _sending || _uploadingMedia,
                         isLastPage: !_hasMore,
                         customBottomWidget: const SizedBox.shrink(),
-                        customStatusBuilder: _chatStatusBuilder,
-                        textMessageBuilder: (text, {required messageWidth, required showName}) {
-                          final outgoing =
-                              text.author.id == (_currentUserId ?? '').trim();
-                          final label = _timeLabelFor(text);
+                        messageWidthRatio: 0.62,
+                        onMessageDoubleTap: (context, message) {
+                          final raw = _rawMessageById(message.id);
+                          if (raw == null || raw['isDeleted'] == true) return;
+                          _reactToMessage(raw, '❤️');
+                        },
+                        onMessageLongPress: (context, message) {
+                          final raw = _rawMessageById(message.id);
+                          if (raw == null || raw['isDeleted'] == true) return;
+                          final mine = message.author.id ==
+                              (_currentUserId ?? '').trim();
+                          _showMessageActions(context, raw, mine: mine);
+                        },
+                        textMessageBuilder: (text,
+                            {required messageWidth, required showName}) {
+                          return GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onDoubleTap: () {
+                              final raw = _rawMessageById(text.id);
+                              if (raw == null || raw['isDeleted'] == true) {
+                                return;
+                              }
+                              _reactToMessage(raw, '❤️');
+                            },
+                            child: TextMessage(
+                              emojiEnlargementBehavior:
+                                  EmojiEnlargementBehavior.multi,
+                              hideBackgroundOnEmojiMessages: true,
+                              message: text,
+                              showName: showName,
+                              usePreviewData: true,
+                            ),
+                          );
+                        },
+                        bubbleBuilder: (child,
+                            {required message, required nextMessageInGroup}) {
+                          final mine = message.author.id ==
+                              (_currentUserId ?? '').trim();
+                          final cs = Theme.of(context).colorScheme;
+                          final bubbleColor = mine ? cs.primary : cs.surface;
+                          final textColor = mine ? Colors.white : cs.onSurface;
+                          final radius = BorderRadius.only(
+                            topLeft: const Radius.circular(22),
+                            topRight: const Radius.circular(22),
+                            bottomLeft: Radius.circular(mine ? 22 : 8),
+                            bottomRight: Radius.circular(mine ? 8 : 22),
+                          );
+                          final raw = _rawMessageById(message.id);
+                          final reaction = raw == null
+                              ? const <ChatReaction>[]
+                              : _reactionBadgesFor(raw);
+                          final reactionLabel =
+                              reaction.isNotEmpty ? reaction.first.label : null;
+                          final seenLabel = _readReceiptLabelForMessage(
+                            message.id,
+                            context: context,
+                          );
+
+                          Widget footer = const SizedBox.shrink();
+                          if (reactionLabel != null || seenLabel != null) {
+                            footer = Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: mine
+                                    ? CrossAxisAlignment.end
+                                    : CrossAxisAlignment.start,
+                                children: [
+                                  if (seenLabel != null)
+                                    Text(
+                                      seenLabel,
+                                      textAlign: mine
+                                          ? TextAlign.right
+                                          : TextAlign.left,
+                                      style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.48),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  if (reactionLabel != null) ...[
+                                    if (seenLabel != null)
+                                      const SizedBox(height: 2),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.06),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                      ),
+                                      child: Text(
+                                        reactionLabel,
+                                        textAlign: mine
+                                            ? TextAlign.right
+                                            : TextAlign.left,
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.78),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }
+
                           return Column(
                             mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                            crossAxisAlignment: mine
+                                ? CrossAxisAlignment.end
+                                : CrossAxisAlignment.start,
                             children: [
-                              TextMessage(
-                                emojiEnlargementBehavior:
-                                    EmojiEnlargementBehavior.multi,
-                                hideBackgroundOnEmojiMessages: true,
-                                message: text,
-                                showName: showName,
-                                usePreviewData: true,
-                              ),
-                              if (label.isNotEmpty)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                                  child: _bubbleTimestamp(
-                                    label: label,
-                                    outgoing: outgoing,
+                              Padding(
+                                padding: EdgeInsets.only(right: mine ? 12 : 0),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: bubbleColor,
+                                    borderRadius: radius,
+                                    boxShadow: mine
+                                        ? const []
+                                        : [
+                                            BoxShadow(
+                                              color: Colors.black
+                                                  .withValues(alpha: 0.04),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 3),
+                                            ),
+                                          ],
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: radius,
+                                    child: DefaultTextStyle.merge(
+                                      style: TextStyle(color: textColor),
+                                      child: IconTheme.merge(
+                                        data: IconThemeData(color: textColor),
+                                        child: child,
+                                      ),
+                                    ),
                                   ),
                                 ),
+                              ),
+                              footer,
                             ],
                           );
                         },
                         imageMessageBuilder: (image, {required messageWidth}) {
-                          final outgoing =
-                              image.author.id == (_currentUserId ?? '').trim();
-                          final label = _timeLabelFor(image);
-                          final loadedImage = ImageMessage(
-                            message: image,
-                            messageWidth: messageWidth,
-                          );
-                          return Stack(
-                            children: [
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  right: 54,
-                                  bottom: label.isEmpty ? 0 : 16,
-                                ),
-                                child: _dataSaverMode
-                                    ? TapToLoadMediaPreview(
-                                        icon: LucideIcons.image,
-                                        title: 'Image preview hidden',
-                                        subtitle:
-                                            'Data saver is on. Tap to load this image.',
-                                        loadedChild: loadedImage,
-                                      )
-                                    : loadedImage,
-                              ),
-                              if (label.isNotEmpty)
-                                Positioned(
-                                  right: 8,
-                                  bottom: 6,
-                                  child: _bubbleTimestamp(
-                                    label: label,
-                                    outgoing: outgoing,
-                                  ),
-                                ),
-                            ],
+                          return GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onDoubleTap: () {
+                              final raw = _rawMessageById(image.id);
+                              if (raw == null || raw['isDeleted'] == true) {
+                                return;
+                              }
+                              _reactToMessage(raw, '❤️');
+                            },
+                            child: ImageMessage(
+                              message: image,
+                              messageWidth: messageWidth,
+                            ),
                           );
                         },
                         fileMessageBuilder: (file, {required messageWidth}) {
-                          final outgoing =
-                              file.author.id == (_currentUserId ?? '').trim();
-                          final label = _timeLabelFor(file);
-                          final loadedFile = DocumentMessageContent(
-                            title: file.name,
-                            subtitle: _documentSubtitleFor({
-                              'mimeType': file.mimeType,
-                              'mediaUrl': file.uri,
-                            }),
-                            isOutgoing: outgoing,
-                            onTap: () async {
-                              final uri = Uri.tryParse(file.uri);
-                              if (uri == null) return;
-                              await launchUrl(
-                                uri,
-                                mode: LaunchMode.externalApplication,
-                              );
+                          return GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onDoubleTap: () {
+                              final raw = _rawMessageById(file.id);
+                              if (raw == null || raw['isDeleted'] == true) {
+                                return;
+                              }
+                              _reactToMessage(raw, '❤️');
                             },
-                          );
-                          return Stack(
-                            children: [
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  right: 54,
-                                  bottom: label.isEmpty ? 0 : 16,
-                                ),
-                                child: _dataSaverMode
-                                    ? TapToLoadMediaPreview(
-                                        icon: LucideIcons.fileText,
-                                        title: 'Document hidden',
-                                        subtitle:
-                                            'Data saver is on. Tap to load this document.',
-                                        loadedChild: loadedFile,
-                                      )
-                                    : loadedFile,
-                              ),
-                              if (label.isNotEmpty)
-                                Positioned(
-                                  right: 8,
-                                  bottom: 6,
-                                  child: _bubbleTimestamp(
-                                    label: label,
-                                    outgoing: outgoing,
-                                  ),
-                                ),
-                            ],
+                            child: FileMessage(
+                              message: file,
+                            ),
                           );
                         },
                         systemMessageBuilder: (message) {
                           if (message.id == _headerSystemMessageId()) {
                             return Container(
                               width: double.infinity,
-                              color:
-                                  Theme.of(context).scaffoldBackgroundColor,
+                              color: Theme.of(context).scaffoldBackgroundColor,
                               child: Padding(
                                 padding:
                                     const EdgeInsets.fromLTRB(12, 12, 12, 12),
@@ -1814,33 +1847,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                           );
                         },
                         audioMessageBuilder: (audio, {required messageWidth}) {
-                          final outgoing =
-                              audio.author.id == (_currentUserId ?? '').trim();
-                          final label = _timeLabelFor(audio);
-                          return Stack(
-                            children: [
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  right: 54,
-                                  bottom: label.isEmpty ? 0 : 16,
-                                ),
-                                child: VoiceMessageContent(
-                                  audioUrl: UrlHelper.normalizeUrl(audio.uri),
-                                  totalDurationSeconds:
-                                      audio.duration.inSeconds,
-                                  isOutgoing: outgoing,
-                                ),
-                              ),
-                              if (label.isNotEmpty)
-                                Positioned(
-                                  right: 8,
-                                  bottom: 6,
-                                  child: _bubbleTimestamp(
-                                    label: label,
-                                    outgoing: outgoing,
-                                  ),
-                                ),
-                            ],
+                          return GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onDoubleTap: () {
+                              final raw = _rawMessageById(audio.id);
+                              if (raw == null || raw['isDeleted'] == true) {
+                                return;
+                              }
+                              _reactToMessage(raw, '❤️');
+                            },
+                            child: VoiceMessageContent(
+                              audioUrl: UrlHelper.normalizeUrl(audio.uri),
+                              totalDurationSeconds: audio.duration.inSeconds,
+                              isOutgoing: audio.author.id ==
+                                  (_currentUserId ?? '').trim(),
+                            ),
                           );
                         },
                         onEndReached: () async {
@@ -2161,25 +2182,27 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                       onPressed: messagingBlocked
                           ? null
                           : () {
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          backgroundColor: Colors.transparent,
-                          barrierColor: Colors.black54,
-                          builder: (_) => Padding(
-                            padding: EdgeInsets.only(
-                              bottom: MediaQuery.of(context).viewInsets.bottom,
-                            ),
-                            child: VoiceRecorderSheet(
-                              onSend: (bytes, duration) async {
-                                Navigator.of(context).pop();
-                                await _sendVoiceMessage(bytes, duration);
-                              },
-                              onCancel: () => Navigator.of(context).pop(),
-                            ),
-                          ),
-                        );
-                      },
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                barrierColor: Colors.black54,
+                                builder: (_) => Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: MediaQuery.of(context)
+                                        .viewInsets
+                                        .bottom,
+                                  ),
+                                  child: VoiceRecorderSheet(
+                                    onSend: (bytes, duration) async {
+                                      Navigator.of(context).pop();
+                                      await _sendVoiceMessage(bytes, duration);
+                                    },
+                                    onCancel: () => Navigator.of(context).pop(),
+                                  ),
+                                ),
+                              );
+                            },
                       icon: Icon(LucideIcons.mic, size: 20, color: muted),
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
@@ -2432,11 +2455,36 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     return list;
   }
 
+  List<ChatReaction> _reactionBadgesFor(Map<String, dynamic> message) {
+    final reactionsRaw = message['reactions'];
+    final reactions = (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    if (reactions.isEmpty) return const <ChatReaction>[];
+
+    final uid = _currentUserId ?? '';
+    final own = uid.isEmpty ? null : _ownReactionFor(message, uid);
+    final primaryEmoji = (own?['emoji']?.toString().trim().isNotEmpty == true)
+        ? own!['emoji'].toString().trim()
+        : (reactions.first['emoji']?.toString().trim() ?? '');
+    if ((message['isDeleted'] == true) || primaryEmoji.isEmpty) {
+      return const <ChatReaction>[];
+    }
+
+    return [
+      ChatReaction(
+        emoji: primaryEmoji,
+        count: reactions.length,
+        isMine: own != null,
+      ),
+    ];
+  }
+
   void _showMessageActions(BuildContext context, Map<String, dynamic> message,
       {required bool mine}) {
     if (message['isDeleted'] == true) return;
-    final text = message['text']?.toString().trim() ?? '';
-    final hasCopy = text.isNotEmpty;
+    final reactions = const ['❤️', '😂', '😮', '😢', '👍'];
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -2460,16 +2508,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    height: 42,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
-                      color: cs.onSurface.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(999),
+                      color: cs.onSurface.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        for (final e in ['❤️', '😂', '😮', '😢', '👍'])
+                        for (final e in reactions)
                           Material(
                             color: Colors.transparent,
                             child: InkWell(
@@ -2477,10 +2527,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                 Navigator.of(context).pop();
                                 _reactToMessage(message, e);
                               },
-                              borderRadius: BorderRadius.circular(999),
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 8),
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: Colors.transparent,
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                                 child: Text(
                                   e,
                                   style: const TextStyle(
@@ -2494,35 +2549,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                       ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  _actionRow(
-                    icon: LucideIcons.reply,
-                    label: 'Reply',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      _setReplyTo(message);
-                    },
-                  ),
-                  if (hasCopy)
-                    _actionRow(
-                      icon: LucideIcons.copy,
-                      label: 'Copy',
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        unawaited(_copyMessageText(message));
-                      },
-                    ),
-                  if (mine)
+                  if (mine) ...[
+                    const SizedBox(height: 10),
                     _actionRow(
                       icon: LucideIcons.trash2,
-                      label: _unsending ? 'Unsending…' : 'Unsend',
+                      label: 'Delete message',
                       destructive: true,
-                      enabled: !_unsending,
                       onTap: () {
                         Navigator.of(context).pop();
                         unawaited(_unsendMessage(message));
                       },
                     ),
+                  ],
                 ],
               ),
             ),
@@ -3415,127 +3453,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     );
   }
 
-  Widget _bubble(
-    Map<String, dynamic> message,
-    bool mine, {
-    required Map<String, dynamic>? senderMap,
-    required ChatBubbleGroupPosition groupPosition,
-    required bool showTail,
-    required EdgeInsets outerPadding,
-  }) {
-    final isDeleted = message['isDeleted'] == true;
-    final text = message['text']?.toString() ?? '';
-    final mediaType = message['mediaType']?.toString() ?? '';
-    final mediaUrl = (message['mediaUrl'] ?? message['url'])?.toString() ?? '';
-    final timeText = _messageTimeText(message);
-
-    final reactionsRaw = message['reactions'];
-    final reactions = (reactionsRaw is List ? reactionsRaw : const <dynamic>[])
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
-    final uid = _currentUserId ?? '';
-    final own = uid.isEmpty ? null : _ownReactionFor(message, uid);
-    final primaryEmoji = (own?['emoji']?.toString().trim().isNotEmpty == true)
-        ? own!['emoji'].toString().trim()
-        : (reactions.isNotEmpty
-            ? (reactions.first['emoji']?.toString().trim() ?? '')
-            : '');
-
-    final replied = _repliedMessageFor(message);
-    final replySender = _senderLabelForMessage(replied);
-    final replyPreview = _previewForMessage(replied);
-    final replyData = (replied != null &&
-            (replySender.trim().isNotEmpty || replyPreview.trim().isNotEmpty))
-        ? ChatReplyPreview(
-            senderLabel: replySender.trim().isEmpty ? 'Reply' : replySender,
-            text: replyPreview.trim().isEmpty ? 'Message' : replyPreview,
-          )
-        : null;
-
-    final shared = _sharedContentFor(message);
-    final sharedCard = shared == null ? null : _sharedContentCard(shared, mine);
-    final cleanedText = shared != null
-        ? text.replaceAll(
-            RegExp(r'https?:\\/\\/\\S+', caseSensitive: false), '')
-        : text;
-
-    Widget content;
-    final isMediaMessage = !isDeleted && mediaUrl.trim().isNotEmpty;
-    if (isDeleted) {
-      content = Text(
-        'Message unsent',
-        style: const TextStyle(fontStyle: FontStyle.italic),
-      );
-    } else if (mediaType == 'audio') {
-      final audioUrl = (message['mediaUrl'] ??
-                  message['audioUrl'] ??
-                  message['fileUrl'] ??
-                  message['url'])
-              ?.toString() ??
-          '';
-      final storedDuration =
-          (message['audioDuration'] ?? message['duration'] ?? 0);
-      final totalSecs = storedDuration is num
-          ? storedDuration.toInt()
-          : int.tryParse(storedDuration.toString()) ?? 0;
-      content = VoiceMessageContent(
-        audioUrl: UrlHelper.normalizeUrl(audioUrl),
-        totalDurationSeconds: totalSecs,
-        isOutgoing: mine,
-      );
-    } else if (mediaUrl.trim().isNotEmpty) {
-      content = ImageMessageContent(
-        urls: [UrlHelper.normalizeUrl(mediaUrl)],
-        caption: cleanedText.trim(),
-        isOutgoing: mine,
-        onTap: () => _openImageViewer(
-          [UrlHelper.normalizeUrl(mediaUrl)],
-          initialIndex: 0,
-        ),
-      );
-    } else {
-      content = TextMessageContent(
-        text: cleanedText.trim(),
-        isOutgoing: mine,
-        leading: sharedCard,
-      );
-    }
-
-    final shell = ChatBubbleShell(
-      isOutgoing: mine,
-      isGroup: false,
-      senderName: null,
-      reply: replyData,
-      isSelected: false,
-      bareContent: isMediaMessage,
-      showTail: isMediaMessage ? false : showTail,
-      groupPosition: groupPosition,
-      timestampText: timeText,
-      deliveryStatus: _deliveryStatusFor(message, mine: mine),
-      reactions: (!isDeleted && reactions.isNotEmpty && primaryEmoji.isNotEmpty)
-          ? [
-              ChatReaction(
-                emoji: primaryEmoji,
-                count: reactions.length,
-                isMine: own != null,
-              )
-            ]
-          : const [],
-      onDoubleTap: () => _reactToMessage(message, '❤️'),
-      onLongPress: () => _showMessageActions(context, message, mine: mine),
-      child: content,
-    );
-
-    return _SwipeToReply(
-      onReply: () => _setReplyTo(message),
-      child: Padding(
-        padding: outerPadding,
-        child: shell,
-      ),
-    );
-  }
-
   String? _messageTimeText(Map<String, dynamic> message) {
     final raw = message['createdAt'] ??
         message['created_at'] ??
@@ -3634,8 +3551,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   }) {
     if (!mine) return null;
     if (!_otherAllowsReadReceipts()) return ChatDeliveryStatus.sent;
-    final seenBy = message['seenBy'];
-    if (seenBy is List && seenBy.isNotEmpty) return ChatDeliveryStatus.read;
+    final otherId = _otherParticipantId();
+    if (otherId.isEmpty) return ChatDeliveryStatus.sent;
+    final latestSeen = _latestSeenOwnMessage(otherId);
+    if (latestSeen != null && _messageId(latestSeen) == _messageId(message)) {
+      return ChatDeliveryStatus.read;
+    }
     return ChatDeliveryStatus.sent;
   }
 

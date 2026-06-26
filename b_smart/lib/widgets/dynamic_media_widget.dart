@@ -433,8 +433,20 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     _loadingVideo = true;
     if (mounted) setState(() {});
     try {
-      final ctl = await VideoPool.instance.attach(widget.id, url);
+      final ctl =
+          await VideoPool.instance.attachWithPlayback(widget.id, url, autoplay: false);
       if (!mounted) {
+        _loadingVideo = false;
+        return;
+      }
+      if (!widget.isActive) {
+        await VideoPool.instance.pauseIf(widget.id);
+        _loadingVideo = false;
+        return;
+      }
+      await ctl.play();
+      if (!mounted || !widget.isActive) {
+        await VideoPool.instance.pauseIf(widget.id);
         _loadingVideo = false;
         return;
       }
@@ -476,7 +488,11 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     final url = widget.url.trim();
     if (url.isEmpty) return;
     try {
-      final ctl = await VideoPool.instance.attach(widget.id, url);
+      final ctl = await VideoPool.instance.attachWithPlayback(
+        widget.id,
+        url,
+        autoplay: true,
+      );
       if (!mounted) return;
       setState(() {
         _videoCtl = ctl;
@@ -569,7 +585,14 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     }
     final thumb = _applyFilterToWidget(_buildVideoPlaceholder());
     final ctl = _videoCtl;
-    final canShowVideo = _isControllerUsable(ctl);
+    final canShowVideo = _isControllerUsable(ctl) &&
+        (() {
+          try {
+            return ctl!.value.isPlaying;
+          } catch (_) {
+            return false;
+          }
+        })();
     bool isBuffering = false;
     if (canShowVideo && ctl != null) {
       try {

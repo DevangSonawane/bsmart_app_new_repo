@@ -115,7 +115,7 @@ class VideoPool extends ChangeNotifier {
     final ctl = VideoPlayerController.networkUrl(
       Uri.parse(url),
       httpHeaders: headers,
-      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
     );
     await ctl.initialize().timeout(const Duration(seconds: 12));
     await ctl.setLooping(true);
@@ -159,11 +159,23 @@ class VideoPool extends ChangeNotifier {
   }
 
   Future<VideoPlayerController> attach(String id, String url) async {
+    return attachWithPlayback(id, url, autoplay: true);
+  }
+
+  Future<VideoPlayerController> attachWithPlayback(
+    String id,
+    String url, {
+    required bool autoplay,
+  }) async {
     final existingActive = _activeId == id ? _usableController(id) : null;
     if (existingActive != null) {
       final ctl = existingActive;
       await ctl.setVolume(_muted ? 0 : 1);
-      if (!ctl.value.isPlaying) await ctl.play();
+      if (autoplay) {
+        if (!ctl.value.isPlaying) await ctl.play();
+      } else if (ctl.value.isPlaying) {
+        await ctl.pause();
+      }
       return ctl;
     }
 
@@ -185,7 +197,11 @@ class VideoPool extends ChangeNotifier {
     if (prewarmed != null) {
       final ctl = prewarmed;
       await ctl.setVolume(_muted ? 0 : 1);
-      await ctl.play();
+      if (autoplay) {
+        await ctl.play();
+      } else if (ctl.value.isPlaying) {
+        await ctl.pause();
+      }
       _evictIfNeeded(keep: id);
       _touchWarmOrder(id);
       return ctl;
@@ -201,7 +217,11 @@ class VideoPool extends ChangeNotifier {
         try {
           ctl = await _createControllerFor(candidateUrl, headers: headers);
           await ctl.setVolume(_muted ? 0 : 1);
-          await ctl.play();
+          if (autoplay) {
+            await ctl.play();
+          } else if (ctl.value.isPlaying) {
+            await ctl.pause();
+          }
           _pool[id] = ctl;
           _touchWarmOrder(id);
           _evictIfNeeded(keep: id);

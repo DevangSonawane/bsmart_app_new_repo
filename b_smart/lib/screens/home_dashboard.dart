@@ -1340,7 +1340,6 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (!mounted) return;
     if (_currentIndex != 0) return;
     unawaited(_refreshUnreadNotificationCount());
-    unawaited(VideoPool.instance.disposeAll());
     // When app resumes, jump to top and refresh to show latest posts.
     if (_feedScrollController.hasClients) {
       _feedScrollController.jumpTo(0);

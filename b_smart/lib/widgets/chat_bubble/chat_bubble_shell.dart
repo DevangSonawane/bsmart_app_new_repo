@@ -54,8 +54,6 @@ class ChatBubbleShell extends StatelessWidget {
 
     final maxWidth = MediaQuery.sizeOf(context).width * 0.72;
     final hasMeta = (timestampText ?? '').trim().isNotEmpty;
-    final metaReserveRight = hasMeta ? 68.0 : 0.0;
-    final metaReserveBottom = hasMeta ? 16.0 : 0.0;
     final deliveryLabelColor = isOutgoing
         ? colors.outgoingMeta
         : colors.incomingMeta;
@@ -75,47 +73,7 @@ class ChatBubbleShell extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: RepaintBoundary(
         child: bareContent
-            ? Stack(
-                children: [
-                  child,
-                  if (hasMeta)
-                    Positioned(
-                      right: 8,
-                      bottom: 8,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.40),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 3),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                timestampText!.trim(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                textScaler: MediaQuery.textScalerOf(context),
-                              ),
-                              if (isOutgoing) ...[
-                                const SizedBox(width: 4),
-                                _DeliveryMeta(
-                                  status: deliveryStatus,
-                                  color: Colors.white.withValues(alpha: 0.90),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              )
+            ? child
             : CustomPaint(
                 painter: ChatBubblePainter(
                   color: bubbleColor,
@@ -127,67 +85,34 @@ class ChatBubbleShell extends StatelessWidget {
                 ),
                 child: Padding(
                   padding: padding,
-                  child: Stack(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Padding(
-                        padding: EdgeInsets.only(
-                          right: metaReserveRight,
-                          bottom: metaReserveBottom,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isGroup &&
-                                !isOutgoing &&
-                                (senderName ?? '').trim().isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
-                                child: Text(
-                                  senderName!.trim(),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style:
-                                      typography.sender.copyWith(color: nameColor),
-                                  textScaler: MediaQuery.textScalerOf(context),
-                                ),
-                              ),
-                            if (reply != null) ...[
-                              _ReplyPreviewChip(
-                                reply: reply!,
-                                isOutgoing: isOutgoing,
-                              ),
-                              const SizedBox(height: 6),
-                            ],
-                            DefaultTextStyle(
-                              style: typography.message.copyWith(color: textColor),
-                              child: child,
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (hasMeta)
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                timestampText!.trim(),
-                                style: typography.timestamp.copyWith(color: metaColor),
-                                textScaler: MediaQuery.textScalerOf(context),
-                              ),
-                              if (isOutgoing) ...[
-                                const SizedBox(width: 4),
-                                _DeliveryMeta(
-                                  status: deliveryStatus,
-                                  color: deliveryLabelColor,
-                                ),
-                              ],
-                            ],
+                      if (isGroup &&
+                          !isOutgoing &&
+                          (senderName ?? '').trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            senderName!.trim(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: typography.sender.copyWith(color: nameColor),
+                            textScaler: MediaQuery.textScalerOf(context),
                           ),
                         ),
+                      if (reply != null) ...[
+                        _ReplyPreviewChip(
+                          reply: reply!,
+                          isOutgoing: isOutgoing,
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      DefaultTextStyle(
+                        style: typography.message.copyWith(color: textColor),
+                        child: child,
+                      ),
                     ],
                   ),
                 ),
@@ -219,6 +144,65 @@ class ChatBubbleShell extends StatelessWidget {
             ),
           );
 
+    Widget metaWidget() {
+      if (!hasMeta) return const SizedBox.shrink();
+      if (bareContent) {
+        return Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.24),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    timestampText!.trim(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textScaler: MediaQuery.textScalerOf(context),
+                  ),
+                  if (isOutgoing) ...[
+                    const SizedBox(width: 4),
+                    _DeliveryMeta(
+                      status: deliveryStatus,
+                      color: Colors.white.withValues(alpha: 0.90),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+      return Padding(
+        padding: const EdgeInsets.only(top: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              timestampText!.trim(),
+              style: typography.timestamp.copyWith(color: metaColor),
+              textScaler: MediaQuery.textScalerOf(context),
+            ),
+            if (isOutgoing) ...[
+              const SizedBox(width: 4),
+              _DeliveryMeta(
+                status: deliveryStatus,
+                color: deliveryLabelColor,
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
     return Align(
       alignment: isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
@@ -227,6 +211,7 @@ class ChatBubbleShell extends StatelessWidget {
             isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           bubble,
+          metaWidget(),
           if (reactionPill != null) reactionPill,
         ],
       ),

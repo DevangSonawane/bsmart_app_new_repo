@@ -61,8 +61,9 @@ class ReelsService {
     for (var i = 0; i < upperBound; i++) {
       final url = UrlHelper.absoluteUrl(reels[i].videoUrl);
       if (url.isEmpty) continue;
-      final headers =
-          UrlHelper.shouldAttachAuthHeader(url) ? authHeaders : const <String, String>{};
+      final headers = UrlHelper.shouldAttachAuthHeader(url)
+          ? authHeaders
+          : const <String, String>{};
       VideoPlayerController? controller;
       try {
         controller = VideoPlayerController.networkUrl(
@@ -131,8 +132,10 @@ class ReelsService {
             _string(media['videoUrl']) ??
             _string(media['file_url']);
 
-        final thumbField =
-            media['thumbnail'] ?? media['thumbnailUrl'] ?? media['thumb'];
+        final thumbField = media['thumbnail'] ??
+            media['thumbnails'] ??
+            media['thumbnailUrl'] ??
+            media['thumb'];
         if (thumbField is String) {
           thumbnailUrl = _string(thumbField);
         } else if (thumbField is Map) {
@@ -141,7 +144,15 @@ class ReelsService {
               _string(thumbMap['url']) ??
               _string(thumbMap['file_url']);
         } else if (thumbField is List && thumbField.isNotEmpty) {
-          thumbnailUrl = _string(thumbField.first);
+          final firstThumb = thumbField.first;
+          if (firstThumb is String) {
+            thumbnailUrl = _string(firstThumb);
+          } else if (firstThumb is Map) {
+            final thumbMap = Map<String, dynamic>.from(firstThumb);
+            thumbnailUrl = _string(thumbMap['fileUrl']) ??
+                _string(thumbMap['url']) ??
+                _string(thumbMap['file_url']);
+          }
         }
 
         final mediaCrop = media['crop'] is Map
