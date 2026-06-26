@@ -16,6 +16,7 @@ import '../models/reel_model.dart';
 import '../services/media_playback_registry.dart';
 import '../services/reels_service.dart';
 import '../services/supabase_service.dart';
+import '../services/ui_surface_memory_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/comments_sheet.dart';
@@ -131,14 +132,23 @@ class _ReelsScreenState extends State<ReelsScreen>
         final idx = _reels.indexWhere((r) => r.id == initialId);
         if (idx >= 0) {
           _currentIndex = idx;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_pageController.hasClients) {
-              _pageController.jumpToPage(idx);
-            }
-          });
         }
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted || _reels.isEmpty) return;
+        if (initialId == null || initialId.isEmpty) {
+          final savedIndex = await UiSurfaceMemoryService.instance.loadReelsIndex();
+          if (!mounted || _reels.isEmpty) return;
+          if (savedIndex != null) {
+            final clamped = savedIndex.clamp(0, _reels.length - 1).toInt();
+            _currentIndex = clamped;
+            if (_pageController.hasClients) {
+              _pageController.jumpToPage(clamped);
+            }
+          }
+        } else if (_pageController.hasClients) {
+          _pageController.jumpToPage(_currentIndex);
+        }
         if (!mounted || _reels.isEmpty || !_playbackAllowed) return;
         unawaited(_initializePoolAt(_currentIndex));
         _poolOps = _poolOps.then<void>((_) async {
@@ -217,6 +227,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   @override
   void dispose() {
+    unawaited(UiSurfaceMemoryService.instance.saveReelsIndex(_currentIndex));
     WidgetsBinding.instance.removeObserver(this);
     MediaPlaybackRegistry.instance.unregister('reels-screen');
     _navigationUnlockTimer?.cancel();
@@ -351,6 +362,11 @@ class _ReelsScreenState extends State<ReelsScreen>
       if (initialId != null && initialId.isNotEmpty) {
         final idx = reels.indexWhere((r) => r.id == initialId);
         if (idx >= 0) nextIndex = idx;
+      } else {
+        final savedIndex = await UiSurfaceMemoryService.instance.loadReelsIndex();
+        if (savedIndex != null && reels.isNotEmpty) {
+          nextIndex = savedIndex.clamp(0, reels.length - 1).toInt();
+        }
       }
       setState(() {
         _reels = reels;
@@ -365,6 +381,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
       if (_reels.isNotEmpty) {
         unawaited(_reelsService.incrementViews(_reels[_currentIndex].id));
+        unawaited(_reelsService.preWarmReels(3));
         if (!_playbackAllowed) return;
         unawaited(_initializePoolAt(_currentIndex));
         _poolOps = _poolOps.then<void>((_) async {
@@ -714,6 +731,7 @@ class _ReelsScreenState extends State<ReelsScreen>
       _userPaused = false;
       _isScrubbing = false;
     });
+    unawaited(UiSurfaceMemoryService.instance.saveReelsIndex(index));
     _prewarmRequested.clear();
     // The active index changed; reevaluate audio gate based on page settling.
     _applyAudioGate();
@@ -748,6 +766,7 @@ class _ReelsScreenState extends State<ReelsScreen>
         _reels.addAll(next);
         if (next.length < 20) _hasMore = false;
       });
+      unawaited(_reelsService.preWarmReels(3));
     } catch (_) {
       // ignore fetch errors for background pagination
     } finally {

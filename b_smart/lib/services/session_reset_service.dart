@@ -11,6 +11,7 @@ import 'notification_service.dart';
 import 'reels_service.dart';
 import 'story_cache.dart';
 import 'supabase_service.dart';
+import 'ui_surface_memory_service.dart';
 import 'video_pool.dart';
 import '../screens/tweet_composer/tweet_composer_page.dart';
 
@@ -29,6 +30,7 @@ class SessionResetService {
     clearTweetComposerCache();
     SupabaseService().clearSessionCache();
     ReelsService().clearCache();
+    UiSurfaceMemoryService.instance.clearCache();
     await VideoPool.instance.clearSessionCache();
 
     globalStore.dispatch(ClearAuthentication());

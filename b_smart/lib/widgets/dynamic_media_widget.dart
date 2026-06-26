@@ -66,6 +66,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   bool _loadingVideo = false;
   bool _videoFailed = false;
   String? _registeredPauseId;
+  bool _muteListenerAttached = false;
 
   bool get _hasVideoFilter {
     if (!widget.isVideo) return false;
@@ -337,6 +338,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
             : null);
     _ratio ??= widget.initialAspectRatio;
     _registerPauseHook();
+    _attachMuteListener();
     _primeRatio();
     if (_cachedAuthHeaders.isEmpty) {
       ensureAuthHeaders().then((_) {
@@ -392,6 +394,12 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
         if (mounted) setState(() {});
       }
     }
+    if (widget.isVideo &&
+        (oldWidget.isActive != widget.isActive ||
+            oldWidget.id != widget.id ||
+            oldWidget.url != widget.url)) {
+      _syncVolumeToMuteState();
+    }
   }
 
   Future<void> _primeRatio() async {
@@ -444,6 +452,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
         _loadingVideo = false;
         return;
       }
+      await _syncVolumeToMuteState(controller: ctl);
       await ctl.play();
       if (!mounted || !widget.isActive) {
         await VideoPool.instance.pauseIf(widget.id);
@@ -494,6 +503,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
         autoplay: true,
       );
       if (!mounted) return;
+      await _syncVolumeToMuteState(controller: ctl);
       setState(() {
         _videoCtl = ctl;
         _ratio = ctl.value.isInitialized
@@ -526,9 +536,40 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
 
   @override
   void dispose() {
+    _detachMuteListener();
     _disposeVideo();
     _unregisterPauseHook(_registeredPauseId);
     super.dispose();
+  }
+
+  void _attachMuteListener() {
+    if (_muteListenerAttached) return;
+    _muteListenerAttached = true;
+    VideoPool.instance.addListener(_handleMuteChanged);
+  }
+
+  void _detachMuteListener() {
+    if (!_muteListenerAttached) return;
+    _muteListenerAttached = false;
+    VideoPool.instance.removeListener(_handleMuteChanged);
+  }
+
+  void _handleMuteChanged() {
+    if (!mounted) return;
+    _syncVolumeToMuteState();
+  }
+
+  Future<void> _syncVolumeToMuteState({
+    VideoPlayerController? controller,
+  }) async {
+    final ctl = controller ?? _videoCtl;
+    if (!_isControllerUsable(ctl)) return;
+    try {
+      final volume = widget.isVideo && widget.isActive && !VideoPool.instance.isMuted
+          ? 1.0
+          : 0.0;
+      await ctl!.setVolume(volume);
+    } catch (_) {}
   }
 
   void _registerPauseHook() {

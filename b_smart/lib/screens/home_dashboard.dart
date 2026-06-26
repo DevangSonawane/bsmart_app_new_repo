@@ -12,6 +12,7 @@ import '../services/feed_service.dart';
 import '../services/notification_service.dart';
 import '../services/media_playback_registry.dart';
 import '../services/supabase_service.dart';
+import '../services/ui_surface_memory_service.dart';
 import '../services/wallet_service.dart';
 import '../services/video_pool.dart';
 import '../state/app_state.dart';
@@ -405,9 +406,12 @@ class _HomeDashboardState extends State<HomeDashboard>
   Timer? _activeFeedDebounce;
   bool _isCommentsOpen = false;
   final Set<String> _prewarmedFeedIds = {};
+  final Set<String> _prewarmedFeedAvatarUrls = {};
   bool _isFeedScrolling = false;
-  Timer? _scrollIdleTimer;
+  Timer? _feedScrollSaveDebounce;
   String? _pendingActivePostId;
+  ScrollPosition? _trackedFeedScrollPosition;
+  int _feedSkeletonLoadCount = 0;
   int _unreadNotificationCount = 0;
   StreamSubscription<List<NotificationItem>>? _notificationSub;
   Timer? _notificationRefreshTimer;
@@ -620,11 +624,15 @@ class _HomeDashboardState extends State<HomeDashboard>
         PageController(initialPage: initialPage < 0 ? 0 : initialPage);
     _feedScrollController.addListener(_onFeedScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _attachFeedScrollActivityListener();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(primeMediaAuthHeaders());
       final store = StoreProvider.of<AppState>(context);
       // Force a clean, fresh feed on app open to avoid stale or partial data.
       store.dispatch(SetFeedPosts(const []));
       store.dispatch(SetFeedLoading(true));
+      _beginFeedSkeletonLoading();
       _loadData(store);
       _loadInitialFeed(forceNetwork: true);
       unawaited(_loadFollowSuggestions());
@@ -1085,7 +1093,7 @@ class _HomeDashboardState extends State<HomeDashboard>
           ? null
           : UrlHelper.absoluteUrl(normalizedAvatar),
       videoUrl: UrlHelper.absoluteUrl(normalizedVideo),
-      thumbnailUrl: normalizedThumb == null || normalizedThumb.isEmpty
+      thumbnailUrl: normalizedThumb.isEmpty
           ? null
           : UrlHelper.absoluteUrl(normalizedThumb),
       aspectRatio: aspectRatio,
@@ -1293,6 +1301,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     _isRouteActive = false;
     _activeFeedPostId = null;
     _activeFeedPostIdListenable.value = null;
+    unawaited(_persistFeedScrollPosition());
     unawaited(MediaPlaybackRegistry.instance.pauseAll());
     if (mounted) setState(() {});
   }
@@ -1302,6 +1311,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (_isRouteActive) return;
     _isRouteActive = true;
     unawaited(_refreshUnreadNotificationCount());
+    unawaited(_restoreFeedScrollPosition());
     if (_pendingHomeRefreshAfterRoute && _currentIndex == 0) {
       _pendingHomeRefreshAfterRoute = false;
       _scheduleHomeRefresh();
@@ -1314,12 +1324,14 @@ class _HomeDashboardState extends State<HomeDashboard>
     VisibilityDetectorController.instance.updateInterval =
         const Duration(milliseconds: 500);
     MediaPlaybackRegistry.instance.unregister('home-dashboard');
+    unawaited(_persistFeedScrollPosition());
     _notificationSub?.cancel();
     _notificationRefreshTimer?.cancel();
     _activeFeedDebounce?.cancel();
     _autoRefreshDebounce?.cancel();
-    _scrollIdleTimer?.cancel();
+    _feedScrollSaveDebounce?.cancel();
     _activeFeedPostIdListenable.dispose();
+    _detachFeedScrollActivityListener();
     _feedScrollController.removeListener(_onFeedScroll);
     _feedScrollController.dispose();
     _tabPageController?.dispose();
@@ -1334,19 +1346,18 @@ class _HomeDashboardState extends State<HomeDashboard>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
+      unawaited(_persistFeedScrollPosition());
       unawaited(MediaPlaybackRegistry.instance.pauseAll());
       return;
     }
     if (!mounted) return;
     if (_currentIndex != 0) return;
     unawaited(_refreshUnreadNotificationCount());
-    // When app resumes, jump to top and refresh to show latest posts.
-    if (_feedScrollController.hasClients) {
-      _feedScrollController.jumpTo(0);
-    }
     final store = StoreProvider.of<AppState>(context);
+    _beginFeedSkeletonLoading();
     unawaited(
         Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]));
+    unawaited(_restoreFeedScrollPosition());
   }
 
   void _scheduleHomeRefresh() {
@@ -1362,6 +1373,7 @@ class _HomeDashboardState extends State<HomeDashboard>
       }
       _lastAutoRefreshAt = now;
       final store = StoreProvider.of<AppState>(context);
+      _beginFeedSkeletonLoading();
       unawaited(Future.wait(
           [_loadData(store), _loadInitialFeed(forceNetwork: true)]));
     });
@@ -1506,127 +1518,127 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   Future<void> _loadInitialFeed({bool forceNetwork = false}) async {
-    await primeMediaAuthHeaders(); // ensure auth headers ready before any image loads
-    unawaited(_loadReelSuggestions(force: forceNetwork));
-    final store = StoreProvider.of<AppState>(context);
-    final isFirstLoad = store.state.feedState.posts.isEmpty || forceNetwork;
-    if (isFirstLoad) {
-      _prewarmedFeedIds.clear();
-    }
-
-    // Only show full-screen spinner on genuine first load
-    if (isFirstLoad) {
-      store.dispatch(SetFeedLoading(true));
-      if (forceNetwork) {
-        store.dispatch(SetFeedPosts(const []));
-      }
-    }
-
-    final currentUserId = await CurrentUser.id;
-    List<FeedPost> items = const <FeedPost>[];
     try {
-      items = await _feedService.fetchFeedFromBackend(
-        currentUserId: currentUserId,
-        useBackendDefault: false,
-        limit: _pageSize,
-        cacheBuster: DateTime.now().millisecondsSinceEpoch.toString(),
-      );
-    } catch (_) {
-      items = const <FeedPost>[];
-    }
-    // If backend returns too few posts, eagerly fetch next pages to fill the screen.
-    var nextPageCursor = 2;
-    var prefetchNoMore = false;
-    if (items.isNotEmpty && items.length < _pageSize) {
-      final seen = items.map((p) => p.id).toSet();
-      var keepGoing = true;
-      while (keepGoing && items.length < _pageSize) {
-        List<FeedPost> pageItems = const <FeedPost>[];
-        try {
-          pageItems = await _feedService.fetchFeedFromBackend(
-            limit: _pageSize,
-            offset: (nextPageCursor - 1) * _pageSize,
-            currentUserId: currentUserId,
-            useBackendDefault: false,
-            cacheBuster: DateTime.now().millisecondsSinceEpoch.toString(),
-          );
-        } catch (_) {
-          pageItems = const <FeedPost>[];
-        }
-        if (pageItems.isEmpty) {
-          keepGoing = false;
-          prefetchNoMore = true;
-          break;
-        }
-        final newOnes = pageItems.where((p) => !seen.contains(p.id)).toList();
-        if (newOnes.isEmpty) {
-          keepGoing = false;
-          prefetchNoMore = true;
-          break;
-        }
-        for (final p in newOnes) {
-          seen.add(p.id);
-        }
-        items = [...items, ...newOnes];
-        nextPageCursor += 1;
-        // Safety: avoid unbounded prefetching on bad pagination.
-        if (nextPageCursor > 4) {
-          keepGoing = false;
+      await primeMediaAuthHeaders(); // ensure auth headers ready before any image loads
+      unawaited(_loadReelSuggestions(force: forceNetwork));
+      final store = StoreProvider.of<AppState>(context);
+      final isFirstLoad = store.state.feedState.posts.isEmpty || forceNetwork;
+      if (isFirstLoad) {
+        _prewarmedFeedIds.clear();
+        _prewarmedFeedAvatarUrls.clear();
+      }
+
+      // Only show full-screen spinner on genuine first load
+      if (isFirstLoad) {
+        store.dispatch(SetFeedLoading(true));
+        if (forceNetwork) {
+          store.dispatch(SetFeedPosts(const []));
         }
       }
-    }
-    if (!mounted) {
-      if (isFirstLoad) store.dispatch(SetFeedLoading(false));
-      return;
-    }
 
-    if (items.isNotEmpty) {
-      await _precacheFeedMedia(items);
+      final currentUserId = await CurrentUser.id;
+      List<FeedPost> items = const <FeedPost>[];
+      try {
+        items = await _feedService.fetchFeedFromBackend(
+          currentUserId: currentUserId,
+          useBackendDefault: false,
+          limit: _pageSize,
+          cacheBuster: DateTime.now().millisecondsSinceEpoch.toString(),
+        );
+      } catch (_) {
+        items = const <FeedPost>[];
+      }
+      // If backend returns too few posts, eagerly fetch next pages to fill the screen.
+      var nextPageCursor = 2;
+      var prefetchNoMore = false;
+      if (items.isNotEmpty && items.length < _pageSize) {
+        final seen = items.map((p) => p.id).toSet();
+        var keepGoing = true;
+        while (keepGoing && items.length < _pageSize) {
+          List<FeedPost> pageItems = const <FeedPost>[];
+          try {
+            pageItems = await _feedService.fetchFeedFromBackend(
+              limit: _pageSize,
+              offset: (nextPageCursor - 1) * _pageSize,
+              currentUserId: currentUserId,
+              useBackendDefault: false,
+              cacheBuster: DateTime.now().millisecondsSinceEpoch.toString(),
+            );
+          } catch (_) {
+            pageItems = const <FeedPost>[];
+          }
+          if (pageItems.isEmpty) {
+            keepGoing = false;
+            prefetchNoMore = true;
+            break;
+          }
+          final newOnes = pageItems.where((p) => !seen.contains(p.id)).toList();
+          if (newOnes.isEmpty) {
+            keepGoing = false;
+            prefetchNoMore = true;
+            break;
+          }
+          for (final p in newOnes) {
+            seen.add(p.id);
+          }
+          items = [...items, ...newOnes];
+          nextPageCursor += 1;
+          // Safety: avoid unbounded prefetching on bad pagination.
+          if (nextPageCursor > 4) {
+            keepGoing = false;
+          }
+        }
+      }
       if (!mounted) {
         if (isFirstLoad) store.dispatch(SetFeedLoading(false));
         return;
       }
-    }
 
-    store.dispatch(SetFeedPosts(items));
-
-    setState(() {
-      if (isFirstLoad || forceNetwork) {
-        // First load only: start from top, reset everything
-        _activeFeedPostId = items.isNotEmpty ? items.first.id : null;
-        _activeFeedPostIdListenable.value = _activeFeedPostId;
-        // Show ALL items from backend on first load, not just _pageSize
-        _visibleCount = items.length;
-      } else {
-        // Background refresh: preserve current scroll depth
-        // Just expand _visibleCount if new items arrived beyond current depth
-        _visibleCount = math.max(
-          _visibleCount,
-          items.length,
-        );
-        // Do NOT reset _activeFeedPostId — user is mid-scroll
-      }
-      _pageCursor = nextPageCursor;
-      _pagingInFlight = false;
-      _noMorePages = items.isEmpty || prefetchNoMore;
-    });
-
-    if (isFirstLoad || forceNetwork) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (_feedScrollController.hasClients) {
-          _feedScrollController.jumpTo(0);
+      if (items.isNotEmpty) {
+        await _precacheFeedMedia(items);
+        if (!mounted) {
+          if (isFirstLoad) store.dispatch(SetFeedLoading(false));
+          return;
         }
+      }
+
+      store.dispatch(SetFeedPosts(items));
+
+      setState(() {
+        if (isFirstLoad || forceNetwork) {
+          // First load only: start from top, reset everything
+          _activeFeedPostId = items.isNotEmpty ? items.first.id : null;
+          _activeFeedPostIdListenable.value = _activeFeedPostId;
+          // Show ALL items from backend on first load, not just _pageSize
+          _visibleCount = items.length;
+        } else {
+          // Background refresh: preserve current scroll depth
+          // Just expand _visibleCount if new items arrived beyond current depth
+          _visibleCount = math.max(
+            _visibleCount,
+            items.length,
+          );
+          // Do NOT reset _activeFeedPostId — user is mid-scroll
+        }
+        _pageCursor = nextPageCursor;
+        _pagingInFlight = false;
+        _noMorePages = items.isEmpty || prefetchNoMore;
       });
-    }
 
-    if (isFirstLoad) store.dispatch(SetFeedLoading(false));
+      if (isFirstLoad || forceNetwork) {
+        unawaited(_restoreFeedScrollPosition());
+      }
 
-    // If list is too short to scroll, proactively load next page
-    if (items.isNotEmpty) {
-      _checkIfListNeedsMorePosts();
-      // Ensure we have a full initial batch without requiring a scroll.
-      unawaited(_prefetchUntil(minPosts: _pageSize, maxPages: 3));
+      if (isFirstLoad) store.dispatch(SetFeedLoading(false));
+
+      // If list is too short to scroll, proactively load next page
+      if (items.isNotEmpty) {
+        _checkIfListNeedsMorePosts();
+        // Ensure we have a full initial batch without requiring a scroll.
+        unawaited(_prefetchUntil(minPosts: _pageSize, maxPages: 3));
+      }
+    } finally {
+      _endFeedSkeletonLoading();
     }
   }
 
@@ -1666,6 +1678,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     }
     for (var i = 0; i < limit; i++) {
       final post = posts[i];
+      unawaited(_precacheFeedAvatar(post));
       String? url;
       if (post.mediaType == PostMediaType.video ||
           post.mediaType == PostMediaType.reel) {
@@ -1692,6 +1705,98 @@ class _HomeDashboardState extends State<HomeDashboard>
     } catch (_) {
       // Best-effort prefetch only.
     }
+  }
+
+  Future<void> _precacheFeedAvatar(FeedPost post) async {
+    final rawUrl = post.userAvatar?.trim() ?? '';
+    if (rawUrl.isEmpty) return;
+    final url = UrlHelper.absoluteUrl(rawUrl);
+    if (url.isEmpty || _prewarmedFeedAvatarUrls.contains(url)) return;
+    _prewarmedFeedAvatarUrls.add(url);
+    final token = await ApiClient().getToken();
+    final authHeaders = <String, String>{};
+    if (token != null && token.isNotEmpty) {
+      authHeaders['Authorization'] = 'Bearer $token';
+    }
+    final headers = UrlHelper.shouldAttachAuthHeader(url)
+        ? authHeaders
+        : const <String, String>{};
+    try {
+      await precacheImage(
+        CachedNetworkImageProvider(url, headers: headers),
+        context,
+      ).timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // Best-effort only.
+    }
+  }
+
+  void _scheduleFeedScrollSave() {
+    if (!_feedScrollController.hasClients) return;
+    final pixels = _feedScrollController.position.pixels;
+    _feedScrollSaveDebounce?.cancel();
+    _feedScrollSaveDebounce = Timer(const Duration(milliseconds: 250), () {
+      unawaited(UiSurfaceMemoryService.instance.saveFeedScrollOffset(pixels));
+    });
+  }
+
+  void _beginFeedSkeletonLoading() {
+    _feedSkeletonLoadCount += 1;
+    if (mounted) setState(() {});
+  }
+
+  void _endFeedSkeletonLoading() {
+    if (_feedSkeletonLoadCount > 0) {
+      _feedSkeletonLoadCount -= 1;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _persistFeedScrollPosition() async {
+    if (!_feedScrollController.hasClients) return;
+    await UiSurfaceMemoryService.instance
+        .saveFeedScrollOffset(_feedScrollController.position.pixels);
+  }
+
+  Future<void> _restoreFeedScrollPosition({int attempts = 12}) async {
+    if (!mounted || _currentIndex != 0) return;
+    if (!_feedScrollController.hasClients) {
+      if (attempts <= 0) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_restoreFeedScrollPosition(attempts: attempts - 1));
+      });
+      return;
+    }
+
+    final position = _feedScrollController.position;
+    if (position.pixels > 1.0) return;
+
+    final savedOffset = await UiSurfaceMemoryService.instance.loadFeedScrollOffset();
+    if (savedOffset == null || savedOffset <= 0) return;
+    if (!mounted || _currentIndex != 0 || !_feedScrollController.hasClients) return;
+
+    final maxScrollExtent = _feedScrollController.position.maxScrollExtent;
+    if (maxScrollExtent <= 0) {
+      if (attempts <= 0) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_restoreFeedScrollPosition(attempts: attempts - 1));
+      });
+      return;
+    }
+
+    final target = savedOffset.clamp(0.0, maxScrollExtent).toDouble();
+    if ((position.pixels - target).abs() < 1.0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_feedScrollController.hasClients) return;
+      final position = _feedScrollController.position;
+      final clampedTarget =
+          target.clamp(0.0, position.maxScrollExtent).toDouble();
+      if (position.pixels <= 1.0 && (position.pixels - clampedTarget).abs() >= 1.0) {
+        _feedScrollController.jumpTo(clampedTarget);
+      }
+    });
   }
 
   Future<void> _prefetchUntil({
@@ -1739,25 +1844,8 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   void _onFeedScroll() {
     if (!_feedScrollController.hasClients) return;
-    final wasScrolling = _isFeedScrolling;
-    _isFeedScrolling = true;
-    if (!wasScrolling && _currentIndex == 0 && _isRouteActive) {
-      unawaited(VideoPool.instance.pauseActive());
-    }
-    _scrollIdleTimer?.cancel();
-    _scrollIdleTimer = Timer(const Duration(milliseconds: 120), () {
-      _isFeedScrolling = false;
-      final pending = _pendingActivePostId;
-      if (pending != null && pending != _activeFeedPostId) {
-        _activeFeedPostId = pending;
-        _activeFeedPostIdListenable.value = pending;
-      } else if (_activeFeedPostId != null &&
-          _currentIndex == 0 &&
-          _isRouteActive) {
-        unawaited(VideoPool.instance.resumeActive());
-      }
-      _pendingActivePostId = null;
-    });
+    _attachFeedScrollActivityListener();
+    _scheduleFeedScrollSave();
     final store = StoreProvider.of<AppState>(context);
     final total = store.state.feedState.posts.length;
     final position = _feedScrollController.position;
@@ -1775,6 +1863,40 @@ class _HomeDashboardState extends State<HomeDashboard>
       }
       _maybeFetchNextPage(total);
     }
+  }
+
+  void _attachFeedScrollActivityListener() {
+    if (!_feedScrollController.hasClients) return;
+    final position = _feedScrollController.position;
+    if (identical(_trackedFeedScrollPosition, position)) return;
+    _trackedFeedScrollPosition?.isScrollingNotifier
+        .removeListener(_onFeedScrollActivityChanged);
+    _trackedFeedScrollPosition = position;
+    position.isScrollingNotifier.addListener(_onFeedScrollActivityChanged);
+  }
+
+  void _detachFeedScrollActivityListener() {
+    _trackedFeedScrollPosition?.isScrollingNotifier
+        .removeListener(_onFeedScrollActivityChanged);
+    _trackedFeedScrollPosition = null;
+  }
+
+  void _onFeedScrollActivityChanged() {
+    final position = _trackedFeedScrollPosition;
+    if (position == null) return;
+    final scrolling = position.isScrollingNotifier.value;
+    if (scrolling) {
+      _isFeedScrolling = true;
+      return;
+    }
+
+    _isFeedScrolling = false;
+    final pending = _pendingActivePostId;
+    if (pending != null && pending != _activeFeedPostId) {
+      _activeFeedPostId = pending;
+      _activeFeedPostIdListenable.value = pending;
+    }
+    _pendingActivePostId = null;
   }
 
   void _maybeFetchNextPage(int totalCount) {
@@ -1844,6 +1966,9 @@ class _HomeDashboardState extends State<HomeDashboard>
         );
     if (visibleFraction >= 0.15) {
       _preWarmVisibleVideo(postId);
+      if (post != null) {
+        unawaited(_precacheFeedAvatar(post));
+      }
     }
     // Only consider activating a post when at least half of it is visible.
     // This matches typical "Instagram-like" behavior and prevents audio/video
@@ -2680,12 +2805,14 @@ class _HomeDashboardState extends State<HomeDashboard>
     }
     // Clear Redux posts so isFirstLoad = true in _loadInitialFeed
     store.dispatch(SetFeedPosts(const []));
+    _beginFeedSkeletonLoading();
     await Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]);
   }
 
   // Silent background refresh after story/route pop — preserve scroll
   Future<void> _onSilentRefresh() async {
     final store = StoreProvider.of<AppState>(context);
+    _beginFeedSkeletonLoading();
     await Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]);
   }
 
@@ -2738,18 +2865,22 @@ class _HomeDashboardState extends State<HomeDashboard>
     final switchingToHome =
         idx == 0 && !wasOnHome; // ← only true when actually switching
 
-    if (idx != _currentIndex) {
-      if (idx == 4 && !_reelsPrefetched) {
-        _reelsPrefetched = true;
-        unawaited(() async {
-          try {
-            await _reelsService.fetchReels(limit: 20, offset: 0);
-          } catch (_) {}
-        }());
-      }
+      if (idx != _currentIndex) {
+        if (idx == 4 && !_reelsPrefetched) {
+          _reelsPrefetched = true;
+          unawaited(() async {
+            try {
+              await _reelsService.fetchReels(limit: 20, offset: 0);
+              await _reelsService.preWarmReels(3);
+            } catch (_) {}
+          }());
+        }
       setState(() {
         _currentIndex = idx;
       });
+      if (idx == 0) {
+        unawaited(_restoreFeedScrollPosition());
+      }
     }
 
     // Only schedule refresh when genuinely navigating TO home from another tab
@@ -2908,6 +3039,7 @@ class _HomeDashboardState extends State<HomeDashboard>
         feedState.posts.take(effectiveVisible).toList(growable: false);
     final hasMoreToShow = effectiveVisible < totalCount;
     final isLoading = feedState.isLoading;
+    final showFeedSkeleton = isLoading || _feedSkeletonLoadCount > 0;
     final isDesktop = MediaQuery.sizeOf(context).width >= 768;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -3156,7 +3288,9 @@ class _HomeDashboardState extends State<HomeDashboard>
                         onLocationTap: _showLocationSheet,
                       ),
                     ),
-                    if (posts.isEmpty)
+                    if (posts.isEmpty && showFeedSkeleton)
+                      ..._buildFeedSkeletonSlivers(context)
+                    else if (posts.isEmpty)
                       SliverFillRemaining(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -3469,7 +3603,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                   ],
                 ),
               ),
-              if (isLoading)
+              if (showFeedSkeleton && posts.isNotEmpty)
                 const ColoredBox(
                   color: Colors.transparent,
                   child: Center(
@@ -3640,6 +3774,185 @@ class _HomeDashboardState extends State<HomeDashboard>
       },
       child: body,
     );
+  }
+
+  List<Widget> _buildFeedSkeletonSlivers(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final base = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.grey.shade300;
+    final highlight = isDark
+        ? Colors.white.withValues(alpha: 0.14)
+        : Colors.grey.shade100;
+
+    Widget box({
+      double? width,
+      double height = 12,
+      double radius = 10,
+      EdgeInsetsGeometry margin = EdgeInsets.zero,
+    }) {
+      return Container(
+        width: width,
+        height: height,
+        margin: margin,
+        decoration: BoxDecoration(
+          color: base,
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      );
+    }
+
+    Widget shimmerCard() {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.grey.shade200,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: base,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          box(width: 120, height: 12, radius: 999),
+                          const SizedBox(height: 8),
+                          box(width: 80, height: 10, radius: 999),
+                        ],
+                      ),
+                    ),
+                    box(width: 54, height: 24, radius: 999),
+                  ],
+                ),
+              ),
+              AspectRatio(
+                aspectRatio: 1,
+                child: Container(
+                  color: highlight,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    box(width: double.infinity, height: 12, radius: 999),
+                    const SizedBox(height: 8),
+                    box(width: MediaQuery.sizeOf(context).width * 0.55, height: 12, radius: 999),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        box(width: 28, height: 28, radius: 999),
+                        const SizedBox(width: 10),
+                        box(width: 28, height: 28, radius: 999),
+                        const SizedBox(width: 10),
+                        box(width: 28, height: 28, radius: 999),
+                        const Spacer(),
+                        box(width: 70, height: 12, radius: 999),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return <Widget>[
+      SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+              child: Row(
+                children: [
+                  box(width: 42, height: 42, radius: 999),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        box(width: 120, height: 12, radius: 999),
+                        const SizedBox(height: 8),
+                        box(width: 160, height: 10, radius: 999),
+                      ],
+                    ),
+                  ),
+                  box(width: 54, height: 28, radius: 999),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Container(
+            height: 90,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : Colors.grey.shade200,
+              ),
+            ),
+            child: Row(
+              children: [
+                const SizedBox(width: 14),
+                box(width: 62, height: 62, radius: 999),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      box(width: 180, height: 14, radius: 999),
+                      const SizedBox(height: 10),
+                      box(width: 120, height: 10, radius: 999),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+              ],
+            ),
+          ),
+        ),
+      ),
+      SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => shimmerCard(),
+          childCount: 4,
+        ),
+      ),
+      const SliverToBoxAdapter(child: SizedBox(height: 28)),
+    ];
   }
 }
 
