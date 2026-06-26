@@ -6,6 +6,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../api/api_exceptions.dart';
 import '../models/feed_post_model.dart';
 import '../repositories/feed_repository.dart';
+import '../services/content_sync_service.dart';
 import '../utils/app_error_handler.dart';
 import '../utils/current_user.dart';
 import 'feed_paging_state.dart';
@@ -21,6 +22,7 @@ class FeedController extends ChangeNotifier {
   int _page = 1;
   String? _cursor;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  StreamSubscription<ContentSyncEvent>? _contentSyncSub;
   bool _disposed = false;
 
   FeedController({
@@ -30,6 +32,76 @@ class FeedController extends ChangeNotifier {
   })  : _repository = repository,
         _connectivity = connectivity ?? Connectivity() {
     _listenConnectivity();
+    _contentSyncSub = ContentSyncService().changes.listen(_applyContentSync);
+  }
+
+  void _applyContentSync(ContentSyncEvent event) {
+    if (_disposed || _state.posts.isEmpty) return;
+
+    if (event.followed != null && event.userId.isNotEmpty) {
+      var changed = false;
+      final next = _state.posts.map((post) {
+        if (post.userId != event.userId) return post;
+        if (post.isFollowed == event.followed) return post;
+        changed = true;
+        return post.copyWith(isFollowed: event.followed);
+      }).toList(growable: false);
+      if (!changed) return;
+      _setState(_state.copyWith(posts: next));
+      return;
+    }
+
+    if (event.contentId.isEmpty) return;
+    final idx = _state.posts.indexWhere((p) => p.id == event.contentId);
+    if (idx == -1) return;
+    final prev = _state.posts[idx];
+
+    switch (event.kind) {
+      case ContentSyncKind.like:
+        if (event.likesCount == null &&
+            event.likesDelta == null &&
+            prev.isLiked == (event.liked ?? prev.isLiked)) {
+          return;
+        }
+        final likesCount = event.likesCount ??
+            ((event.likesDelta ?? 0) != 0
+                ? (prev.likes + (event.likesDelta ?? 0))
+                    .clamp(0, 1 << 31)
+                    .toInt()
+                : null);
+        final updated = prev.copyWith(
+          isLiked: event.liked ?? prev.isLiked,
+          likes: likesCount ??
+              ((event.liked ?? prev.isLiked)
+                  ? prev.likes + 1
+                  : (prev.likes > 0 ? prev.likes - 1 : 0)),
+        );
+        if (updated == prev) return;
+        final next = List<FeedPost>.from(_state.posts);
+        next[idx] = updated;
+        _setState(_state.copyWith(posts: next));
+        break;
+      case ContentSyncKind.save:
+        if (prev.isSaved == (event.saved ?? prev.isSaved)) return;
+        final next = List<FeedPost>.from(_state.posts);
+        next[idx] = prev.copyWith(isSaved: event.saved ?? prev.isSaved);
+        _setState(_state.copyWith(posts: next));
+        break;
+      case ContentSyncKind.commentCount:
+        if (event.commentsCount == null && event.commentsDelta == null) return;
+        final commentsCount = event.commentsCount ??
+            ((event.commentsDelta ?? 0) != 0
+                ? (prev.comments + (event.commentsDelta ?? 0))
+                    .clamp(0, 1 << 31)
+                    .toInt()
+                : null);
+        final next = List<FeedPost>.from(_state.posts);
+        next[idx] = prev.copyWith(comments: commentsCount ?? prev.comments);
+        _setState(_state.copyWith(posts: next));
+        break;
+      case ContentSyncKind.follow:
+        break;
+    }
   }
 
   void _listenConnectivity() {
@@ -193,6 +265,7 @@ class FeedController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _connectivitySub?.cancel();
+    _contentSyncSub?.cancel();
     super.dispose();
   }
 }

@@ -409,9 +409,13 @@ class Ad {
           }
         }
         final url = _normalizeUrl(
-          map['url'] ??
+          map['link'] ??
+              map['url'] ??
               map['fileUrl'] ??
               map['file_url'] ??
+              map['fileName'] ??
+              map['filename'] ??
+              map['filname'] ??
               map['path'] ??
               map['image'] ??
               map['imageUrl'] ??
@@ -438,11 +442,12 @@ class Ad {
     }
 
     final direct = _normalizeUrl(
+      media['link'] ??
       media['fileUrl'] ??
-          media['file_url'] ??
-          media['url'] ??
-          media['image'] ??
-          media['imageUrl'] ??
+      media['file_url'] ??
+      media['url'] ??
+      media['image'] ??
+      media['imageUrl'] ??
           media['path'],
     );
     if (direct != null && direct.isNotEmpty) return direct;

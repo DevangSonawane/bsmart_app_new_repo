@@ -1189,29 +1189,32 @@ class _PromoteScreenState extends State<PromoteScreen>
                                   ],
                                 ],
                               ),
-                              if (caption.isNotEmpty) ...[
+                              if (caption.isNotEmpty || products.isNotEmpty) ...[
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    Expanded(
-                                      child: Text(
-                                        caption,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          height: 1.25,
-                                          shadows: [
-                                            Shadow(
-                                              color: Colors.black45,
-                                              offset: Offset(0, 1),
-                                              blurRadius: 2,
-                                            ),
-                                          ],
+                                    if (caption.isNotEmpty)
+                                      Expanded(
+                                        child: Text(
+                                          caption,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            height: 1.25,
+                                            shadows: [
+                                              Shadow(
+                                                color: Colors.black45,
+                                                offset: Offset(0, 1),
+                                                blurRadius: 2,
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    ),
+                                      )
+                                    else
+                                      const Spacer(),
                                     if (caption.isNotEmpty &&
                                         caption.trim().split(RegExp(r'\s+')).length > 3) ...[
                                       const SizedBox(width: 8),

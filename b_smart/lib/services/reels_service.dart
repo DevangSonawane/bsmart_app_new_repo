@@ -2,27 +2,132 @@ import '../api/posts_api.dart';
 import '../api/reels_api.dart';
 import '../models/feed_post_model.dart';
 import '../models/reel_model.dart';
+import 'content_sync_service.dart';
 import 'supabase_service.dart';
 import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/url_helper.dart';
 import '../api/api_client.dart';
 import 'package:video_player/video_player.dart';
+import 'dart:async';
 
 class ReelsService {
   static final ReelsService _instance = ReelsService._internal();
   factory ReelsService() => _instance;
-  ReelsService._internal();
 
   final PostsApi _postsApi = PostsApi();
   final ReelsApi _reelsApi = ReelsApi();
   final SupabaseService _supabase = SupabaseService();
   final List<Reel> _cache = [];
+  // Kept alive for the lifetime of the singleton so reel state stays in sync.
+  // ignore: unused_field
+  late final StreamSubscription<ContentSyncEvent> _syncSub;
+
+  void _handleSyncEvent(ContentSyncEvent event) {
+    if (event.followed != null && event.userId.isNotEmpty) {
+      var changed = false;
+      final followed = event.followState == 'requested' ? false : event.followed!;
+      for (var i = 0; i < _cache.length; i++) {
+        if (_cache[i].userId != event.userId) continue;
+        if (_cache[i].isFollowing == followed) continue;
+        _cache[i] = _cache[i].copyWith(isFollowing: followed);
+        changed = true;
+      }
+      if (changed) {
+        globalStore.dispatch(UpdateUserFollowed(event.userId, followed));
+      }
+      return;
+    }
+
+    if (event.contentId.isEmpty) return;
+    final idx = _cache.indexWhere((r) => r.id == event.contentId);
+    if (idx == -1) return;
+
+    final current = _cache[idx];
+    switch (event.kind) {
+      case ContentSyncKind.like:
+        if (event.likesCount == null &&
+            event.likesDelta == null &&
+            current.isLiked == (event.liked ?? current.isLiked)) {
+          return;
+        }
+        final likesCount = event.likesCount ??
+            ((event.likesDelta ?? 0) != 0
+                ? (current.likes + (event.likesDelta ?? 0))
+                    .clamp(0, 1 << 31)
+                    .toInt()
+                : null);
+        final next = current.copyWith(
+          isLiked: event.liked ?? current.isLiked,
+          likes: likesCount ??
+              ((event.liked ?? current.isLiked)
+                  ? current.likes + 1
+                  : (current.likes > 0 ? current.likes - 1 : 0)),
+        );
+        if (next == current) return;
+        _cache[idx] = next;
+        break;
+      case ContentSyncKind.save:
+        if (current.isSaved == (event.saved ?? current.isSaved)) return;
+        _cache[idx] = current.copyWith(
+          isSaved: event.saved ?? current.isSaved,
+        );
+        break;
+      case ContentSyncKind.commentCount:
+        if (event.commentsCount == null && event.commentsDelta == null) return;
+        final commentsCount = event.commentsCount ??
+            ((event.commentsDelta ?? 0) != 0
+                ? (current.comments + (event.commentsDelta ?? 0))
+                    .clamp(0, 1 << 31)
+                    .toInt()
+                : null);
+        _cache[idx] = current.copyWith(
+          comments: commentsCount ?? current.comments,
+        );
+        break;
+      case ContentSyncKind.follow:
+        break;
+    }
+  }
 
   List<Reel> getReels() => List.unmodifiable(_applyFeedOverrides(_cache));
 
   void clearCache() {
     _cache.clear();
+  }
+
+  void _publishSync({
+    required ContentSyncKind kind,
+    required String contentId,
+    String userId = '',
+    bool? liked,
+    int? likesCount,
+    int? likesDelta,
+    bool? saved,
+    bool? followed,
+    String? followState,
+    int? commentsCount,
+    int? commentsDelta,
+    bool? isTweet,
+  }) {
+    ContentSyncService().publish(ContentSyncEvent(
+      kind: kind,
+      contentId: contentId,
+      userId: userId,
+      liked: liked,
+      likesCount: likesCount,
+      likesDelta: likesDelta,
+      saved: saved,
+      followed: followed,
+      followState: followState,
+      commentsCount: commentsCount,
+      commentsDelta: commentsDelta,
+      isTweet: isTweet,
+    ));
+  }
+
+  ReelsService._internal() {
+    _syncSub = ContentSyncService().changes.listen(_handleSyncEvent);
   }
 
   Future<List<Reel>> fetchReels({int limit = 20, int offset = 0}) async {
@@ -295,6 +400,13 @@ class ReelsService {
     _cache[idx] = optimistic;
     globalStore.dispatch(
         UpdatePostLikedWithCount(reelId, optimistic.isLiked, optimistic.likes));
+    _publishSync(
+      kind: ContentSyncKind.like,
+      contentId: reelId,
+      liked: optimistic.isLiked,
+      likesCount: optimistic.likes,
+      likesDelta: nextLiked ? 1 : -1,
+    );
 
     try {
       if (nextLiked) {
@@ -306,6 +418,13 @@ class ReelsService {
       _cache[idx] = original;
       globalStore.dispatch(
           UpdatePostLikedWithCount(reelId, original.isLiked, original.likes));
+      _publishSync(
+        kind: ContentSyncKind.like,
+        contentId: reelId,
+        liked: original.isLiked,
+        likesCount: original.likes,
+        likesDelta: original.isLiked ? 1 : -1,
+      );
       rethrow;
     }
   }
@@ -320,6 +439,11 @@ class ReelsService {
 
     _cache[idx] = optimistic;
     globalStore.dispatch(UpdatePostSaved(reelId, optimistic.isSaved));
+    _publishSync(
+      kind: ContentSyncKind.save,
+      contentId: reelId,
+      saved: optimistic.isSaved,
+    );
 
     try {
       final saved = await _supabase.setPostSaved(reelId, save: nextSaved);
@@ -331,9 +455,19 @@ class ReelsService {
 
       _cache[idx] = optimistic.copyWith(isSaved: serverSaved);
       globalStore.dispatch(UpdatePostSaved(reelId, serverSaved));
+      _publishSync(
+        kind: ContentSyncKind.save,
+        contentId: reelId,
+        saved: serverSaved,
+      );
     } catch (_) {
       _cache[idx] = original;
       globalStore.dispatch(UpdatePostSaved(reelId, original.isSaved));
+      _publishSync(
+        kind: ContentSyncKind.save,
+        contentId: reelId,
+        saved: original.isSaved,
+      );
       rethrow;
     }
   }
@@ -348,5 +482,12 @@ class ReelsService {
       }
     }
     globalStore.dispatch(UpdateUserFollowed(userId, next));
+    _publishSync(
+      kind: ContentSyncKind.follow,
+      contentId: '',
+      userId: userId,
+      followed: next,
+      followState: next ? 'following' : 'not_following',
+    );
   }
 }

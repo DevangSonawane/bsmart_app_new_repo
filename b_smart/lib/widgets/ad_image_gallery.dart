@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'fullscreen_image_viewer.dart';
 
 class AdImageGallery extends StatefulWidget {
   final List<String> imageUrls;
@@ -57,14 +58,22 @@ class _AdImageGalleryState extends State<AdImageGallery> {
       );
     }
     if (urls.length == 1) {
-      return CachedNetworkImage(
-        imageUrl: urls.first,
-        fit: widget.fit,
-        httpHeaders: widget.httpHeaders,
-        placeholder: (context, _) =>
-            const Center(child: CircularProgressIndicator(color: Colors.white)),
-        errorWidget: (context, _, __) =>
-            const Icon(Icons.broken_image, color: Colors.white54),
+      return GestureDetector(
+        onTap: () => showFullscreenImageViewer(
+          context,
+          imageUrl: urls.first,
+          httpHeaders: widget.httpHeaders,
+        ),
+        child: CachedNetworkImage(
+          imageUrl: urls.first,
+          fit: widget.fit,
+          httpHeaders: widget.httpHeaders,
+          placeholder: (context, _) => const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
+          errorWidget: (context, _, __) =>
+              const Icon(Icons.broken_image, color: Colors.white54),
+        ),
       );
     }
 
@@ -76,16 +85,23 @@ class _AdImageGalleryState extends State<AdImageGallery> {
           itemCount: urls.length,
           onPageChanged: (value) => setState(() => _index = value),
           itemBuilder: (context, i) {
-            return CachedNetworkImage(
-              imageUrl: urls[i],
-              fit: widget.fit,
-              httpHeaders: widget.httpHeaders,
-              placeholder: (context, _) => const Center(
-                child: CircularProgressIndicator(color: Colors.white),
+            return GestureDetector(
+              onTap: () => showFullscreenImageViewer(
+                context,
+                imageUrl: urls[i],
+                httpHeaders: widget.httpHeaders,
               ),
-              errorWidget: (context, _, __) => const Icon(
-                Icons.broken_image,
-                color: Colors.white54,
+              child: CachedNetworkImage(
+                imageUrl: urls[i],
+                fit: widget.fit,
+                httpHeaders: widget.httpHeaders,
+                placeholder: (context, _) => const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+                errorWidget: (context, _, __) => const Icon(
+                  Icons.broken_image,
+                  color: Colors.white54,
+                ),
               ),
             );
           },

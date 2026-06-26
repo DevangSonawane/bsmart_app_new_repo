@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'fullscreen_image_viewer.dart';
 
 class AdPublicGallerySection extends StatelessWidget {
   final List<String> urls;
@@ -57,8 +58,6 @@ class AdPublicGallerySection extends StatelessWidget {
               itemBuilder: (context, index) {
                 return _GalleryTile(
                   url: items[index],
-                  index: index,
-                  urls: items,
                   httpHeaders: httpHeaders,
                 );
               },
@@ -72,162 +71,51 @@ class AdPublicGallerySection extends StatelessWidget {
 
 class _GalleryTile extends StatelessWidget {
   final String url;
-  final int index;
-  final List<String> urls;
   final Map<String, String>? httpHeaders;
 
   const _GalleryTile({
     required this.url,
-    required this.index,
-    required this.urls,
     required this.httpHeaders,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            PageRouteBuilder(
-              opaque: false,
-              barrierColor: Colors.black,
-              pageBuilder: (_, __, ___) => _GalleryLightbox(
-                urls: urls,
-                initialIndex: index,
-                httpHeaders: httpHeaders,
-              ),
-              transitionsBuilder: (_, animation, __, child) {
-                return FadeTransition(opacity: animation, child: child);
-              },
-            ),
-          );
-        },
-        borderRadius: BorderRadius.circular(14),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              CachedNetworkImage(
-                imageUrl: url,
-                fit: BoxFit.cover,
-                httpHeaders: httpHeaders,
-                placeholder: (context, _) => const ColoredBox(
-                  color: Color(0x11000000),
-                  child: Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-                errorWidget: (context, _, __) => const ColoredBox(
-                  color: Color(0x11000000),
-                  child: Center(
-                    child: Icon(Icons.broken_image, color: Colors.white54),
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.10),
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => showFullscreenImageViewer(
+        context,
+        imageUrl: url,
+        httpHeaders: httpHeaders,
       ),
-    );
-  }
-}
-
-class _GalleryLightbox extends StatefulWidget {
-  final List<String> urls;
-  final int initialIndex;
-  final Map<String, String>? httpHeaders;
-
-  const _GalleryLightbox({
-    required this.urls,
-    required this.initialIndex,
-    required this.httpHeaders,
-  });
-
-  @override
-  State<_GalleryLightbox> createState() => _GalleryLightboxState();
-}
-
-class _GalleryLightboxState extends State<_GalleryLightbox> {
-  late final PageController _controller =
-      PageController(initialPage: widget.initialIndex);
-  late int _index = widget.initialIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
         child: Stack(
+          fit: StackFit.expand,
           children: [
-            PageView.builder(
-              controller: _controller,
-              itemCount: widget.urls.length,
-              onPageChanged: (value) => setState(() => _index = value),
-              itemBuilder: (context, i) {
-                return InteractiveViewer(
-                  minScale: 1,
-                  maxScale: 4,
-                  child: Center(
-                    child: CachedNetworkImage(
-                      imageUrl: widget.urls[i],
-                      fit: BoxFit.contain,
-                      httpHeaders: widget.httpHeaders,
-                      placeholder: (context, _) => const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      ),
-                      errorWidget: (context, _, __) => const Icon(
-                        Icons.broken_image,
-                        color: Colors.white54,
-                        size: 32,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-            Positioned(
-              top: 10,
-              left: 10,
-              child: IconButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.close, color: Colors.white),
-                tooltip: 'Close',
+            CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              httpHeaders: httpHeaders,
+              placeholder: (context, _) => const ColoredBox(
+                color: Color(0x11000000),
+                child: Center(
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+              errorWidget: (context, _, __) => const ColoredBox(
+                color: Color(0x11000000),
+                child: Center(
+                  child: Icon(Icons.broken_image, color: Colors.white54),
+                ),
               ),
             ),
-            Positioned(
-              top: 14,
-              right: 14,
+            Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(999),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                ),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  child: Text(
-                    '${_index + 1}/${widget.urls.length}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.10),
                   ),
+                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
             ),
@@ -237,4 +125,3 @@ class _GalleryLightboxState extends State<_GalleryLightbox> {
     );
   }
 }
-

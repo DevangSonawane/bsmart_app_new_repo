@@ -8,6 +8,7 @@ import '../api/vendors_api.dart';
 import '../api/notification_preferences_api.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
+import '../widgets/fullscreen_image_viewer.dart';
 import '../widgets/ad_cta_buttons.dart';
 import 'external_link_screen.dart';
 
@@ -1419,17 +1420,25 @@ class _GalleryTab extends StatelessWidget {
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final url = deduped[index];
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.06)
-                        : Colors.black.withValues(alpha: 0.04),
-                    child: Image.network(
-                      url,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Center(
-                        child: Icon(Icons.broken_image_outlined, color: muted),
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => showFullscreenImageViewer(
+                    context,
+                    imageUrl: url,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.06)
+                          : Colors.black.withValues(alpha: 0.04),
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Center(
+                          child:
+                              Icon(Icons.broken_image_outlined, color: muted),
+                        ),
                       ),
                     ),
                   ),

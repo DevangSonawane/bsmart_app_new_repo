@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/current_user.dart';
 import '../utils/value_parsers.dart';
 import 'comment_sync_service.dart';
+import 'content_sync_service.dart';
 
 /// Service layer that was previously calling Supabase directly.
 ///
@@ -206,6 +207,11 @@ class SupabaseService {
 
   Future<void> syncFollowStatus(String targetUserId, bool followed) async {
     await _updateLocalFollow(targetUserId, followed);
+    ContentSyncService().publishFollow(
+      userId: targetUserId,
+      followed: followed,
+      followState: followed ? 'following' : 'not_following',
+    );
   }
 
   Future<void> _updateLocalFollow(String targetUserId, bool followed) async {
@@ -564,31 +570,66 @@ class SupabaseService {
 
   Future<bool> followUser(String targetUserId) async {
     bool result = false; // Default to failure for optimistic UI revert
+    String followState = 'not_following';
+    bool followed = false;
+
+    void absorbResponse(Map<String, dynamic>? res) {
+      if (res == null) return;
+      final rawStatus = (res['status'] ??
+              res['requestStatus'] ??
+              res['request_status'] ??
+              res['followRequestStatus'] ??
+              res['follow_request_status'])
+          ?.toString()
+          .trim()
+          .toLowerCase();
+      final isPending = rawStatus == 'pending' ||
+          rawStatus == 'requested' ||
+          rawStatus == 'request_pending' ||
+          rawStatus == 'follow_requested';
+      final explicitFollowed = res['followed'] as bool?;
+      final explicitRequested = res['is_requested'] as bool? ??
+          res['requested'] as bool? ??
+          res['requestPending'] as bool? ??
+          res['isPending'] as bool?;
+      if (isPending || explicitRequested == true) {
+        followState = 'requested';
+        followed = false;
+        return;
+      }
+      if (explicitFollowed != null) {
+        followed = explicitFollowed;
+        followState = explicitFollowed ? 'following' : 'not_following';
+      } else if (res['isFollowing'] == true ||
+          res['is_following'] == true ||
+          res['followed_by_me'] == true ||
+          res['is_followed_by_me'] == true) {
+        followed = true;
+        followState = 'following';
+      }
+    }
+
     try {
       final res = await _followsApi.follow(targetUserId);
-      final followed = res['followed'] as bool?;
-      if (followed != null) {
-        result = followed;
-      } else {
-        // Fallback if 'followed' key missing but no error
-        result = true;
-      }
+      absorbResponse(res);
+      result = true;
     } catch (_) {
       try {
         final res = await _followsApi.followById(targetUserId);
-        final followed = res['followed'] as bool?;
-        if (followed != null) {
-          result = followed;
-        } else {
-          result = true;
-        }
+        absorbResponse(res);
+        result = true;
       } catch (_) {
         result = false;
       }
     }
     // Only update local cache if operation appeared successful (or explicitly returned status)
     if (result) {
-      await _updateLocalFollow(targetUserId, true);
+      await _updateLocalFollow(targetUserId, followed);
+      ContentSyncService().publishFollow(
+        userId: targetUserId,
+        followed: followed,
+        followState: followState,
+      );
     }
     return result;
   }
@@ -610,6 +651,11 @@ class SupabaseService {
     // If unfollow succeeded (result=true), we update cache to false (not following)
     if (result) {
       await _updateLocalFollow(targetUserId, false);
+      ContentSyncService().publishFollow(
+        userId: targetUserId,
+        followed: false,
+        followState: 'not_following',
+      );
     }
     return result;
   }
@@ -950,6 +996,13 @@ class SupabaseService {
         isTweet: isTweet == true,
         delta: (parentId == null || parentId.isEmpty) ? 1 : 0,
       );
+      if (parentId == null || parentId.isEmpty) {
+        ContentSyncService().publishCommentCount(
+          contentId: postId,
+          commentsDelta: 1,
+          isTweet: isTweet == true,
+        );
+      }
       return created;
     } catch (_) {
       if (isTweet == true) return null;
@@ -964,6 +1017,13 @@ class SupabaseService {
           isTweet: true,
           delta: (parentId == null || parentId.isEmpty) ? 1 : 0,
         );
+        if (parentId == null || parentId.isEmpty) {
+          ContentSyncService().publishCommentCount(
+            contentId: postId,
+            commentsDelta: 1,
+            isTweet: true,
+          );
+        }
         return created;
       } catch (_) {}
       return null;
@@ -1160,7 +1220,19 @@ class SupabaseService {
             ? await _promoteReelsApi.likePromoteReel(promoteId)
             : await _promoteReelsApi.unlikePromoteReel(promoteId);
         final liked = parseLiked(res);
-        if (liked != null) return liked;
+        if (liked != null) {
+          ContentSyncService().publishLike(
+            contentId: postId,
+            liked: liked,
+            isTweet: isTweet,
+          );
+          return liked;
+        }
+        ContentSyncService().publishLike(
+          contentId: postId,
+          liked: like,
+          isTweet: isTweet,
+        );
         return like;
       }
 
@@ -1172,15 +1244,34 @@ class SupabaseService {
               ? await _postsApi.likePost(postId)
               : await _postsApi.unlikePost(postId));
       final liked = parseLiked(res);
-      if (liked != null) return liked;
+      if (liked != null) {
+        ContentSyncService().publishLike(
+          contentId: postId,
+          liked: liked,
+          isTweet: isTweet,
+        );
+        return liked;
+      }
       // As a final fallback, re-fetch the post to derive authoritative state.
       try {
         final post = (isTweet == true)
             ? await _tweetsApi.getTweet(postId)
             : await _postsApi.getPost(postId);
         final isLikedByMe = parseLiked(post);
-        if (isLikedByMe != null) return isLikedByMe;
+        if (isLikedByMe != null) {
+          ContentSyncService().publishLike(
+            contentId: postId,
+            liked: isLikedByMe,
+            isTweet: isTweet,
+          );
+          return isLikedByMe;
+        }
       } catch (_) {}
+      ContentSyncService().publishLike(
+        contentId: postId,
+        liked: like,
+        isTweet: isTweet,
+      );
       return like;
     } on BadRequestException {
       // Already in desired state; fetch current state to avoid incorrect flips.
@@ -1189,8 +1280,20 @@ class SupabaseService {
             ? await _tweetsApi.getTweet(postId)
             : await _postsApi.getPost(postId);
         final isLikedByMe = parseLiked(post);
-        if (isLikedByMe != null) return isLikedByMe;
+        if (isLikedByMe != null) {
+          ContentSyncService().publishLike(
+            contentId: postId,
+            liked: isLikedByMe,
+            isTweet: isTweet,
+          );
+          return isLikedByMe;
+        }
       } catch (_) {}
+      ContentSyncService().publishLike(
+        contentId: postId,
+        liked: like,
+        isTweet: isTweet,
+      );
       return like;
     } on UnauthorizedException {
       // Token missing/expired – cannot persist. Try to read current state; otherwise keep desired for UI.
@@ -1199,20 +1302,51 @@ class SupabaseService {
             ? await _tweetsApi.getTweet(postId)
             : await _postsApi.getPost(postId);
         final isLikedByMe = parseLiked(post);
-        if (isLikedByMe != null) return isLikedByMe;
+        if (isLikedByMe != null) {
+          ContentSyncService().publishLike(
+            contentId: postId,
+            liked: isLikedByMe,
+            isTweet: isTweet,
+          );
+          return isLikedByMe;
+        }
       } catch (_) {}
+      ContentSyncService().publishLike(
+        contentId: postId,
+        liked: like,
+        isTweet: isTweet,
+      );
       return like;
     } catch (_) {
-      if (isTweet == false) return like;
+      if (isTweet == false) {
+        ContentSyncService().publishLike(
+          contentId: postId,
+          liked: like,
+          isTweet: isTweet,
+        );
+        return like;
+      }
       // Fallback: if caller didn't know content type, try tweet like/unlike.
       try {
         final res = like
             ? await _tweetsApi.likeTweet(postId)
             : await _tweetsApi.unlikeTweet(postId);
         final liked = parseLiked(res);
-        if (liked != null) return liked;
+        if (liked != null) {
+          ContentSyncService().publishLike(
+            contentId: postId,
+            liked: liked,
+            isTweet: true,
+          );
+          return liked;
+        }
       } catch (_) {}
       // Network or other error – avoid flipping; best-effort read of server state failed.
+      ContentSyncService().publishLike(
+        contentId: postId,
+        liked: like,
+        isTweet: isTweet,
+      );
       return like;
     }
   }
@@ -1253,6 +1387,11 @@ class SupabaseService {
       result = save;
     }
     await _updateLocalSaved(postId, result);
+    ContentSyncService().publishSave(
+      contentId: postId,
+      saved: result,
+      isTweet: isTweet,
+    );
     return result;
   }
 
