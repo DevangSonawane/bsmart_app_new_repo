@@ -137,6 +137,8 @@ class _MessagingScreenState extends State<MessagingScreen>
     _pollTimer = null;
   }
 
+  int get _incomingRequestCount => _requestConversations.length;
+
   Future<void> _refreshAllSilent() async {
     if (_refreshingList) return;
     _refreshingList = true;
@@ -496,6 +498,10 @@ class _MessagingScreenState extends State<MessagingScreen>
                 _buildActiveUsersRow(context),
                 const SizedBox(height: 12),
                 _buildFilterToggles(context),
+                if (_selectedFilter == 3) ...[
+                  const SizedBox(height: 12),
+                  _buildRequestHeader(context),
+                ],
               ],
             ),
           ),
@@ -538,7 +544,7 @@ class _MessagingScreenState extends State<MessagingScreen>
                             final msg = q.isNotEmpty
                                 ? 'No results for "$q"'
                                 : _selectedFilter == 3
-                                    ? 'No message requests'
+                                    ? "Chats will appear here after you send or receive a message request."
                                     : 'No conversations yet';
                             return Padding(
                               padding:
@@ -909,15 +915,49 @@ class _MessagingScreenState extends State<MessagingScreen>
                                 : track,
                             borderRadius: BorderRadius.circular(999),
                           ),
-                          child: Text(
-                            labels[index],
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 11,
-                              color: _selectedFilter == index
-                                  ? Colors.white
-                                  : theme.textTheme.bodyMedium?.color,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                labels[index],
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11,
+                                  color: _selectedFilter == index
+                                      ? Colors.white
+                                      : theme.textTheme.bodyMedium?.color,
+                                ),
+                              ),
+                                if (index == 3 && _incomingRequestCount > 0) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  height: 18,
+                                  alignment: Alignment.center,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1,
+                                  ),
+                                  constraints:
+                                      const BoxConstraints(minWidth: 18),
+                                  decoration: BoxDecoration(
+                                    color: _selectedFilter == index
+                                        ? Colors.white.withValues(alpha: 0.20)
+                                        : const Color(0xFFF43F5E),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    _incomingRequestCount > 99
+                                        ? '99+'
+                                        : '$_incomingRequestCount',
+                                    style: const TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ),
@@ -928,6 +968,74 @@ class _MessagingScreenState extends State<MessagingScreen>
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildRequestHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final border =
+        (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06);
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF111827) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFF97316), Color(0xFFFB7185)],
+              ),
+            ),
+            child: const Icon(
+              LucideIcons.userMinus,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Message requests',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _incomingRequestCount > 0
+                      ? '$_incomingRequestCount pending request${_incomingRequestCount == 1 ? '' : 's'}'
+                      : 'No pending requests',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            LucideIcons.chevronRight,
+            color: theme.colorScheme.onSurfaceVariant,
+            size: 18,
+          ),
+        ],
       ),
     );
   }
@@ -1071,6 +1179,7 @@ class _MessagingScreenState extends State<MessagingScreen>
             : sender)
         ?.toString();
     final mine = senderId != null && senderId.isNotEmpty && senderId == uid;
+    final isRequest = _isRequest(conversation);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1148,15 +1257,44 @@ class _MessagingScreenState extends State<MessagingScreen>
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        _preview(lastMessage, mine, name),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color:
-                              Theme.of(context).textTheme.bodyMedium?.color ??
-                                  Colors.grey,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _preview(lastMessage, mine, name),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.color ??
+                                    Colors.grey,
+                              ),
+                            ),
+                          ),
+                          if (isRequest) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFEDD5),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Text(
+                                'Request',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFEA580C),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),

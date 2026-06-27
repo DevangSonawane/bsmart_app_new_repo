@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:math';
 
@@ -19,6 +20,7 @@ import '../services/chat_socket_service.dart';
 import '../services/chat_unread_service.dart';
 import '../services/ads_service.dart';
 import '../services/chat_media_auto_save_service.dart';
+import '../services/media_aspect_cache.dart';
 import '../utils/app_error_handler.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
@@ -95,6 +97,7 @@ class _GroupChatConversationScreenState
   final Set<String> _loadingSharedAdIds = <String>{};
   final Set<String> _loadingSharedPostIds = <String>{};
   final Set<String> _loadingSharedReelIds = <String>{};
+  Map<String, String>? _mediaHeaders;
   late final VoidCallback _mediaPrefsListener;
 
   static const int _pageLimit = 20;
@@ -492,6 +495,7 @@ class _GroupChatConversationScreenState
     _autoSaveService.dataSaverModeNotifier.addListener(_mediaPrefsListener);
     _conversation = widget.initialConversation;
     ChatUnreadService().markConversationRead(widget.conversationId);
+    unawaited(_loadMediaHeaders());
     _init();
     unawaited(_loadMediaPrefs());
     _scrollController.addListener(_handleScroll);
@@ -2780,6 +2784,12 @@ class _GroupChatConversationScreenState
   Map<String, dynamic>? _sharedContentFor(Map<String, dynamic> message) {
     final raw = message['sharedContent'] ?? message['shared_content'];
     if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
     return null;
   }
 
@@ -2827,6 +2837,25 @@ class _GroupChatConversationScreenState
     return 4 / 5;
   }
 
+  Future<void> _loadMediaHeaders() async {
+    if (_mediaHeaders != null) return;
+    try {
+      final token = await ApiClient().getToken();
+      if (!mounted) return;
+      if (token != null && token.isNotEmpty) {
+        _mediaHeaders = {'Authorization': 'Bearer $token'};
+        MediaAspectCache.instance.setAuthHeaders(_mediaHeaders!);
+        setState(() {});
+      }
+    } catch (_) {
+      // Best-effort only; public previews can still render without headers.
+    }
+  }
+
+  Map<String, String>? _sharedImageHeaders(String url) {
+    return UrlHelper.shouldAttachAuthHeader(url) ? _mediaHeaders : null;
+  }
+
   void _ensureSharedPreviewAspectRatio(String url) {
     final trimmed = url.trim();
     if (trimmed.isEmpty) return;
@@ -2834,7 +2863,10 @@ class _GroupChatConversationScreenState
     if (_resolvingSharedPreviewAspectRatioUrls.contains(trimmed)) return;
     _resolvingSharedPreviewAspectRatioUrls.add(trimmed);
 
-    final provider = CachedNetworkImageProvider(trimmed);
+    final provider = CachedNetworkImageProvider(
+      trimmed,
+      headers: _sharedImageHeaders(trimmed),
+    );
     final stream = provider.resolve(ImageConfiguration.empty);
 
     late final ImageStreamListener listener;
@@ -2968,7 +3000,22 @@ class _GroupChatConversationScreenState
     String norm(dynamic v) =>
         UrlHelper.normalizeUrl((v ?? '').toString().trim());
 
+    dynamic decodeJsonLike(dynamic value) {
+      if (value is! String) return value;
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return value;
+      if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) {
+        return value;
+      }
+      try {
+        return jsonDecode(trimmed);
+      } catch (_) {
+        return value;
+      }
+    }
+
     String nestedThumbnailUrl(dynamic thumbnail) {
+      thumbnail = decodeJsonLike(thumbnail);
       if (thumbnail is String) return norm(thumbnail);
       if (thumbnail is Map) {
         final t = Map<String, dynamic>.from(thumbnail);
@@ -2991,10 +3038,17 @@ class _GroupChatConversationScreenState
     }
 
     String? firstImageUrl(dynamic media) {
+      media = decodeJsonLike(media);
       if (media is Map) return firstImageUrl([media]);
       if (media is! List) return null;
       for (final item in media) {
         if (item is String) {
+          final decodedItem = decodeJsonLike(item);
+          if (decodedItem is Map || decodedItem is List) {
+            final nested = firstImageUrl(decodedItem);
+            if (nested != null && nested.isNotEmpty) return nested;
+            continue;
+          }
           final url = norm(item);
           if (url.isNotEmpty && !_isVideoLikeUrl(url)) return url;
           continue;
@@ -3680,6 +3734,7 @@ class _GroupChatConversationScreenState
               child: preview.isNotEmpty
                   ? SafeNetworkImage(
                       url: preview,
+                      headers: _sharedImageHeaders(preview),
                       fit: fit,
                       assumeRaster: isLikelyRasterImage(preview),
                       trustExtension: isLikelyRasterImage(preview),

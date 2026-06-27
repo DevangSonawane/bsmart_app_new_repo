@@ -32,6 +32,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   String _activeTab = 'all';
   bool _markingAll = false;
   bool _isVendor = false;
+  final Map<String, String> _followRequestActionState = <String, String>{};
   StreamSubscription<List<NotificationItem>>? _notificationSub;
   Timer? _pollTimer;
   final String _wsStatus = 'polling';
@@ -156,6 +157,51 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _deleteNotification(String notificationId) async {
     await _notificationService.deleteNotification(notificationId);
+  }
+
+  String _requesterIdOf(NotificationItem notification) {
+    final sender = notification.sender ?? const <String, dynamic>{};
+    final fromSender =
+        (sender['_id'] ?? sender['id'] ?? sender['user_id'])?.toString().trim();
+    if (fromSender != null && fromSender.isNotEmpty) return fromSender;
+    return notification.relatedId?.trim() ?? '';
+  }
+
+  Future<void> _handleFollowRequestDecision(
+    NotificationItem notification,
+    String decision,
+  ) async {
+    final notificationId = notification.id.trim();
+    final requesterId = _requesterIdOf(notification);
+    if (notificationId.isEmpty || requesterId.isEmpty) return;
+    if (_followRequestActionState.containsKey(notificationId)) return;
+    setState(() => _followRequestActionState[notificationId] = decision);
+    try {
+      if (decision == 'accept') {
+        await _followRequestsApi.acceptFollowRequest(requesterId);
+      } else {
+        await _followRequestsApi.declineFollowRequest(requesterId);
+      }
+      await _deleteNotification(notificationId);
+      if (!mounted) return;
+      await _loadNotifications(force: false, showLoading: false);
+      await _loadFollowRequestsCount();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            decision == 'accept'
+                ? 'Failed to accept follow request.'
+                : 'Failed to decline follow request.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _followRequestActionState.remove(notificationId));
+      }
+    }
   }
 
   void _handleTabChange(String tab) {
@@ -608,6 +654,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     onTap: () => _handleNotificationTap(n),
                     onDelete: () => _deleteNotification(n.id),
                     onMarkRead: n.isRead ? null : () => _markAsRead(n.id),
+                    onFollowDecision: (n.typeKey == 'follow_request')
+                        ? (decision) =>
+                            _handleFollowRequestDecision(n, decision)
+                        : null,
+                    followRequestActionState:
+                        _followRequestActionState[n.id.trim()],
                   ),
                 )
                 .toList(),
@@ -637,6 +689,8 @@ class _NotificationRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final VoidCallback? onMarkRead;
+  final void Function(String decision)? onFollowDecision;
+  final String? followRequestActionState;
 
   const _NotificationRow({
     required this.notification,
@@ -644,6 +698,8 @@ class _NotificationRow extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     required this.onMarkRead,
+    required this.onFollowDecision,
+    required this.followRequestActionState,
   });
 
   @override
@@ -655,6 +711,15 @@ class _NotificationRow extends StatelessWidget {
     final name =
         (sender['full_name'] ?? sender['username'] ?? 'Someone').toString();
     final avatar = sender['avatar_url']?.toString();
+    final isFollowRequest = notification.typeKey == 'follow_request';
+    final isActing = followRequestActionState != null;
+    final thumbnailUrl = (notification.metadata?['thumbnail_url'] ??
+            notification.metadata?['thumbnailUrl'] ??
+            notification.metadata?['image_url'] ??
+            notification.metadata?['imageUrl'] ??
+            notification.metadata?['media_url'] ??
+            notification.metadata?['mediaUrl'])
+        ?.toString();
 
     return InkWell(
       onTap: onTap,
@@ -773,40 +838,132 @@ class _NotificationRow extends StatelessWidget {
                             fontSize: 11, color: Color(0xFFF97316)),
                       ),
                     ),
+                  if (isFollowRequest) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        SizedBox(
+                          height: 30,
+                          child: ElevatedButton(
+                            onPressed: isActing
+                                ? null
+                                : () => onFollowDecision?.call('accept'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 6,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: isActing && followRequestActionState == 'accept'
+                                ? const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text('Confirm'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 30,
+                          child: ElevatedButton(
+                            onPressed: isActing
+                                ? null
+                                : () => onFollowDecision?.call('decline'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6),
+                              foregroundColor:
+                                  isDark ? Colors.white : Colors.black87,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 6,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: isActing && followRequestActionState == 'decline'
+                                ? SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                  )
+                                : const Text('Delete'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (onMarkRead != null)
+            if (!isFollowRequest)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.network(
+                          thumbnailUrl,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  if (onMarkRead != null)
+                    IconButton(
+                      onPressed: onMarkRead,
+                      icon: const Icon(
+                        LucideIcons.checkCheck,
+                        size: 18,
+                        color: Color(0xFF3B82F6),
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(minWidth: 36, minHeight: 36),
+                      splashRadius: 20,
+                    ),
                   IconButton(
-                    onPressed: onMarkRead,
+                    onPressed: onDelete,
                     icon: const Icon(
-                      LucideIcons.checkCheck,
+                      LucideIcons.trash2,
                       size: 18,
-                      color: Color(0xFF3B82F6),
+                      color: Color(0xFFF87171),
                     ),
                     padding: EdgeInsets.zero,
                     constraints:
                         const BoxConstraints(minWidth: 36, minHeight: 36),
                     splashRadius: 20,
                   ),
-                IconButton(
-                  onPressed: onDelete,
-                  icon: const Icon(
-                    LucideIcons.trash2,
-                    size: 18,
-                    color: Color(0xFFF87171),
-                  ),
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 36),
-                  splashRadius: 20,
-                ),
-              ],
-            ),
+                ],
+              ),
           ],
         ),
       ),

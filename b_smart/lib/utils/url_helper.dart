@@ -116,7 +116,20 @@ class UrlHelper {
     if (_isPlaceholderToken(u) || _hasPlaceholderPathToken(u)) return '';
 
     // If it's already a full URL, return it
-    if (u.startsWith('http://') || u.startsWith('https://')) return u;
+    if (u.startsWith('http://') || u.startsWith('https://')) {
+      try {
+        final uri = Uri.parse(u);
+        final host = uri.host.toLowerCase();
+        final path = uri.path;
+        final isApiHost = host == 'api.bebsmart.in' || host.startsWith('api.');
+        if (isApiHost &&
+            path.startsWith('/uploads/') &&
+            !path.startsWith('/api/uploads/')) {
+          return uri.replace(path: '/api$path').toString();
+        }
+      } catch (_) {}
+      return u;
+    }
 
     // Clean the base URL (keep /api because backend serves media under /api/uploads)
     final baseUri = Uri.parse(ApiConfig.baseUrl);

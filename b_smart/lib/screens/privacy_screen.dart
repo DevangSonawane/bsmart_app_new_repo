@@ -46,6 +46,17 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
   String _id(Map<String, dynamic> r) =>
       (r['_id'] ?? r['id'] ?? r['requestId'] ?? '').toString().trim();
 
+  String _requesterId(Map<String, dynamic> r) {
+    final rawUser = r['user'] ?? r['from'] ?? r['requester'] ?? r['sender'];
+    if (rawUser is Map) {
+      final userId = (rawUser['_id'] ?? rawUser['id'] ?? rawUser['user_id'])
+          ?.toString()
+          .trim();
+      if (userId != null && userId.isNotEmpty) return userId;
+    }
+    return _id(r);
+  }
+
   String _username(Map<String, dynamic> r) =>
       (r['username'] ?? r['handle'] ?? r['full_name'] ?? r['name'] ?? '')
           .toString()
@@ -721,7 +732,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                         )
                       : Column(
                           children: _requests.map((r) {
-                            final id = _id(r);
+                            final id = _requesterId(r);
                             final username = _username(r);
                             final avatar = _avatar(r);
                             final bio = _bio(r);

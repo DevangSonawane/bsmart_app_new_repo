@@ -19,6 +19,7 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
 
   bool _loading = true;
   String? _error;
+  int _pendingCount = 0;
   List<Map<String, dynamic>> _requests = const [];
   final Set<String> _accepting = <String>{};
   final Set<String> _rejecting = <String>{};
@@ -35,6 +36,12 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
   Map<String, dynamic> _user(Map<String, dynamic> r) {
     final u = r['user'] ?? r['from'] ?? r['requester'] ?? r['sender'];
     return u is Map ? Map<String, dynamic>.from(u) : r;
+  }
+
+  String _requesterId(Map<String, dynamic> r) {
+    final userId = _userId(r);
+    if (userId.isNotEmpty) return userId;
+    return _id(r);
   }
 
   String _userId(Map<String, dynamic> r) =>
@@ -81,6 +88,7 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
       if (!mounted) return;
       setState(() {
         _requests = page.requests;
+        _pendingCount = page.count;
         _loading = false;
       });
     } catch (_) {
@@ -93,7 +101,7 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
   }
 
   Future<void> _accept(Map<String, dynamic> r) async {
-    final requesterId = _id(r);
+    final requesterId = _requesterId(r);
     final key = requesterId;
     if (key.isEmpty || _accepting.contains(key)) return;
     setState(() => _accepting.add(key));
@@ -114,7 +122,7 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
   }
 
   Future<void> _reject(Map<String, dynamic> r) async {
-    final requesterId = _id(r);
+    final requesterId = _requesterId(r);
     final key = requesterId;
     if (key.isEmpty || _rejecting.contains(key)) return;
     setState(() => _rejecting.add(key));
@@ -139,6 +147,8 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bg = theme.scaffoldBackgroundColor;
+    final border =
+        (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06);
 
     return Scaffold(
       backgroundColor: bg,
@@ -201,10 +211,98 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
                     : ListView.separated(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                        itemCount: _requests.length,
+                        itemCount: _requests.length + 1,
                         separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (context, index) {
-                          final r = _requests[index];
+                          if (index == 0) {
+                            return Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF111827)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: border),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(14),
+                                      gradient: const LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          Color(0xFF2563EB),
+                                          Color(0xFF60A5FA),
+                                        ],
+                                      ),
+                                    ),
+                                    child: const Icon(
+                                      LucideIcons.userPlus,
+                                      size: 18,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Follow requests',
+                                          style: theme.textTheme.titleMedium
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _pendingCount == 0
+                                              ? 'No pending requests'
+                                              : '$_pendingCount pending request${_pendingCount == 1 ? '' : 's'}',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: theme
+                                                .colorScheme.onSurfaceVariant,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (_pendingCount > 0)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF2563EB)
+                                            .withValues(alpha: 0.12),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                      ),
+                                      child: Text(
+                                        _pendingCount > 9
+                                            ? '9+'
+                                            : '$_pendingCount',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF2563EB),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          final r = _requests[index - 1];
                           final avatar = _avatar(r);
                           final name = _name(r);
                           final username = _username(r);
@@ -280,6 +378,7 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
                                 ),
                                 const SizedBox(width: 12),
                                 Column(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     SizedBox(
                                       width: 92,
@@ -324,9 +423,10 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
                                             : () => unawaited(_reject(r)),
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: isDark
-                                              ? const Color(0xFF374151)
-                                              : const Color(0xFF4B5563),
-                                          foregroundColor: Colors.white,
+                                              ? const Color(0xFF1F2937)
+                                              : const Color(0xFFF3F4F6),
+                                          foregroundColor:
+                                              isDark ? Colors.white : Colors.black87,
                                           textStyle: const TextStyle(
                                             fontWeight: FontWeight.w800,
                                             fontSize: 12,
@@ -346,7 +446,7 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
                                                   color: Colors.white,
                                                 ),
                                               )
-                                            : const Text('Reject'),
+                                            : const Text('Decline'),
                                       ),
                                     ),
                                   ],
