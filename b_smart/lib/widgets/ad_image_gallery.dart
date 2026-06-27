@@ -8,6 +8,7 @@ class AdImageGallery extends StatefulWidget {
   final BoxFit fit;
   final double indicatorBottomPadding;
   final bool showThumbnails;
+  final bool showIndicators;
 
   const AdImageGallery({
     super.key,
@@ -16,6 +17,7 @@ class AdImageGallery extends StatefulWidget {
     this.fit = BoxFit.cover,
     this.indicatorBottomPadding = 18,
     this.showThumbnails = true,
+    this.showIndicators = true,
   });
 
   @override
@@ -64,15 +66,18 @@ class _AdImageGalleryState extends State<AdImageGallery> {
           imageUrl: urls.first,
           httpHeaders: widget.httpHeaders,
         ),
-        child: CachedNetworkImage(
-          imageUrl: urls.first,
-          fit: widget.fit,
-          httpHeaders: widget.httpHeaders,
-          placeholder: (context, _) => const Center(
-            child: CircularProgressIndicator(color: Colors.white),
+        child: ColoredBox(
+          color: Colors.black,
+          child: CachedNetworkImage(
+            imageUrl: urls.first,
+            fit: widget.fit,
+            httpHeaders: widget.httpHeaders,
+            placeholder: (context, _) => const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+            errorWidget: (context, _, __) =>
+                const Icon(Icons.broken_image, color: Colors.white54),
           ),
-          errorWidget: (context, _, __) =>
-              const Icon(Icons.broken_image, color: Colors.white54),
         ),
       );
     }
@@ -91,16 +96,19 @@ class _AdImageGalleryState extends State<AdImageGallery> {
                 imageUrl: urls[i],
                 httpHeaders: widget.httpHeaders,
               ),
-              child: CachedNetworkImage(
-                imageUrl: urls[i],
-                fit: widget.fit,
-                httpHeaders: widget.httpHeaders,
-                placeholder: (context, _) => const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-                errorWidget: (context, _, __) => const Icon(
-                  Icons.broken_image,
-                  color: Colors.white54,
+              child: ColoredBox(
+                color: Colors.black,
+                child: CachedNetworkImage(
+                  imageUrl: urls[i],
+                  fit: widget.fit,
+                  httpHeaders: widget.httpHeaders,
+                  placeholder: (context, _) => const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                  errorWidget: (context, _, __) => const Icon(
+                    Icons.broken_image,
+                    color: Colors.white54,
+                  ),
                 ),
               ),
             );
@@ -131,10 +139,11 @@ class _AdImageGalleryState extends State<AdImageGallery> {
                   ),
                   const SizedBox(height: 8),
                 ],
-                _DotsIndicator(
-                  count: urls.length,
-                  index: _index.clamp(0, urls.length - 1),
-                ),
+                if (widget.showIndicators)
+                  _DotsIndicator(
+                    count: urls.length,
+                    index: _index.clamp(0, urls.length - 1),
+                  ),
               ],
             ),
           ),

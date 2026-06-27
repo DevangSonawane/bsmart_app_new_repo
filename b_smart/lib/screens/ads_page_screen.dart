@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -1494,10 +1495,12 @@ class AdVideoItem extends StatefulWidget {
 }
 
 class _AdVideoItemState extends State<AdVideoItem>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const Duration _ctaRevealDelay = Duration(seconds: 3);
   VideoPlayerController? _controller;
   late final AnimationController _watchProgressController =
+      AnimationController(vsync: this);
+  late final AnimationController _videoProgressController =
       AnimationController(vsync: this);
   final AdsService _adsService = AdsService();
   final SupabaseService _supabase = SupabaseService();
@@ -1515,8 +1518,11 @@ class _AdVideoItemState extends State<AdVideoItem>
   bool _loopRestartInFlight = false;
   late bool _lastPopupVisible;
   Timer? _watchGateTimer;
+  Ticker? _videoProgressTicker;
   int _watchTotalMs = 15000;
   bool _watchProgressRunning = false;
+  Duration _videoProgressBasePosition = Duration.zero;
+  DateTime? _videoProgressBaseTimestamp;
   Map<String, String>? _mediaHeaders;
   bool _viewMarked = false;
   Timer? _ctaTimer;
@@ -1686,6 +1692,10 @@ class _AdVideoItemState extends State<AdVideoItem>
   @override
   void initState() {
     super.initState();
+    debugPrint(
+      '[AdsDetail] init ad=${widget.ad.id} active=${widget.isActive} '
+      'ctaVisible=$_ctaVisible bottomInset=${widget.bottomInset}',
+    );
     _isLiked = widget.ad.isLikedByMe;
     _isSaved = widget.ad.isSavedByMe;
     _likesCount = widget.ad.likesCount;
@@ -1758,8 +1768,12 @@ class _AdVideoItemState extends State<AdVideoItem>
       _offlineRetryAttempts = 0;
       _resetCtaCountdown();
       _watchProgressController.value = 0;
+      _videoProgressController.value = 0;
+      _videoProgressBasePosition = Duration.zero;
+      _videoProgressBaseTimestamp = null;
       _watchProgressRunning = false;
       _watchProgressController.stop(canceled: true);
+      _stopVideoProgressTicker();
       _controller?.removeListener(_onVideoTick);
       unawaited(_controller?.dispose());
       _controller = null;
@@ -1790,6 +1804,7 @@ class _AdVideoItemState extends State<AdVideoItem>
         _userPaused = true;
         unawaited(_safePause());
       }
+      _startOrStopVideoProgressTicker();
       _startOrStopProgress();
     }
     _startOrStopCtaCountdown();
@@ -1800,8 +1815,12 @@ class _AdVideoItemState extends State<AdVideoItem>
     _controller?.removeListener(_onVideoTick);
     _controller?.dispose();
     _watchGateTimer?.cancel();
+    _stopVideoProgressTicker();
+    _videoProgressTicker?.dispose();
+    _videoProgressTicker = null;
     _connectivitySub?.cancel();
     _watchProgressController.dispose();
+    _videoProgressController.dispose();
     _ctaTimer?.cancel();
     widget.popupVisibility.removeListener(_onPopupVisibilityChanged);
     _unregisterPauseHook(_registeredPauseId);
@@ -1855,6 +1874,89 @@ class _AdVideoItemState extends State<AdVideoItem>
     _updateWatchProgressRunning();
   }
 
+  void _syncVideoProgress({bool updateDisplay = false}) {
+    final controller = _controller;
+    if (!mounted || controller == null || !_isInitialized || !_isVideoAd) {
+      return;
+    }
+    final value = controller.value;
+    if (!value.isInitialized) return;
+    final duration = value.duration;
+    if (duration <= Duration.zero) {
+      if (updateDisplay && _videoProgressController.value != 0) {
+        _videoProgressController.value = 0;
+      }
+      _videoProgressBasePosition = Duration.zero;
+      _videoProgressBaseTimestamp = null;
+      return;
+    }
+    final progress =
+        (value.position.inMilliseconds / duration.inMilliseconds)
+            .clamp(0.0, 1.0);
+    if (updateDisplay &&
+        (_videoProgressController.value - progress).abs() > 0.001) {
+      _videoProgressController.value = progress;
+    }
+    _videoProgressBasePosition = value.position;
+    _videoProgressBaseTimestamp = DateTime.now();
+  }
+
+  void _startOrStopVideoProgressTicker() {
+    final shouldRun = mounted &&
+        widget.isActive &&
+        _isVideoAd &&
+        _isInitialized &&
+        !_userPaused;
+
+    if (!shouldRun) {
+      _stopVideoProgressTicker();
+      return;
+    }
+
+    _videoProgressTicker ??= createTicker(_tickVideoProgress);
+    if (!_videoProgressTicker!.isActive) {
+      _syncVideoProgress(updateDisplay: true);
+      _videoProgressTicker!.start();
+    }
+  }
+
+  void _stopVideoProgressTicker() {
+    if (_videoProgressTicker?.isActive ?? false) {
+      _videoProgressTicker?.stop();
+    }
+  }
+
+  void _tickVideoProgress(Duration _) {
+    final controller = _controller;
+    if (!mounted || controller == null || !_isInitialized || !_isVideoAd) {
+      return;
+    }
+
+    final value = controller.value;
+    if (!value.isInitialized || value.hasError) return;
+    if (!widget.isActive || _userPaused || !value.isPlaying || value.isBuffering) {
+      return;
+    }
+
+    final duration = value.duration;
+    if (duration <= Duration.zero) return;
+
+    final basePosition = _videoProgressBasePosition;
+    final baseTimestamp = _videoProgressBaseTimestamp;
+    if (baseTimestamp == null) {
+      _syncVideoProgress(updateDisplay: true);
+      return;
+    }
+
+    final estimatedPosition = basePosition + DateTime.now().difference(baseTimestamp);
+    final progress = (estimatedPosition.inMilliseconds / duration.inMilliseconds)
+        .clamp(0.0, 1.0);
+
+    if ((_videoProgressController.value - progress).abs() > 0.001) {
+      _videoProgressController.value = progress;
+    }
+  }
+
   Future<void> _showLikeRewardPopup({required bool isLike}) async {
     if (!mounted) return;
     await AppModalPopup.show<void>(
@@ -1886,12 +1988,14 @@ class _AdVideoItemState extends State<AdVideoItem>
         if (widget.isActive) {
           await _controller!.play();
         }
-        _startOrStopProgress();
         if (mounted) {
           setState(() {
             _isInitialized = true;
             _offlineRetryAttempts = 0;
           });
+          _syncVideoProgress(updateDisplay: true);
+          _startOrStopVideoProgressTicker();
+          _startOrStopProgress();
         }
       } catch (e) {
         debugPrint('Error initializing video: $e');
@@ -1941,6 +2045,9 @@ class _AdVideoItemState extends State<AdVideoItem>
 
     final value = controller.value;
     if (!value.isInitialized || value.hasError) return;
+    if (_isVideoAd) {
+      _startOrStopVideoProgressTicker();
+    }
     _updateWatchProgressRunning();
     final duration = value.duration;
     final atEnd = value.isCompleted ||
@@ -1957,6 +2064,8 @@ class _AdVideoItemState extends State<AdVideoItem>
       unawaited(() async {
         try {
           await controller.seekTo(Duration.zero);
+          _syncVideoProgress(updateDisplay: true);
+          _startOrStopVideoProgressTicker();
           if (widget.isActive && !_userPaused) {
             await controller.play();
           }
@@ -2044,6 +2153,9 @@ class _AdVideoItemState extends State<AdVideoItem>
     final allowAdvance =
         _isVideoAd ? _allowWatchProgressForVideo() : !_userPaused;
     _setWatchProgressRunning(allowAdvance);
+    if (_isVideoAd) {
+      _startOrStopVideoProgressTicker();
+    }
     _startOrStopCtaCountdown();
   }
 
@@ -2156,6 +2268,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       setState(() {
         _ctaVisible = true;
       });
+      debugPrint('[AdsDetail] CTA visible immediately ad=${widget.ad.id}');
       _stopCtaCountdown(accumulate: false);
       return;
     }
@@ -2166,6 +2279,10 @@ class _AdVideoItemState extends State<AdVideoItem>
       setState(() {
         _ctaVisible = true;
       });
+      debugPrint(
+        '[AdsDetail] CTA visible after countdown ad=${widget.ad.id} '
+        'elapsed=${_ctaCountdownAccumulated.inMilliseconds}ms',
+      );
       _stopCtaCountdown(accumulate: false);
     });
   }
@@ -2656,6 +2773,8 @@ class _AdVideoItemState extends State<AdVideoItem>
                   httpHeaders:
                       needsHeaders ? (_mediaHeaders ?? const {}) : null,
                   indicatorBottomPadding: 18,
+                  showThumbnails: false,
+                  showIndicators: false,
                 );
               }
 
@@ -2800,12 +2919,16 @@ class _AdVideoItemState extends State<AdVideoItem>
                   height: 4,
                   color: Colors.white.withValues(alpha: 0.22),
                   child: AnimatedBuilder(
-                    animation: _watchProgressController,
+                    animation: _isVideoAd
+                        ? _videoProgressController
+                        : _watchProgressController,
                     builder: (context, _) {
                       return FractionallySizedBox(
                         alignment: Alignment.centerLeft,
-                        widthFactor:
-                            _watchProgressController.value.clamp(0.0, 1.0),
+                        widthFactor: (_isVideoAd
+                                ? _videoProgressController.value
+                                : _watchProgressController.value)
+                            .clamp(0.0, 1.0),
                         child: Container(color: Colors.white),
                       );
                     },
@@ -4849,7 +4972,14 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                   width: double.infinity,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  color: Colors.grey.withValues(alpha: 0.12),
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                    border: Border(
+                      top: BorderSide(
+                        color: theme.dividerColor.withValues(alpha: 0.18),
+                      ),
+                    ),
+                  ),
                   child: Row(
                     children: [
                       Expanded(

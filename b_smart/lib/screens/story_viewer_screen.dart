@@ -179,6 +179,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
     final currentStory = currentGroup.stories[_currentStoryIndex];
     _syncLikedStateForStory(currentStory);
+    _markCurrentStoryViewed(currentStory);
     _logStoryDebug(
       'startAutoPlay currentStory id=${currentStory.id} type=${currentStory.mediaType} '
       'url=${currentStory.mediaUrl} texts=${currentStory.texts?.length ?? 0} '
@@ -196,6 +197,21 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       _waitingForMedia = false;
       _startAutoPlayTimer(currentStory);
     }
+  }
+
+  void _markCurrentStoryViewed(Story story) {
+    final id = story.id.trim();
+    if (id.isEmpty || _viewedItemIds.contains(id)) return;
+    _viewedItemIds.add(id);
+    _logStoryDebug('markViewed story=$id');
+    unawaited(() async {
+      try {
+        await _feedService.markItemViewed(id);
+        _logStoryDebug('markViewed success story=$id');
+      } catch (e) {
+        _logStoryDebug('markViewed failed story=$id error=$e');
+      }
+    }());
   }
 
   void _startAutoPlayTimer(Story currentStory) {

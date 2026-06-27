@@ -2272,7 +2272,7 @@ class _SmoothReelProgressBarState extends State<_SmoothReelProgressBar>
   double _playbackSpeed = 1.0;
   bool _isPlaying = false;
   int _baseEpochMs = 0;
-  static const int _snapBackToleranceMs = 120;
+  static const int _snapBackToleranceMs = 600;
   int _lastNotifiedDurationMs = 0;
   int _lastNotifiedBasePosMs = -1;
 

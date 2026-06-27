@@ -97,13 +97,16 @@ class _GalleryTile extends StatelessWidget {
               fit: BoxFit.cover,
               httpHeaders: httpHeaders,
               placeholder: (context, _) => const ColoredBox(
-                color: Color(0x11000000),
+                color: Colors.black,
                 child: Center(
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 ),
               ),
               errorWidget: (context, _, __) => const ColoredBox(
-                color: Color(0x11000000),
+                color: Colors.black,
                 child: Center(
                   child: Icon(Icons.broken_image, color: Colors.white54),
                 ),

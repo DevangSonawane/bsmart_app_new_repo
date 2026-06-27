@@ -964,7 +964,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                           fallbackTags: ad.hashtags,
                         ),
                         const SizedBox(height: 18),
-                        if (_vendorAdsLoading || _vendorAds.isNotEmpty) ...[
+                        if (_vendorAds.isNotEmpty) ...[
                           Row(
                             children: [
                               Expanded(
@@ -1006,13 +1006,11 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                             ],
                           ),
                           const SizedBox(height: 10),
-                          _vendorAdsLoading
-                              ? _VendorAdsSkeleton(isDark: isDark)
-                              : _VendorAdsGrid(
-                                  ads: _vendorAds,
-                                  onTap: (id) => Navigator.of(context)
-                                      .pushReplacementNamed('/ads/$id/details'),
-                                ),
+                          _VendorAdsGrid(
+                            ads: _vendorAds,
+                            onTap: (id) => Navigator.of(context)
+                                .pushReplacementNamed('/ads/$id/details'),
+                          ),
                           const SizedBox(height: 18),
                         ],
                         if (galleryUrls.isNotEmpty) ...[
@@ -1221,12 +1219,7 @@ class _TopCommentsSection extends StatelessWidget {
 
     final dividerColor =
         isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black12;
-    final skeletonLine =
-        isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black12;
-
-    final items = commentsLoading
-        ? List.generate(3, (i) => const <String, dynamic>{})
-        : comments.take(3).toList();
+    final items = commentsLoading ? const <Map<String, dynamic>>[] : comments.take(3).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1239,28 +1232,38 @@ class _TopCommentsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: items.length,
-          separatorBuilder: (_, __) => Divider(height: 18, color: dividerColor),
-          itemBuilder: (context, index) {
-            final raw = items[index];
-            final avatarUrl =
-                commentsLoading ? '' : _pickAvatarUrl(Map.from(raw));
-            final username =
-                commentsLoading ? '' : _pickUsername(Map.from(raw));
-            final text = commentsLoading ? '' : _pickText(Map.from(raw));
-            return _TopCommentRow(
-              isDark: isDark,
-              avatarUrl: avatarUrl,
-              username: username,
-              text: text,
-              skeletonLine: skeletonLine,
-              loading: commentsLoading,
-            );
-          },
-        ),
+        if (commentsLoading)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.80)
+                      : Colors.black.withValues(alpha: 0.55),
+                ),
+              ),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => Divider(height: 18, color: dividerColor),
+            itemBuilder: (context, index) {
+              final raw = items[index];
+              return _TopCommentRow(
+                isDark: isDark,
+                avatarUrl: _pickAvatarUrl(Map.from(raw)),
+                username: _pickUsername(Map.from(raw)),
+                text: _pickText(Map.from(raw)),
+              );
+            },
+          ),
       ],
     );
   }
@@ -1271,16 +1274,12 @@ class _TopCommentRow extends StatelessWidget {
   final String avatarUrl;
   final String username;
   final String text;
-  final Color skeletonLine;
-  final bool loading;
 
   const _TopCommentRow({
     required this.isDark,
     required this.avatarUrl,
     required this.username,
     required this.text,
-    required this.skeletonLine,
-    required this.loading,
   });
 
   @override
@@ -1309,7 +1308,7 @@ class _TopCommentRow extends StatelessWidget {
                   : Colors.black.withValues(alpha: 0.04),
             ),
             child: ClipOval(
-              child: !loading && avatarUrl.trim().isNotEmpty
+              child: avatarUrl.trim().isNotEmpty
                   ? CachedNetworkImage(
                       imageUrl: avatarUrl,
                       fit: BoxFit.cover,
@@ -1340,74 +1339,33 @@ class _TopCommentRow extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: loading
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      height: 10,
-                      width: MediaQuery.of(context).size.width * 0.32,
-                      decoration: BoxDecoration(
-                        color: skeletonLine,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      height: 10,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: skeletonLine,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      height: 10,
-                      width: MediaQuery.of(context).size.width * 0.60,
-                      decoration: BoxDecoration(
-                        color: skeletonLine,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      height: 10,
-                      width: MediaQuery.of(context).size.width * 0.72,
-                      decoration: BoxDecoration(
-                        color: skeletonLine,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                  ],
-                )
-              : Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: name,
-                        style: TextStyle(
-                          color: textColor.withValues(alpha: 0.95),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const TextSpan(text: '  '),
-                      TextSpan(
-                        text: text.trim().isEmpty ? '-' : text.trim(),
-                        style: TextStyle(
-                          color: textColor,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: name,
+                  style: TextStyle(
+                    color: textColor.withValues(alpha: 0.95),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
                   ),
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.start,
                 ),
+                const TextSpan(text: '  '),
+                TextSpan(
+                  text: text.trim().isEmpty ? '-' : text.trim(),
+                  style: TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.start,
+          ),
         ),
       ],
     );
@@ -1471,33 +1429,6 @@ class _TagsSection extends StatelessWidget {
           ),
         );
       }).toList(),
-    );
-  }
-}
-
-class _VendorAdsSkeleton extends StatelessWidget {
-  final bool isDark;
-  const _VendorAdsSkeleton({required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    final base = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.06);
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: 6,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 9 / 16,
-      ),
-      itemBuilder: (_, __) => ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: ColoredBox(color: base),
-      ),
     );
   }
 }

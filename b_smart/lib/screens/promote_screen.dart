@@ -1630,7 +1630,7 @@ class _SmoothVideoProgressBarState extends State<_SmoothVideoProgressBar>
   bool _isPlaying = false;
   int _baseEpochMs = 0;
 
-  static const int _snapBackToleranceMs = 120;
+  static const int _snapBackToleranceMs = 600;
   int _lastNotifiedDurationMs = 0;
   int _lastNotifiedBasePosMs = -1;
 
