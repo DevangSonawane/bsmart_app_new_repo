@@ -110,6 +110,71 @@ class _LoginScreenState extends State<LoginScreen>
     return Theme.of(context).colorScheme.onSurface;
   }
 
+  InputDecoration _fieldDecoration(
+    BuildContext context, {
+    required String labelText,
+    required String hintText,
+    required IconData icon,
+    Widget? suffixIcon,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final fillColor = isDark
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55)
+        : Colors.white;
+    final mutedColor = theme.colorScheme.onSurfaceVariant;
+
+    return InputDecoration(
+      labelText: labelText,
+      hintText: hintText,
+      labelStyle: TextStyle(color: mutedColor),
+      hintStyle: TextStyle(color: mutedColor),
+      prefixIcon: Icon(icon, color: mutedColor),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: fillColor,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 18,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: InstagramTheme.borderGrey,
+          width: 1,
+        ),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: InstagramTheme.borderGrey,
+          width: 1,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: InstagramTheme.accentBlue,
+          width: 1.6,
+        ),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: InstagramTheme.errorRed,
+          width: 1,
+        ),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: InstagramTheme.errorRed,
+          width: 1.6,
+        ),
+      ),
+    );
+  }
+
   Future<void> _showOtpDialog({
     required String identifier,
     required String password,
@@ -319,31 +384,37 @@ class _LoginScreenState extends State<LoginScreen>
                       const SizedBox(height: 32),
                       TextFormField(
                         controller: _identifierController,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
                         style: TextStyle(color: _fieldTextColor(context)),
-                        decoration: InputDecoration(
-                          labelText: 'Identity',
-                          hintText: 'Email, Phone, or Username',
-                          prefixIcon: const Icon(LucideIcons.user),
-                          filled: true,
-                          fillColor: _fieldFillColor(context),
+                        decoration: _fieldDecoration(
+                          context,
+                          labelText: 'Email Address',
+                          hintText: 'john@example.com',
+                          icon: LucideIcons.mail,
                         ),
                         validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter your email, phone, or username';
+                          final email = (value ?? '').trim();
+                          if (email.isEmpty) {
+                            return 'Please enter your email address';
+                          }
+                          if (!email.contains('@') || !email.contains('.')) {
+                            return 'Please enter a valid email address';
                           }
                           return null;
                         },
                       ),
-                      const SizedBox(height: 20),
-                      // Password Field
+                      const SizedBox(height: 14),
                       TextFormField(
                         controller: _passwordController,
                         obscureText: !_isPasswordVisible,
+                        autofillHints: const [AutofillHints.password],
                         style: TextStyle(color: _fieldTextColor(context)),
-                        decoration: InputDecoration(
+                        decoration: _fieldDecoration(
+                          context,
                           labelText: 'Password',
-                          hintText: 'Enter your password',
-                          prefixIcon: const Icon(LucideIcons.lock),
+                          hintText: '••••••••',
+                          icon: LucideIcons.keyRound,
                           suffixIcon: IconButton(
                             icon: Icon(
                               _isPasswordVisible
