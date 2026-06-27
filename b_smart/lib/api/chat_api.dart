@@ -435,6 +435,38 @@ class ChatApi {
     }
   }
 
+  /// Declines a pending message request conversation.
+  ///
+  /// Mirrors the React web app: `DELETE /chat/conversations/:id/decline`.
+  Future<Map<String, dynamic>> declineConversationRequest({
+    required String conversationId,
+  }) async {
+    final id = conversationId.trim();
+    if (id.isEmpty) return <String, dynamic>{};
+
+    const deleteLabel = 'DELETE /chat/conversations/{id}/decline';
+    developer.log(
+      '[ChatApi] declineConversationRequest conversationId=$id attempt="$deleteLabel"',
+      name: 'ChatApi',
+    );
+    try {
+      final res = await _client.delete('/chat/conversations/$id/decline');
+      return res is Map<String, dynamic> ? res : <String, dynamic>{};
+    } catch (e) {
+      developer.log(
+        '[ChatApi] declineConversationRequest failed attempt="$deleteLabel" error="$e"',
+        name: 'ChatApi',
+      );
+      if (e is ApiException && e.statusCode == 404) {
+        throw NotFoundException(
+          message: 'DELETE /chat/conversations/$id/decline → ${e.message}',
+          body: e.body,
+        );
+      }
+      rethrow;
+    }
+  }
+
   /// Deletes a conversation (used for declining/deleting message requests).
   ///
   /// Backend implementations differ; try a few common routes/methods.

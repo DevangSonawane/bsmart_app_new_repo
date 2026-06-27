@@ -908,7 +908,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     if (convId.isEmpty) return;
     setState(() => _requestActionLoading = true);
     try {
-      await _chatApi.deleteConversation(conversationId: convId);
+      await _chatApi.declineConversationRequest(conversationId: convId);
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (e, st) {
@@ -1505,7 +1505,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               (_otherProfile ?? other)?['private_account'] ??
               (_otherProfile ?? other)?['author_is_private'],
         );
-    final shouldGateMessaging = isRequestPending && isOtherPrivate;
+    final shouldGateMessaging = isRequestPending;
     final requestWho = (otherHandle != null &&
             otherHandle.isNotEmpty &&
             otherHandle != otherDisplayName)
@@ -2053,7 +2053,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                               height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Delete'),
+                          : const Text('Decline'),
                     ),
                   ),
                 ),
