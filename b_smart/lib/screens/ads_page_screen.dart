@@ -24,10 +24,10 @@ import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/ad_cta_buttons.dart';
 import '../widgets/app_popups/app_modal_popup.dart';
-import '../widgets/app_popups/app_toast.dart';
 import '../widgets/app_popups/like_reward_popup_card.dart';
 import '../widgets/app_popups/popup_visibility_controller.dart';
 import '../widgets/app_popups/view_recorded_popup_card.dart';
+import '../widgets/app_popups/view_reward_popup_card.dart';
 import '../widgets/ad_image_gallery.dart';
 import '../widgets/share_content_modal.dart';
 import '../widgets/offline_retry_banner.dart';
@@ -591,14 +591,16 @@ class _AdsPageScreenState extends State<AdsPageScreen>
     final viewCount = viewCountRaw is num
         ? viewCountRaw.round()
         : int.tryParse(viewCountRaw?.toString() ?? '');
+    final rewardAmount = rewarded
+        ? (coins ?? (ad.coinReward > 0 ? ad.coinReward : 10))
+        : (coins != null && coins > 0 ? coins : null);
     _logAdRewardDebug(
-      'Parsed reward state adId=${ad.id} rewarded=$rewarded coinsRaw=$coinsRaw coins=$coins viewCount=$viewCount adCoinReward=${ad.coinReward}',
+      'Parsed reward state adId=${ad.id} rewarded=$rewarded coinsRaw=$coinsRaw coins=$coins viewCount=$viewCount rewardAmount=$rewardAmount adCoinReward=${ad.coinReward}',
     );
-    if (rewarded) {
-      final reward = (coins ?? (ad.coinReward > 0 ? ad.coinReward : 10));
-      _logAdRewardDebug('Reward granted adId=${ad.id} amount=$reward');
+    if (rewardAmount != null && rewardAmount > 0) {
+      _logAdRewardDebug('Reward granted adId=${ad.id} amount=$rewardAmount');
       unawaited(_rememberAdViewed(ad.id));
-      await _showViewRewardPopup(amount: reward);
+      await _showViewRewardPopup(amount: rewardAmount);
       return;
     }
     if (res.containsKey('rewarded') || res.containsKey('view_count')) {
@@ -613,10 +615,17 @@ class _AdsPageScreenState extends State<AdsPageScreen>
 
   Future<void> _showViewRewardPopup({required int amount}) async {
     if (!mounted) return;
-    await AppToast.showCoinEarned(
+    await AppModalPopup.show<void>(
       context: context,
-      amount: amount,
       visibility: _popupVisibility,
+      barrierDismissible: false,
+      builder: (dialogContext, close) {
+        return ViewRewardPopupCard(
+          amount: amount,
+          subtitle: 'You earned $amount coins by watching the full ad',
+          onOk: close,
+        );
+      },
     );
   }
 
