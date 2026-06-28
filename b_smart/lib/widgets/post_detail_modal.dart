@@ -60,6 +60,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
   final Map<String, double> _resolvedImageAspectRatios = <String, double>{};
   final Set<String> _resolvingImageAspectRatioUrls = <String>{};
   late bool _isTweet;
+  String? _currentUserId;
   StreamSubscription<CommentChangeEvent>? _commentSyncSub;
 
   String? _extractId(dynamic value) {
@@ -143,6 +144,20 @@ class _PostDetailModalState extends State<PostDetailModal> {
   }
 
   bool _isCommentLiked(Map<String, dynamic> comment) {
+    final uid = _currentUserId?.trim();
+    final likes = comment['likes'];
+    if (uid != null && uid.isNotEmpty && likes is List) {
+      for (final entry in likes) {
+        if (entry is String && entry == uid) return true;
+        if (entry is Map) {
+          final likedUserId = _extractId(entry['user_id']) ??
+              _extractId(entry['id']) ??
+              _extractId(entry['_id']) ??
+              (entry['user'] is Map ? _extractId(entry['user']) : null);
+          if (likedUserId != null && likedUserId == uid) return true;
+        }
+      }
+    }
     return _asBool(comment['is_liked_by_me']) ||
         _asBool(comment['liked_by_me']) ||
         _asBool(comment['liked']) ||
@@ -170,6 +185,25 @@ class _PostDetailModalState extends State<PostDetailModal> {
     final current = _commentLikesCount(comment);
     comment['likes_count'] =
         liked ? current + 1 : (current > 0 ? current - 1 : 0);
+  }
+
+  void _applyExternalCommentLikeState(String commentId, bool liked) {
+    final id = commentId.trim();
+    if (id.isEmpty) return;
+    setState(() {
+      for (var i = 0; i < _comments.length; i++) {
+        final comment = _comments[i];
+        if (_commentId(comment) != id) continue;
+        final currentLiked = _isCommentLiked(comment);
+        if (currentLiked == liked) continue;
+        final currentCount = _commentLikesCount(comment);
+        final updated = Map<String, dynamic>.from(comment);
+        _applyCommentLikeState(updated, liked);
+        updated['likes_count'] =
+            liked ? currentCount + 1 : (currentCount > 0 ? currentCount - 1 : 0);
+        _comments[i] = updated;
+      }
+    });
   }
 
   bool _isDuplicateCommentLikeError(Object error) {
@@ -376,6 +410,10 @@ class _PostDetailModalState extends State<PostDetailModal> {
     _isTweet = widget.isTweet;
     _commentSyncSub = _commentSync.changes.listen((event) {
       if (!mounted) return;
+      if (event.commentId != null && event.liked != null) {
+        _applyExternalCommentLikeState(event.commentId!, event.liked!);
+        return;
+      }
       if (event.postId != widget.postId || event.isTweet != _isTweet) return;
       unawaited(_load());
     });
@@ -479,6 +517,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
     }
     final comments = await _svc.getComments(widget.postId, isTweet: _isTweet);
     final currentUserId = await CurrentUser.id;
+    final currentUserIdString = currentUserId?.toString();
     final isLiked =
         _extractLikedFlag(post, currentUserId: currentUserId) ?? false;
     final likeCount = _extractLikesCount(post) ?? 0;
@@ -495,6 +534,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
         _likeCount = likeCount;
         _loadingPost = false;
         _loadingComments = false;
+        _currentUserId = currentUserIdString;
       });
       _syncCurrentMediaPlayback();
     }
@@ -609,6 +649,12 @@ class _PostDetailModalState extends State<PostDetailModal> {
           latest['likes_count'] =
               likedNow ? prevCount + 1 : (prevCount > 0 ? prevCount - 1 : 0);
         }
+        _svc.syncCommentLikeState(
+          postId: widget.postId,
+          commentId: id,
+          liked: likedNow,
+          isTweet: _isTweet,
+        );
         if (index >= 0 && index < _comments.length) {
           _comments[index] = latest;
         }
@@ -620,6 +666,12 @@ class _PostDetailModalState extends State<PostDetailModal> {
           final reconciled = Map<String, dynamic>.from(comment);
           _applyCommentLikeState(reconciled, targetLiked);
           reconciled['likes_count'] = prevCount;
+          _svc.syncCommentLikeState(
+            postId: widget.postId,
+            commentId: id,
+            liked: targetLiked,
+            isTweet: _isTweet,
+          );
           if (index >= 0 && index < _comments.length) {
             _comments[index] = reconciled;
           }

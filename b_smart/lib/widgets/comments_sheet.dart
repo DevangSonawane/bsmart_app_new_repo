@@ -103,12 +103,56 @@ class _CommentsSheetState extends State<CommentsSheet> {
     store.dispatch(UpdatePostCommentsCount(widget.postId, next < 0 ? 0 : next));
   }
 
+  void _applyExternalCommentLikeState(String commentId, bool liked) {
+    final id = commentId.trim();
+    if (id.isEmpty) return;
+
+    void updateComment(Map<String, dynamic> comment) {
+      if (_commentIdOf(comment) != id) return;
+      final currentLiked = _liked.contains(id);
+      if (currentLiked == liked) return;
+      final currentCount = _toInt(
+        comment['likes_count'] ??
+            comment['likesCount'] ??
+            comment['like_count'] ??
+            comment['likeCount'] ??
+            comment['likes'],
+      );
+      comment['is_liked_by_me'] = liked;
+      comment['liked_by_me'] = liked;
+      comment['liked'] = liked;
+      comment['is_liked'] = liked;
+      comment['likes_count'] =
+          liked ? currentCount + 1 : (currentCount > 0 ? currentCount - 1 : 0);
+    }
+
+    setState(() {
+      for (final comment in _comments) {
+        updateComment(comment);
+      }
+      for (final replies in _replies.values) {
+        for (final reply in replies) {
+          updateComment(reply);
+        }
+      }
+      if (liked) {
+        _liked.add(id);
+      } else {
+        _liked.remove(id);
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _isTweet = widget.isTweet;
     _commentSyncSub = _commentSync.changes.listen((event) {
       if (!mounted) return;
+      if (event.commentId != null && event.liked != null) {
+        _applyExternalCommentLikeState(event.commentId!, event.liked!);
+        return;
+      }
       if (event.postId != widget.postId || event.isTweet != _isTweet) return;
       unawaited(_load());
     });
@@ -676,7 +720,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
           } else {
             _liked.remove(id);
           }
-          _svc.setCommentLikeOverride(id, likedNow);
+          _svc.syncCommentLikeState(
+            postId: widget.postId,
+            commentId: id,
+            liked: likedNow,
+            isTweet: _isTweet,
+          );
         }
         _comments[index] = cc;
       });
@@ -692,7 +741,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
           } else {
             _liked.remove(id);
           }
-          _svc.setCommentLikeOverride(id, targetLiked);
+          _svc.syncCommentLikeState(
+            postId: widget.postId,
+            commentId: id,
+            liked: targetLiked,
+            isTweet: _isTweet,
+          );
         });
         return;
       }
@@ -985,7 +1039,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
           } else {
             _liked.remove(id);
           }
-          _svc.setCommentLikeOverride(id, likedNow);
+          _svc.syncCommentLikeState(
+            postId: widget.postId,
+            commentId: id,
+            liked: likedNow,
+            isTweet: _isTweet,
+          );
         }
         list[replyIndex] = latest;
       });
@@ -1254,9 +1313,11 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                             mainAxisAlignment:
                                                 MainAxisAlignment.center,
                                             children: [
-                                        IconButton(
-                                          icon: Icon(
-                                                  liked ? Icons.favorite : Icons.favorite_border,
+                                              IconButton(
+                                                icon: Icon(
+                                                  liked
+                                                      ? Icons.favorite
+                                                      : Icons.favorite_border,
                                                   size: 20,
                                                   color: liked
                                                       ? Colors.red

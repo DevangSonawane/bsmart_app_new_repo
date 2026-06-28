@@ -25,78 +25,30 @@ class SupabaseService {
   final TweetCommentsApi _tweetCommentsApi = TweetCommentsApi();
   final UploadApi _uploadApi = UploadApi();
   final FollowsApi _followsApi = FollowsApi();
-  final Map<String, bool> _commentLikeOverrides = {};
-  String _commentLikeOverridesLoadedForUserId = '';
-
   void clearSessionCache() {
-    _commentLikeOverrides.clear();
-    _commentLikeOverridesLoadedForUserId = '';
     _repliesCache.clear();
   }
 
-  Future<void> _ensureCommentLikeOverridesLoaded() async {
-    final uid = (await CurrentUser.id)?.trim() ?? '';
-    if (uid.isEmpty) return;
-    if (_commentLikeOverridesLoadedForUserId == uid) return;
-    _commentLikeOverridesLoadedForUserId = uid;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('comment_like_overrides_$uid');
-      if (raw == null || raw.isEmpty) return;
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return;
-      for (final entry in decoded.entries) {
-        final key = entry.key.toString().trim();
-        if (key.isEmpty) continue;
-        final v = entry.value;
-        final liked = v == true || v == 1 || v == '1' || v == 'true';
-        _commentLikeOverrides[key] = liked;
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _persistCommentLikeOverride(String commentId, bool liked) async {
-    final uid = (await CurrentUser.id)?.trim() ?? '';
-    if (uid.isEmpty) return;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'comment_like_overrides_$uid';
-      final raw = prefs.getString(key);
-      final next = <String, dynamic>{};
-      if (raw != null && raw.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(raw);
-          if (decoded is Map) {
-            for (final e in decoded.entries) {
-              next[e.key.toString()] = e.value;
-            }
-          }
-        } catch (_) {}
-      }
-      next[commentId] = liked;
-      await prefs.setString(key, jsonEncode(next));
-    } catch (_) {}
-  }
-
   void setCommentLikeOverride(String commentId, bool liked) {
-    final id = commentId.trim();
-    if (id.isEmpty) return;
-    _commentLikeOverrides[id] = liked;
-    () async {
-      await _persistCommentLikeOverride(id, liked);
-    }();
+    // No-op: comment likes are now treated as live state, not cached state.
+  }
+
+  void syncCommentLikeState({
+    required String postId,
+    required String commentId,
+    required bool liked,
+    required bool isTweet,
+  }) {
+    CommentSyncService().notifyChanged(
+      postId: postId,
+      isTweet: isTweet,
+      commentId: commentId.trim(),
+      liked: liked,
+    );
   }
 
   bool? getCommentLikeOverride(String commentId) {
-    final id = commentId.trim();
-    if (id.isEmpty) return null;
-    // Best-effort: load persisted overrides lazily. Do not block reads.
-    if (_commentLikeOverridesLoadedForUserId.isEmpty) {
-      () async {
-        await _ensureCommentLikeOverridesLoaded();
-      }();
-    }
-    return _commentLikeOverrides[id];
+    return null;
   }
 
   final Map<String, List<Map<String, dynamic>>> _repliesCache = {};

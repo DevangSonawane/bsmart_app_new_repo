@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/reel_model.dart';
+import '../services/comment_sync_service.dart';
 import '../services/reel_comments_service.dart';
 import '../theme/instagram_theme.dart';
 
@@ -17,12 +20,27 @@ class ReelCommentsScreen extends StatefulWidget {
 
 class _ReelCommentsScreenState extends State<ReelCommentsScreen> {
   final ReelCommentsService _commentsService = ReelCommentsService();
+  final CommentSyncService _commentSync = CommentSyncService();
   final TextEditingController _commentController = TextEditingController();
   String? _replyingToCommentId;
   String? _replyingToUserName;
+  StreamSubscription<CommentChangeEvent>? _commentSyncSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _commentSyncSub = _commentSync.changes.listen((event) {
+      if (!mounted) return;
+      if (event.postId != widget.reel.id) return;
+      if (event.commentId == null || event.liked == null) return;
+      _commentsService.setLikeState(widget.reel.id, event.commentId!, event.liked!);
+      setState(() {});
+    });
+  }
 
   @override
   void dispose() {
+    _commentSyncSub?.cancel();
     _commentController.dispose();
     super.dispose();
   }
@@ -302,10 +320,10 @@ class _ReelCommentsScreenState extends State<ReelCommentsScreen> {
                                 color: comment.isLiked ? Colors.blue : Colors.grey,
                                 fontSize: 12,
                               ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
+                    ),
                       const SizedBox(width: 16),
                       GestureDetector(
                         onTap: () => _startReply(comment),

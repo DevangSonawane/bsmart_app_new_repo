@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/promote_reels_api.dart';
+import '../services/comment_sync_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
@@ -50,6 +51,7 @@ class PromoteCommentsSheet extends StatefulWidget {
 
 class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
   final _api = PromoteReelsApi();
+  final _commentSync = CommentSyncService();
   final _controller = TextEditingController();
   final _inputFocus = FocusNode();
 
@@ -59,6 +61,7 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
   final Map<String, List<Map<String, dynamic>>> _replies = {};
   final Set<String> _liked = <String>{};
   final Set<String> _loadingReplies = <String>{};
+  StreamSubscription<CommentChangeEvent>? _commentSyncSub;
 
   String? _replyParentId;
   String? _replyingTo;
@@ -131,15 +134,54 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
     return '${y}y';
   }
 
+  void _applyExternalCommentLikeState(String commentId, bool liked) {
+    final id = commentId.trim();
+    if (id.isEmpty) return;
+
+    void updateIn(List<Map<String, dynamic>> list) {
+      for (final c in list) {
+        if (_commentId(c) != id) continue;
+        final currentLiked = _liked.contains(id);
+        if (currentLiked == liked) return;
+        final cur = _toInt(c['likes_count'] ?? c['likesCount'] ?? c['like_count']);
+        c['is_liked_by_me'] = liked;
+        c['liked_by_me'] = liked;
+        c['liked'] = liked;
+        c['is_liked'] = liked;
+        c['likes_count'] = liked ? cur + 1 : (cur > 0 ? cur - 1 : 0);
+        return;
+      }
+    }
+
+    setState(() {
+      updateIn(_comments);
+      for (final entry in _replies.entries) {
+        updateIn(entry.value);
+      }
+      if (liked) {
+        _liked.add(id);
+      } else {
+        _liked.remove(id);
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _count = widget.initialCount;
+    _commentSyncSub = _commentSync.changes.listen((event) {
+      if (!mounted) return;
+      if (event.postId != widget.promoteReelId) return;
+      if (event.commentId == null || event.liked == null) return;
+      _applyExternalCommentLikeState(event.commentId!, event.liked!);
+    });
     unawaited(_init());
   }
 
   @override
   void dispose() {
+    _commentSyncSub?.cancel();
     _controller.dispose();
     _inputFocus.dispose();
     super.dispose();
@@ -282,6 +324,12 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
       } else {
         await _api.likeComment(commentId);
       }
+      _commentSync.notifyChanged(
+        postId: widget.promoteReelId,
+        isTweet: false,
+        commentId: commentId,
+        liked: !wasLiked,
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() {

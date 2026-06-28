@@ -240,20 +240,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return 0;
   }
 
-  bool _isCommentLiked(Map<String, dynamic> comment) {
+  bool _isCommentLiked(Map<String, dynamic> comment, {String? currentUserId}) {
     final cid = _commentId(comment);
     if (cid.isNotEmpty && _likedCommentIds.contains(cid)) return true;
+    final uid = (currentUserId ?? _currentUserId)?.trim();
+    final likes = comment['likes'];
+    if (uid != null && uid.isNotEmpty && likes is List) {
+      for (final entry in likes) {
+        if (entry is String && entry == uid) return true;
+        if (entry is Map) {
+          final likedUserId = _extractId(entry['user_id']) ??
+              _extractId(entry['id']) ??
+              _extractId(entry['_id']) ??
+              (entry['user'] is Map ? _extractId(entry['user']) : null);
+          if (likedUserId != null && likedUserId == uid) return true;
+        }
+      }
+    }
     return _asBool(comment['is_liked_by_me']) ||
         _asBool(comment['liked_by_me']) ||
         _asBool(comment['liked']) ||
         _asBool(comment['is_liked']);
   }
 
-  void _syncLikedCommentIdsFromState() {
+  void _syncLikedCommentIdsFromState([String? currentUserId]) {
     _likedCommentIds.clear();
     void collect(Map<String, dynamic> comment) {
       final cid = _commentId(comment);
-      if (cid.isNotEmpty && _isCommentLiked(comment)) {
+      if (cid.isNotEmpty &&
+          _isCommentLiked(comment, currentUserId: currentUserId)) {
         _likedCommentIds.add(cid);
       }
     }
@@ -278,6 +293,43 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         liked ? current + 1 : (current - 1 < 0 ? 0 : current - 1);
   }
 
+  void _applyExternalCommentLikeState(String commentId, bool liked) {
+    final id = commentId.trim();
+    if (id.isEmpty) return;
+    var changed = false;
+
+    void updateComment(Map<String, dynamic> comment) {
+      if (_commentId(comment) != id) return;
+      final currentLiked = _likedCommentIds.contains(id);
+      if (currentLiked == liked) return;
+      final currentCount = _commentLikesCount(comment);
+      _applyLikeState(comment, liked);
+      comment['likes_count'] =
+          liked ? currentCount + 1 : (currentCount > 0 ? currentCount - 1 : 0);
+      changed = true;
+    }
+
+    setState(() {
+      for (final comment in _comments) {
+        updateComment(comment);
+      }
+      for (final replies in _replies.values) {
+        for (final reply in replies) {
+          updateComment(reply);
+        }
+      }
+      if (liked) {
+        _likedCommentIds.add(id);
+      } else {
+        _likedCommentIds.remove(id);
+      }
+    });
+
+    if (changed) {
+      _svc.setCommentLikeOverride(id, liked);
+    }
+  }
+
   bool _isDuplicateCommentLikeError(Object error) {
     if (error is! ApiException) return false;
     final message = error.message.toLowerCase();
@@ -296,6 +348,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _isTweet = widget.isTweet || (widget.initialPost?.isTweet ?? false);
     _commentSyncSub = _commentSync.changes.listen((event) {
       if (!mounted) return;
+      if (event.commentId != null && event.liked != null) {
+        _applyExternalCommentLikeState(event.commentId!, event.liked!);
+        return;
+      }
       if (event.postId != widget.postId || event.isTweet != _isTweet) return;
       unawaited(_load());
     });
@@ -481,7 +537,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _replies
           ..clear()
           ..addAll(seededReplies);
-        _syncLikedCommentIdsFromState();
         _isLiked = isLiked;
         _isSaved = isSaved;
         _loadingPost = false;
@@ -491,6 +546,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _likesSummaryText = likesSummaryText;
         _likesSummaryUserId = likesSummaryUserId;
       });
+      _syncLikedCommentIdsFromState(meId2);
       _syncCurrentMediaPlayback();
       _prefetchRepliesForTopLevelComments(topLevelComments);
       final serverCount = tryParseInt(
@@ -770,7 +826,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         } else {
           _likedCommentIds.remove(id);
         }
-        _svc.setCommentLikeOverride(id, likedNow);
+        _svc.syncCommentLikeState(
+          postId: widget.postId,
+          commentId: id,
+          liked: likedNow,
+          isTweet: _isTweet,
+        );
         if (isReply && parentId != null && replyIndex != null) {
           final list = _replies[parentId];
           if (list != null &&
@@ -798,7 +859,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           } else {
             _likedCommentIds.remove(id);
           }
-          _svc.setCommentLikeOverride(id, targetLiked);
+          _svc.syncCommentLikeState(
+            postId: widget.postId,
+            commentId: id,
+            liked: targetLiked,
+            isTweet: _isTweet,
+          );
           if (isReply && parentId != null && replyIndex != null) {
             final list = _replies[parentId];
             if (list != null &&
