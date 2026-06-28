@@ -725,7 +725,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     }
 
                     final asset = banners[index];
-                    final w = 56 * bannerAspect;
+                    const w = 56 * bannerAspect;
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(14),
                       child: SizedBox(
@@ -1328,7 +1328,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
     }
 
-    final isVendor = (profile?['role'] as String?)?.toLowerCase() == 'vendor';
+    final isVendor = (profile['role'] as String?)?.toLowerCase() == 'vendor';
     List<Ad> vendorAds = [];
     if (isVendor && targetId.isNotEmpty) {
       try {
@@ -1400,7 +1400,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             map['media_urls'] as List<dynamic>? ??
             const <dynamic>[]);
 
-        String _thumbFrom(dynamic raw) {
+        String thumbFrom(dynamic raw) {
           if (raw == null) return '';
           if (raw is String) return UrlHelper.normalizeUrl(raw);
           if (raw is Map) {
@@ -1420,7 +1420,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
           if (raw is List) {
             for (final e in raw) {
-              final v = _thumbFrom(e);
+              final v = thumbFrom(e);
               if (v.isNotEmpty) return v;
             }
             return '';
@@ -1428,7 +1428,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           return UrlHelper.normalizeUrl(raw.toString());
         }
 
-        String _mediaFromMap(Map<String, dynamic> mm) {
+        String mediaFromMap(Map<String, dynamic> mm) {
           final cand = (mm['fileUrl'] ??
                   mm['file_url'] ??
                   mm['url'] ??
@@ -1452,28 +1452,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
           if (m is Map) {
             final mm = Map<String, dynamic>.from(m);
-            final url = _mediaFromMap(mm);
+            final url = mediaFromMap(mm);
             if (url.isNotEmpty) mediaUrls.add(url);
 
-            if (thumbnailUrl == null || thumbnailUrl!.isEmpty) {
+            if (thumbnailUrl == null || thumbnailUrl.isEmpty) {
               final thumbField = mm['thumbnail'] ??
                   mm['thumbnailUrl'] ??
                   mm['thumbnail_url'] ??
                   mm['thumb'] ??
                   mm['thumbnails'] ??
                   mm['poster'];
-              final thumb = _thumbFrom(thumbField);
+              final thumb = thumbFrom(thumbField);
               if (thumb.isNotEmpty) thumbnailUrl = thumb;
             }
           }
         }
 
-        if (thumbnailUrl == null || thumbnailUrl!.isEmpty) {
+        if (thumbnailUrl == null || thumbnailUrl.isEmpty) {
           final postThumb = map['thumbnail'] ??
               map['thumbnailUrl'] ??
               map['thumb'] ??
               map['poster'];
-          final thumb = _thumbFrom(postThumb);
+          final thumb = thumbFrom(postThumb);
           if (thumb.isNotEmpty) thumbnailUrl = thumb;
         }
         final typeStr = ((map['type'] as String?) ??
@@ -1543,10 +1543,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           userName: userName,
           mediaType: mediaType,
           mediaUrls: mediaUrls,
-          thumbnailUrl:
-              (thumbnailUrl != null && thumbnailUrl!.trim().isNotEmpty)
-                  ? thumbnailUrl!.trim()
-                  : null,
+          thumbnailUrl: (thumbnailUrl != null && thumbnailUrl.trim().isNotEmpty)
+              ? thumbnailUrl.trim()
+              : null,
           caption: caption,
           hashtags: hashtags,
           createdAt: createdAt,
@@ -1626,21 +1625,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ]);
     }
     // 3. Fallback to API profile response (if available)
-    if (followersCount == null && profile != null) {
-      followersCount = tryReadInt(profile, const [
-        'followers_count',
-        'followersCount',
-        'followers',
-        'follower_count',
-      ]);
-    }
-    if (followingCount == null && profile != null) {
-      followingCount = tryReadInt(profile, const [
-        'following_count',
-        'followingCount',
-        'following',
-      ]);
-    }
+    followersCount ??= tryReadInt(profile, const [
+      'followers_count',
+      'followersCount',
+      'followers',
+      'follower_count',
+    ]);
+    followingCount ??= tryReadInt(profile, const [
+      'following_count',
+      'followingCount',
+      'following',
+    ]);
 
     // 4. Update with fresh API data (only if successful and valid)
     // Fix: Check if API returns 0 but Redux has a non-zero value, prevent overwrite
@@ -1765,9 +1760,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (meId != null && meId.isNotEmpty) {
       // Prioritize server-provided follow status if available
-      if (profile != null &&
-          (profile.containsKey('is_followed_by_me') ||
-              profile.containsKey('is_following'))) {
+      if ((profile.containsKey('is_followed_by_me') ||
+          profile.containsKey('is_following'))) {
         isFollowedByMe =
             (profile['is_followed_by_me'] ?? profile['is_following']) == true;
         // Sync local cache with authoritative server state
@@ -1811,7 +1805,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Determine correct post count:
       // If we received fewer posts than the requested page limit, we know we have the complete list.
       // In that case, trust the actual list length over the potentially stale count from the server.
-      int finalPostsCount = (profile?['posts_count'] as int?) ?? posts.length;
+      int finalPostsCount = (profile['posts_count'] as int?) ?? posts.length;
       if (posts.length < _initialPostsLimit) {
         finalPostsCount = posts.length;
       }
@@ -1819,7 +1813,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final merged = {
         ...?_profile, // 1. Start with existing local state as fallback
         ...derivedFromPosts, // 2. Update with info derived from posts (if any)
-        ...?profile, // 3. Override with fresh API profile data (if success)
+        ...profile, // 3. Override with fresh API profile data (if success)
         if (vendorInfo != null) 'vendor': vendorInfo,
         'is_followed_by_me': isFollowedByMe,
         'is_requested': isFollowRequested,
@@ -1827,7 +1821,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'posts_count': finalPostsCount,
         'followers_count': finalFollowers,
         'following_count': finalFollowing,
-        'wallet_balance': (profile?['wallet_balance'] as int?) ?? walletBalance,
+        'wallet_balance': (profile['wallet_balance'] as int?) ?? walletBalance,
         'account_type': userAccount?.accountType.toString().split('.').last,
         'engagement_score': userAccount?.engagementScore,
       };
@@ -1835,8 +1829,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Fill validated from vendor object only when missing on the user profile.
       if (vendorInfo != null &&
           merged['validated'] == null &&
-          vendorInfo!['validated'] != null) {
-        merged['validated'] = vendorInfo!['validated'];
+          vendorInfo['validated'] != null) {
+        merged['validated'] = vendorInfo['validated'];
       }
 
       final reelsFromService =
@@ -2921,7 +2915,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final fullName = displayProfile?['full_name'] as String?;
         final bio = displayProfile?['bio'] as String?;
         final avatar = displayProfile?['avatar_url'] as String?;
-        String _asId(dynamic v) {
+        String asId(dynamic v) {
           if (v == null) return '';
           final s = v.toString().trim();
           return s;
@@ -2933,7 +2927,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           displayProfile?['user_id'],
           displayProfile?['userId'],
           displayProfile?['uid'],
-        ].map(_asId).firstWhere((s) => s.isNotEmpty, orElse: () => '');
+        ].map(asId).firstWhere((s) => s.isNotEmpty, orElse: () => '');
         final postsCount =
             (displayProfile?['posts_count'] as int?) ?? _posts.length;
         final followers = tryReadInt(displayProfile, const [
@@ -3008,7 +3002,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   IconButton(
                     icon: Icon(LucideIcons.menu, color: fgColor),
-                    onPressed: () => Navigator.of(context).pushNamed('/settings'),
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed('/settings'),
                   ),
                 ],
               ],
@@ -3860,14 +3855,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     height: 96,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: DesignTokens.instaGradient,
-                      boxShadow: [
-                        BoxShadow(
-                            color: DesignTokens.instaPink.withAlpha(80),
-                            blurRadius: 8)
-                      ],
+                      color: theme.cardColor,
+                      border: Border.all(
+                        color: theme.dividerColor.withValues(alpha: 0.45),
+                      ),
                     ),
-                    padding: const EdgeInsets.all(3),
+                    padding: const EdgeInsets.all(0),
                     child: Container(
                       decoration: BoxDecoration(
                           shape: BoxShape.circle, color: theme.cardColor),

@@ -246,7 +246,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           style: TextStyle(color: Colors.grey.shade600, height: 1.4),
         ),
         const SizedBox(height: 22),
-        _FieldLabel('Email Address'),
+        const _FieldLabel('Email Address'),
         const SizedBox(height: 8),
         TextField(
           controller: _emailController,
@@ -290,7 +290,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           style: TextStyle(color: Colors.grey.shade600, height: 1.4),
         ),
         const SizedBox(height: 18),
-        _FieldLabel('Verification Code'),
+        const _FieldLabel('Verification Code'),
         const SizedBox(height: 8),
         TextField(
           controller: _codeController,
@@ -304,7 +304,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        _FieldLabel('New Password'),
+        const _FieldLabel('New Password'),
         const SizedBox(height: 8),
         TextField(
           controller: _passwordController,
@@ -316,7 +316,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        _FieldLabel('Confirm Password'),
+        const _FieldLabel('Confirm Password'),
         const SizedBox(height: 8),
         TextField(
           controller: _confirmPasswordController,
@@ -537,8 +537,8 @@ class _StepIcon extends StatelessWidget {
       child: Container(
         width: 76,
         height: 76,
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFEDF3),
+        decoration: const BoxDecoration(
+          color: Color(0xFFFFEDF3),
           shape: BoxShape.circle,
         ),
         child: Icon(icon, size: 36, color: DesignTokens.instaPink),

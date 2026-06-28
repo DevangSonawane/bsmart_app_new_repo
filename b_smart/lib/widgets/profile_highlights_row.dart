@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
 import '../models/highlight_model.dart';
@@ -83,7 +81,7 @@ class _ProfileHighlightsRowState extends State<ProfileHighlightsRow> {
     setState(() => _loading = true);
     try {
       final raw = await _api.userHighlights(widget.userId);
-      Map<String, dynamic> _normalizeId(Map<String, dynamic> m) {
+      Map<String, dynamic> normalizeId(Map<String, dynamic> m) {
         final copy = Map<String, dynamic>.from(m);
         final id = copy['_id'];
         if (id != null && id is! String) copy['_id'] = id.toString();
@@ -92,7 +90,7 @@ class _ProfileHighlightsRowState extends State<ProfileHighlightsRow> {
         return copy;
       }
 
-      final parsed = raw.map((m) => Highlight.fromMap(_normalizeId(m))).toList()
+      final parsed = raw.map((m) => Highlight.fromMap(normalizeId(m))).toList()
         ..sort((a, b) => a.order.compareTo(b.order));
       if (mounted) setState(() => _highlights = parsed);
     } catch (_) {

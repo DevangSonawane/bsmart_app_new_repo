@@ -941,7 +941,7 @@ class _PromoteScreenState extends State<PromoteScreen>
                               controller.value.isInitialized)
                             () {
                               final ar = controller.value.aspectRatio;
-                              final target = 9 / 16;
+                              const target = 9 / 16;
                               final isNineSixteen = ar.isFinite &&
                                   ar > 0 &&
                                   (ar - target).abs() < 0.06;

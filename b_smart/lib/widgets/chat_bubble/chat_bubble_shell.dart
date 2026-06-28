@@ -240,10 +240,10 @@ class _DeliveryMeta extends StatelessWidget {
     if (s == ChatDeliveryStatus.delivered) {
       return Icon(LucideIcons.checkCheck, size: 14, color: color);
     }
-    return Icon(
+    return const Icon(
       LucideIcons.checkCheck,
       size: 14,
-      color: const Color(0xFF34B7F1),
+      color: Color(0xFF34B7F1),
     );
   }
 }

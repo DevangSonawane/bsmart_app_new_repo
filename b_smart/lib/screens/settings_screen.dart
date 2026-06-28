@@ -814,7 +814,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                   onTap: _clearCache,
                   trailing: Text(
                     'settings_recommended'.tr(),
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
                   ),
                 ),
                 const Divider(height: 1),

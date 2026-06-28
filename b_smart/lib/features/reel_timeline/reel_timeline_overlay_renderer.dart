@@ -71,7 +71,7 @@ class ReelTimelineOverlayRenderer {
       )..layout(maxWidth: size.width);
 
       final textSize = textPainter.size;
-      final padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6);
+      const padding = EdgeInsets.symmetric(horizontal: 10, vertical: 6);
       final bgRect = Rect.fromLTWH(
         0,
         0,
@@ -129,7 +129,7 @@ class ReelTimelineOverlayRenderer {
           Offset(padding.left, padding.top),
         );
       } else {
-        textPainter.paint(canvas, Offset(0, 0));
+        textPainter.paint(canvas, const Offset(0, 0));
       }
 
       canvas.restore();

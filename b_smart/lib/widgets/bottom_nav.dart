@@ -7,7 +7,7 @@ class BottomNav extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
 
-  const BottomNav({Key? key, required this.currentIndex, required this.onTap}) : super(key: key);
+  const BottomNav({super.key, required this.currentIndex, required this.onTap});
 
   @override
   State<BottomNav> createState() => _BottomNavState();
@@ -21,7 +21,7 @@ class _BottomNavState extends State<BottomNav> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final inactiveColor = theme.colorScheme.onSurface.withValues(alpha: 0.6);
-    final activeColor = DesignTokens.instaPink;
+    const activeColor = DesignTokens.instaPink;
 
     return Container(
       decoration: BoxDecoration(
@@ -85,9 +85,9 @@ class _BottomNavState extends State<BottomNav> {
         child: Container(
           width: 56,
           height: 56,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             shape: BoxShape.circle,
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
@@ -96,7 +96,7 @@ class _BottomNavState extends State<BottomNav> {
                 Color(0xFFBC1888),
               ],
             ),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
                 color: Color(0x26000000),
                 blurRadius: 10,

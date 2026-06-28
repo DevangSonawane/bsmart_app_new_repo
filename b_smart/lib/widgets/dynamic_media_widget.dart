@@ -470,25 +470,28 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     } on PlatformException catch (e) {
       debugPrint(
           'DynamicMediaWidget: PlatformException for ${widget.id}: ${e.message}');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _videoFailed = true;
           _loadingVideo = false;
         });
+      }
     } on TimeoutException catch (e) {
       debugPrint('DynamicMediaWidget: Timeout for ${widget.id}: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _videoFailed = true;
           _loadingVideo = false;
         });
+      }
     } catch (e) {
       debugPrint('DynamicMediaWidget: Unknown error for ${widget.id}: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _videoFailed = true;
           _loadingVideo = false;
         });
+      }
     }
   }
 
@@ -732,7 +735,7 @@ class _VideoPlaceholder extends StatelessWidget {
     // The actual thumbnail (when present) is drawn above this immediately.
     const c1 = Color(0xFF1B1B1F);
     const c2 = Color(0xFF2A2A2F);
-    return DecoratedBox(
+    return const DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,

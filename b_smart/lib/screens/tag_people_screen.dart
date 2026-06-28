@@ -538,10 +538,10 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(_flattenTags()),
-            child: Text(
+            child: const Text(
               'Done',
               style: TextStyle(
-                color: const Color(0xFF4F6EF7),
+                color: Color(0xFF4F6EF7),
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -618,8 +618,9 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                                                   onTapDown: (_) =>
                                                       _tapStartedOnTag = true,
                                                   onTap: () {
-                                                    if (_currentIndex != index)
+                                                    if (_currentIndex != index) {
                                                       return;
+                                                    }
                                                     setState(() {
                                                       final id = (t['id'] ?? '')
                                                           .toString();
@@ -631,8 +632,9 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                                                     _tapStartedOnTag = false;
                                                   },
                                                   onPanStart: (_) {
-                                                    if (_currentIndex != index)
+                                                    if (_currentIndex != index) {
                                                       return;
+                                                    }
                                                     _tapStartedOnTag = true;
                                                     setState(() {
                                                       final id = (t['id'] ?? '')
@@ -642,25 +644,29 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                                                     });
                                                   },
                                                   onPanUpdate: (d) {
-                                                    if (_currentIndex != index)
+                                                    if (_currentIndex != index) {
                                                       return;
+                                                    }
                                                     final id = (t['id'] ?? '')
                                                         .toString();
-                                                    if (_draggingTagId != id)
+                                                    if (_draggingTagId != id) {
                                                       return;
+                                                    }
                                                     _moveTagByDelta(
                                                         id, d.delta, size);
                                                   },
                                                   onPanEnd: (_) {
-                                                    if (_currentIndex != index)
+                                                    if (_currentIndex != index) {
                                                       return;
+                                                    }
                                                     _tapStartedOnTag = false;
                                                     setState(() =>
                                                         _draggingTagId = null);
                                                   },
                                                   onPanCancel: () {
-                                                    if (_currentIndex != index)
+                                                    if (_currentIndex != index) {
                                                       return;
+                                                    }
                                                     _tapStartedOnTag = false;
                                                     setState(() =>
                                                         _draggingTagId = null);
@@ -717,7 +723,9 @@ class _TagPeopleScreenState extends State<TagPeopleScreen> {
                                                                     true,
                                                             onTap: () {
                                                               if (_currentIndex !=
-                                                                  index) return;
+                                                                  index) {
+                                                                return;
+                                                              }
                                                               _tapStartedOnTag =
                                                                   false;
                                                               _removeTag((t[

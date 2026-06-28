@@ -25,8 +25,8 @@ class ChatBubblePainter extends CustomPainter {
       ..style = PaintingStyle.fill
       ..color = color;
 
-    final rBig = 18.0;
-    final rSmall = 6.0;
+    const rBig = 18.0;
+    const rSmall = 6.0;
 
     final tl = (groupPosition == ChatBubbleGroupPosition.middle ||
             groupPosition == ChatBubbleGroupPosition.bottom)

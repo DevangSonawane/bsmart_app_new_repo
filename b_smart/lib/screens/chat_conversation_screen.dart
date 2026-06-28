@@ -1582,14 +1582,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                   if (showOtherOnlineStatus &&
                       _otherOnline &&
                       otherId.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 1),
                       child: Text(
                         'Online',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: const Color(0xFF2ECC71),
+                          color: Color(0xFF2ECC71),
                         ),
                       ),
                     ),
@@ -2550,7 +2550,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   void _showMessageActions(BuildContext context, Map<String, dynamic> message,
       {required bool mine}) {
     if (message['isDeleted'] == true) return;
-    final reactions = const ['❤️', '😂', '😮', '😢', '👍'];
+    const reactions = ['❤️', '😂', '😮', '😢', '👍'];
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,

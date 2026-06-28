@@ -506,7 +506,7 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
                   constraints: const BoxConstraints.tightFor(width: 34, height: 34),
                   onPressed: id.isEmpty ? null : () => _toggleLike(id),
                   icon: Icon(
-                    isLiked ? LucideIcons.heart : LucideIcons.heart,
+                    isLiked ? Icons.favorite : Icons.favorite_border,
                     color: isLiked ? DesignTokens.instaPink : Colors.grey,
                   ),
                 ),

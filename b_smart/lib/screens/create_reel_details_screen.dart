@@ -47,7 +47,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   bool _hideLikes = false;
   bool _turnOffCommenting = false;
   bool _advancedOpen = false;
-  bool _showEmojiPicker = false;
+  final bool _showEmojiPicker = false;
   bool _isSubmitting = false;
   Map<String, dynamic>? _currentUserProfile;
   final List<Map<String, dynamic>> _peopleTags = [];

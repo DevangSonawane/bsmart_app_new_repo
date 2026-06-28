@@ -131,8 +131,9 @@ class _FeedHeader extends StatelessWidget {
                         TextSpan(
                           text: currentLocation == null
                               ? (locationLoading
-                              ? 'home_dashboard_detecting_location'.tr()
-                                  : 'home_dashboard_tap_to_detect_location'.tr())
+                                  ? 'home_dashboard_detecting_location'.tr()
+                                  : 'home_dashboard_tap_to_detect_location'
+                                      .tr())
                               : currentLocation!,
                           style: TextStyle(
                             color: isDark ? Colors.white70 : Colors.black54,
@@ -604,14 +605,14 @@ class _HomeDashboardState extends State<HomeDashboard>
       (notifications) {
         if (!mounted) return;
         setState(() {
-          _unreadNotificationCount =
-              notifications.where((notification) => !notification.isRead).length;
+          _unreadNotificationCount = notifications
+              .where((notification) => !notification.isRead)
+              .length;
         });
       },
     );
     _loadUnreadNotificationCount();
-    _notificationRefreshTimer =
-        Timer.periodic(const Duration(seconds: 1), (_) {
+    _notificationRefreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _refreshUnreadNotificationCount();
     });
     VisibilityDetectorController.instance.updateInterval =
@@ -1004,6 +1005,48 @@ class _HomeDashboardState extends State<HomeDashboard>
       return parsed ?? false;
     }
 
+    bool looksLikeVideoUrl(String url) {
+      final lower = url.toLowerCase();
+      return lower.endsWith('.mp4') ||
+          lower.endsWith('.mov') ||
+          lower.endsWith('.mkv') ||
+          lower.endsWith('.webm') ||
+          lower.contains('.m3u8') ||
+          lower.contains('.mpd');
+    }
+
+    String? normalizeThumb(dynamic raw) {
+      final thumb = str(raw);
+      if (thumb == null || thumb.isEmpty) return null;
+      final normalized = UrlHelper.normalizeUrl(thumb);
+      if (normalized.isEmpty || looksLikeVideoUrl(normalized)) return null;
+      return UrlHelper.absoluteUrl(normalized);
+    }
+
+    String? bestThumbnailFromMediaMap(Map<String, dynamic> m) {
+      final thumbs = m['thumbnails'];
+      if (thumbs is List && thumbs.isNotEmpty) {
+        for (final t in thumbs) {
+          if (t is! Map) continue;
+          final tm = Map<String, dynamic>.from(t);
+          final candidate = normalizeThumb(
+            tm['fileUrl'] ?? tm['file_url'] ?? tm['url'] ?? tm['path'],
+          );
+          if (candidate != null) return candidate;
+        }
+      }
+      final direct = normalizeThumb(
+        m['thumbnail_url'] ??
+            m['thumbnailUrl'] ??
+            m['thumbnail'] ??
+            m['thumb'] ??
+            m['image_url'] ??
+            m['image'],
+      );
+      if (direct != null) return direct;
+      return null;
+    }
+
     final id = str(item['_id']) ?? str(item['id']) ?? str(item['post_id']);
     if (id == null || id.isEmpty) return null;
 
@@ -1039,32 +1082,36 @@ class _HomeDashboardState extends State<HomeDashboard>
             str(media['url']) ??
             str(media['videoUrl']) ??
             str(media['file_url']);
-
-        final thumbField = media['thumbnails'] ??
-            media['thumbnail'] ??
-            media['thumbnailUrl'] ??
-            media['thumb'];
-        if (thumbField is String) {
-          thumbnailUrl = str(thumbField);
-        } else if (thumbField is Map) {
-          final m = Map<String, dynamic>.from(thumbField);
-          thumbnailUrl =
-              str(m['fileUrl']) ?? str(m['url']) ?? str(m['file_url']);
-        } else if (thumbField is List && thumbField.isNotEmpty) {
-          final t0 = thumbField.first;
-          if (t0 is String) {
-            thumbnailUrl = str(t0);
-          } else if (t0 is Map) {
-            final m = Map<String, dynamic>.from(t0);
-            thumbnailUrl =
-                str(m['fileUrl']) ?? str(m['fileName']) ?? str(m['url']);
-          }
-        }
+        thumbnailUrl ??= bestThumbnailFromMediaMap(media);
 
         final crop = media['crop'] is Map
             ? Map<String, dynamic>.from(media['crop'])
             : const <String, dynamic>{};
         aspectRatio = str(crop['aspect_ratio']) ?? str(media['aspect_ratio']);
+      }
+    }
+
+    thumbnailUrl ??= normalizeThumb(
+          item['thumbnail_url'] ?? item['thumbnailUrl'] ?? item['thumbnail'],
+        ) ??
+        normalizeThumb(item['thumb']) ??
+        normalizeThumb(item['image_url']) ??
+        normalizeThumb(item['image']);
+
+    if (thumbnailUrl == null) {
+      final directThumbs = item['thumbnails'];
+      if (directThumbs is List && directThumbs.isNotEmpty) {
+        for (final t in directThumbs) {
+          if (t is! Map) continue;
+          final tm = Map<String, dynamic>.from(t);
+          final candidate = normalizeThumb(
+            tm['fileUrl'] ?? tm['file_url'] ?? tm['url'] ?? tm['path'],
+          );
+          if (candidate != null) {
+            thumbnailUrl = candidate;
+            break;
+          }
+        }
       }
     }
 
@@ -1772,9 +1819,12 @@ class _HomeDashboardState extends State<HomeDashboard>
     final position = _feedScrollController.position;
     if (position.pixels > 1.0) return;
 
-    final savedOffset = await UiSurfaceMemoryService.instance.loadFeedScrollOffset();
+    final savedOffset =
+        await UiSurfaceMemoryService.instance.loadFeedScrollOffset();
     if (savedOffset == null || savedOffset <= 0) return;
-    if (!mounted || _currentIndex != 0 || !_feedScrollController.hasClients) return;
+    if (!mounted || _currentIndex != 0 || !_feedScrollController.hasClients) {
+      return;
+    }
 
     final maxScrollExtent = _feedScrollController.position.maxScrollExtent;
     if (maxScrollExtent <= 0) {
@@ -1793,7 +1843,8 @@ class _HomeDashboardState extends State<HomeDashboard>
       final position = _feedScrollController.position;
       final clampedTarget =
           target.clamp(0.0, position.maxScrollExtent).toDouble();
-      if (position.pixels <= 1.0 && (position.pixels - clampedTarget).abs() >= 1.0) {
+      if (position.pixels <= 1.0 &&
+          (position.pixels - clampedTarget).abs() >= 1.0) {
         _feedScrollController.jumpTo(clampedTarget);
       }
     });
@@ -2181,8 +2232,9 @@ class _HomeDashboardState extends State<HomeDashboard>
         desired ? post.likes + 1 : (post.likes > 0 ? post.likes - 1 : 0);
     final store = StoreProvider.of<AppState>(context);
     store.dispatch(UpdatePostLiked(post.id, desired));
-    if (mounted)
+    if (mounted) {
       setState(() {}); // trigger rebuild to reflect optimistic change
+    }
     final liked = await _supabase.setPostLike(post.id,
         like: desired, isTweet: post.isTweet);
     if (!mounted) return;
@@ -2865,16 +2917,16 @@ class _HomeDashboardState extends State<HomeDashboard>
     final switchingToHome =
         idx == 0 && !wasOnHome; // ← only true when actually switching
 
-      if (idx != _currentIndex) {
-        if (idx == 4 && !_reelsPrefetched) {
-          _reelsPrefetched = true;
-          unawaited(() async {
-            try {
-              await _reelsService.fetchReels(limit: 20, offset: 0);
-              await _reelsService.preWarmReels(3);
-            } catch (_) {}
-          }());
-        }
+    if (idx != _currentIndex) {
+      if (idx == 4 && !_reelsPrefetched) {
+        _reelsPrefetched = true;
+        unawaited(() async {
+          try {
+            await _reelsService.fetchReels(limit: 20, offset: 0);
+            await _reelsService.preWarmReels(3);
+          } catch (_) {}
+        }());
+      }
       setState(() {
         _currentIndex = idx;
       });
@@ -2956,7 +3008,9 @@ class _HomeDashboardState extends State<HomeDashboard>
                   child: const Icon(LucideIcons.image,
                       color: Colors.white, size: 22),
                 ),
-                title: Text(_isVendor ? 'home_dashboard_create_ads'.tr() : 'home_dashboard_create_post'.tr()),
+                title: Text(_isVendor
+                    ? 'home_dashboard_create_ads'.tr()
+                    : 'home_dashboard_create_post'.tr()),
                 subtitle: Text(
                   _isVendor ? 'Upload ad campaign' : 'Photo or video',
                   style: TextStyle(
@@ -3060,7 +3114,7 @@ class _HomeDashboardState extends State<HomeDashboard>
               DesignTokens.instaOrange
             ],
           ).createShader(bounds),
-          child: Text('b_smart',
+          child: const Text('b_smart',
               style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -3127,8 +3181,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                       IconButton(
                         onPressed: () =>
                             Navigator.of(context).pushNamed('/notifications'),
-                        icon: Icon(LucideIcons.heart,
-                            size: 24, color: appBarFg),
+                        icon:
+                            Icon(LucideIcons.heart, size: 24, color: appBarFg),
                       ),
                       if (_notificationBadgeText(_unreadNotificationCount) !=
                           null)
@@ -3173,16 +3227,34 @@ class _HomeDashboardState extends State<HomeDashboard>
                       child: Container(
                         width: 32,
                         height: 32,
-                        padding: const EdgeInsets.all(1.5),
-                        decoration: const BoxDecoration(
+                        padding: EdgeInsets.all(_yourStoryHasActive ? 1.5 : 0),
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: DesignTokens.instaGradient,
+                          gradient: _yourStoryHasActive
+                              ? DesignTokens.instaGradient
+                              : null,
+                          color: _yourStoryHasActive
+                              ? null
+                              : (isDark
+                                  ? const Color(0xFF2D2D2D)
+                                  : Colors.grey.shade200),
+                          border: _yourStoryHasActive
+                              ? null
+                              : Border.all(
+                                  color: isDark
+                                      ? const Color(0xFF3D3D3D)
+                                      : Colors.grey.shade300,
+                                ),
                         ),
                         child: CircleAvatar(
-                          radius: 14,
-                          backgroundColor: isDark ? Colors.black : Colors.white,
+                          radius: _yourStoryHasActive ? 14 : 16,
+                          backgroundColor: _yourStoryHasActive && isDark
+                              ? Colors.black
+                              : (_yourStoryHasActive
+                                  ? Colors.white
+                                  : Colors.transparent),
                           child: CircleAvatar(
-                            radius: 13,
+                            radius: _yourStoryHasActive ? 13 : 15,
                             backgroundColor: isDark
                                 ? const Color(0xFF3D3D3D)
                                 : Colors.grey.shade200,
@@ -3343,8 +3415,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                                     _FeedRenderRowType.suggestedReels) {
                                   if (_suggestedReels.isEmpty &&
                                       _reelSuggestionsLoading) {
-                                    return Padding(
-                                      padding: const EdgeInsets.symmetric(
+                                    return const Padding(
+                                      padding: EdgeInsets.symmetric(
                                           horizontal: 14, vertical: 12),
                                       child: _SuggestedReelsPlaceholder(
                                         isLoading: true,
@@ -3570,7 +3642,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                       ),
                                     ),
                                   );
-                                } catch (e, st) {
+                                } catch (e) {
                                   itemWidget = Padding(
                                     padding: const EdgeInsets.all(16.0),
                                     child: Column(
@@ -3779,12 +3851,10 @@ class _HomeDashboardState extends State<HomeDashboard>
   List<Widget> _buildFeedSkeletonSlivers(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final base = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.grey.shade300;
-    final highlight = isDark
-        ? Colors.white.withValues(alpha: 0.14)
-        : Colors.grey.shade100;
+    final base =
+        isDark ? Colors.white.withValues(alpha: 0.08) : Colors.grey.shade300;
+    final highlight =
+        isDark ? Colors.white.withValues(alpha: 0.14) : Colors.grey.shade100;
 
     Widget box({
       double? width,
@@ -3859,7 +3929,10 @@ class _HomeDashboardState extends State<HomeDashboard>
                   children: [
                     box(width: double.infinity, height: 12, radius: 999),
                     const SizedBox(height: 8),
-                    box(width: MediaQuery.sizeOf(context).width * 0.55, height: 12, radius: 999),
+                    box(
+                        width: MediaQuery.sizeOf(context).width * 0.55,
+                        height: 12,
+                        radius: 999),
                     const SizedBox(height: 12),
                     Row(
                       children: [

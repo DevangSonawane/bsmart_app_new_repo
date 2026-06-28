@@ -282,7 +282,7 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
   }
 
   Widget _buildCoverThumb() {
-    final size = 48.0;
+    const size = 48.0;
     final child = _newCoverFile != null
         ? Image.file(_newCoverFile!,
             width: size, height: size, fit: BoxFit.cover)

@@ -37,7 +37,6 @@ class AppToast {
     await WidgetsBinding.instance.endOfFrame;
 
     final overlay = Overlay.of(overlayContext, rootOverlay: true);
-    if (overlay == null) return;
 
     _hide();
     _visibility = visibility;

@@ -914,7 +914,7 @@ class _VendorHeader extends StatelessWidget {
                                       fontWeight: FontWeight.w900,
                                       fontSize: 12)),
                               Text(
-                                category!,
+                                category,
                                 style: TextStyle(
                                   color: muted,
                                   fontWeight: FontWeight.w800,
@@ -1242,7 +1242,7 @@ class _ProductsTab extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.70)
         : Colors.black.withValues(alpha: 0.55);
 
-    final products = const [
+    const products = [
       (
         name: 'Wireless Headphones',
         subtitle: 'Noise cancelling • Bluetooth 5.3',
@@ -1405,8 +1405,8 @@ class _GalleryTab extends StatelessWidget {
 
     return CustomScrollView(
       slivers: [
-        SliverToBoxAdapter(
-          child: const SizedBox(height: 42),
+        const SliverToBoxAdapter(
+          child: SizedBox(height: 42),
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -1465,7 +1465,7 @@ class _EventsTab extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.70)
         : Colors.black.withValues(alpha: 0.55);
 
-    final items = const [
+    const items = [
       (
         title: 'New Collection Launch',
         subtitle: 'This Friday • 6:00 PM',
@@ -1559,8 +1559,9 @@ class _LocationsTab extends StatelessWidget {
     final companyAddressText = addressText.isNotEmpty
         ? addressText
         : _pick(online['company_address'] ?? company['company_address']);
-    final displayAddress =
-        companyAddressText.isNotEmpty ? companyAddressText : 'No company address available.';
+    final displayAddress = companyAddressText.isNotEmpty
+        ? companyAddressText
+        : 'No company address available.';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),

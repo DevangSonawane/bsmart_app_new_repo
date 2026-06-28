@@ -144,7 +144,7 @@ class _HighlightNameScreenState extends State<HighlightNameScreen>
       );
       return;
     }
-    Map<String, dynamic> _normalizeId(Map<String, dynamic> m) {
+    Map<String, dynamic> normalizeId(Map<String, dynamic> m) {
       final copy = Map<String, dynamic>.from(m);
       final id = copy['_id'];
       if (id != null && id is! String) copy['_id'] = id.toString();
@@ -154,7 +154,7 @@ class _HighlightNameScreenState extends State<HighlightNameScreen>
     }
 
     final highlights = raw
-        .map((m) => Highlight.fromMap(_normalizeId(m)))
+        .map((m) => Highlight.fromMap(normalizeId(m)))
         .toList()
       ..sort((a, b) => a.order.compareTo(b.order));
     if (!mounted) return;

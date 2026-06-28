@@ -60,6 +60,18 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   String _toId(dynamic v) => (v ?? '').toString().trim();
 
+  bool _isDuplicateCommentLikeError(Object error) {
+    if (error is! ApiException) return false;
+    final message = error.message.toLowerCase();
+    return error.statusCode == 409 ||
+        (error.statusCode == 400 &&
+            (message.contains('already liked') ||
+                message.contains('already unliked') ||
+                message.contains('already exists') ||
+                message.contains('duplicate') ||
+                message.contains('conflict')));
+  }
+
   String _commentIdOf(Map<String, dynamic> c) {
     return _toId(c['_id'] ?? c['id'] ?? c['comment_id'] ?? c['commentId']);
   }
@@ -215,8 +227,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
         (post['item_type'] ?? post['itemType'] ?? '').toString().toLowerCase();
     if (itemType == 'ad') return true;
     if (post['vendor_id'] != null || post['vendorId'] != null) return true;
-    if (post['total_budget_coins'] != null || post['totalBudgetCoins'] != null)
+    if (post['total_budget_coins'] != null || post['totalBudgetCoins'] != null) {
       return true;
+    }
     return false;
   }
 
@@ -625,6 +638,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
     final liked = _liked.contains(id);
     final prevLiked = liked;
     final prevCount = ((c['likes_count'] as int?) ?? 0);
+    final targetLiked = !liked;
     setState(() {
       if (liked) {
         _liked.remove(id);
@@ -633,7 +647,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
       }
       final cc = Map<String, dynamic>.from(_comments[index]);
       final count = (cc['likes_count'] as int?) ?? 0;
-      cc['likes_count'] = liked ? (count - 1).clamp(0, 1 << 31) : count + 1;
+      cc['likes_count'] =
+          targetLiked ? count + 1 : (count - 1).clamp(0, 1 << 31);
       _comments[index] = cc;
     });
     try {
@@ -666,6 +681,21 @@ class _CommentsSheetState extends State<CommentsSheet> {
         _comments[index] = cc;
       });
     } on ApiException catch (e) {
+      if (_isDuplicateCommentLikeError(e)) {
+        if (!mounted) return;
+        setState(() {
+          final cc = Map<String, dynamic>.from(_comments[index]);
+          cc['likes_count'] = prevCount;
+          _comments[index] = cc;
+          if (targetLiked) {
+            _liked.add(id);
+          } else {
+            _liked.remove(id);
+          }
+          _svc.setCommentLikeOverride(id, targetLiked);
+        });
+        return;
+      }
       if (!mounted) return;
       setState(() {
         final cc = Map<String, dynamic>.from(_comments[index]);
@@ -1053,8 +1083,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
                           adCount +
                           (_comments.isEmpty ? 1 : _comments.length),
                       itemBuilder: (context, i) {
-                        if (showAdInfo && i == introCount)
+                        if (showAdInfo && i == introCount) {
                           return _buildAdInfo(_post!);
+                        }
                         if (_comments.isEmpty) {
                           return Center(
                             child: Padding(
@@ -1223,11 +1254,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                             mainAxisAlignment:
                                                 MainAxisAlignment.center,
                                             children: [
-                                              IconButton(
-                                                icon: Icon(
-                                                  liked
-                                                      ? Icons.favorite
-                                                      : LucideIcons.heart,
+                                        IconButton(
+                                          icon: Icon(
+                                                  liked ? Icons.favorite : Icons.favorite_border,
                                                   size: 20,
                                                   color: liked
                                                       ? Colors.red
@@ -1266,8 +1295,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                       final isExpanded =
                                           _expandedComments.contains(cid);
                                       final totalReplies = _replyCount(c, cid);
-                                      if (!hasReplies)
+                                      if (!hasReplies) {
                                         return const SizedBox.shrink();
+                                      }
                                       return Align(
                                         alignment: Alignment.centerLeft,
                                         child: TextButton(

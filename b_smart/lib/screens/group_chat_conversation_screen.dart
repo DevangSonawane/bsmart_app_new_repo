@@ -2581,7 +2581,7 @@ class _GroupChatConversationScreenState
   void _showMessageActions(BuildContext context, Map<String, dynamic> message,
       {required bool mine}) {
     if (message['isDeleted'] == true) return;
-    final reactions = const ['❤️', '😂', '😮', '😢', '👍'];
+    const reactions = ['❤️', '😂', '😮', '😢', '👍'];
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,

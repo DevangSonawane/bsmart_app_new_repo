@@ -158,7 +158,7 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                       final textWidths = <double>[];
                       double totalWidth = 0;
                       for (var i = 0; i < labels.length; i++) {
-                        final textStyle = TextStyle(
+                        const textStyle = TextStyle(
                           fontSize: _pillFontSize,
                           fontWeight: FontWeight.w700,
                           letterSpacing: _pillLetterSpacing,
@@ -203,7 +203,7 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
 
                                 final maxWidth = constraints.maxWidth;
                                 double left = (maxWidth / 2) - activeCenter;
-                                final minLeft = 0.0;
+                                const minLeft = 0.0;
                                 final maxLeft = (maxWidth - totalWidth)
                                     .clamp(0.0, double.infinity);
                                 left = left.clamp(minLeft, maxLeft);
@@ -308,6 +308,6 @@ class _AlwaysScrollablePageScrollPhysics extends PageScrollPhysics {
 
   @override
   _AlwaysScrollablePageScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return _AlwaysScrollablePageScrollPhysics();
+    return const _AlwaysScrollablePageScrollPhysics();
   }
 }

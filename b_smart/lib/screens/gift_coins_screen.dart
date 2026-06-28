@@ -4,7 +4,6 @@ import '../utils/current_user.dart';
 import '../services/wallet_service.dart';
 import '../services/notification_service.dart';
 import '../services/supabase_service.dart';
-import '../models/notification_model.dart';
 import '../theme/instagram_theme.dart';
 
 class GiftCoinsScreen extends StatefulWidget {

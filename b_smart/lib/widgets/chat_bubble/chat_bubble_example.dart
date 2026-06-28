@@ -13,7 +13,7 @@ class ChatBubbleExample extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: [
+      children: const [
         ChatBubbleShell(
           isOutgoing: false,
           isGroup: true,
@@ -21,41 +21,41 @@ class ChatBubbleExample extends StatelessWidget {
           timestampText: '9:41 PM',
           deliveryStatus: null,
           groupPosition: ChatBubbleGroupPosition.single,
-          child: const TextMessageContent(
+          child: TextMessageContent(
             text: 'Hello 👋',
             isOutgoing: false,
           ),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         ChatBubbleShell(
           isOutgoing: true,
           timestampText: '9:42 PM',
           deliveryStatus: ChatDeliveryStatus.read,
           groupPosition: ChatBubbleGroupPosition.single,
-          child: const TextMessageContent(
+          child: TextMessageContent(
             text: 'Hey! This matches WhatsApp-style bubbles.',
             isOutgoing: true,
           ),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         ChatBubbleShell(
           isOutgoing: false,
           timestampText: '9:43 PM',
           deliveryStatus: null,
           groupPosition: ChatBubbleGroupPosition.single,
-          child: const ImageMessageContent(
+          child: ImageMessageContent(
             urls: ['https://picsum.photos/600/900'],
             caption: 'Nice view',
             isOutgoing: false,
           ),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         ChatBubbleShell(
           isOutgoing: true,
           timestampText: '9:44 PM',
           deliveryStatus: ChatDeliveryStatus.sent,
           groupPosition: ChatBubbleGroupPosition.single,
-          child: const VoiceMessageContent(
+          child: VoiceMessageContent(
             audioUrl: '',
             totalDurationSeconds: 42,
             isOutgoing: true,

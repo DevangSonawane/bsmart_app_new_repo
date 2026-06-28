@@ -57,8 +57,8 @@ class ChatBubbleThemeData {
   });
 
   static ChatBubbleThemeData light() {
-    return ChatBubbleThemeData(
-      colors: const ChatBubbleColors(
+    return const ChatBubbleThemeData(
+      colors: ChatBubbleColors(
         incomingBubble: Color(0xFFFFFFFF),
         outgoingBubble: Color(0xFF7C3AED), // App theme (purple)
         incomingText: Color(0xFF111827),
@@ -70,7 +70,7 @@ class ChatBubbleThemeData {
         reactionBg: Color(0xFFF3F4F6),
         reactionFg: Color(0xFF111827),
       ),
-      typography: const ChatBubbleTypography(
+      typography: ChatBubbleTypography(
         message: TextStyle(
           fontSize: 15,
           height: 1.2,

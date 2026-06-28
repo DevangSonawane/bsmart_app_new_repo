@@ -665,48 +665,27 @@ class _PostCardState extends State<PostCard> {
     Widget avatar() {
       return GestureDetector(
         onTap: widget.onUserTap,
-        child: Container(
-          width: 36,
-          height: 36,
-          padding: const EdgeInsets.all(2),
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: [
-                Color(0xFFFACC15),
-                Color(0xFFF97316),
-                Color(0xFFEC4899),
-              ],
-            ),
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: theme.scaffoldBackgroundColor,
-            ),
-            padding: const EdgeInsets.all(1),
-            child: CircleAvatar(
-              backgroundColor:
-                  isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
-              child: avatarUrl.isEmpty
-                  ? Text(
-                      post.userName.isNotEmpty
-                          ? post.userName[0].toUpperCase()
-                          : 'U',
-                      style: TextStyle(color: theme.colorScheme.onSurface),
-                    )
-                  : ClipOval(
-                      child: SafeNetworkImage(
-                        url: avatarUrl,
-                        width: 34,
-                        height: 34,
-                        fit: BoxFit.cover,
-                        placeholder: const SizedBox.shrink(),
-                        errorWidget: const SizedBox.shrink(),
-                      ),
-                    ),
-            ),
-          ),
+        child: CircleAvatar(
+          radius: 18,
+          backgroundColor:
+              isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
+          child: avatarUrl.isEmpty
+              ? Text(
+                  post.userName.isNotEmpty
+                      ? post.userName[0].toUpperCase()
+                      : 'U',
+                  style: TextStyle(color: theme.colorScheme.onSurface),
+                )
+              : ClipOval(
+                  child: SafeNetworkImage(
+                    url: avatarUrl,
+                    width: 36,
+                    height: 36,
+                    fit: BoxFit.cover,
+                    placeholder: const SizedBox.shrink(),
+                    errorWidget: const SizedBox.shrink(),
+                  ),
+                ),
         ),
       );
     }
@@ -1245,48 +1224,27 @@ class _PostCardState extends State<PostCard> {
         children: [
           GestureDetector(
             onTap: widget.onUserTap,
-            child: Container(
-              width: 36,
-              height: 36,
-              padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFFFACC15),
-                    Color(0xFFF97316),
-                    Color(0xFFEC4899)
-                  ],
-                ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: theme.scaffoldBackgroundColor,
-                ),
-                padding: const EdgeInsets.all(1),
-                child: CircleAvatar(
-                  backgroundColor:
-                      isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
-                  child: avatarUrl.isEmpty
-                      ? Text(
-                          post.userName.isNotEmpty
-                              ? post.userName[0].toUpperCase()
-                              : 'U',
-                          style: TextStyle(color: theme.colorScheme.onSurface),
-                        )
-                      : ClipOval(
-                          child: SafeNetworkImage(
-                            url: avatarUrl,
-                            width: 34,
-                            height: 34,
-                            fit: BoxFit.cover,
-                            placeholder: const SizedBox.shrink(),
-                            errorWidget: const SizedBox.shrink(),
-                          ),
-                        ),
-                ),
-              ),
+            child: CircleAvatar(
+              radius: 18,
+              backgroundColor:
+                  isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
+              child: avatarUrl.isEmpty
+                  ? Text(
+                      post.userName.isNotEmpty
+                          ? post.userName[0].toUpperCase()
+                          : 'U',
+                      style: TextStyle(color: theme.colorScheme.onSurface),
+                    )
+                  : ClipOval(
+                      child: SafeNetworkImage(
+                        url: avatarUrl,
+                        width: 36,
+                        height: 36,
+                        fit: BoxFit.cover,
+                        placeholder: const SizedBox.shrink(),
+                        errorWidget: const SizedBox.shrink(),
+                      ),
+                    ),
             ),
           ),
           const SizedBox(width: 10),

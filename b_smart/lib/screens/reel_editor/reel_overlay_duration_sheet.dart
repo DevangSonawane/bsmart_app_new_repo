@@ -50,9 +50,9 @@ class _ReelOverlayDurationSheetState extends State<ReelOverlayDurationSheet> {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
+            children: [
               Text('Start', style: TextStyle(color: Colors.white)),
               Text('End', style: TextStyle(color: Colors.white)),
             ],

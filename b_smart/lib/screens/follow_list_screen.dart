@@ -1262,7 +1262,7 @@ class _FollowListScreenState extends State<FollowListScreen>
             child: _DividerLine(),
           ),
           Padding(
-            padding: EdgeInsets.fromLTRB(14, 6, 14, 8),
+            padding: const EdgeInsets.fromLTRB(14, 6, 14, 8),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -2024,7 +2024,7 @@ class _AvatarCircle extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           label,
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w800,
           ),
@@ -2096,7 +2096,7 @@ class _ActionButton extends StatelessWidget {
         onPressed: disabled ? null : onPressed,
         style: OutlinedButton.styleFrom(
           backgroundColor: bg,
-          side: BorderSide(color: Colors.transparent),
+          side: const BorderSide(color: Colors.transparent),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           padding: const EdgeInsets.symmetric(horizontal: 14),

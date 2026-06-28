@@ -4874,10 +4874,6 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
           _editingVideoFile!,
           title: title,
         );
-        if (saved == null) {
-          _showStorySnack('Failed to save video to gallery.');
-          return;
-        }
       } else {
         final boundary = _storyRepaintKey.currentContext?.findRenderObject()
             as RenderRepaintBoundary?;
@@ -4904,10 +4900,6 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
           title: title,
           filename: '$title.jpg',
         );
-        if (saved == null) {
-          _showStorySnack('Failed to save image to gallery.');
-          return;
-        }
       }
 
       _showStorySnack('Saved to gallery.');

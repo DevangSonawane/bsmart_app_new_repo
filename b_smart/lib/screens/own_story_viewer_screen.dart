@@ -1069,9 +1069,6 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         final tmp = File('${Directory.systemTemp.path}/$title.mp4');
         await tmp.writeAsBytes(res.bodyBytes, flush: true);
         final saved = await PhotoManager.editor.saveVideo(tmp, title: title);
-        if (saved == null) {
-          throw Exception('Save failed');
-        }
       } else {
         final res = await http.get(Uri.parse(url));
         if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -1083,9 +1080,6 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
           title: title,
           filename: '$title.jpg',
         );
-        if (saved == null) {
-          throw Exception('Save failed');
-        }
       }
 
       if (!mounted) return;

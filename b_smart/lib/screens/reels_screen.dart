@@ -1195,7 +1195,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                       left: 12,
                       right: 12,
                       top: topSystemInset + 8,
-                      child: SafeArea(
+                      child: const SafeArea(
                         bottom: false,
                         child: OfflineRetryBanner(
                           message:
@@ -1219,8 +1219,8 @@ class _ReelsScreenState extends State<ReelsScreen>
     const minimalBottomPadding = 28.0;
     final caption = (current.caption ?? '').trim();
     final hasBottomText = caption.isNotEmpty || current.hashtags.isNotEmpty;
-    final infoBottomMobile = minimalBottomPadding;
-    final infoBottomDesktop = minimalBottomPadding;
+    const infoBottomMobile = minimalBottomPadding;
+    const infoBottomDesktop = minimalBottomPadding;
     const maxInfoHeightMobile = 220.0;
     const maxInfoHeightDesktop = 240.0;
 
@@ -1478,8 +1478,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget _buildScrubbableProgressBar() {
     final controller = _controllerForIndex(_currentIndex);
     final canScrub = controller != null && _isControllerInitialized(controller);
-    final duration = canScrub ? _durationFor(controller!) : Duration.zero;
-    final pos = canScrub ? _positionFor(controller!) : Duration.zero;
+    final duration = canScrub ? _durationFor(controller) : Duration.zero;
+    final pos = canScrub ? _positionFor(controller) : Duration.zero;
     final baseFraction = duration.inMilliseconds > 0
         ? pos.inMilliseconds / duration.inMilliseconds
         : 0.0;
@@ -1495,7 +1495,7 @@ class _ReelsScreenState extends State<ReelsScreen>
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final knobLeft = (width * fraction).clamp(0.0, width);
-        final barHeight = 4.0;
+        const barHeight = 4.0;
         final previewWidth = (width * 0.28).clamp(96.0, 140.0);
         final previewHeight = previewWidth * (16 / 9);
         final previewLeft = (knobLeft - (previewWidth / 2))
@@ -1550,22 +1550,19 @@ class _ReelsScreenState extends State<ReelsScreen>
                       child: Builder(
                         builder: (context) {
                           Size? videoSize;
-                          if (controller != null) {
-                            try {
-                              final v = controller.value;
-                              if (v.isInitialized) videoSize = v.size;
-                            } catch (_) {
-                              videoSize = null;
-                            }
+                          try {
+                            final v = controller.value;
+                            if (v.isInitialized) videoSize = v.size;
+                          } catch (_) {
+                            videoSize = null;
                           }
-                          if (controller == null ||
-                              !_isControllerInitialized(controller) ||
+                                                  if (!_isControllerInitialized(controller) ||
                               videoSize == null ||
-                              videoSize!.isEmpty) {
+                              videoSize.isEmpty) {
                             return const SizedBox.shrink();
                           }
-                          final ar = videoSize!.width / videoSize!.height;
-                          final target = 9 / 16;
+                          final ar = videoSize.width / videoSize.height;
+                          const target = 9 / 16;
                           final isNineSixteen = ar.isFinite &&
                               ar > 0 &&
                               (ar - target).abs() < 0.06;
@@ -1574,8 +1571,8 @@ class _ReelsScreenState extends State<ReelsScreen>
                               child: FittedBox(
                                 fit: BoxFit.cover,
                                 child: SizedBox(
-                                  width: videoSize!.width,
-                                  height: videoSize!.height,
+                                  width: videoSize.width,
+                                  height: videoSize.height,
                                   child: VideoPlayer(controller),
                                 ),
                               ),
@@ -1629,7 +1626,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                               widthFactor: _clamp01(fraction),
                               child: Container(color: Colors.white),
                             )
-                          : _SmoothReelProgressBar(controller: controller!),
+                          : _SmoothReelProgressBar(controller: controller),
                     ),
                   ),
                 ),
@@ -2567,7 +2564,7 @@ class _ReelPlayerItemState extends State<_ReelPlayerItem> {
                       child: () {
                         final vs = videoSize!;
                         final ar = controller.value.aspectRatio;
-                        final target = 9 / 16;
+                        const target = 9 / 16;
                         final isNineSixteen =
                             ar.isFinite && ar > 0 && (ar - target).abs() < 0.06;
                         if (isNineSixteen) {

@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -140,7 +139,7 @@ class _ColorPickerStripState extends State<ColorPickerStrip> {
                         ),
                       ),
                     );
-                  }).toList(),
+                  }),
                 ],
               );
             },

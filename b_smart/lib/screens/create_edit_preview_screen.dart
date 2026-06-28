@@ -1456,7 +1456,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         setState(() {
           _imageAspectRatio = w / h;
           _imagePixelSize = Size(w, h);
-          _imageKey = ValueKey('img_${w}_${h}');
+          _imageKey = ValueKey('img_${w}_$h');
           if (widget.isPostFlow) {
             _maybeInitPostAspect(_imageAspectRatio ?? 1.0);
           }
@@ -1553,7 +1553,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
         setState(() {
           _imageAspectRatio = w / h;
           _imagePixelSize = Size(w, h);
-          _imageKey = ValueKey('img_${w}_${h}');
+          _imageKey = ValueKey('img_${w}_$h');
         });
       });
       stream2.addListener(_imageStreamListener!);
@@ -1649,7 +1649,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
       }
 
       if (seekTarget != null) {
-        c.seekTo(seekTarget!).then((_) {
+        c.seekTo(seekTarget).then((_) {
           _isSeeking = false;
         }).catchError((_) {
           _isSeeking = false;
@@ -3356,8 +3356,8 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     if (!ps.isAuth) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Allow photo access to add clips.'),
+        const SnackBar(
+          content: Text('Allow photo access to add clips.'),
           action: SnackBarAction(
             label: 'Settings',
             onPressed: PhotoManager.openSetting,
@@ -5329,7 +5329,7 @@ class _CreateEditPreviewScreenState extends State<CreateEditPreviewScreen>
     bool enabled = true,
   }) {
     final canTap = enabled;
-    final accent = const Color(0xFF0095F6);
+    const accent = Color(0xFF0095F6);
     final fg = enabled ? Colors.white : Colors.white54;
     final activeColor = enabled ? accent : Colors.white54;
     return GestureDetector(
@@ -5480,7 +5480,7 @@ class _ClipPickerSheetState extends State<_ClipPickerSheet> {
     final minutes = d.inMinutes;
     final seconds = d.inSeconds % 60;
     if (minutes <= 0) return '${seconds}s';
-    return '${minutes}:${seconds.toString().padLeft(2, '0')}';
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -5521,14 +5521,14 @@ class _ClipPickerSheetState extends State<_ClipPickerSheet> {
             ],
           ),
           if (widget.isLimited)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline,
+                  Icon(Icons.info_outline,
                       color: Colors.white70, size: 16),
-                  const SizedBox(width: 8),
-                  const Expanded(
+                  SizedBox(width: 8),
+                  Expanded(
                     child: Text(
                       'Limited photo access. Some items may be hidden.',
                       style: TextStyle(color: Colors.white70, fontSize: 12),
@@ -5536,7 +5536,7 @@ class _ClipPickerSheetState extends State<_ClipPickerSheet> {
                   ),
                   TextButton(
                     onPressed: PhotoManager.openSetting,
-                    child: const Text(
+                    child: Text(
                       'Settings',
                       style: TextStyle(color: Color(0xFF0095F6)),
                     ),
@@ -5680,7 +5680,6 @@ class _PerVideoEditPage extends StatefulWidget {
   final List<double> Function(String id) filterMatrixFor;
 
   const _PerVideoEditPage({
-    super.key,
     required this.media,
     required this.frameAspect,
     required this.initialFilter,
@@ -5937,7 +5936,7 @@ class _PerVideoEditPageState extends State<_PerVideoEditPage> {
                     itemCount: _thumbs.length,
                     itemBuilder: (context, i) {
                       final bytes = _thumbs[i];
-                      final isActive = false;
+                      const isActive = false;
                       return GestureDetector(
                         onTap: () async {
                           if (bytes == null) return;
@@ -5964,10 +5963,10 @@ class _PerVideoEditPageState extends State<_PerVideoEditPage> {
                     },
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(8, 2, 8, 8),
                   child: Row(
-                    children: const [
+                    children: [
                       Spacer(),
                       Text(
                         'Cover',
@@ -6220,7 +6219,7 @@ class _PerImageEditPageState extends State<_PerImageEditPage> {
         if (!mounted || h == 0) return;
         setState(() {
           _imageAspect = w / h;
-          _imageKey = ValueKey('img_${w}_${h}');
+          _imageKey = ValueKey('img_${w}_$h');
         });
       });
       stream.addListener(_imageStreamListener!);

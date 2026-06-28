@@ -436,7 +436,7 @@ class FeedService {
               (item['createdAt'] as String?) ??
               (item['created_at'] as String?) ??
               DateTime.now().toIso8601String();
-          String _bust(String url) {
+          String bust(String url) {
             if (url.isEmpty) return url;
             try {
               final uri = Uri.parse(url);
@@ -448,7 +448,7 @@ class FeedService {
             }
           }
 
-          String? _parseFilterName(Map<String, dynamic> map) {
+          String? parseFilterName(Map<String, dynamic> map) {
             final raw = map['filter'];
             if (raw is String) return raw;
             if (raw is Map) {
@@ -460,11 +460,11 @@ class FeedService {
             return null;
           }
 
-          Map<String, int> _parseAdjustments(Map<String, dynamic> map) {
+          Map<String, int> parseAdjustments(Map<String, dynamic> map) {
             final raw = map['adjustments'];
             if (raw is! Map) return const {};
             final adj = Map<String, dynamic>.from(raw);
-            int _toInt(dynamic v) {
+            int toInt(dynamic v) {
               if (v is int) return v;
               if (v is num) return v.round();
               return int.tryParse(v?.toString() ?? '') ?? 0;
@@ -472,28 +472,28 @@ class FeedService {
 
             final out = <String, int>{};
             if (adj.containsKey('brightness')) {
-              out['brightness'] = _toInt(adj['brightness']);
+              out['brightness'] = toInt(adj['brightness']);
             }
             if (adj.containsKey('contrast')) {
-              out['contrast'] = _toInt(adj['contrast']);
+              out['contrast'] = toInt(adj['contrast']);
             }
             if (adj.containsKey('saturation')) {
-              out['saturate'] = _toInt(adj['saturation']);
+              out['saturate'] = toInt(adj['saturation']);
             }
             if (adj.containsKey('temperature')) {
-              out['sepia'] = _toInt(adj['temperature']);
+              out['sepia'] = toInt(adj['temperature']);
             }
             if (adj.containsKey('fade')) {
-              out['opacity'] = _toInt(adj['fade']);
+              out['opacity'] = toInt(adj['fade']);
             }
             if (adj.containsKey('opacity')) {
-              out['opacity'] = _toInt(adj['opacity']);
+              out['opacity'] = toInt(adj['opacity']);
             }
             if (adj.containsKey('vignette')) {
-              out['vignette'] = _toInt(adj['vignette']);
+              out['vignette'] = toInt(adj['vignette']);
             }
             if (adj.containsKey('lux')) {
-              out['lux'] = _toInt(adj['lux']);
+              out['lux'] = toInt(adj['lux']);
             }
             return out;
           }
@@ -532,8 +532,8 @@ class FeedService {
             if (normalized.isEmpty) continue;
             mediaUrls.add(normalized);
             if (map != null) {
-              mediaFilters.add(_parseFilterName(map));
-              mediaAdjustments.add(_parseAdjustments(map));
+              mediaFilters.add(parseFilterName(map));
+              mediaAdjustments.add(parseAdjustments(map));
               final rawAr = map['aspect_ratio'] ??
                   map['aspectRatio'] ??
                   (map['crop'] is Map
@@ -668,7 +668,7 @@ class FeedService {
 
           String? thumbnailUrl;
           double? aspectRatio;
-          double? _parseAspectRatio(dynamic raw) {
+          double? parseAspectRatio(dynamic raw) {
             if (raw == null) return null;
             if (raw is num) {
               final v = raw.toDouble();
@@ -767,7 +767,7 @@ class FeedService {
               }
               if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
                 thumbnailUrl = UrlHelper.normalizeUrl(thumbnailUrl);
-                if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+                if (thumbnailUrl.isNotEmpty) {
                   break;
                 }
               }
@@ -787,7 +787,7 @@ class FeedService {
                   (first['crop_settings'] is Map
                       ? (first['crop_settings'] as Map)['aspectRatio']
                       : null);
-              aspectRatio = _parseAspectRatio(rawAr);
+              aspectRatio = parseAspectRatio(rawAr);
             }
           }
 
@@ -882,7 +882,7 @@ class FeedService {
               (item['full_name'] as String?) ??
               vendorName;
 
-          String? _firstNonEmptyString(Iterable<dynamic> candidates) {
+          String? firstNonEmptyString(Iterable<dynamic> candidates) {
             for (final c in candidates) {
               final s = c?.toString();
               if (s == null) continue;
@@ -892,7 +892,7 @@ class FeedService {
             return null;
           }
 
-          final avatarCandidate = _firstNonEmptyString([
+          final avatarCandidate = firstNonEmptyString([
             user['avatar_url'],
             item['userAvatar'],
             vendor['logo_url'],
@@ -983,8 +983,9 @@ class FeedService {
                     item['comment_count'],
               );
               if (explicit != null) return explicit;
-              if (item['comments'] is List)
+              if (item['comments'] is List) {
                 return (item['comments'] as List).length;
+              }
               return toInt(item['comments']);
             }(),
             views: 0,

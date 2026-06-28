@@ -141,12 +141,12 @@ class _HighlightStoryPickerScreenState
     List<Map<String, dynamic>> stories,
   ) async {
     if (stories.isEmpty) return const [];
-    String _storyId(Map<String, dynamic> m) {
+    String storyId(Map<String, dynamic> m) {
       final v = m['_id'] ?? m['id'] ?? m['story_id'] ?? m['storyId'];
       return v == null ? '' : v.toString().trim();
     }
 
-    final ids = stories.map(_storyId).where((s) => s.isNotEmpty).toList();
+    final ids = stories.map(storyId).where((s) => s.isNotEmpty).toList();
     if (ids.isEmpty) return const [];
 
     final itemLists = await Future.wait(

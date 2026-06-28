@@ -473,7 +473,7 @@ class _VoiceRecorderSheetState extends State<VoiceRecorderSheet> {
                     // Prevent overflow on narrow screens by adapting the number of bars.
                     const barWidth = 3.0;
                     const barMargin = 1.3; // each side
-                    final perBar = barWidth + (barMargin * 2);
+                    const perBar = barWidth + (barMargin * 2);
                     final maxBars =
                         max(6, min(waveformHeights.length, (constraints.maxWidth / perBar).floor()));
                     final activeBars = (progress * maxBars).floor();

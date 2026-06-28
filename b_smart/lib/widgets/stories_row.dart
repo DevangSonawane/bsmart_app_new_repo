@@ -6,6 +6,7 @@ import '../theme/design_tokens.dart';
 class StoriesRow extends StatelessWidget {
   final List<Map<String, dynamic>> users;
   final VoidCallback? onYourStoryTap;
+
   /// Called when a user story is tapped. Index 0 = first user in [users].
   final void Function(int userIndex)? onUserStoryTap;
   final bool yourStoryHasActive;
@@ -68,7 +69,9 @@ class StoriesRow extends StatelessWidget {
           final hasUnseen = status['hasUnseen'] == true;
           final allViewed = status['allViewed'] == true;
           final isSubscribed = status['isSubscribedCreator'] == true;
-          final segmentsCount = (status['segments'] == true ? 2 : 1); // boolean presence indicates multi for simplicity
+          final segmentsCount = (status['segments'] == true
+              ? 2
+              : 1); // boolean presence indicates multi for simplicity
           Gradient ring;
           if (isSubscribed) {
             ring = const LinearGradient(
@@ -85,15 +88,22 @@ class StoriesRow extends StatelessWidget {
           } else if (hasUnseen) {
             ring = DesignTokens.instaGradient;
           } else if (allViewed) {
-            ring = LinearGradient(colors: [Colors.grey.shade300, Colors.grey.shade300]);
+            ring = LinearGradient(
+                colors: [Colors.grey.shade300, Colors.grey.shade300]);
           } else {
-            ring = DesignTokens.instaGradient;
+            ring = LinearGradient(
+              colors: [Colors.grey.shade300, Colors.grey.shade300],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            );
           }
           return _StoryItem(
             label: (user['username'] ?? user['full_name'] ?? '').toString(),
             avatarUrl: user['avatar_url'] as String?,
             ringGradient: ring,
-            onTap: onUserStoryTap != null ? () => onUserStoryTap!(index - offset) : null,
+            onTap: onUserStoryTap != null
+                ? () => onUserStoryTap!(index - offset)
+                : null,
             segmentsCount: segmentsCount,
           );
         },
@@ -150,7 +160,8 @@ class _StoryItem extends StatelessWidget {
                       : null,
                 ),
               ),
-              if (uploadProgress != null && (uploadProgress! > 0 && uploadProgress! < 1))
+              if (uploadProgress != null &&
+                  (uploadProgress! > 0 && uploadProgress! < 1))
                 Positioned.fill(
                   child: Align(
                     alignment: Alignment.center,
@@ -160,7 +171,8 @@ class _StoryItem extends StatelessWidget {
                       child: CircularProgressIndicator(
                         value: uploadProgress!.clamp(0, 1),
                         strokeWidth: 3,
-                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFF3B82F6)),
                         backgroundColor: Colors.white24,
                       ),
                     ),
@@ -180,7 +192,8 @@ class _StoryItem extends StatelessWidget {
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2),
                       ),
-                      child: const Icon(Icons.add, size: 14, color: Colors.white),
+                      child:
+                          const Icon(Icons.add, size: 14, color: Colors.white),
                     ),
                   ),
                 ),

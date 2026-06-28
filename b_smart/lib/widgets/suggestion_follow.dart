@@ -415,7 +415,7 @@ class _SuggestionCard extends StatelessWidget {
           onTap: _loading ? null : onTap,
           borderRadius: BorderRadius.circular(14),
           child: Padding(
-            padding: EdgeInsets.fromLTRB(
+            padding: const EdgeInsets.fromLTRB(
               12,
               12,
               12,

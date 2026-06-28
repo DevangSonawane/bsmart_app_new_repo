@@ -1766,11 +1766,11 @@ class _ReelEditorScreenState extends State<ReelEditorScreen>
             child: InkWell(
               borderRadius: BorderRadius.circular(999),
               onTap: _onNext,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: const [
+                  children: [
                     Text(
                       'Next',
                       style: TextStyle(
@@ -2521,7 +2521,7 @@ class _ReelEditorScreenState extends State<ReelEditorScreen>
     final totalSeconds = d.inSeconds;
     final minutes = totalSeconds ~/ 60;
     final seconds = totalSeconds % 60;
-    return '${minutes}:${seconds.toString().padLeft(2, '0')}';
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   void _toggleClipSelection(int index) {
@@ -3006,10 +3006,10 @@ class _ExportProgressDialog extends StatelessWidget {
     return Dialog(
       backgroundColor: const Color(0xFF1C1C1E),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
+      child: const Padding(
+        padding: EdgeInsets.all(20),
         child: Row(
-          children: const [
+          children: [
             SizedBox(
               width: 22,
               height: 22,

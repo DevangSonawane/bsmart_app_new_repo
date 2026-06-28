@@ -278,6 +278,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         liked ? current + 1 : (current - 1 < 0 ? 0 : current - 1);
   }
 
+  bool _isDuplicateCommentLikeError(Object error) {
+    if (error is! ApiException) return false;
+    final message = error.message.toLowerCase();
+    return error.statusCode == 409 ||
+        (error.statusCode == 400 &&
+            (message.contains('already liked') ||
+                message.contains('already unliked') ||
+                message.contains('already exists') ||
+                message.contains('duplicate') ||
+                message.contains('conflict')));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -522,8 +534,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           if (!completer.isCompleted) completer.complete(info);
         },
         onError: (error, stackTrace) {
-          if (!completer.isCompleted)
+          if (!completer.isCompleted) {
             completer.completeError(error, stackTrace);
+          }
         },
       );
       stream.addListener(listener);
@@ -700,6 +713,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final liked = _isCommentLiked(comment);
     final prevLiked = liked;
     final prevCount = _commentLikesCount(comment);
+    final targetLiked = !liked;
 
     setState(() {
       if (liked) {
@@ -708,7 +722,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _likedCommentIds.add(id);
       }
       final updated = Map<String, dynamic>.from(comment);
-      _applyLikeState(updated, !liked);
+      _applyLikeState(updated, targetLiked);
       if (isReply && parentId != null && replyIndex != null) {
         final list = _replies[parentId];
         if (list != null &&
@@ -737,7 +751,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (res == null || !mounted) return;
       setState(() {
         final latest = Map<String, dynamic>.from(comment);
-        final likedNow = res['liked'] as bool? ?? !liked;
+        final likedNow = res['liked'] as bool? ?? targetLiked;
         latest['is_liked_by_me'] = likedNow;
         latest['liked_by_me'] = likedNow;
         latest['liked'] = likedNow;
@@ -770,6 +784,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }
       });
     } on ApiException catch (e) {
+      if (_isDuplicateCommentLikeError(e)) {
+        if (!mounted) return;
+        setState(() {
+          final reconciled = Map<String, dynamic>.from(comment);
+          reconciled['likes_count'] = prevCount;
+          reconciled['is_liked_by_me'] = targetLiked;
+          reconciled['liked_by_me'] = targetLiked;
+          reconciled['liked'] = targetLiked;
+          reconciled['is_liked'] = targetLiked;
+          if (targetLiked) {
+            _likedCommentIds.add(id);
+          } else {
+            _likedCommentIds.remove(id);
+          }
+          _svc.setCommentLikeOverride(id, targetLiked);
+          if (isReply && parentId != null && replyIndex != null) {
+            final list = _replies[parentId];
+            if (list != null &&
+                replyIndex >= 0 &&
+                replyIndex < list.length &&
+                _commentId(list[replyIndex]) == id) {
+              list[replyIndex] = reconciled;
+            }
+          } else if (!isReply && index >= 0 && index < _comments.length) {
+            _comments[index] = reconciled;
+          }
+        });
+        return;
+      }
       if (!mounted) return;
       setState(() {
         final reverted = Map<String, dynamic>.from(comment);
@@ -1218,9 +1261,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             onTap: () {
                               if (!_isControllerUsable(controller)) return;
                               if (_isControllerPlaying(controller)) {
-                                controller!.pause();
+                                controller.pause();
                               } else {
-                                controller!.play();
+                                controller.play();
                               }
                               if (mounted) setState(() {});
                             },
@@ -2050,7 +2093,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
-                          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                           child: Text(
                             'Comments',
                             style: TextStyle(
@@ -2213,7 +2256,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                         icon: Icon(
                                           _isCommentLiked(c)
                                               ? Icons.favorite
-                                              : LucideIcons.heart,
+                                              : Icons.favorite_border,
                                           size: 14,
                                           color: _isCommentLiked(c)
                                               ? Colors.red
@@ -2379,7 +2422,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                       icon: Icon(
                                                         rLiked
                                                             ? Icons.favorite
-                                                            : LucideIcons.heart,
+                                                            : Icons.favorite_border,
                                                         size: 13,
                                                         color: rLiked
                                                             ? Colors.red

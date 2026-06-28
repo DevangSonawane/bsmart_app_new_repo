@@ -150,13 +150,13 @@ class ReelTimelineRenderer {
         final offset = (outDur - safeDur).clamp(0.0, double.infinity);
         final tName = _xfadeTransitionName(transId);
         sb.write(
-          '${prev}${next}'
+          '$prev$next'
           'xfade=transition=$tName:duration=${safeDur.toStringAsFixed(3)}:offset=${offset.toStringAsFixed(3)}'
           '$label;',
         );
         outDur = outDur + durationsSec[i] - safeDur;
       } else {
-        sb.write('${prev}${next}concat=n=2:v=1:a=0$label;');
+        sb.write('$prev${next}concat=n=2:v=1:a=0$label;');
         outDur = outDur + durationsSec[i];
       }
       prev = label;

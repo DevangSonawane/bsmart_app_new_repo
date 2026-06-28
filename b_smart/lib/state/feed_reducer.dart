@@ -47,7 +47,7 @@ FeedState _setLoading(FeedState state, SetFeedLoading action) {
 }
 
 FeedState _clearFeed(FeedState state, ClearFeed action) {
-  return FeedState.initialLoading();
+  return const FeedState.initialLoading();
 }
 
 FeedState _setPosts(FeedState state, SetFeedPosts action) {

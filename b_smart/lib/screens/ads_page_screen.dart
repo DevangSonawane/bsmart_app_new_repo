@@ -68,7 +68,7 @@ class _AdsPageScreenState extends State<AdsPageScreen>
 
   List<AdCategory> _categories = [];
   String _selectedCategoryId = 'All';
-  String _searchQuery = '';
+  final String _searchQuery = '';
   String _searchInput = '';
   bool _searchOpen = false;
   bool _searchLoading = false;
@@ -1089,7 +1089,7 @@ class _AdsPageScreenState extends State<AdsPageScreen>
         vertical: isDesktop ? 6 : 8,
         horizontal: 4,
       ),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.transparent,
       ),
       child: Column(
@@ -2022,8 +2022,9 @@ class _AdVideoItemState extends State<AdVideoItem>
   }
 
   Future<Map<String, String>> _videoHeadersFor(String url) async {
-    if (_mediaHeaders != null && _mediaHeaders!.isNotEmpty)
+    if (_mediaHeaders != null && _mediaHeaders!.isNotEmpty) {
       return _mediaHeaders!;
+    }
     if (!UrlHelper.shouldAttachAuthHeader(url)) return const {};
     await _loadMediaHeaders();
     return _mediaHeaders ?? const {};
@@ -2733,7 +2734,7 @@ class _AdVideoItemState extends State<AdVideoItem>
       child: _isInitialized && _controller != null && _isVideoAd
           ? () {
               final ar = _controller!.value.aspectRatio;
-              final target = 9 / 16;
+              const target = 9 / 16;
               final isNineSixteen =
                   ar.isFinite && ar > 0 && (ar - target).abs() < 0.06;
               if (isNineSixteen) {
@@ -2820,7 +2821,7 @@ class _AdVideoItemState extends State<AdVideoItem>
               child: const ColoredBox(color: Colors.black),
             ),
           if (_isOffline && _offlineRetryAttempts >= 2)
-            Positioned(
+            const Positioned(
               left: 12,
               right: 12,
               top: 12,
@@ -3450,7 +3451,7 @@ class _SearchUser {
   factory _SearchUser.fromMap(Map<String, dynamic> raw) {
     String pickString(dynamic value) {
       final v = value?.toString().trim();
-      return v == null ? '' : v;
+      return v ?? '';
     }
 
     final id = pickString(raw['_id'] ?? raw['id'] ?? raw['user_id']);

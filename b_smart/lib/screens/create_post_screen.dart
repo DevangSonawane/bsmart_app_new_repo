@@ -36,8 +36,6 @@ class _CreatePostMediaItem {
     this.croppedPath, // ignore: unused_element_parameter
     this.thumbnailPath,
     this.duration,
-    this.trimStart,
-    this.trimEnd,
     required this.isVideo,
     this.alreadyCropped = false,
     this.alreadyProcessed = false,
@@ -175,7 +173,7 @@ Widget _buildMoreOptionToggle(
   final theme = Theme.of(context);
   final fg = theme.colorScheme.onSurface;
   final muted = theme.colorScheme.onSurfaceVariant;
-  final primary = _shareBlue;
+  const primary = _shareBlue;
   return Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [

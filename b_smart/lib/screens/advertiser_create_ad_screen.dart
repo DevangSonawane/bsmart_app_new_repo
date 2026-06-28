@@ -5,8 +5,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/ads_api.dart';
-import '../models/notification_model.dart';
-import '../services/notification_service.dart';
 import '../api/auth_api.dart';
 import '../api/upload_api.dart';
 import '../config/api_config.dart';

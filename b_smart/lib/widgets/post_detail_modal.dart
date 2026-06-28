@@ -107,8 +107,9 @@ class _PostDetailModalState extends State<PostDetailModal> {
     if (direct != null) return direct;
 
     final likes = post['likes'];
-    if (likes is! List || currentUserId == null || currentUserId.isEmpty)
+    if (likes is! List || currentUserId == null || currentUserId.isEmpty) {
       return null;
+    }
     for (final e in likes) {
       if (e is String && e == currentUserId) return true;
       if (e is Map) {
@@ -131,6 +132,56 @@ class _PostDetailModalState extends State<PostDetailModal> {
     final likes = post['likes'];
     if (likes is List) return likes.length;
     return null;
+  }
+
+  String _commentId(Map<String, dynamic> comment) {
+    final raw = comment['id'] ??
+        comment['_id'] ??
+        comment['comment_id'] ??
+        comment['commentId'];
+    return raw?.toString().trim() ?? '';
+  }
+
+  bool _isCommentLiked(Map<String, dynamic> comment) {
+    return _asBool(comment['is_liked_by_me']) ||
+        _asBool(comment['liked_by_me']) ||
+        _asBool(comment['liked']) ||
+        _asBool(comment['is_liked']);
+  }
+
+  int _commentLikesCount(Map<String, dynamic> comment) {
+    final value = comment['likes_count'] ??
+        comment['likesCount'] ??
+        comment['like_count'] ??
+        comment['likeCount'] ??
+        comment['likes'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    if (value is List) return value.length;
+    return 0;
+  }
+
+  void _applyCommentLikeState(Map<String, dynamic> comment, bool liked) {
+    comment['is_liked_by_me'] = liked;
+    comment['liked_by_me'] = liked;
+    comment['liked'] = liked;
+    comment['is_liked'] = liked;
+    final current = _commentLikesCount(comment);
+    comment['likes_count'] =
+        liked ? current + 1 : (current > 0 ? current - 1 : 0);
+  }
+
+  bool _isDuplicateCommentLikeError(Object error) {
+    if (error is! ApiException) return false;
+    final message = error.message.toLowerCase();
+    return error.statusCode == 409 ||
+        (error.statusCode == 400 &&
+            (message.contains('already liked') ||
+                message.contains('already unliked') ||
+                message.contains('already exists') ||
+                message.contains('duplicate') ||
+                message.contains('conflict')));
   }
 
   bool _isAdPost(Map<String, dynamic>? post) {
@@ -384,10 +435,9 @@ class _PostDetailModalState extends State<PostDetailModal> {
       eagerSaved = _asBool(eagerPost['is_saved_by_me']) ||
           _asBool(eagerPost['saved_by_me']);
       eagerLikeCount = _extractLikesCount(eagerPost) ?? eagerLikeCount;
-      final itemType =
-          (eagerPost['item_type'] ?? eagerPost['itemType'] ?? '')
-              .toString()
-              .toLowerCase();
+      final itemType = (eagerPost['item_type'] ?? eagerPost['itemType'] ?? '')
+          .toString()
+          .toLowerCase();
       if (itemType == 'tweet') _isTweet = true;
     }
 
@@ -407,7 +457,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
       });
     }
 
-    final fetchedPost = await _svc.getPostById(widget.postId, isTweet: _isTweet);
+    final fetchedPost =
+        await _svc.getPostById(widget.postId, isTweet: _isTweet);
     final post = fetchedPost ?? _post;
     if (post == null || !mounted) {
       if (mounted) setState(() => _loadingPost = false);
@@ -505,6 +556,101 @@ class _PostDetailModalState extends State<PostDetailModal> {
       await _load();
     } finally {
       if (mounted) setState(() => _postingComment = false);
+    }
+  }
+
+  Future<void> _toggleCommentLike(
+      Map<String, dynamic> comment, int index) async {
+    final id = _commentId(comment);
+    if (id.isEmpty) return;
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to like comments')),
+        );
+      }
+      return;
+    }
+
+    final liked = _isCommentLiked(comment);
+    final targetLiked = !liked;
+    final prevCount = _commentLikesCount(comment);
+    final prevLiked = liked;
+
+    setState(() {
+      final updated = Map<String, dynamic>.from(comment);
+      _applyCommentLikeState(updated, targetLiked);
+      if (index >= 0 && index < _comments.length) {
+        _comments[index] = updated;
+      }
+    });
+
+    try {
+      final res = liked
+          ? await _svc.unlikeComment(
+              id,
+              isTweet: _isTweet,
+              throwOnError: true,
+            )
+          : await _svc.likeComment(
+              id,
+              isTweet: _isTweet,
+              throwOnError: true,
+            );
+      if (res == null || !mounted) return;
+      setState(() {
+        final latest = Map<String, dynamic>.from(comment);
+        final likedNow = res['liked'] as bool? ?? !liked;
+        _applyCommentLikeState(latest, likedNow);
+        if (res.containsKey('likes_count')) {
+          latest['likes_count'] = _toInt(res['likes_count']);
+        } else {
+          latest['likes_count'] =
+              likedNow ? prevCount + 1 : (prevCount > 0 ? prevCount - 1 : 0);
+        }
+        if (index >= 0 && index < _comments.length) {
+          _comments[index] = latest;
+        }
+      });
+    } on ApiException catch (e) {
+      if (_isDuplicateCommentLikeError(e)) {
+        if (!mounted) return;
+        setState(() {
+          final reconciled = Map<String, dynamic>.from(comment);
+          _applyCommentLikeState(reconciled, targetLiked);
+          reconciled['likes_count'] = prevCount;
+          if (index >= 0 && index < _comments.length) {
+            _comments[index] = reconciled;
+          }
+        });
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        final reverted = Map<String, dynamic>.from(comment);
+        _applyCommentLikeState(reverted, prevLiked);
+        reverted['likes_count'] = prevCount;
+        if (index >= 0 && index < _comments.length) {
+          _comments[index] = reverted;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to like comment: ${e.message}')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        final reverted = Map<String, dynamic>.from(comment);
+        _applyCommentLikeState(reverted, prevLiked);
+        reverted['likes_count'] = prevCount;
+        if (index >= 0 && index < _comments.length) {
+          _comments[index] = reverted;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to like comment')),
+      );
     }
   }
 
@@ -792,8 +938,9 @@ class _PostDetailModalState extends State<PostDetailModal> {
           if (!completer.isCompleted) completer.complete(info);
         },
         onError: (error, stackTrace) {
-          if (!completer.isCompleted)
+          if (!completer.isCompleted) {
             completer.completeError(error, stackTrace);
+          }
         },
       );
       stream.addListener(listener);
@@ -1038,9 +1185,9 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                       return;
                                     }
                                     if (_isControllerPlaying(controller)) {
-                                      controller!.pause();
+                                      controller.pause();
                                     } else {
-                                      controller!.play();
+                                      controller.play();
                                     }
                                     if (mounted) setState(() {});
                                   },
@@ -1452,7 +1599,8 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                                                               false);
                                                                       Navigator.pop(
                                                                           context);
-                                                                      messenger.showSnackBar(
+                                                                      messenger
+                                                                          .showSnackBar(
                                                                         SnackBar(
                                                                           content:
                                                                               Text(AppErrorHandler.userMessage(e)),
@@ -1554,10 +1702,13 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                     color: Colors.grey.shade600,
                                     fontSize: 14))))
                   else
-                    ..._comments.map((c) {
+                    ..._comments.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final c = entry.value;
                       final u = c['user'] as Map<String, dynamic>?;
                       final un = u?['username'] as String? ?? 'user';
                       final uAvatar = u?['avatar_url'] as String?;
+                      final liked = _isCommentLiked(c);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Row(
@@ -1605,10 +1756,17 @@ class _PostDetailModalState extends State<PostDetailModal> {
                               ),
                             ),
                             IconButton(
-                                icon: const Icon(LucideIcons.heart, size: 14),
-                                onPressed: () {},
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints()),
+                              icon: Icon(
+                                liked
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
+                                size: 14,
+                                color: liked ? Colors.red : Colors.black87,
+                              ),
+                              onPressed: () => _toggleCommentLike(c, index),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
                           ],
                         ),
                       );
@@ -1714,6 +1872,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
   }
 
   String _formatFullDate(String dateString) {
-    return TimezoneService.instance.formatDate(dateString, pattern: 'MMMM d, yyyy');
+    return TimezoneService.instance
+        .formatDate(dateString, pattern: 'MMMM d, yyyy');
   }
 }

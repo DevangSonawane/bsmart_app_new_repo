@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/design_tokens.dart';
@@ -495,7 +494,7 @@ class ProfileHeader extends StatelessWidget {
         child: Container(
           width: 38,
           height: 38,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.transparent,
           ),
@@ -645,82 +644,14 @@ class _StoryAvatarRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final ringColor = theme.brightness == Brightness.dark
-        ? Colors.white24
-        : Colors.grey.shade400;
+    if (!hasStory) return child;
     return Container(
       padding: const EdgeInsets.all(1),
-      decoration: hasStory
-          ? const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: DesignTokens.instaGradient,
-            )
-          : BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.transparent,
-            ),
-      child: hasStory
-          ? child
-          : CustomPaint(
-              painter: _DottedCirclePainter(
-                color: ringColor,
-                strokeWidth: 0.75,
-                dashLength: 4,
-                gap: 3,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(1),
-                child: child,
-              ),
-            ),
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: DesignTokens.instaGradient,
+      ),
+      child: child,
     );
-  }
-}
-
-class _DottedCirclePainter extends CustomPainter {
-  final Color color;
-  final double strokeWidth;
-  final double dashLength;
-  final double gap;
-
-  const _DottedCirclePainter({
-    required this.color,
-    required this.strokeWidth,
-    required this.dashLength,
-    required this.gap,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final radius = size.width / 2;
-    final rect = Rect.fromCircle(
-      center: Offset(radius, radius),
-      radius: radius - strokeWidth / 2,
-    );
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-    final circumference = 2 * pi * rect.width / 2;
-    final dashCount =
-        (circumference / (dashLength + gap)).floor().clamp(6, 200);
-    final r = rect.width / 2;
-    final dashAngle = dashLength / r;
-    final gapAngle = gap / r;
-    double start = -pi / 2;
-    for (int i = 0; i < dashCount; i++) {
-      canvas.drawArc(rect, start, dashAngle, false, paint);
-      start += dashAngle + gapAngle;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DottedCirclePainter oldDelegate) {
-    return oldDelegate.color != color ||
-        oldDelegate.strokeWidth != strokeWidth ||
-        oldDelegate.dashLength != dashLength ||
-        oldDelegate.gap != gap;
   }
 }

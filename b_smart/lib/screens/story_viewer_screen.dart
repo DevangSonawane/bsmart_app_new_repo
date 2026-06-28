@@ -382,7 +382,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     // Apply the system inset outside the main layout so story/bottom-bar
     // positioning behaves consistently (like Ads/Reels) and never sits behind
     // the Android nav bar.
-    final storyBottom = bottomBarHeight + bottomGap;
+    const storyBottom = bottomBarHeight + bottomGap;
 
     final currentGroup = widget.storyGroups[_currentGroupIndex];
     final currentStory = currentGroup.stories.isNotEmpty
@@ -646,7 +646,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                     PopupMenuItem(
                                       value: 'mute',
                                       child: Text(
-                                          'Mute ${currentAuthorName}\'s story'),
+                                          'Mute $currentAuthorName\'s story'),
                                     ),
                                     if (currentGroup.isCloseFriend)
                                       const PopupMenuItem(
