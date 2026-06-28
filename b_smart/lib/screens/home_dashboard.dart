@@ -894,7 +894,31 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   String _vendorSuggestionIdOf(Map<String, dynamic> v) {
     final embedded = v['vendor'] ?? v['business'] ?? v['company'];
-    return extractEntityId(embedded ?? v) ?? '';
+    String? pickId(dynamic value) {
+      if (value == null) return null;
+      if (value is Map) {
+        final map = Map<String, dynamic>.from(value);
+        for (final key in const [
+          'user_id',
+          'userId',
+          'vendorUserId',
+          'vendor_user_id',
+          'owner_id',
+          'ownerId',
+          '_id',
+          'id',
+          'vendorId',
+          'vendor_id',
+        ]) {
+          final candidate = pickId(map[key]);
+          if (candidate != null && candidate.isNotEmpty) return candidate;
+        }
+        return extractEntityId(map);
+      }
+      return extractEntityId(value);
+    }
+
+    return pickId(embedded ?? v) ?? '';
   }
 
   String _vendorSuggestionTitleOf(Map<String, dynamic> v) {

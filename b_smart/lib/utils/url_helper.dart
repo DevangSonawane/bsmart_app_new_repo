@@ -122,16 +122,16 @@ class UrlHelper {
         final host = uri.host.toLowerCase();
         final path = uri.path;
         final isApiHost = host == 'api.bebsmart.in' || host.startsWith('api.');
-        if (isApiHost &&
-            path.startsWith('/uploads/') &&
-            !path.startsWith('/api/uploads/')) {
-          return uri.replace(path: '/api$path').toString();
+        if (isApiHost && path.startsWith('/api/uploads/')) {
+          return uri.replace(path: path.replaceFirst('/api', '')).toString();
         }
       } catch (_) {}
       return u;
     }
 
-    // Clean the base URL (keep /api because backend serves media under /api/uploads)
+    // Media files are served from the origin root under /uploads, while API
+    // calls use /api. Keep the API base untouched for requests, but point
+    // asset URLs at the origin so we don't end up with /api/uploads/... .
     final baseUri = Uri.parse(ApiConfig.baseUrl);
     final origin =
         '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
@@ -140,6 +140,16 @@ class UrlHelper {
 
     // Ensure path starts with exactly one slash
     if (!u.startsWith('/')) u = '/$u';
+
+    final isUploadPath = u.startsWith('/uploads/') ||
+        u == '/uploads' ||
+        u.startsWith('/api/uploads/');
+    if (isUploadPath) {
+      final uploadsPath = u.startsWith('/api/')
+          ? u.replaceFirst('/api', '')
+          : (u == '/uploads' ? '/uploads' : u);
+      return '$origin$uploadsPath';
+    }
 
     // If the incoming path already contains the base path (e.g. `/api/...`),
     // avoid double-prefixing `/api/api/...`.

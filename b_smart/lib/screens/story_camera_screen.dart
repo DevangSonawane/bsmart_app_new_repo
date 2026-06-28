@@ -630,6 +630,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
   bool _boomerangProcessing = false;
   bool _boomerangStarting = false;
   bool _videoRecordStartPending = false;
+  bool _videoRecordStopPending = false;
   bool _layoutMenuOpen = false;
   _StoryLayoutType? _selectedLayout;
   final List<Uint8List?> _layoutSlotImages = [];
@@ -1050,6 +1051,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
 
   Future<void> _onRecordEnd() async {
     _videoRecordStartPending = false;
+    if (_videoRecordStopPending) return;
     if (_controller == null || !_controller!.value.isRecordingVideo) {
       if (_recording && mounted) setState(() => _recording = false);
       return;
@@ -1059,19 +1061,14 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       return;
     }
     try {
+      _videoRecordStopPending = true;
       final xfile = await _controller!.stopVideoRecording();
       if (!mounted) return;
       setState(() => _recording = false);
       _mode = UploadMode.story;
-      File videoFile = File(xfile.path);
-      try {
-        await Future.delayed(const Duration(milliseconds: 200));
-        videoFile = await _fixVideoRotation(xfile.path);
-      } catch (e) {
-        debugPrint('FFmpeg error: $e');
-      }
+      await Future.delayed(const Duration(milliseconds: 120));
       await _navigateToEditor(
-        videoFile,
+        File(xfile.path),
         MediaType.video,
         flipHorizontal: _isFrontCamera,
         loopPreview: true,
@@ -1079,11 +1076,14 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
     } catch (e) {
       debugPrint('Error stopping video recording: $e');
       if (mounted) setState(() => _recording = false);
+    } finally {
+      _videoRecordStopPending = false;
     }
   }
 
   Future<void> _stopVideoAndNavigate() async {
     _videoRecordStartPending = false;
+    if (_videoRecordStopPending) return;
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (!_controller!.value.isRecordingVideo) {
       if (_recording) {
@@ -1094,6 +1094,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       return;
     }
     try {
+      _videoRecordStopPending = true;
       final xfile = await _controller!.stopVideoRecording();
       if (mounted) {
         setState(() {
@@ -1106,15 +1107,9 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
           _layoutActiveIndex = 0;
         });
       }
-      File videoFile = File(xfile.path);
-      try {
-        await Future.delayed(const Duration(milliseconds: 200));
-        videoFile = await _fixVideoRotation(xfile.path);
-      } catch (e) {
-        debugPrint('FFmpeg error: $e');
-      }
+      await Future.delayed(const Duration(milliseconds: 120));
       await _navigateToEditor(
-        videoFile,
+        File(xfile.path),
         MediaType.video,
         flipHorizontal: _isFrontCamera,
         loopPreview: true,
@@ -1126,6 +1121,8 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
           _recording = false;
         });
       }
+    } finally {
+      _videoRecordStopPending = false;
     }
   }
 
