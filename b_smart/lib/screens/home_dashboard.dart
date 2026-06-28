@@ -39,11 +39,13 @@ import 'story_viewer_screen.dart';
 import 'own_story_viewer_screen.dart';
 import 'create_upload_screen.dart';
 import '../utils/current_user.dart';
+import '../utils/id_extractor.dart';
 import '../utils/share_links.dart';
 import '../api/auth_api.dart';
 import '../api/api_exceptions.dart';
 import '../api/api_client.dart';
 import '../api/follows_api.dart';
+import '../api/privacy_api.dart';
 import '../api/users_api.dart';
 import '../api/suggestions_api.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -661,13 +663,7 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   String _suggestionIdOf(Map<String, dynamic> u) {
     final embedded = u['user'];
-    if (embedded is Map) {
-      final e = Map<String, dynamic>.from(embedded);
-      final raw = e['_id'] ?? e['id'] ?? e['userId'];
-      return raw == null ? '' : raw.toString();
-    }
-    final raw = u['_id'] ?? u['id'] ?? u['userId'];
-    return raw == null ? '' : raw.toString();
+    return extractEntityId(embedded ?? u) ?? '';
   }
 
   String _suggestionTitleOf(Map<String, dynamic> u) {
@@ -734,6 +730,61 @@ class _HomeDashboardState extends State<HomeDashboard>
     return 'Suggested for you';
   }
 
+  String _suggestionRoleOf(Map<String, dynamic> u) {
+    final embedded = u['user'];
+    if (embedded is Map) {
+      return _suggestionRoleOf(Map<String, dynamic>.from(embedded));
+    }
+    final raw = u['role'] ??
+        u['user_role'] ??
+        u['userRole'] ??
+        u['user_type'] ??
+        u['userType'] ??
+        u['type'] ??
+        u['accountType'] ??
+        u['account_type'];
+    return raw == null ? '' : raw.toString().toLowerCase().trim();
+  }
+
+  bool _isUserSuggestionAccount(Map<String, dynamic> u) {
+    final role = _suggestionRoleOf(u);
+    if (role.isEmpty) return true;
+
+    const nonUserRoles = <String>{
+      'admin',
+      'administrator',
+      'business',
+      'vendor',
+      'advertiser',
+      'ads',
+      'company',
+      'brand',
+      'organization',
+      'organisation',
+      'org',
+      'page',
+      'team',
+      'store',
+      'shop',
+      'agency',
+      'official',
+      'enterprise',
+    };
+
+    if (nonUserRoles.contains(role)) return false;
+
+    const userRoles = <String>{
+      'user',
+      'member',
+      'creator',
+      'regular',
+      'personal',
+      'individual',
+    };
+
+    return userRoles.contains(role);
+  }
+
   Future<void> _loadFollowSuggestions({bool force = false}) async {
     if (_followSuggestionsLoading) return;
     if (!force && _followSuggestions.isNotEmpty) return;
@@ -761,8 +812,13 @@ class _HomeDashboardState extends State<HomeDashboard>
         list = users
             .map((e) => Map<String, dynamic>.from(e))
             .where((u) => _suggestionIdOf(u).trim().isNotEmpty)
+            .where(_isUserSuggestionAccount)
             .toList();
       }
+      list = list
+          .where((u) => _isUserSuggestionAccount(u))
+          .where((u) => privacyAppearsInSuggestions(u))
+          .toList();
       list.shuffle();
       if (list.length > 80) {
         list.removeRange(80, list.length);
@@ -838,33 +894,7 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   String _vendorSuggestionIdOf(Map<String, dynamic> v) {
     final embedded = v['vendor'] ?? v['business'] ?? v['company'];
-    if (embedded is Map) {
-      final e = Map<String, dynamic>.from(embedded);
-      final raw = e['userId'] ??
-          e['user_id'] ??
-          e['ownerId'] ??
-          e['owner_id'] ??
-          e['vendorUserId'] ??
-          e['vendor_user_id'] ??
-          e['user'] ??
-          e['owner'] ??
-          e['id'] ??
-          e['_id'] ??
-          e['vendorId'];
-      return raw == null ? '' : raw.toString();
-    }
-    final raw = v['userId'] ??
-        v['user_id'] ??
-        v['ownerId'] ??
-        v['owner_id'] ??
-        v['vendorUserId'] ??
-        v['vendor_user_id'] ??
-        v['user'] ??
-        v['owner'] ??
-        v['id'] ??
-        v['_id'] ??
-        v['vendorId'];
-    return raw == null ? '' : raw.toString();
+    return extractEntityId(embedded ?? v) ?? '';
   }
 
   String _vendorSuggestionTitleOf(Map<String, dynamic> v) {

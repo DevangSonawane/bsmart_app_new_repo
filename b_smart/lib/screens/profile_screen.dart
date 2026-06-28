@@ -413,6 +413,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _parseBoolLike(u['is_followed_by_me']) ??
       false;
 
+  String _suggestionRoleOf(Map<String, dynamic> u) {
+    final embedded = u['user'];
+    if (embedded is Map) {
+      return _suggestionRoleOf(Map<String, dynamic>.from(embedded));
+    }
+    final raw = u['role'] ??
+        u['user_role'] ??
+        u['userRole'] ??
+        u['user_type'] ??
+        u['userType'] ??
+        u['type'] ??
+        u['accountType'] ??
+        u['account_type'];
+    return raw == null ? '' : raw.toString().toLowerCase().trim();
+  }
+
+  bool _isUserSuggestionAccount(Map<String, dynamic> u) {
+    final role = _suggestionRoleOf(u);
+    if (role.isEmpty) return true;
+
+    const nonUserRoles = <String>{
+      'admin',
+      'administrator',
+      'business',
+      'vendor',
+      'advertiser',
+      'ads',
+      'company',
+      'brand',
+      'organization',
+      'organisation',
+      'org',
+      'page',
+      'team',
+      'store',
+      'shop',
+      'agency',
+      'official',
+      'enterprise',
+    };
+
+    if (nonUserRoles.contains(role)) return false;
+
+    const userRoles = <String>{
+      'user',
+      'member',
+      'creator',
+      'regular',
+      'personal',
+      'individual',
+    };
+
+    return userRoles.contains(role);
+  }
+
   void _toggleFollowSuggestions() {
     final next = !_showFollowSuggestions;
     setState(() => _showFollowSuggestions = next);
@@ -431,6 +486,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final list = users
           .map((e) => Map<String, dynamic>.from(e))
           .where((u) => _suggestionIdOf(u).isNotEmpty)
+          .where(_isUserSuggestionAccount)
           .where(privacyAppearsInSuggestions)
           .toList();
       list.shuffle();

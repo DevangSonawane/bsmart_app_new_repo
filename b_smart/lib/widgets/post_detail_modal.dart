@@ -8,6 +8,7 @@ import '../services/supabase_service.dart';
 import '../services/comment_sync_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
+import '../utils/id_extractor.dart';
 import '../api/api_exceptions.dart';
 import '../config/api_config.dart';
 import '../api/api_client.dart';
@@ -64,13 +65,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
   StreamSubscription<CommentChangeEvent>? _commentSyncSub;
 
   String? _extractId(dynamic value) {
-    if (value is String && value.isNotEmpty) return value;
-    if (value is Map) {
-      final id = value['id'] ?? value['_id'];
-      if (id is String && id.isNotEmpty) return id;
-      if (id != null) return id.toString();
-    }
-    return null;
+    return extractEntityId(value);
   }
 
   Map<String, dynamic>? _extractUserMap(dynamic value) {

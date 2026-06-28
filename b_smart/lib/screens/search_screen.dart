@@ -8,6 +8,7 @@ import '../api/search_api.dart';
 import '../api/privacy_api.dart';
 import '../models/feed_post_model.dart';
 import '../utils/current_user.dart';
+import '../utils/id_extractor.dart';
 import '../utils/url_helper.dart';
 import '../screens/post_detail_screen.dart';
 import '../widgets/post_detail_modal.dart';
@@ -119,10 +120,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   String _userProfileRoute(Map<String, dynamic> user) {
-    final uid = (user['_id'] ?? user['id'] ?? user['user_id'])
-            ?.toString()
-            .trim() ??
-        '';
+    final uid = extractEntityId(user) ?? '';
     if (uid.isEmpty) return '';
     final role = (user['role'] ?? '').toString().toLowerCase();
     return role == 'vendor' ? '/vendor/$uid/public' : '/profile/$uid';

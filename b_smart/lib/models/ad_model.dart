@@ -124,6 +124,25 @@ class Ad {
   }
 
   factory Ad.fromApi(Map<String, dynamic> raw) {
+    String? extractId(dynamic value) {
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+      if (value is num) return value.toString();
+      if (value is Map) {
+        final map = Map<String, dynamic>.from(value);
+        final raw = map['_id'] ??
+            map['id'] ??
+            map['user_id'] ??
+            map['userId'] ??
+            map['vendorId'] ??
+            map['vendor_id'];
+        if (raw == null) return null;
+        final s = raw.toString().trim();
+        return s.isEmpty ? null : s;
+      }
+      final s = value?.toString().trim() ?? '';
+      return s.isEmpty ? null : s;
+    }
+
     final vendor = raw['vendor_id'] is Map
         ? Map<String, dynamic>.from(raw['vendor_id'] as Map)
         : <String, dynamic>{};
@@ -293,13 +312,9 @@ class Ad {
               userStatus['saved'] ??
               false) ==
           true,
-      userId: (user['_id'] ??
-              user['id'] ??
-              ((raw['user_id'] is String || raw['user_id'] is num)
-                  ? raw['user_id']
-                  : null) ??
-              raw['userId'])
-          ?.toString(),
+      userId: extractId(user) ??
+          extractId(raw['user_id']) ??
+          extractId(raw['userId']),
       userName: _asNullableString(user['username'] ?? user['full_name']),
       userAvatarUrl: _normalizeUrl(user['avatar_url'] ??
           user['avatarUrl'] ??

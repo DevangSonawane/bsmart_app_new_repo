@@ -101,6 +101,25 @@ class FeedPost {
   });
 
   factory FeedPost.fromJson(Map<String, dynamic> json) {
+    String? extractId(dynamic value) {
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+      if (value is num) return value.toString();
+      if (value is Map) {
+        final map = Map<String, dynamic>.from(value);
+        final raw = map['_id'] ??
+            map['id'] ??
+            map['user_id'] ??
+            map['userId'] ??
+            map['vendorId'] ??
+            map['vendor_id'];
+        if (raw == null) return null;
+        final s = raw.toString().trim();
+        return s.isEmpty ? null : s;
+      }
+      final s = value?.toString().trim() ?? '';
+      return s.isEmpty ? null : s;
+    }
+
     int toInt(dynamic v) {
       if (v is int) return v;
       if (v is num) return v.toInt();
@@ -322,7 +341,7 @@ class FeedPost {
 
     return FeedPost(
       id: json['_id'] ?? json['id'] ?? '',
-      userId: json['user_id'] ?? json['userId'] ?? '',
+      userId: extractId(json['user_id'] ?? json['userId'] ?? json['user']) ?? '',
       userName: json['username'] ?? json['userName'] ?? 'User',
       fullName: json['fullName'],
       userAvatar:

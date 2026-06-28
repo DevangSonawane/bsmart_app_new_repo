@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import '../api/api.dart';
 import '../services/feed_service.dart';
 import '../utils/current_user.dart';
+import '../utils/id_extractor.dart';
 import '../utils/timezone_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:photo_manager/photo_manager.dart';
@@ -1941,17 +1942,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
   }
 
   String _mentionUserId(Map<String, dynamic> mention) {
-    final direct =
-        (mention['user_id'] ?? mention['userId'] ?? mention['id'])?.toString();
-    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
-    final user = mention['user'];
-    if (user is Map) {
-      final u = Map<String, dynamic>.from(user);
-      final nested =
-          (u['user_id'] ?? u['userId'] ?? u['_id'] ?? u['id'])?.toString();
-      if (nested != null && nested.trim().isNotEmpty) return nested.trim();
-    }
-    return '';
+    return extractEntityId(mention) ?? '';
   }
 
   String? _mentionUserRole(Map<String, dynamic> mention) {

@@ -21,6 +21,7 @@ import '../utils/app_error_handler.dart';
 import '../state/feed_actions.dart';
 import '../state/store.dart';
 import '../utils/current_user.dart';
+import '../utils/id_extractor.dart';
 import '../utils/url_helper.dart';
 import '../widgets/ad_cta_buttons.dart';
 import '../widgets/app_popups/app_modal_popup.dart';
@@ -3454,7 +3455,9 @@ class _SearchUser {
       return v ?? '';
     }
 
-    final id = pickString(raw['_id'] ?? raw['id'] ?? raw['user_id']);
+    final id = extractEntityId(raw['_id'] ?? raw['id'] ?? raw['user_id']) ??
+        extractEntityId(raw) ??
+        '';
     final username = pickString(raw['username']);
     final fullName = pickString(raw['full_name'] ?? raw['name']);
     final avatar =

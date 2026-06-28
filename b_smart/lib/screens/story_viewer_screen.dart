@@ -6,6 +6,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:video_player/video_player.dart';
 import '../models/story_model.dart';
 import '../utils/current_user.dart';
+import '../utils/id_extractor.dart';
 import '../services/feed_service.dart';
 import '../services/story_cache.dart';
 import '../utils/timezone_service.dart';
@@ -1112,17 +1113,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   String _mentionUserId(Map<String, dynamic> mention) {
-    final direct =
-        (mention['user_id'] ?? mention['userId'] ?? mention['id'])?.toString();
-    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
-    final user = mention['user'];
-    if (user is Map) {
-      final u = Map<String, dynamic>.from(user);
-      final nested =
-          (u['user_id'] ?? u['userId'] ?? u['_id'] ?? u['id'])?.toString();
-      if (nested != null && nested.trim().isNotEmpty) return nested.trim();
-    }
-    return '';
+    return extractEntityId(mention) ?? '';
   }
 
   String? _mentionUserRole(Map<String, dynamic> mention) {
