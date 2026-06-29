@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import '../models/feed_post_model.dart';
 import '../api/api_client.dart';
@@ -66,15 +68,12 @@ class _PostsGridState extends State<PostsGrid> {
               (p.thumbnailUrl != null && p.thumbnailUrl!.trim().isNotEmpty)
                   ? p.thumbnailUrl
                   : (p.mediaUrls.isNotEmpty ? p.mediaUrls.first : null);
-          final normalized = (raw != null && raw.trim().isNotEmpty)
-              ? UrlHelper.normalizeUrl(raw)
-              : '';
-          final thumb = normalized.isNotEmpty ? normalized : null;
-          final firstMedia = p.mediaUrls.isNotEmpty
-              ? UrlHelper.normalizeUrl(p.mediaUrls.first)
-              : '';
-          final needsVideoThumb =
-              p.mediaType == PostMediaType.reel && _isVideoUrl(thumb ?? firstMedia);
+          final thumb = _resolveThumbSource(raw);
+          final firstMedia = p.mediaUrls.isNotEmpty ? p.mediaUrls.first : '';
+          final videoThumb =
+              p.mediaType == PostMediaType.reel && _isVideoUrl(firstMedia)
+                  ? UrlHelper.normalizeUrl(firstMedia)
+                  : '';
           assert(() {
             if (thumb == null && !_loggedMissingThumbIds.contains(p.id)) {
               _loggedMissingThumbIds.add(p.id);
@@ -82,15 +81,16 @@ class _PostsGridState extends State<PostsGrid> {
               final first =
                   p.mediaUrls.isNotEmpty ? p.mediaUrls.first.trim() : '';
               debugPrint(
-                '[PostsGrid] Missing thumb for id=${p.id} mediaType=${p.mediaType} thumbRaw="$thumbRaw" first="$first" normalized="$normalized"',
+                '[PostsGrid] Missing thumb for id=${p.id} mediaType=${p.mediaType} thumbRaw="$thumbRaw" first="$first"',
               );
             }
             return true;
           }());
-          final headers =
-              (thumb != null && UrlHelper.shouldAttachAuthHeader(thumb))
-                  ? _headers
-                  : null;
+          final headers = (thumb != null &&
+                  thumb.startsWith('http') &&
+                  UrlHelper.shouldAttachAuthHeader(thumb))
+              ? _headers
+              : null;
           return GestureDetector(
             onTap: () => widget.onTap(p),
             child: Transform.scale(
@@ -101,8 +101,22 @@ class _PostsGridState extends State<PostsGrid> {
                 children: [
                   ColoredBox(
                     color: seamColor,
-                    child: thumb != null && !needsVideoThumb
-                        ? SafeNetworkImage(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (videoThumb.isNotEmpty)
+                          _generatedThumbFor(
+                            p.id,
+                            videoThumb,
+                            seamColor,
+                          ),
+                        if (thumb != null && p.mediaType == PostMediaType.reel)
+                          _renderThumbSource(
+                            thumb,
+                            headers: headers,
+                          ),
+                        if (thumb != null && p.mediaType != PostMediaType.reel)
+                          SafeNetworkImage(
                             url: thumb,
                             headers: headers,
                             cacheKey:
@@ -113,14 +127,9 @@ class _PostsGridState extends State<PostsGrid> {
                               color: seamColor,
                               child: const Icon(Icons.broken_image),
                             ),
-                          )
-                        : needsVideoThumb
-                            ? _generatedThumbFor(
-                                p.id,
-                                thumb ?? firstMedia,
-                                seamColor,
-                              )
-                            : const SizedBox.shrink(),
+                          ),
+                      ],
+                    ),
                   ),
                   if (p.mediaType == PostMediaType.reel)
                     const Positioned(
@@ -171,6 +180,60 @@ class _PostsGridState extends State<PostsGrid> {
         );
       },
     );
+  }
+
+  Widget _renderThumbSource(
+    String source, {
+    Map<String, String>? headers,
+  }) {
+    if (_looksLikeLocalFile(source)) {
+      final file = _fileForSource(source);
+      if (file != null && file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    return CachedNetworkImage(
+      imageUrl: source,
+      httpHeaders: headers,
+      fit: BoxFit.cover,
+      placeholder: (_, __) => const SizedBox.shrink(),
+      errorWidget: (_, __, ___) => const SizedBox.shrink(),
+    );
+  }
+
+  File? _fileForSource(String source) {
+    final trimmed = source.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.startsWith('file://')) {
+      final uri = Uri.tryParse(trimmed);
+      if (uri == null) return null;
+      return File(uri.toFilePath());
+    }
+    return File(trimmed);
+  }
+
+  bool _looksLikeLocalFile(String source) {
+    final trimmed = source.trim();
+    if (trimmed.isEmpty) return false;
+    if (trimmed.startsWith('file://')) return true;
+    if (trimmed.startsWith('/')) return true;
+    final file = File(trimmed);
+    return file.existsSync();
+  }
+
+  String? _resolveThumbSource(String? raw) {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty) return null;
+    if (_looksLikeLocalFile(value)) return value;
+    final normalized = UrlHelper.normalizeUrl(value);
+    return normalized.isNotEmpty ? normalized : null;
   }
 
   bool _isVideoUrl(String url) {

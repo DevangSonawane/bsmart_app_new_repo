@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
@@ -2687,10 +2688,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       itemBuilder: (ctx, i) {
         final r = _userReels[i];
         final thumbRaw = r.thumbnailUrl?.trim();
-        final thumb = (thumbRaw != null && thumbRaw.isNotEmpty)
-            ? _absoluteReelUrl(thumbRaw)
-            : null;
+        final thumb = _resolveReelThumbSource(thumbRaw);
         final videoUrl = _absoluteReelUrl(r.videoUrl);
+        final videoThumb = _looksLikeVideoUrl(videoUrl) ? videoUrl : '';
         return GestureDetector(
           onTap: () => Navigator.of(context).pushNamed(
             '/reels',
@@ -2702,20 +2702,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
               fit: StackFit.expand,
               children: [
                 Container(color: Colors.black),
-                if (thumb != null && !_looksLikeVideoUrl(thumb))
-                  SafeNetworkImage(
-                    url: thumb,
-                    headers: _reelImageHeaders,
-                    cacheKey:
-                        '$thumb#${_reelImageHeaders?['Authorization'] ?? ''}',
-                    fit: BoxFit.cover,
-                    placeholder: Container(color: Colors.grey[900]),
-                    errorWidget: Container(color: Colors.grey[900]),
-                  ),
-                if (thumb == null || _looksLikeVideoUrl(thumb))
+                if (videoThumb.isNotEmpty)
                   _buildReelThumbnailFallback(
                     cacheId: r.id,
-                    videoUrl: videoUrl,
+                    videoUrl: videoThumb,
+                  ),
+                if (thumb != null)
+                  _buildRenderableReelThumb(
+                    thumb,
+                    headers: _reelImageHeaders,
                   ),
                 const Positioned(
                   top: 6,
@@ -2777,6 +2772,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
         lower.endsWith('.m4v') ||
         lower.endsWith('.mkv') ||
         lower.endsWith('.webm');
+  }
+
+  Widget _buildRenderableReelThumb(
+    String source, {
+    Map<String, String>? headers,
+  }) {
+    if (_looksLikeLocalThumb(source)) {
+      final file = _fileFromThumbSource(source);
+      if (file != null && file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    return CachedNetworkImage(
+      imageUrl: source,
+      httpHeaders: headers,
+      fit: BoxFit.cover,
+      placeholder: (_, __) => const SizedBox.shrink(),
+      errorWidget: (_, __, ___) => const SizedBox.shrink(),
+    );
+  }
+
+  bool _looksLikeLocalThumb(String source) {
+    final trimmed = source.trim();
+    if (trimmed.isEmpty) return false;
+    if (trimmed.startsWith('file://')) return true;
+    if (trimmed.startsWith('/')) return true;
+    return File(trimmed).existsSync();
+  }
+
+  File? _fileFromThumbSource(String source) {
+    final trimmed = source.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.startsWith('file://')) {
+      final uri = Uri.tryParse(trimmed);
+      if (uri == null) return null;
+      return File(uri.toFilePath());
+    }
+    return File(trimmed);
+  }
+
+  String? _resolveReelThumbSource(String? raw) {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty) return null;
+    if (_looksLikeLocalThumb(value)) return value;
+    final normalized = UrlHelper.normalizeUrl(value);
+    return normalized.isNotEmpty ? normalized : null;
   }
 
   Widget _buildTweetsList(List<FeedPost> tweets, {required bool isMe}) {
