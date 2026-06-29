@@ -5,7 +5,6 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api.dart';
 import '../services/auth/auth_service.dart';
@@ -24,6 +23,7 @@ import 'notification_settings_screen.dart';
 import 'privacy_screen.dart';
 import 'saved_items_screen.dart';
 import 'security_screen.dart';
+import 'contact_support_screen.dart';
 import 'wallet_screen.dart';
 
 String _trFallback(String key, String fallback) {
@@ -144,20 +144,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _openMailSupport() async {
-    final uri = Uri(
-      scheme: 'mailto',
-      path: 'support@bsmart.app',
-      queryParameters: {
-        'subject': 'bSmart support request',
-      },
+  Future<void> _openContactSupportPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ContactSupportScreen()),
     );
-    if (!await launchUrl(uri)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Support email is not available yet.')),
-      );
-    }
   }
 
   Future<void> _showDeleteAccountDialog() async {
@@ -386,7 +376,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.help_outline,
             label: 'settings_help_support'.tr(),
             subLabel: 'settings_help_support_subtitle'.tr(),
-            onTap: () => _push(_HelpSupportScreen(onContactSupport: _openMailSupport)),
+            onTap: () => _push(
+                _HelpSupportScreen(onContactSupport: _openContactSupportPage)),
           ),
           _settingTile(
             icon: Icons.article_outlined,
@@ -406,7 +397,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _sectionTitle('settings_section_account_actions'.tr()),
           _settingTile(
             icon: LucideIcons.logOut,
-            label: _trFallback('settings_section_account_actions', 'Account Actions'),
+            label: _trFallback(
+                'settings_section_account_actions', 'Account Actions'),
             subLabel: _trFallback(
               'settings_account_actions_subtitle',
               'Open logout, deactivate, and delete options',
@@ -440,18 +432,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final info = _packageInfo;
     if (info == null) return 'Version information loading...';
     return 'Version ${info.version} (${info.buildNumber})';
-  }
-
-  String _appearanceModeLabel() {
-    final mode = ThemeScope.of(context).themeMode;
-    switch (mode) {
-      case ThemeMode.light:
-        return 'appearance_light_mode';
-      case ThemeMode.dark:
-        return 'appearance_dark_mode';
-      case ThemeMode.system:
-        return 'appearance_system_default';
-    }
   }
 
   Widget _headerCard(ThemeData theme, bool isDark) {
@@ -518,7 +498,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     _chip(roleLabel),
                     _chip(_aboutSubtitle),
-                    if (_isCreator) _chip('settings_creator_tools_enabled'.tr()),
+                    if (_isCreator)
+                      _chip('settings_creator_tools_enabled'.tr()),
                     if (_isVendor) _chip('settings_vendor_tools_enabled'.tr()),
                   ],
                 ),
@@ -620,11 +601,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 ),
-                if (trailing != null) trailing else Icon(
-                  LucideIcons.chevronRight,
-                  color: theme.iconTheme.color ?? Colors.grey.shade400,
-                  size: 20,
-                ),
+                if (trailing != null)
+                  trailing
+                else
+                  Icon(
+                    LucideIcons.chevronRight,
+                    color: theme.iconTheme.color ?? Colors.grey.shade400,
+                    size: 20,
+                  ),
               ],
             ),
           ),
@@ -632,7 +616,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-
 }
 
 class _CreatorCenterScreen extends StatelessWidget {
@@ -658,7 +641,8 @@ class _CreatorCenterScreen extends StatelessWidget {
             title: 'settings_creator_dashboard'.tr(),
             subtitle: 'settings_creator_dashboard_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdvertiserDashboardScreen()),
+              MaterialPageRoute(
+                  builder: (_) => const AdvertiserDashboardScreen()),
             ),
           ),
           _centerTile(
@@ -708,7 +692,8 @@ class _VendorCenterScreen extends StatelessWidget {
             title: 'settings_vendor_dashboard'.tr(),
             subtitle: 'settings_vendor_dashboard_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdvertiserDashboardScreen()),
+              MaterialPageRoute(
+                  builder: (_) => const AdvertiserDashboardScreen()),
             ),
           ),
           _centerTile(
@@ -717,7 +702,8 @@ class _VendorCenterScreen extends StatelessWidget {
             title: 'settings_vendor_ad_manager'.tr(),
             subtitle: 'settings_vendor_ad_manager_subtitle'.tr(),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdvertiserAdsListScreen()),
+              MaterialPageRoute(
+                  builder: (_) => const AdvertiserAdsListScreen()),
             ),
           ),
           _centerTile(
@@ -821,7 +807,8 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                   onTap: _clearCache,
                   trailing: Text(
                     'settings_recommended'.tr(),
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700),
                   ),
                 ),
                 const Divider(height: 1),
@@ -829,7 +816,8 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                   icon: LucideIcons.download,
                   title: 'settings_downloaded_media'.tr(),
                   subtitle: 'settings_downloaded_media_subtitle'.tr(),
-                  onTap: () => _showUnavailable('settings_downloaded_media'.tr()),
+                  onTap: () =>
+                      _showUnavailable('settings_downloaded_media'.tr()),
                 ),
               ],
             ),
@@ -846,13 +834,16 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                   activeThumbColor: DesignTokens.instaPink,
                   activeTrackColor:
                       DesignTokens.instaPink.withValues(alpha: 0.35),
-                  inactiveThumbColor:
-                      isDark ? const Color(0xFFE5E7EB) : const Color(0xFF4B5563),
-                  inactiveTrackColor:
-                      isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB),
+                  inactiveThumbColor: isDark
+                      ? const Color(0xFFE5E7EB)
+                      : const Color(0xFF4B5563),
+                  inactiveTrackColor: isDark
+                      ? const Color(0xFF4B5563)
+                      : const Color(0xFFD1D5DB),
                   onChanged: (value) {
                     setState(() => _mobileDataSaver = value);
-                    _showUnavailable('settings_mobile_data_saver_local_only'.tr());
+                    _showUnavailable(
+                        'settings_mobile_data_saver_local_only'.tr());
                   },
                 ),
                 const Divider(height: 1),
@@ -865,13 +856,16 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                   activeThumbColor: DesignTokens.instaPink,
                   activeTrackColor:
                       DesignTokens.instaPink.withValues(alpha: 0.35),
-                  inactiveThumbColor:
-                      isDark ? const Color(0xFFE5E7EB) : const Color(0xFF4B5563),
-                  inactiveTrackColor:
-                      isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB),
+                  inactiveThumbColor: isDark
+                      ? const Color(0xFFE5E7EB)
+                      : const Color(0xFF4B5563),
+                  inactiveTrackColor: isDark
+                      ? const Color(0xFF4B5563)
+                      : const Color(0xFFD1D5DB),
                   onChanged: (value) {
                     setState(() => _wifiOnlyDownloads = value);
-                    _showUnavailable('settings_wifi_only_downloads_local_only'.tr());
+                    _showUnavailable(
+                        'settings_wifi_only_downloads_local_only'.tr());
                   },
                 ),
               ],
@@ -946,8 +940,10 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final labelColor =
+        isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor =
+        isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
     return InkWell(
       onTap: onTap,
@@ -1007,9 +1003,12 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
-    final total = (_cachedImagesMb + _cachedVideosMb + _cachedDocumentsMb).clamp(1, 999999);
+    final labelColor =
+        isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor =
+        isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final total = (_cachedImagesMb + _cachedVideosMb + _cachedDocumentsMb)
+        .clamp(1, 999999);
     final percent = valueMb / total;
 
     return Padding(
@@ -1154,7 +1153,8 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.confirmation_num_outlined,
                   title: 'settings_raise_ticket'.tr(),
                   subtitle: 'settings_raise_ticket_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_raise_ticket'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_raise_ticket'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1162,7 +1162,8 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.chat_bubble_outline,
                   title: 'settings_live_chat'.tr(),
                   subtitle: 'settings_live_chat_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_live_chat'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_live_chat'.tr()),
                 ),
               ],
             ),
@@ -1184,7 +1185,8 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.video_library_outlined,
                   title: 'settings_tutorials'.tr(),
                   subtitle: 'settings_tutorials_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_tutorials'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_tutorials'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1192,7 +1194,8 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.menu_book_outlined,
                   title: 'settings_user_guide'.tr(),
                   subtitle: 'settings_user_guide_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_user_guide'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_user_guide'.tr()),
                 ),
               ],
             ),
@@ -1206,7 +1209,8 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.bug_report_outlined,
                   title: 'settings_report_bug'.tr(),
                   subtitle: 'settings_report_bug_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_report_bug'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_report_bug'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1214,7 +1218,8 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.flag_outlined,
                   title: 'settings_report_content'.tr(),
                   subtitle: 'settings_report_content_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_report_content'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_report_content'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1222,7 +1227,8 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.person_off_outlined,
                   title: 'settings_report_user'.tr(),
                   subtitle: 'settings_report_user_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_report_user'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_report_user'.tr()),
                 ),
               ],
             ),
@@ -1281,8 +1287,10 @@ class _HelpSupportScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final labelColor =
+        isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor =
+        isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
     return Material(
       color: Colors.transparent,
@@ -1370,7 +1378,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.article_outlined,
                   title: 'settings_terms_conditions'.tr(),
                   subtitle: 'settings_terms_conditions_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_terms_conditions'.tr()),
+                  onTap: () => _showUnavailable(
+                      context, 'settings_terms_conditions'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1378,7 +1387,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.privacy_tip_outlined,
                   title: 'settings_privacy_policy'.tr(),
                   subtitle: 'settings_privacy_policy_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_privacy_policy'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_privacy_policy'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1386,7 +1396,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.receipt_long_outlined,
                   title: 'settings_refund_policy'.tr(),
                   subtitle: 'settings_refund_policy_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_refund_policy'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_refund_policy'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1394,7 +1405,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.rule_outlined,
                   title: 'settings_community_guidelines'.tr(),
                   subtitle: 'settings_community_guidelines_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_community_guidelines'.tr()),
+                  onTap: () => _showUnavailable(
+                      context, 'settings_community_guidelines'.tr()),
                 ),
               ],
             ),
@@ -1408,7 +1420,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.download_outlined,
                   title: 'settings_download_my_data'.tr(),
                   subtitle: 'settings_download_my_data_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_download_my_data'.tr()),
+                  onTap: () => _showUnavailable(
+                      context, 'settings_download_my_data'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1416,7 +1429,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.delete_outline,
                   title: 'settings_delete_my_data'.tr(),
                   subtitle: 'settings_delete_my_data_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_delete_my_data'.tr()),
+                  onTap: () =>
+                      _showUnavailable(context, 'settings_delete_my_data'.tr()),
                 ),
               ],
             ),
@@ -1430,7 +1444,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.tune_outlined,
                   title: 'settings_manage_consent_preferences'.tr(),
                   subtitle: 'settings_manage_consent_preferences_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_manage_consent_preferences'.tr()),
+                  onTap: () => _showUnavailable(
+                      context, 'settings_manage_consent_preferences'.tr()),
                 ),
               ],
             ),
@@ -1444,7 +1459,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.manage_search_outlined,
                   title: 'settings_data_access_request'.tr(),
                   subtitle: 'settings_data_access_request_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_data_access_request'.tr()),
+                  onTap: () => _showUnavailable(
+                      context, 'settings_data_access_request'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1452,7 +1468,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.edit_outlined,
                   title: 'settings_data_correction_request'.tr(),
                   subtitle: 'settings_data_correction_request_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_data_correction_request'.tr()),
+                  onTap: () => _showUnavailable(
+                      context, 'settings_data_correction_request'.tr()),
                 ),
                 const Divider(height: 1),
                 _actionRow(
@@ -1460,7 +1477,8 @@ class _LegalComplianceScreen extends StatelessWidget {
                   icon: Icons.delete_sweep_outlined,
                   title: 'settings_data_deletion_request'.tr(),
                   subtitle: 'settings_data_deletion_request_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_data_deletion_request'.tr()),
+                  onTap: () => _showUnavailable(
+                      context, 'settings_data_deletion_request'.tr()),
                 ),
               ],
             ),
@@ -1519,8 +1537,10 @@ class _LegalComplianceScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final labelColor =
+        isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor =
+        isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
     return Material(
       color: Colors.transparent,
@@ -1730,8 +1750,10 @@ class _AboutScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final labelColor =
+        isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor =
+        isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
     return Material(
       color: Colors.transparent,
@@ -1787,8 +1809,10 @@ class _AboutScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final labelColor =
+        isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor =
+        isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
     return Material(
       color: Colors.transparent,
@@ -1875,10 +1899,11 @@ class _AccountActionsScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
-      return Scaffold(
+    return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text(_trFallback('settings_section_account_actions', 'Account Actions')),
+        title: Text(
+            _trFallback('settings_section_account_actions', 'Account Actions')),
         centerTitle: true,
         elevation: 0,
       ),
@@ -1927,8 +1952,9 @@ class _AccountActionsScreen extends StatelessWidget {
                       : 'settings_deactivate_account'.tr(),
                   subtitle: 'settings_deactivate_account_subtitle'.tr(),
                   loading: deactivatingAccount,
-                  onTap:
-                      deactivatingAccount ? null : () async => onDeactivateAccount(),
+                  onTap: deactivatingAccount
+                      ? null
+                      : () async => onDeactivateAccount(),
                   danger: false,
                 ),
                 const Divider(height: 1),
@@ -2116,8 +2142,8 @@ Widget _infoCard(
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.35,
-                  color: theme.textTheme.bodyMedium?.color ??
-                      Colors.grey.shade600,
+                  color:
+                      theme.textTheme.bodyMedium?.color ?? Colors.grey.shade600,
                 ),
               ),
             ],

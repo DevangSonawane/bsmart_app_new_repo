@@ -1,5 +1,6 @@
 /// Barrel file – import this single file to access the entire REST API layer.
 library;
+
 export 'api_client.dart';
 export 'api_exceptions.dart';
 export 'auth_api.dart';
@@ -23,6 +24,7 @@ export 'highlights_api.dart';
 export 'notification_preferences_api.dart';
 export 'privacy_api.dart';
 export 'security_api.dart';
+export 'support_queries_api.dart';
 export 'suggestions_api.dart';
 export 'wallet_api.dart';
 export 'views_api.dart';
