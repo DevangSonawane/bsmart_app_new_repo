@@ -578,8 +578,8 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
         ? const Color(0xFF0B0B0C)
         : const Color(0xFFF3F4F6);
     final dividerColor = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.10)
-        : Colors.black.withValues(alpha: 0.08);
+        ? Colors.white.withValues(alpha: 0.18)
+        : Colors.black.withValues(alpha: 0.16);
 
     if (!_loading && _items.isEmpty) {
       return Center(
@@ -613,68 +613,67 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
           final isLastRow = rowIndex == totalRows - 1;
           return GestureDetector(
             onTap: () => _openItem(item),
-            child: Transform.scale(
-              scale: 1.01,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: seamColor,
-                      border: Border(
-                        right: isLastColumn
-                            ? BorderSide.none
-                            : BorderSide(
-                                color: dividerColor,
-                                width: 0.5,
-                              ),
-                        bottom: isLastRow
-                            ? BorderSide.none
-                            : BorderSide(
-                                color: dividerColor,
-                                width: 0.5,
-                              ),
-                      ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(
+                  color: seamColor,
+                  child: SafeNetworkImage(
+                    url: url,
+                    headers: shouldAuth ? _imageHeaders : null,
+                    fit: BoxFit.cover,
+                    placeholder: ColoredBox(color: seamColor),
+                    errorWidget: const Center(
+                      child: Icon(Icons.image, color: Colors.grey),
                     ),
-                    child: SafeNetworkImage(
-                      url: url,
-                      headers: shouldAuth ? _imageHeaders : null,
-                      fit: BoxFit.cover,
-                      placeholder: ColoredBox(color: seamColor),
-                      errorWidget: const Center(
-                        child: Icon(Icons.image, color: Colors.grey),
-                      ),
-                      assumeRaster: true,
+                    assumeRaster: true,
+                  ),
+                ),
+                if (!isLastColumn)
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: Container(width: 2, color: dividerColor),
                     ),
                   ),
-                  if (item.mediaType == PostMediaType.reel)
-                    const Positioned(
-                      top: 6,
-                      right: 6,
-                      child: Icon(
-                        LucideIcons.video,
-                        size: 16,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(color: Colors.black54, blurRadius: 8),
-                        ],
-                      ),
+                if (!isLastRow)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: Container(height: 2, color: dividerColor),
                     ),
-                  if (item.id.startsWith('ad-'))
-                    const Positioned(
-                      top: 6,
-                      left: 6,
-                      child: Icon(
-                        LucideIcons.badgeAlert,
-                        size: 16,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(color: Colors.black54, blurRadius: 8),
-                        ],
-                      ),
+                  ),
+                if (item.mediaType == PostMediaType.reel)
+                  const Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Icon(
+                      LucideIcons.video,
+                      size: 16,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(color: Colors.black54, blurRadius: 8),
+                      ],
                     ),
-                ],
-              ),
+                  ),
+                if (item.id.startsWith('ad-'))
+                  const Positioned(
+                    top: 6,
+                    left: 6,
+                    child: Icon(
+                      LucideIcons.badgeAlert,
+                      size: 16,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(color: Colors.black54, blurRadius: 8),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           );
         },
