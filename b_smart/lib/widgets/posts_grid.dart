@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import '../models/feed_post_model.dart';
 import '../api/api_client.dart';
 import 'safe_network_image.dart';
@@ -18,6 +21,8 @@ class PostsGrid extends StatefulWidget {
 class _PostsGridState extends State<PostsGrid> {
   Map<String, String>? _headers;
   final Set<String> _loggedMissingThumbIds = <String>{};
+  final Map<String, Future<Uint8List?>> _generatedThumbFutures =
+      <String, Future<Uint8List?>>{};
 
   @override
   void initState() {
@@ -65,6 +70,11 @@ class _PostsGridState extends State<PostsGrid> {
               ? UrlHelper.normalizeUrl(raw)
               : '';
           final thumb = normalized.isNotEmpty ? normalized : null;
+          final firstMedia = p.mediaUrls.isNotEmpty
+              ? UrlHelper.normalizeUrl(p.mediaUrls.first)
+              : '';
+          final needsVideoThumb =
+              p.mediaType == PostMediaType.reel && _isVideoUrl(thumb ?? firstMedia);
           assert(() {
             if (thumb == null && !_loggedMissingThumbIds.contains(p.id)) {
               _loggedMissingThumbIds.add(p.id);
@@ -91,7 +101,7 @@ class _PostsGridState extends State<PostsGrid> {
                 children: [
                   ColoredBox(
                     color: seamColor,
-                    child: thumb != null
+                    child: thumb != null && !needsVideoThumb
                         ? SafeNetworkImage(
                             url: thumb,
                             headers: headers,
@@ -104,7 +114,13 @@ class _PostsGridState extends State<PostsGrid> {
                               child: const Icon(Icons.broken_image),
                             ),
                           )
-                        : const SizedBox.shrink(),
+                        : needsVideoThumb
+                            ? _generatedThumbFor(
+                                p.id,
+                                thumb ?? firstMedia,
+                                seamColor,
+                              )
+                            : const SizedBox.shrink(),
                   ),
                   if (p.mediaType == PostMediaType.reel)
                     const Positioned(
@@ -123,5 +139,47 @@ class _PostsGridState extends State<PostsGrid> {
         },
       ),
     );
+  }
+
+  Widget _generatedThumbFor(String cacheId, String videoUrl, Color seamColor) {
+    final future = _generatedThumbFutures.putIfAbsent(cacheId, () async {
+      try {
+        final bytes = await VideoThumbnail.thumbnailData(
+          video: videoUrl,
+          imageFormat: ImageFormat.JPEG,
+          timeMs: 0,
+          quality: 75,
+        );
+        return bytes != null && bytes.isNotEmpty ? bytes : null;
+      } catch (_) {
+        return null;
+      }
+    });
+
+    return FutureBuilder<Uint8List?>(
+      future: future,
+      builder: (context, snap) {
+        final bytes = snap.data;
+        if (bytes == null || bytes.isEmpty) {
+          return ColoredBox(color: seamColor);
+        }
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
+        );
+      },
+    );
+  }
+
+  bool _isVideoUrl(String url) {
+    final lower = url.trim().toLowerCase();
+    return lower.endsWith('.m3u8') ||
+        lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.mkv') ||
+        lower.endsWith('.webm');
   }
 }

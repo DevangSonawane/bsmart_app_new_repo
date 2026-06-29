@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import '../services/reels_service.dart';
 import '../models/reel_model.dart';
 import '../services/supabase_service.dart';
@@ -164,6 +165,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _interestsLoadedForUserId = '';
   List<String> _adInterests = const <String>[];
   List<String> _availableInterestCategories = const <String>[];
+  final Map<String, Future<Uint8List?>> _reelThumbFutures =
+      <String, Future<Uint8List?>>{};
 
   @override
   void initState() {
@@ -2687,6 +2690,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final thumb = (thumbRaw != null && thumbRaw.isNotEmpty)
             ? _absoluteReelUrl(thumbRaw)
             : null;
+        final videoUrl = _absoluteReelUrl(r.videoUrl);
         return GestureDetector(
           onTap: () => Navigator.of(context).pushNamed(
             '/reels',
@@ -2698,7 +2702,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               fit: StackFit.expand,
               children: [
                 Container(color: Colors.black),
-                if (thumb != null)
+                if (thumb != null && !_looksLikeVideoUrl(thumb))
                   SafeNetworkImage(
                     url: thumb,
                     headers: _reelImageHeaders,
@@ -2707,6 +2711,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     fit: BoxFit.cover,
                     placeholder: Container(color: Colors.grey[900]),
                     errorWidget: Container(color: Colors.grey[900]),
+                  ),
+                if (thumb == null || _looksLikeVideoUrl(thumb))
+                  _buildReelThumbnailFallback(
+                    cacheId: r.id,
+                    videoUrl: videoUrl,
                   ),
                 const Positioned(
                   top: 6,
@@ -2723,6 +2732,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
+  }
+
+  Widget _buildReelThumbnailFallback({
+    required String cacheId,
+    required String videoUrl,
+  }) {
+    final future = _reelThumbFutures.putIfAbsent(cacheId, () async {
+      try {
+        final bytes = await VideoThumbnail.thumbnailData(
+          video: videoUrl,
+          imageFormat: ImageFormat.JPEG,
+          timeMs: 0,
+          quality: 75,
+        );
+        return bytes != null && bytes.isNotEmpty ? bytes : null;
+      } catch (_) {
+        return null;
+      }
+    });
+
+    return FutureBuilder<Uint8List?>(
+      future: future,
+      builder: (context, snap) {
+        final bytes = snap.data;
+        if (bytes == null || bytes.isEmpty) {
+          return Container(color: Colors.black);
+        }
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
+        );
+      },
+    );
+  }
+
+  bool _looksLikeVideoUrl(String url) {
+    final lower = url.trim().toLowerCase();
+    return lower.endsWith('.m3u8') ||
+        lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.mkv') ||
+        lower.endsWith('.webm');
   }
 
   Widget _buildTweetsList(List<FeedPost> tweets, {required bool isMe}) {
