@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/api_client.dart';
 import '../theme/design_tokens.dart';
 import '../services/promote_service.dart';
+import '../services/promote_like_cache.dart';
 import '../services/media_playback_registry.dart';
 import '../services/video_pool.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
@@ -23,8 +24,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 class PromoteScreen extends StatefulWidget {
   final bool isActive;
+  final String? initialReelId;
 
-  const PromoteScreen({super.key, this.isActive = true});
+  const PromoteScreen({
+    super.key,
+    this.isActive = true,
+    this.initialReelId,
+  });
 
   @override
   State<PromoteScreen> createState() => _PromoteScreenState();
@@ -114,13 +120,31 @@ class _PromoteScreenState extends State<PromoteScreen>
   Future<void> _loadPromotes() async {
     final list = await _promoteService.fetchPromotes();
     if (mounted) {
+      final initialReelId = _toId(widget.initialReelId);
+      var initialIndex = 0;
+      if (initialReelId.isNotEmpty) {
+        final foundIndex = list.indexWhere((item) {
+          final id = _toId(item['id'] ?? item['_id'] ?? item['promote_reel_id']);
+          return id == initialReelId;
+        });
+        if (foundIndex >= 0) initialIndex = foundIndex;
+      }
       setState(() {
         _promotes = list
             .map((e) => Map<String, dynamic>.from(e))
             .toList(growable: false);
+        _currentIndex = initialIndex;
         _loading = false;
       });
-      if (_promotes.isNotEmpty) _initControllerForIndex(0);
+      if (_promotes.isNotEmpty) {
+        _initControllerForIndex(initialIndex);
+        if (initialIndex > 0) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_pageController.hasClients) return;
+            _pageController.jumpToPage(initialIndex);
+          });
+        }
+      }
       unawaited(_loadFollowStatuses());
     }
   }
@@ -693,6 +717,17 @@ class _PromoteScreenState extends State<PromoteScreen>
       } else {
         await _promoteReelsApi.likePromoteReel(id);
       }
+      PromoteLikeCache.putById(id, {
+        ...item,
+        'isLikedByMe': nextLiked,
+        'is_liked_by_me': nextLiked,
+        'liked_by_me': nextLiked,
+        'liked': nextLiked,
+        'is_liked': nextLiked,
+        'likesCount': nextCount,
+        'likes_count': nextCount,
+        'likes': nextCount.toString(),
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -702,6 +737,17 @@ class _PromoteScreenState extends State<PromoteScreen>
           'likesCount': cur,
           'likes': cur.toString(),
         });
+      });
+      PromoteLikeCache.putById(id, {
+        ...item,
+        'isLikedByMe': wasLiked,
+        'is_liked_by_me': wasLiked,
+        'liked_by_me': wasLiked,
+        'liked': wasLiked,
+        'is_liked': wasLiked,
+        'likesCount': cur,
+        'likes_count': cur,
+        'likes': cur.toString(),
       });
     }
   }
@@ -809,8 +855,9 @@ class _PromoteScreenState extends State<PromoteScreen>
         _followByUserId[userId] = was;
       });
     } finally {
-      if (!mounted) return;
-      setState(() => _followLoadingUserIds.remove(userId));
+      if (mounted) {
+        setState(() => _followLoadingUserIds.remove(userId));
+      }
     }
   }
 
@@ -1524,94 +1571,6 @@ class _PromoteScreenState extends State<PromoteScreen>
     );
   }
 
-  void _showFeaturedProductsSheet(
-      BuildContext context, List<dynamic> products) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.black87,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).padding.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(left: 16),
-                  child: Text('Featured Products',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold)),
-                ),
-                IconButton(
-                  icon: const Icon(LucideIcons.x, color: Colors.white),
-                  onPressed: () => Navigator.of(ctx).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 120,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                scrollDirection: Axis.horizontal,
-                itemCount: products.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (context, i) {
-                  final prod = products[i] as Map<String, dynamic>;
-                  return Container(
-                    width: 120,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[850],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey[700]!),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          child: CachedNetworkImage(
-                            imageUrl: (prod['image'] as String?) ?? '',
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) => const Center(
-                                child: Icon(LucideIcons.image,
-                                    color: Colors.white54)),
-                            errorWidget: (_, __, ___) => const Center(
-                                child: Icon(LucideIcons.imageOff,
-                                    color: Colors.white54)),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Text(
-                            (prod['title'] as String?) ?? 'Product',
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 12),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    ).then((_) => setState(() {}));
-  }
 }
 
 class _SmoothVideoProgressBar extends StatefulWidget {

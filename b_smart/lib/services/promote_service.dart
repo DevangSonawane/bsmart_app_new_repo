@@ -1,5 +1,6 @@
 import '../api/posts_api.dart';
 import '../api/promote_reels_api.dart';
+import 'promote_like_cache.dart';
 
 /// Fetches promote (sponsored video) content. When backend has a
 /// promoted_videos (or similar) table, add the query here and remove fallback.
@@ -103,10 +104,25 @@ class PromoteService {
         item['views']);
     final isLikedByMe = item['is_liked_by_me'] == true ||
         item['liked_by_me'] == true ||
-        item['isLikedByMe'] == true;
+        item['isLikedByMe'] == true ||
+        item['liked'] == true ||
+        item['is_liked'] == true;
     final isSavedByMe = item['is_saved_by_me'] == true ||
         item['saved_by_me'] == true ||
-        item['isSavedByMe'] == true;
+        item['isSavedByMe'] == true ||
+        item['saved'] == true ||
+        item['is_saved'] == true;
+    final cached = PromoteLikeCache.getById(id);
+    final cachedLiked = cached?['is_liked_by_me'] ??
+        cached?['liked_by_me'] ??
+        cached?['isLikedByMe'] ??
+        cached?['liked'] ??
+        cached?['is_liked'];
+    final cachedSaved = cached?['is_saved_by_me'] ??
+        cached?['saved_by_me'] ??
+        cached?['isSavedByMe'] ??
+        cached?['saved'] ??
+        cached?['is_saved'];
 
     final tagsRaw = item['tags'];
     final tags = <String>[];
@@ -169,6 +185,9 @@ class PromoteService {
       }
     }
 
+    final normalizedLiked = cachedLiked ?? isLikedByMe;
+    final normalizedSaved = cachedSaved ?? isSavedByMe;
+
     return {
       'id': id,
       'postId': asId(item['postId'] ??
@@ -185,8 +204,16 @@ class PromoteService {
       'likesCount': likesCount,
       'commentsCount': commentsCount,
       'viewsCount': viewsCount,
-      'isLikedByMe': isLikedByMe,
-      'isSavedByMe': isSavedByMe,
+      'isLikedByMe': normalizedLiked,
+      'is_liked_by_me': normalizedLiked,
+      'liked_by_me': normalizedLiked,
+      'liked': normalizedLiked,
+      'is_liked': normalizedLiked,
+      'isSavedByMe': normalizedSaved,
+      'is_saved_by_me': normalizedSaved,
+      'saved_by_me': normalizedSaved,
+      'saved': normalizedSaved,
+      'is_saved': normalizedSaved,
       'likes': likesCount.toString(),
       'comments': commentsCount.toString(),
       'description': (item['caption'] ?? item['description'] ?? '').toString(),

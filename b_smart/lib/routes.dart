@@ -84,7 +84,11 @@ final Map<String, WidgetBuilder> appRoutes = {
         redirectTo: '/ads',
         child: AdvertiserCreateAdScreen(),
       ),
-  '/promote': (ctx) => const PromoteScreen(),
+  '/promote': (ctx) {
+    final args = ModalRoute.of(ctx)?.settings.arguments;
+    final reelId = args is Map ? args['reelId']?.toString() : null;
+    return PromoteScreen(initialReelId: reelId);
+  },
   '/settings': (ctx) => const SettingsScreen(),
   '/wallet': (ctx) => const WalletScreen(),
   '/notifications': (ctx) => const NotificationsScreen(),

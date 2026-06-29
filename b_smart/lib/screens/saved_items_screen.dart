@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/api.dart';
+import '../api/reels_api.dart';
+import '../models/ad_model.dart';
 import '../models/feed_post_model.dart';
+import '../services/promote_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/safe_network_image.dart';
@@ -18,6 +22,11 @@ class SavedItemsScreen extends StatefulWidget {
 
 class _SavedItemsScreenState extends State<SavedItemsScreen> {
   final SavedApi _savedApi = SavedApi();
+  final PromoteService _promoteService = PromoteService();
+  final SupabaseService _supabaseService = SupabaseService();
+  final ReelsApi _reelsApi = ReelsApi();
+  final AdsApi _adsApi = AdsApi();
+  final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
   Map<String, String>? _imageHeaders;
 
   bool _loading = false;
@@ -114,6 +123,58 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
         u.contains('.mpd');
   }
 
+  String _savedItemType(Map<String, dynamic> item) {
+    final raw = (item['item_type'] ??
+            item['itemType'] ??
+            item['type'] ??
+            item['media_type'] ??
+            item['mediaType'] ??
+            '')
+        .toString()
+        .toLowerCase()
+        .trim();
+    switch (raw) {
+      case 'promote reel':
+      case 'promote-reel':
+      case 'promote_reels':
+      case 'promote reels':
+      case 'promoted_reel':
+      case 'promoted reel':
+        return 'promote_reel';
+      case 'reels':
+        return 'reel';
+      case 'posts':
+        return 'post';
+      case 'ads':
+        return 'ad';
+      default:
+        return raw;
+    }
+  }
+
+  String _savedItemId(Map<String, dynamic> item) {
+    final candidates = [
+      item['_id'],
+      item['id'],
+      item['postId'],
+      item['post_id'],
+      item['reelId'],
+      item['reel_id'],
+      item['adId'],
+      item['ad_id'],
+      item['promoteReelId'],
+      item['promote_reel_id'],
+      item['promote_reel'] is Map
+          ? (item['promote_reel'] as Map)['_id'] ?? (item['promote_reel'] as Map)['id']
+          : null,
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
   String _extractThumbnailValue(dynamic value) {
     if (value == null) return '';
     if (value is List) {
@@ -157,8 +218,15 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
     final candidates = [
       item['post'],
       item['reel'],
+      item['promote_reel'],
+      item['promoteReel'],
+      item['promote'],
       item['savedPost'],
       item['savedReel'],
+      item['savedPromoteReel'],
+      item['savedPromoteReels'],
+      item['saved_promote_reel'],
+      item['saved_promote_reels'],
       item['saved_post'],
       item['saved_reel'],
       item['content'],
@@ -173,6 +241,119 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
     return merged;
   }
 
+  Map<String, dynamic>? _mapDetail(dynamic raw) {
+    if (raw is! Map) return null;
+    final map = Map<String, dynamic>.from(raw);
+    final candidates = [
+      map,
+      map['data'],
+      map['post'],
+      map['reel'],
+      map['ad'],
+      map['promote_reel'],
+      map['promoteReel'],
+      map['saved'],
+      map['item'],
+      map['result'],
+      map['payload'],
+    ];
+    for (final candidate in candidates) {
+      if (candidate is Map) {
+        final value = Map<String, dynamic>.from(candidate);
+        if (value.isNotEmpty) return value;
+      }
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _resolveSavedItem(
+    Map<String, dynamic> item,
+  ) async {
+    final type = _savedItemType(item);
+    final id = _savedItemId(item);
+    if (id.isEmpty) return null;
+
+    try {
+      switch (type) {
+        case 'post':
+          return _mapDetail(await _supabaseService.getPostById(id));
+        case 'reel':
+          return _mapDetail(await _reelsApi.getReel(id));
+        case 'ad':
+          return _mapDetail(await _adsApi.getAdById(id));
+        case 'promote_reel':
+          return _mapDetail(await _promoteReelsApi.getPromoteReelById(id));
+        default:
+          return _mapDetail(await _supabaseService.getPostById(id)) ??
+              _mapDetail(await _reelsApi.getReel(id)) ??
+              _mapDetail(await _adsApi.getAdById(id)) ??
+              _mapDetail(await _promoteReelsApi.getPromoteReelById(id));
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? _toPromoteFeedPost(Map<String, dynamic> item) {
+    final candidates = [
+      item['promote_reel'],
+      item['promoteReel'],
+      item['promote'],
+      item['savedPromoteReel'],
+      item['saved_promote_reel'],
+      item['savedPromoteReels'],
+      item['saved_promote_reels'],
+      item['reel'],
+      item['media'],
+      item,
+    ];
+
+    Map<String, dynamic>? source;
+    for (final candidate in candidates) {
+      if (candidate is Map) {
+        source = Map<String, dynamic>.from(candidate);
+        break;
+      }
+    }
+
+    if (source == null) return null;
+    final mapped = _promoteService.mapPromote(source);
+    final promoteId = (mapped['id'] ?? mapped['postId'] ?? source['_id'] ?? source['id'] ?? source['promote_reel_id'])
+        ?.toString()
+        .trim();
+    if (promoteId == null || promoteId.isEmpty) return null;
+
+    final videoUrl = (mapped['videoUrl'] ?? '').toString().trim();
+    final thumbnailUrl = (mapped['thumbnailUrl'] ?? '').toString().trim();
+    final savedAt = _savedSortTime(item, FeedPost.fromJson({
+      '_id': 'promote-$promoteId',
+      'id': 'promote-$promoteId',
+      'user_id': mapped['userId'] ?? '',
+      'username': mapped['username'] ?? 'User',
+      'mediaType': 'reel',
+      'mediaUrls': videoUrl.isNotEmpty ? [videoUrl] : const <String>[],
+      'thumbnailUrl': thumbnailUrl,
+      'createdAt': DateTime.now().toIso8601String(),
+    }));
+
+    return {
+      '_id': 'promote-$promoteId',
+      'id': 'promote-$promoteId',
+      'user_id': mapped['userId'] ?? '',
+      'username': mapped['username'] ?? 'User',
+      'avatar_url': mapped['avatarUrl'] ?? '',
+      'mediaType': 'reel',
+      'mediaUrls': videoUrl.isNotEmpty ? [videoUrl] : const <String>[],
+      'thumbnailUrl': thumbnailUrl,
+      'caption': mapped['caption'] ?? mapped['description'] ?? '',
+      'content': mapped['caption'] ?? mapped['description'] ?? '',
+      'createdAt': savedAt.toIso8601String(),
+      'is_saved_by_me': true,
+      'isSaved': true,
+      'isAd': true,
+    };
+  }
+
   List<Map<String, dynamic>> _collectMaps(dynamic raw) {
     if (raw is List) {
       return raw
@@ -183,6 +364,7 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
     if (raw is! Map) return const [];
     final map = Map<String, dynamic>.from(raw);
     final candidates = [
+      map['items'],
       map['saved'],
       map['savedItems'],
       map['saved_items'],
@@ -199,6 +381,7 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
       map['data'] is Map ? (map['data'] as Map)['items'] : null,
       map['data'] is Map ? (map['data'] as Map)['posts'] : null,
       map['data'] is Map ? (map['data'] as Map)['reels'] : null,
+      map['data'] is Map ? (map['data'] as Map)['ads'] : null,
     ];
     for (final candidate in candidates) {
       if (candidate is List) {
@@ -235,6 +418,43 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
     return post;
   }
 
+  FeedPost? _toAdFeedPost(Map<String, dynamic> item) {
+    final ad = _mapDetail(item['ad']) ?? item;
+    final adId = _savedItemId(ad);
+    if (adId.isEmpty) return null;
+
+    final adModel = Ad.fromApi(ad);
+    final previewCandidates = <String>[
+      adModel.imageUrl ?? '',
+      ...adModel.imageUrls,
+      adModel.videoUrl ?? '',
+    ].map((e) => UrlHelper.normalizeUrl(e)).where((e) => e.isNotEmpty).toList();
+    final previewUrl = previewCandidates.isNotEmpty ? previewCandidates.first : '';
+    final mediaType = adModel.videoUrl != null &&
+            adModel.videoUrl!.trim().isNotEmpty &&
+            _looksLikeVideoUrl(adModel.videoUrl!.trim())
+        ? 'video'
+        : 'image';
+
+    return FeedPost.fromJson({
+      '_id': 'ad-$adId',
+      'id': 'ad-$adId',
+      'user_id': adModel.userId ?? '',
+      'username': adModel.companyName.isNotEmpty ? adModel.companyName : 'Ad',
+      'mediaType': mediaType,
+      'mediaUrls': previewUrl.isNotEmpty ? [previewUrl] : const <String>[],
+      'thumbnailUrl': previewUrl,
+      'caption': adModel.caption ?? adModel.title,
+      'content': adModel.description.isNotEmpty
+          ? adModel.description
+          : (adModel.caption ?? adModel.title),
+      'createdAt': adModel.createdAt.toIso8601String(),
+      'isAd': true,
+      'is_saved_by_me': true,
+      'isSaved': true,
+    });
+  }
+
   Future<void> _loadSaved({bool force = false}) async {
     if (_loading && !force) return;
     setState(() {
@@ -252,23 +472,32 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
         return;
       }
 
-      final raw = await _savedApi.getSavedItems(uid);
+      final raw = await _savedApi.getSavedItems();
       final items = _collectMaps(raw);
       final seen = <String>{};
       final nextItems = <({FeedPost post, DateTime sortTime, int index})>[];
-      var index = 0;
 
       for (final item in items) {
-        final post = _toFeedPost(item);
+        final type = _savedItemType(item);
+        final detail = await _resolveSavedItem(item);
+        final resolved = <String, dynamic>{
+          ...item,
+          if (detail != null) ...detail,
+        };
+
+        final post = switch (type) {
+          'ad' => _toAdFeedPost(resolved),
+          'promote_reel' => _toFeedPost(_toPromoteFeedPost(resolved) ?? resolved),
+          _ => _toFeedPost(resolved),
+        };
         if (post == null) continue;
         if (seen.add(post.id)) {
           nextItems.add((
             post: post,
-            sortTime: _savedSortTime(item, post),
-            index: index,
+            sortTime: _savedSortTime(resolved, post),
+            index: nextItems.length,
           ));
         }
-        index++;
       }
 
       nextItems.sort((a, b) {
@@ -292,6 +521,21 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
   }
 
   void _openItem(FeedPost post) {
+    if (post.id.startsWith('ad-')) {
+      final adId = post.id.substring('ad-'.length);
+      Navigator.of(context).pushNamed('/ads/$adId/details');
+      return;
+    }
+    if (post.isPromote) {
+      final promoteId = post.id.startsWith('promote-')
+          ? post.id.substring('promote-'.length)
+          : post.id;
+      Navigator.of(context).pushNamed(
+        '/promote',
+        arguments: {'reelId': promoteId},
+      );
+      return;
+    }
     if (post.mediaType == PostMediaType.reel ||
         post.mediaType == PostMediaType.video) {
       Navigator.of(context).pushNamed(
@@ -409,6 +653,19 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
                       right: 6,
                       child: Icon(
                         LucideIcons.video,
+                        size: 16,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(color: Colors.black54, blurRadius: 8),
+                        ],
+                      ),
+                    ),
+                  if (item.id.startsWith('ad-'))
+                    const Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Icon(
+                        LucideIcons.badgeAlert,
                         size: 16,
                         color: Colors.white,
                         shadows: [
