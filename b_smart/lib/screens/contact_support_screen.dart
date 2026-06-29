@@ -998,10 +998,10 @@ class _SupportQueryChatScreenState extends State<_SupportQueryChatScreen> {
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        16,
+        14,
         0,
-        16,
-        16 + MediaQuery.of(context).padding.bottom,
+        14,
+        MediaQuery.of(context).padding.bottom * 0.5,
       ),
       child: Container(
         decoration: BoxDecoration(
