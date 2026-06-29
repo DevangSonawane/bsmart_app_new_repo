@@ -1136,53 +1136,55 @@ class _PromoteScreenState extends State<PromoteScreen>
                                     ),
                                   ),
                                   if (showFollow) ...[
-                                    const SizedBox(width: 10),
-                                    GestureDetector(
-                                      onTap: _followLoadingUserIds
-                                              .contains(uid)
-                                          ? null
-                                          : () => _toggleFollow(index),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 4),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            if (_followLoadingUserIds
-                                                .contains(uid))
-                                              const SizedBox(
-                                                width: 14,
-                                                height: 14,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor:
-                                                      AlwaysStoppedAnimation<
-                                                          Color>(Colors.white),
+                                    Transform.translate(
+                                      offset: const Offset(-30, 0),
+                                      child: GestureDetector(
+                                        onTap: _followLoadingUserIds
+                                                .contains(uid)
+                                            ? null
+                                            : () => _toggleFollow(index),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 4),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (_followLoadingUserIds
+                                                  .contains(uid))
+                                                const SizedBox(
+                                                  width: 14,
+                                                  height: 14,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<
+                                                            Color>(Colors.white),
+                                                  ),
+                                                )
+                                              else
+                                                Icon(
+                                                  _followByUserId[uid] == true
+                                                      ? LucideIcons.userCheck
+                                                      : LucideIcons.userPlus,
+                                                  size: 16,
+                                                  color: Colors.white,
                                                 ),
-                                              )
-                                            else
-                                              Icon(
-                                                _followByUserId[uid] == true
-                                                    ? LucideIcons.userCheck
-                                                    : LucideIcons.userPlus,
-                                                size: 16,
-                                                color: Colors.white,
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                _followLoadingUserIds.contains(uid)
+                                                    ? '...'
+                                                    : (_followByUserId[uid] == true
+                                                        ? 'Following'
+                                                        : 'Follow'),
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                               ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              _followLoadingUserIds.contains(uid)
-                                                  ? '...'
-                                                  : (_followByUserId[uid] == true
-                                                      ? 'Following'
-                                                      : 'Follow'),
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),

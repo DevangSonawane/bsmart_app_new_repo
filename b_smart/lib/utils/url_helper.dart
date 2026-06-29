@@ -28,6 +28,17 @@ class UrlHelper {
     return _isPlaceholderToken(parts.last);
   }
 
+  static bool _isStructuredPlaceholderValue(String value) {
+    final s = value.trim();
+    if (s.isEmpty) return true;
+    if (s == '[]' || s == '{}' || s == '[object Object]') return true;
+    if ((s.startsWith('[') && s.endsWith(']')) ||
+        (s.startsWith('{') && s.endsWith('}'))) {
+      return !_extractFromObjectLike(s).contains(RegExp(r'https?://|/uploads/'));
+    }
+    return false;
+  }
+
   static String _repairScheme(String value) {
     var fixed = value.trim();
     if (fixed.startsWith('http:/') && !fixed.startsWith('http://')) {
@@ -113,7 +124,11 @@ class UrlHelper {
     String u = _extractFromObjectLike(url.trim());
     u = _repairScheme(u);
     if (u == 'file:///') return '';
-    if (_isPlaceholderToken(u) || _hasPlaceholderPathToken(u)) return '';
+    if (_isPlaceholderToken(u) ||
+        _hasPlaceholderPathToken(u) ||
+        _isStructuredPlaceholderValue(u)) {
+      return '';
+    }
 
     // If it's already a full URL, return it
     if (u.startsWith('http://') || u.startsWith('https://')) {
@@ -179,7 +194,11 @@ class UrlHelper {
 
     var u = _extractFromObjectLike(url.trim()).replaceAll('\\', '/');
     u = _repairScheme(u);
-    if (_isPlaceholderToken(u) || _hasPlaceholderPathToken(u)) return '';
+    if (_isPlaceholderToken(u) ||
+        _hasPlaceholderPathToken(u) ||
+        _isStructuredPlaceholderValue(u)) {
+      return '';
+    }
 
     // Collapse duplicated uploads segments that can appear when a backend
     // path already includes `uploads/` and a caller prefixes it again.

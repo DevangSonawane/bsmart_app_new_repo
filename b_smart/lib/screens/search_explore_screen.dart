@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -8,6 +7,7 @@ import '../api/api_client.dart';
 import '../api/posts_api.dart';
 import '../api/reels_api.dart';
 import '../models/feed_post_model.dart';
+import '../widgets/safe_network_image.dart';
 import '../utils/url_helper.dart';
 import '../screens/post_detail_screen.dart';
 import '../widgets/post_detail_modal.dart';
@@ -280,6 +280,44 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
     return _extractMediaUrl(item);
   }
 
+  String _extractValue(dynamic value) {
+    if (value == null) return '';
+    if (value is List) {
+      for (final entry in value) {
+        final url = _extractValue(entry);
+        if (url.isNotEmpty) return url;
+      }
+      return '';
+    }
+    if (value is Map) {
+      final m = Map<String, dynamic>.from(value);
+      final bestThumb = _bestThumbnailFromMediaMap(m);
+      if (bestThumb.isNotEmpty) return bestThumb;
+      final candidates = [
+        m['thumbnail_url'],
+        m['thumbnailUrl'],
+        m['thumbnail'],
+        m['image_url'],
+        m['image'],
+        m['fileUrl'],
+        m['file_url'],
+        m['url'],
+        m['path'],
+      ];
+      for (final candidate in candidates) {
+        if (candidate == null) continue;
+        final normalized = UrlHelper.normalizeUrl(candidate.toString());
+        if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
+          return normalized;
+        }
+      }
+      return '';
+    }
+    final normalized = UrlHelper.normalizeUrl(value.toString());
+    if (normalized.isEmpty || _looksLikeVideoUrl(normalized)) return '';
+    return normalized;
+  }
+
   bool _looksLikeVideoUrl(String url) {
     final u = url.toLowerCase();
     return u.endsWith('.mp4') ||
@@ -315,44 +353,20 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
   }
 
   String _extractMediaUrl(Map<String, dynamic> item) {
-    dynamic media = item['media'] ?? item['mediaUrls'] ?? item['media_urls'];
-    if (media is List && media.isNotEmpty) {
-      final first = media.first;
-      if (first is Map) {
-        final m = Map<String, dynamic>.from(first);
-        final bestThumb = _bestThumbnailFromMediaMap(m);
-        if (bestThumb.isNotEmpty) return bestThumb;
-        final url = m['thumbnail_url'] ??
-            m['thumbnailUrl'] ??
-            m['thumbnail'] ??
-            m['image_url'] ??
-            m['image'] ??
-            m['fileUrl'] ??
-            m['file_url'] ??
-            m['url'];
-        if (url != null) {
-          final normalized = UrlHelper.normalizeUrl(url.toString());
-          if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
-            return normalized;
-          }
-        }
-      } else if (first is String) {
-        final normalized = UrlHelper.normalizeUrl(first);
-        if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
-          return normalized;
-        }
-        return '';
-      }
-    }
-    final direct = item['image_url'] ??
-        item['thumbnail_url'] ??
-        item['image'] ??
-        item['thumb'];
-    if (direct != null) {
-      final normalized = UrlHelper.normalizeUrl(direct.toString());
-      if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
-        return normalized;
-      }
+    final fromMedia = _extractValue(
+      item['media'] ?? item['mediaUrls'] ?? item['media_urls'],
+    );
+    if (fromMedia.isNotEmpty) return fromMedia;
+
+    final direct = [
+      item['image_url'],
+      item['thumbnail_url'],
+      item['image'],
+      item['thumb'],
+    ];
+    for (final candidate in direct) {
+      final url = _extractValue(candidate);
+      if (url.isNotEmpty) return url;
     }
     return '';
   }
@@ -512,14 +526,15 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
                   children: [
                     ColoredBox(
                       color: seamColor,
-                      child: CachedNetworkImage(
-                        imageUrl: url,
-                        httpHeaders: shouldAuth ? _imageHeaders : null,
+                      child: SafeNetworkImage(
+                        url: url,
+                        headers: shouldAuth ? _imageHeaders : null,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => ColoredBox(color: seamColor),
-                        errorWidget: (_, __, ___) => const Center(
+                        placeholder: ColoredBox(color: seamColor),
+                        errorWidget: const Center(
                           child: Icon(Icons.image, color: Colors.grey),
                         ),
+                        assumeRaster: true,
                       ),
                     ),
                     if (item.kind == _ExploreKind.reel)

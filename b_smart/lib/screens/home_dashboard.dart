@@ -1746,10 +1746,6 @@ class _HomeDashboardState extends State<HomeDashboard>
         _noMorePages = items.isEmpty || prefetchNoMore;
       });
 
-      if (isFirstLoad || forceNetwork) {
-        unawaited(_restoreFeedScrollPosition());
-      }
-
       if (isFirstLoad) store.dispatch(SetFeedLoading(false));
 
       // If list is too short to scroll, proactively load next page

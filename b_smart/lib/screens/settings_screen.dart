@@ -22,6 +22,7 @@ import 'content_settings_screen.dart';
 import 'messaging_settings_screen.dart';
 import 'notification_settings_screen.dart';
 import 'privacy_screen.dart';
+import 'saved_items_screen.dart';
 import 'security_screen.dart';
 import 'wallet_screen.dart';
 
@@ -332,6 +333,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             label: 'settings_content_preferences'.tr(),
             subLabel: 'settings_content_preferences_subtitle'.tr(),
             onTap: () => _push(const ContentSettingsScreen()),
+          ),
+          _settingTile(
+            icon: LucideIcons.bookmark,
+            label: 'Saved',
+            subLabel: 'Saved reels and posts',
+            onTap: () => _push(const SavedItemsScreen()),
           ),
           const SizedBox(height: 20),
           _sectionTitle('settings_section_rewards'.tr()),

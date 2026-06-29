@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/search_api.dart';
 import '../api/privacy_api.dart';
 import '../models/feed_post_model.dart';
+import '../widgets/safe_network_image.dart';
 import '../utils/current_user.dart';
 import '../utils/id_extractor.dart';
 import '../utils/url_helper.dart';
@@ -385,29 +385,94 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  String _extractMediaUrl(Map<String, dynamic> item) {
-    dynamic media = item['media'] ?? item['mediaUrls'] ?? item['media_urls'];
-    if (media is List && media.isNotEmpty) {
-      final first = media.first;
-      if (first is Map) {
-        final m = Map<String, dynamic>.from(first);
-        final url = m['fileUrl'] ??
-            m['file_url'] ??
-            m['url'] ??
-            m['thumbnail_url'] ??
-            m['thumbnailUrl'] ??
-            m['thumbnail'] ??
-            m['image'];
-        if (url != null) return UrlHelper.normalizeUrl(url.toString());
-      } else if (first is String) {
-        return UrlHelper.normalizeUrl(first);
+  bool _looksLikeVideoUrl(String url) {
+    final u = url.toLowerCase();
+    return u.endsWith('.mp4') ||
+        u.endsWith('.mov') ||
+        u.endsWith('.mkv') ||
+        u.endsWith('.webm') ||
+        u.contains('.m3u8') ||
+        u.contains('.mpd');
+  }
+
+  String _bestThumbnailFromMediaMap(Map<String, dynamic> m) {
+    final thumbs = m['thumbnails'];
+    if (thumbs is List && thumbs.isNotEmpty) {
+      for (final t in thumbs) {
+        if (t is! Map) continue;
+        final tm = Map<String, dynamic>.from(t);
+        final url = tm['fileUrl'] ?? tm['file_url'] ?? tm['url'] ?? tm['path'];
+        if (url == null) continue;
+        final normalized = UrlHelper.normalizeUrl(url.toString());
+        if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
+          return normalized;
+        }
       }
     }
-    final direct = item['image_url'] ??
-        item['thumbnail_url'] ??
-        item['image'] ??
-        item['thumb'];
-    if (direct != null) return UrlHelper.normalizeUrl(direct.toString());
+    final direct = m['thumbnail_url'] ?? m['thumbnailUrl'] ?? m['thumbnail'];
+    if (direct != null) {
+      final normalized = UrlHelper.normalizeUrl(direct.toString());
+      if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
+        return normalized;
+      }
+    }
+    return '';
+  }
+
+  String _extractMediaValue(dynamic value) {
+    if (value == null) return '';
+    if (value is List) {
+      for (final entry in value) {
+        final url = _extractMediaValue(entry);
+        if (url.isNotEmpty) return url;
+      }
+      return '';
+    }
+    if (value is Map) {
+      final m = Map<String, dynamic>.from(value);
+      final bestThumb = _bestThumbnailFromMediaMap(m);
+      if (bestThumb.isNotEmpty) return bestThumb;
+      final candidates = [
+        m['thumbnail_url'],
+        m['thumbnailUrl'],
+        m['thumbnail'],
+        m['image_url'],
+        m['image'],
+        m['fileUrl'],
+        m['file_url'],
+        m['url'],
+        m['path'],
+      ];
+      for (final candidate in candidates) {
+        if (candidate == null) continue;
+        final normalized = UrlHelper.normalizeUrl(candidate.toString());
+        if (normalized.isNotEmpty && !_looksLikeVideoUrl(normalized)) {
+          return normalized;
+        }
+      }
+      return '';
+    }
+    final normalized = UrlHelper.normalizeUrl(value.toString());
+    if (normalized.isEmpty || _looksLikeVideoUrl(normalized)) return '';
+    return normalized;
+  }
+
+  String _extractMediaUrl(Map<String, dynamic> item) {
+    final fromMedia = _extractMediaValue(
+      item['media'] ?? item['mediaUrls'] ?? item['media_urls'],
+    );
+    if (fromMedia.isNotEmpty) return fromMedia;
+
+    final direct = [
+      item['image_url'],
+      item['thumbnail_url'],
+      item['image'],
+      item['thumb'],
+    ];
+    for (final candidate in direct) {
+      final url = _extractMediaValue(candidate);
+      if (url.isNotEmpty) return url;
+    }
     return '';
   }
 
@@ -673,9 +738,10 @@ class _SearchScreenState extends State<SearchScreen> {
                     child: thumb.isEmpty
                         ? const Center(
                             child: Icon(Icons.image, color: Colors.grey))
-                        : CachedNetworkImage(
-                            imageUrl: thumb,
+                        : SafeNetworkImage(
+                            url: thumb,
                             fit: BoxFit.cover,
+                            assumeRaster: true,
                           ),
                   ),
                 ),
