@@ -666,22 +666,6 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
                 ),
               ),
             ),
-          if (_loadingVideo && widget.isActive)
-            const Positioned(
-              bottom: 12,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white54,
-                  ),
-                  ),
-                ),
-              ),
           if (widget.isActive && (isBuffering || (_loadingVideo && !_videoFailed)))
             const Positioned.fill(
               child: IgnorePointer(
@@ -701,7 +685,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
       );
     } catch (e) {
       try {
-        print(
+        debugPrint(
             'DynamicMediaWidget: error while building VideoPlayer for id=${widget.id} error=$e');
       } catch (_) {}
       return thumb;

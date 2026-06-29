@@ -337,9 +337,6 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
         ? Colors.white.withValues(alpha: 0.10)
         : Colors.black.withValues(alpha: 0.08);
 
-    if (_loading && _items.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
     if (!_loading && _items.isEmpty) {
       return Center(
         child: Text(
