@@ -92,9 +92,9 @@ class AdvertiserDashboardScreen extends StatelessWidget {
               mainAxisSpacing: 12,
               childAspectRatio: 1.5,
               children: [
-                _buildMetricCard('Total Ads', '${metrics.totalAdsCreated}'),
-                _buildMetricCard('Active Ads', '${metrics.activeAds}'),
-                _buildMetricCard('Ads Remaining', '${metrics.adsRemainingInPlan}'),
+                _buildMetricCard('Total Spotlights', '${metrics.totalAdsCreated}'),
+                _buildMetricCard('Active Spotlights', '${metrics.activeAds}'),
+                _buildMetricCard('Spotlights Remaining', '${metrics.adsRemainingInPlan}'),
                 _buildMetricCard('Total Impressions', _formatNumber(metrics.totalImpressions)),
                 _buildMetricCard('Rewarded Users', _formatNumber(metrics.totalRewardedUsers)),
                 _buildMetricCard('Watch Hours', metrics.totalWatchHours.toStringAsFixed(1)),
@@ -102,7 +102,7 @@ class AdvertiserDashboardScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
 
-            // Coins Summary
+            // bCoins Summary
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -110,16 +110,16 @@ class AdvertiserDashboardScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Coins Summary',
+                      'bCoins Summary',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildDetailRow('Total Purchased', _formatNumber(metrics.totalCoinsPurchased)),
-                    _buildDetailRow('Available', _formatNumber(metrics.coinsAvailable)),
-                    _buildDetailRow('Consumed', _formatNumber(metrics.coinsConsumed)),
+                    _buildDetailRow('Total bCoins Purchased', _formatNumber(metrics.totalCoinsPurchased)),
+                    _buildDetailRow('Available bCoins', _formatNumber(metrics.coinsAvailable)),
+                    _buildDetailRow('bCoins Consumed', _formatNumber(metrics.coinsConsumed)),
                     const SizedBox(height: 8),
                     LinearProgressIndicator(
                       value: metrics.totalCoinsPurchased > 0
@@ -220,7 +220,7 @@ class AdvertiserDashboardScreen extends StatelessWidget {
                       );
                     },
                     icon: const Icon(Icons.list),
-                    label: const Text('View Ads'),
+                    label: const Text('View Spotlights'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
@@ -241,7 +241,7 @@ class AdvertiserDashboardScreen extends StatelessWidget {
                       );
                     },
                     icon: const Icon(Icons.account_balance_wallet),
-                    label: const Text('Wallet'),
+                    label: const Text('Vault'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),

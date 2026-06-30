@@ -1525,7 +1525,7 @@ class _CreateSupportQuerySheetState extends State<_CreateSupportQuerySheet> {
                             theme,
                             label: 'Message',
                             hint:
-                                'I made a payment 2 days ago but it is not reflecting in my wallet.',
+                                'I made a payment 2 days ago but it is not reflecting in my vault.',
                             multiline: true,
                           ),
                           validator: (value) {

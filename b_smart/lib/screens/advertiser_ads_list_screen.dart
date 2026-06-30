@@ -124,7 +124,7 @@ class _AdvertiserAdsListScreenState extends State<AdvertiserAdsListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Ads'),
+        title: const Text('My Spotlights'),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

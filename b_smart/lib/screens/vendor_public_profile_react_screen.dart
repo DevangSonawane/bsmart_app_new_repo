@@ -661,7 +661,7 @@ class _VendorPublicProfileReactScreenState
                     Tab(text: 'About'),
                     Tab(text: 'Products'),
                     Tab(text: 'Gallery'),
-                    Tab(text: 'Ads'),
+                    Tab(text: 'Spotlights'),
                     Tab(text: 'Events'),
                     Tab(text: 'Locations'),
                     Tab(text: 'Contact'),
@@ -1926,7 +1926,7 @@ class _AdsTab extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Loading ads…',
+              'Loading spotlights…',
               style: TextStyle(color: muted, fontWeight: FontWeight.w700),
             ),
           ],
@@ -1983,7 +1983,7 @@ class _AdsTab extends StatelessWidget {
               Icon(Icons.campaign_outlined, size: 42, color: muted),
               const SizedBox(height: 10),
               Text(
-                'No ads yet',
+                'No spotlights yet',
                 style: TextStyle(color: muted, fontWeight: FontWeight.w800),
               ),
             ],

@@ -166,8 +166,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
 
     if (visiblePosts.isEmpty) {
       return _buildCenteredStatus(
-        title: 'No posts yet',
-        message: 'Follow people or refresh to see new posts.',
+        title: 'No moments yet',
+        message: 'Follow people or refresh to see new moments.',
         actionLabel: 'Refresh',
         onAction: _feedController.refresh,
       );
@@ -234,8 +234,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
 
   Widget _buildEmptyState() {
     return _buildCenteredStatus(
-      title: 'No posts yet',
-      message: 'Follow people or refresh to see new posts.',
+      title: 'No moments yet',
+      message: 'Follow people or refresh to see new moments.',
       actionLabel: 'Refresh',
       onAction: _feedController.refresh,
     );

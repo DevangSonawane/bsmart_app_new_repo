@@ -3449,7 +3449,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                       ?.color),
                               const SizedBox(height: 12),
                               Text(
-                                'No posts yet',
+                                'No moments yet',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 16,
@@ -4440,7 +4440,7 @@ class _SuggestedAdsPlaceholder extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Suggested ads',
+                  'Suggested spotlights',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w800,

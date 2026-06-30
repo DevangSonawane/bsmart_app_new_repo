@@ -726,7 +726,7 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
     final budgetCoinsInput = num.tryParse(_budgetCtl.text.trim());
     final budgetCoins = budgetCoinsInput?.round();
     if (budgetCoins == null || budgetCoins <= 0) {
-      _showSnack('Please enter total budget in coins.');
+      _showSnack('Please enter total budget in bCoins.');
       return;
     }
 
@@ -1466,7 +1466,7 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                 controller: _budgetCtl,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  labelText: 'Total Budget (Coins) *',
+                  labelText: 'Total Budget (bCoins) *',
                   hintText: 'e.g. 1000',
                   border: const OutlineInputBorder(),
                   focusedBorder: OutlineInputBorder(

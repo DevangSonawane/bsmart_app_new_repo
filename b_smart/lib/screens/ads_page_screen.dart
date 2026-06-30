@@ -623,7 +623,7 @@ class _AdsPageScreenState extends State<AdsPageScreen>
       builder: (dialogContext, close) {
         return ViewRewardPopupCard(
           amount: amount,
-          subtitle: 'You earned $amount coins by watching the full ad',
+          subtitle: 'You earned $amount bCoins by watching the full ad',
           onOk: close,
         );
       },
@@ -1233,7 +1233,7 @@ class _AdsPageScreenState extends State<AdsPageScreen>
                                     ..._searchUsers.map(_buildSearchUserTile),
                                   ],
                                   if (_searchAds.isNotEmpty) ...[
-                                    _buildSearchSectionHeader('Ads'),
+                                    _buildSearchSectionHeader('Spotlights'),
                                     ..._searchAds.map(_buildSearchAdTile),
                                   ],
                                 ],
@@ -4628,7 +4628,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                           size: 14, color: Color(0xFFD97706)),
                       const SizedBox(width: 6),
                       Text(
-                        '${_fmtCount(ad.totalBudgetCoins)} coins budget',
+                        '${_fmtCount(ad.totalBudgetCoins)} bCoins budget',
                         style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,

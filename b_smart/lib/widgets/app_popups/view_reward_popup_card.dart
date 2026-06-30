@@ -61,7 +61,7 @@ class ViewRewardPopupCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                '+$amount Coins',
+                '+$amount bCoins',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: pillTextColor,
@@ -117,4 +117,3 @@ class ViewRewardPopupCard extends StatelessWidget {
     );
   }
 }
-

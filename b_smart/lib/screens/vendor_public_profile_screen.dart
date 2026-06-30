@@ -601,7 +601,7 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                 labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
                 tabs: const [
                   Tab(text: 'Info'),
-                  Tab(text: 'Ads'),
+                  Tab(text: 'Spotlights'),
                   Tab(text: 'Contact'),
                 ],
               ),
@@ -748,7 +748,7 @@ class _AdsTab extends StatelessWidget {
     if (ads.isEmpty) {
       return Center(
         child: Text(
-          'No ads yet',
+          'No spotlights yet',
           style: TextStyle(
             color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
             fontWeight: FontWeight.w800,

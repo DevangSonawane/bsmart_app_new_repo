@@ -78,7 +78,7 @@ class LikeRewardPopupCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                isLike ? '+$amount Coins' : '-$amount Coins',
+                isLike ? '+$amount bCoins' : '-$amount bCoins',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: pillTextColor,
@@ -134,4 +134,3 @@ class LikeRewardPopupCard extends StatelessWidget {
     );
   }
 }
-

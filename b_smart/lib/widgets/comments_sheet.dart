@@ -446,7 +446,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                           size: 14, color: Color(0xFFD97706)),
                       const SizedBox(width: 6),
                       Text(
-                        '${_fmt(budget)} coins budget',
+                        '${_fmt(budget)} bCoins budget',
                         style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,

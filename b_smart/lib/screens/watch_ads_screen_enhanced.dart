@@ -120,7 +120,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Daily earning cap reached. You can earn ${capacity.remainingCoins} more coins today.',
+            'Daily earning cap reached. You can earn ${capacity.remainingCoins} more bCoins today.',
           ),
           backgroundColor: Colors.orange,
         ),
@@ -275,7 +275,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
       return;
     }
 
-    // Credit coins via ledger
+    // Credit rewards via ledger
     final success = await _walletService.addCoinsViaLedger(
       amount: _currentAd!.coinReward,
       description: 'Watched Ad: ${_currentAd!.title}',
@@ -321,7 +321,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
           builder: (dialogContext, close) {
             return ViewRewardPopupCard(
               amount: earned,
-              subtitle: 'You earned $earned coins by watching an ad',
+              subtitle: 'You earned $earned bCoins by watching an ad',
               onOk: close,
             );
           },
@@ -339,9 +339,9 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
       }
     } else {
       _logRewardDebug(
-        'Failed to credit coins adId=${_currentAd!.id} userId=$_userId',
+        'Failed to credit bCoins adId=${_currentAd!.id} userId=$_userId',
       );
-      _handleAdAbandoned('Failed to credit coins');
+      _handleAdAbandoned('Failed to credit bCoins');
     }
   }
 
@@ -394,7 +394,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Watch Ads & Earn Coins'),
+        title: const Text('Watch Spotlights & Earn bCoins'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         actions: [
@@ -402,7 +402,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
             padding: const EdgeInsets.all(8.0),
             child: Center(
               child: Text(
-                '${capacity.remainingCoins} coins left today',
+                '${capacity.remainingCoins} bCoins left today',
                 style: const TextStyle(fontSize: 12),
               ),
             ),
@@ -445,8 +445,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildCapacityItem('Coins', capacity.remainingCoins, capacity.earnedToday),
-                  _buildCapacityItem('Ads', capacity.remainingAds, capacity.adsWatchedToday),
+                  _buildCapacityItem('bCoins', capacity.remainingCoins, capacity.earnedToday),
+                  _buildCapacityItem('Spotlights', capacity.remainingAds, capacity.adsWatchedToday),
                 ],
               ),
             ],
@@ -568,7 +568,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
                             ),
                           ),
                           icon: const Icon(Icons.play_arrow),
-                          label: Text(eligibility.isEligible ? 'Watch & Earn ${ad.coinReward} Coins' : 'Not Available'),
+                          label: Text(eligibility.isEligible ? 'Watch & Earn ${ad.coinReward} bCoins' : 'Not Available'),
                         ),
                       ),
                     ],
@@ -761,7 +761,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
           Icon(Icons.ads_click, size: 80, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            'No Ads Available',
+            'No Spotlights Available',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,

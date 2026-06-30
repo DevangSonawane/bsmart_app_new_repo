@@ -96,7 +96,7 @@ class _GiftCoinsScreenState extends State<GiftCoinsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Confirm Gift'),
         content: Text(
-          'Send $amount coins to ${_selectedUser!['full_name'] ?? _selectedUser!['username']}?',
+          'Send $amount bCoins to ${_selectedUser!['full_name'] ?? _selectedUser!['username']}?',
         ),
         actions: [
           TextButton(
@@ -126,7 +126,7 @@ class _GiftCoinsScreenState extends State<GiftCoinsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Successfully sent $amount coins to ${_selectedUser!['full_name'] ?? _selectedUser!['username']}'),
+                content: Text('Successfully sent $amount bCoins to ${_selectedUser!['full_name'] ?? _selectedUser!['username']}'),
                 backgroundColor: Colors.green,
               ),
           );
@@ -155,7 +155,7 @@ class _GiftCoinsScreenState extends State<GiftCoinsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gift Coins'),
+        title: const Text('Gift bCoins'),
         backgroundColor: Colors.transparent,
         foregroundColor: InstagramTheme.textBlack,
       ),
@@ -188,7 +188,7 @@ class _GiftCoinsScreenState extends State<GiftCoinsScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '$_currentBalance coins',
+                        '$_currentBalance bCoins',
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -299,9 +299,9 @@ class _GiftCoinsScreenState extends State<GiftCoinsScreen> {
               controller: _amountController,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                hintText: 'Enter coins to gift',
+                hintText: 'Enter bCoins to gift',
                 prefixIcon: const Icon(LucideIcons.coins),
-                suffixText: 'coins',
+                suffixText: 'bCoins',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),

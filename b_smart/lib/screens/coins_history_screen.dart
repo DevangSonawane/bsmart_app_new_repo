@@ -99,7 +99,7 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Coins History'),
+        title: const Text('bCoins History'),
         backgroundColor: Colors.transparent,
         foregroundColor: InstagramTheme.textBlack,
       ),
@@ -134,7 +134,7 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
                       },
                     ),
                     _buildFilterChip(
-                      'Ad Rewards',
+                      'Ad bCoins',
                       _selectedType == LedgerTransactionType.adReward,
                       () {
                         setState(() {

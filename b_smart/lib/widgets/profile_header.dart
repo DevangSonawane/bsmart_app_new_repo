@@ -80,12 +80,12 @@ class ProfileHeader extends StatelessWidget {
     final primaryName = displayName.isNotEmpty ? displayName : cleanUsername;
     final stats = isVendor
         ? <_StatItem>[
-            _StatItem(ads, 'Ads'),
+            _StatItem(ads, 'Spotlights'),
             _StatItem(followers, 'Followers'),
             _StatItem(following, 'Following'),
           ]
         : <_StatItem>[
-            _StatItem(posts, 'Posts'),
+            _StatItem(posts, 'Moments'),
             _StatItem(followers, 'Followers'),
             _StatItem(following, 'Following'),
           ];

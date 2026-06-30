@@ -82,7 +82,7 @@ class ViewRecordedPopupCard extends StatelessWidget {
               ],
               const SizedBox(height: 6),
               const Text(
-                'No coins rewarded for this view',
+                'No bCoins earned for this view',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Color(0xFF6B7280),
@@ -128,4 +128,3 @@ class ViewRecordedPopupCard extends StatelessWidget {
     );
   }
 }
-

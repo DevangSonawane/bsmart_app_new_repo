@@ -868,7 +868,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 14),
             Text(
-              emptyTitle ?? (isReels ? 'No Reels Yet' : 'No Posts Yet'),
+              emptyTitle ?? (isReels ? 'No bSparks Yet' : 'No Moments Yet'),
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -2671,7 +2671,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         isReels: true,
         isOwnProfile: isMe,
         emptyIcon: LucideIcons.video,
-        emptyTitle: 'No Reels Yet',
+        emptyTitle: 'No bSparks Yet',
         createButtonLabel: 'Create new reel',
         onCreatePressed: () => _openCreateUpload(mode: UploadMode.reel),
       );
@@ -2842,7 +2842,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         isReels: false,
         isOwnProfile: isMe,
         emptyIcon: LucideIcons.messageCircle,
-        emptyTitle: 'No Tweets Yet',
+        emptyTitle: 'No Buzz Yet',
         createButtonLabel: 'Create new tweet',
         onCreatePressed: () => Navigator.of(context).pushNamed('/tweet'),
       );
@@ -3038,7 +3038,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               username: username,
               fullName: fullName,
               subtitle:
-                  'Follow them to see their posts, stories, and profile content.',
+                  'Follow them to see their posts, glimpses, and profile content.',
             ),
           );
         }
@@ -3256,7 +3256,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     username: username,
                     fullName: fullName,
                     subtitle:
-                        'Follow request must be accepted to view photos, reels, highlights, and posts.',
+                        'Follow request must be accepted to view photos, reels, highlights, and moments.',
                   ),
                 ],
               ),
@@ -3419,8 +3419,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           _postsRestricted
               ? privacyPlaceholder(
-                  title: 'Posts are private',
-                  subtitle: 'Only approved followers can see these posts.',
+                  title: 'Moments are private',
+                  subtitle: 'Only approved followers can see these moments.',
                 )
               : (mediaPosts.isEmpty
                   ? _emptyGridPlaceholder(
@@ -3441,7 +3441,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               _postsRestricted
                   ? privacyPlaceholder(
-                      title: 'Posts are private',
+                      title: 'Moments are private',
                       subtitle: 'Only approved followers can see this content.',
                     )
                   : _buildTweetsList(tweetPosts, isMe: isMe),
@@ -3464,7 +3464,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           isReels: false,
                           isOwnProfile: isMe,
                           emptyIcon: LucideIcons.megaphone,
-                          emptyTitle: 'No Promote Yet',
+                          emptyTitle: 'No Boosts Yet',
                           showCreateButton: false,
                         )
                       : PostsGrid(

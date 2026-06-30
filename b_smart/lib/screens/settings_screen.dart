@@ -327,7 +327,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _settingTile(
             icon: LucideIcons.bookmark,
             label: 'Saved',
-            subLabel: 'Saved reels and posts',
+            subLabel: 'Saved bSparks and moments',
             onTap: () => _push(const SavedItemsScreen()),
           ),
           const SizedBox(height: 20),

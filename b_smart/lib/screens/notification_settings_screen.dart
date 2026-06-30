@@ -78,7 +78,7 @@ class _NotificationSettingsScreenState
                             _toggleRow(
                               icon: Icons.favorite_outline,
                               title: 'Likes',
-                              subtitle: 'People liking your posts.',
+                              subtitle: 'People liking your moments.',
                               value: _likes,
                               onChanged: (value) =>
                                   _unsupportedToggle('Likes'),
@@ -87,7 +87,7 @@ class _NotificationSettingsScreenState
                             _toggleRow(
                               icon: Icons.mode_comment_outlined,
                               title: 'Comments',
-                              subtitle: 'New comments on your posts.',
+                              subtitle: 'New comments on your moments.',
                               value: _comments,
                               onChanged: (value) =>
                                   _unsupportedToggle('Comments'),

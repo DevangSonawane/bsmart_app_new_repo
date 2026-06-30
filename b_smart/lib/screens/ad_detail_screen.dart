@@ -198,7 +198,7 @@ class _AdDetailBody extends StatelessWidget {
                 const SizedBox(width: 8),
                 _MetaPill(
                   icon: Icons.monetization_on_outlined,
-                  text: '${ad.coinReward} coins',
+                  text: '${ad.coinReward} bCoins',
                 ),
                 const Spacer(),
                 IconButton(

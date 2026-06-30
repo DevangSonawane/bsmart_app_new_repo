@@ -154,9 +154,9 @@ class AdCompanyDetailScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
 
-              // Active Ads
+              // Active Spotlights
               const Text(
-                'Active Ads',
+                'Active Spotlights',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,

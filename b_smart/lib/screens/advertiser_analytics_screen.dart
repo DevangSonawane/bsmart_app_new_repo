@@ -143,11 +143,11 @@ class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
             _buildSection(
               'Reward & Cost Metrics',
               [
-                _buildMetricRow('Coins Allocated', _formatNumber(analytics.totalCoinsAllocated)),
-                _buildMetricRow('Coins Consumed', _formatNumber(analytics.coinsConsumed)),
-                _buildMetricRow('Coins Remaining', _formatNumber(analytics.coinsRemaining)),
-                _buildMetricRow('Rewards Issued', _formatNumber(analytics.rewardsIssued)),
-                _buildMetricRow('Avg Coins/User', analytics.averageCoinsPerUser.toStringAsFixed(1)),
+                _buildMetricRow('bCoins Allocated', _formatNumber(analytics.totalCoinsAllocated)),
+                _buildMetricRow('bCoins Consumed', _formatNumber(analytics.coinsConsumed)),
+                _buildMetricRow('bCoins Remaining', _formatNumber(analytics.coinsRemaining)),
+                _buildMetricRow('bCoins Issued', _formatNumber(analytics.rewardsIssued)),
+                _buildMetricRow('Avg bCoins/User', analytics.averageCoinsPerUser.toStringAsFixed(1)),
                 _buildMetricRow('Cost per Valid Reward', '₹${analytics.costPerValidReward.toStringAsFixed(2)}'),
                 _buildMetricRow('Cost per Watch Minute', '₹${analytics.costPerWatchMinute.toStringAsFixed(2)}'),
               ],

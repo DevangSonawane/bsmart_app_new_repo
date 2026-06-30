@@ -1225,13 +1225,13 @@ const _vendorTypeConfig = {
     icon: LucideIcons.trendingUp,
     bgColor: Color(0xFFDCFCE7),
     iconColor: Color(0xFF16A34A),
-    label: 'Wallet Credit',
+    label: 'Vault Credit',
   ),
   'wallet_debit': _TypeConfig(
     icon: LucideIcons.trendingDown,
     bgColor: Color(0xFFFEE2E2),
     iconColor: Color(0xFFDC2626),
-    label: 'Wallet Debit',
+    label: 'Vault Debit',
   ),
   'ad_spend': _TypeConfig(
     icon: LucideIcons.receipt,

@@ -11,14 +11,14 @@ class AdvertiserWalletScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Wallet & Coins'),
+        title: const Text('Vault'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Coins Summary Card
+            // Wallet Summary Card
             Card(
               color: Colors.blue[50],
               child: Padding(
@@ -26,7 +26,7 @@ class AdvertiserWalletScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     const Text(
-                      'Available Coins',
+                      'Available bCoins',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey,
@@ -91,14 +91,14 @@ class AdvertiserWalletScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Wallet Rules',
+                      'Vault Rules',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildRuleItem('✓ Coins never expire'),
+                    _buildRuleItem('✓ bCoins never expire'),
                     _buildRuleItem('✓ Withdrawal requires KYC'),
                     _buildRuleItem('✓ TDS applied on withdrawals'),
                     _buildRuleItem('✗ No refunds'),
@@ -114,11 +114,11 @@ class AdvertiserWalletScreen extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Purchase coins feature coming soon')),
+                    const SnackBar(content: Text('Purchase bCoins feature coming soon')),
                   );
                 },
                 icon: const Icon(Icons.add),
-                label: const Text('Purchase Coins'),
+                label: const Text('Purchase bCoins'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
@@ -143,7 +143,7 @@ class AdvertiserWalletScreen extends StatelessWidget {
                   );
                 },
                 icon: const Icon(Icons.account_balance),
-                label: const Text('Withdraw Coins'),
+                label: const Text('Withdraw bCoins'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),

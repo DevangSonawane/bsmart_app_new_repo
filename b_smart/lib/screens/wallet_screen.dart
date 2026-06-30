@@ -155,7 +155,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                       const Icon(LucideIcons.wallet, size: 18, color: Color(0xFFFB923C)),
                       const SizedBox(width: 8),
                       Text(
-                        'Wallet & Coins',
+                        'Vault',
                         style: GoogleFonts.dmSans(fontWeight: FontWeight.w800, fontSize: 16, color: titleColor),
                       ),
                     ],
@@ -418,7 +418,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
-                        'coins',
+                        'bCoins',
                         style: GoogleFonts.dmSans(color: Colors.white.withValues(alpha: 0.85), fontSize: 16, fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -459,7 +459,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              _errorMessage ?? 'Failed to load wallet data',
+              _errorMessage ?? 'Failed to load vault data',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.dmSans(color: const Color(0xFFFB7185), fontWeight: FontWeight.w600),
@@ -609,7 +609,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
       return m(label: 'Registration Bonus', icon: LucideIcons.sparkles, iconColor: const Color(0xFFFBBF24), bgColor: const Color(0x1AFBBF24));
     }
     if (rawType == 'VENDOR_RECHARGE') {
-      return m(label: 'Wallet Recharge', icon: LucideIcons.trendingUp, iconColor: const Color(0xFF34D399), bgColor: const Color(0x1A34D399));
+      return m(label: 'Vault Recharge', icon: LucideIcons.trendingUp, iconColor: const Color(0xFF34D399), bgColor: const Color(0x1A34D399));
     }
     if (rawType == 'ADMIN_ADJUSTMENT') {
       return m(label: 'Admin Adjustment', icon: LucideIcons.slidersHorizontal, iconColor: const Color(0xFFA78BFA), bgColor: const Color(0x1AA78BFA));
@@ -620,7 +620,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
     if (rawType == 'LIKE') {
       return m(label: 'Like Reward', icon: LucideIcons.heart, iconColor: const Color(0xFF34D399), bgColor: const Color(0x1A34D399));
     }
-    return m(label: rawType.isEmpty ? 'Coins' : rawType, icon: LucideIcons.coins, iconColor: const Color(0xFF9CA3AF), bgColor: const Color(0x1A9CA3AF));
+    return m(label: rawType.isEmpty ? 'bCoins' : rawType, icon: LucideIcons.coins, iconColor: const Color(0xFF9CA3AF), bgColor: const Color(0x1A9CA3AF));
   }
 
   Widget _buildAccountDetails() {
@@ -635,7 +635,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
     final avatarUrl = (user['avatar_url'] ?? '').toString().trim();
     final email = (user['email'] ?? '').toString();
     final phone = (user['phone'] ?? '').toString();
-    final currency = (wallet['currency'] ?? 'Coins').toString();
+    final currency = (wallet['currency'] ?? 'bCoins').toString();
     final companyDetails = user['company_details'] is Map ? Map<String, dynamic>.from(user['company_details'] as Map) : <String, dynamic>{};
     final surface = isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
     final border = isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.06);
@@ -725,7 +725,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
           const SizedBox(height: 10),
           _AccountRow(
             label: 'Balance',
-            value: '${_coinBalance.toString()} Coins',
+            value: '${_coinBalance.toString()} bCoins',
             icon: LucideIcons.coins,
             valueColor: const Color(0xFFFB923C),
           ),
@@ -785,7 +785,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
   }
 
   Widget _buildHelp() {
-    final items = ['How do coins work?', 'Why is my balance changed?', 'Contact support'];
+    final items = ['How do bCoins work?', 'Why is my balance changed?', 'Contact support'];
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
       child: Column(

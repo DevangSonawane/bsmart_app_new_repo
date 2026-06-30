@@ -42,10 +42,10 @@ class _BottomNavState extends State<BottomNav> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildNavItem(context, 0, LucideIcons.house, 'Home', isActive: widget.currentIndex == 0),
-              _buildNavItem(context, 1, LucideIcons.target, 'Ads', isActive: widget.currentIndex == 1),
+              _buildNavItem(context, 1, LucideIcons.target, 'Spotlights', isActive: widget.currentIndex == 1),
               _buildCreateButton(context),
-              _buildNavItem(context, 3, LucideIcons.megaphone, 'Promote', isActive: widget.currentIndex == 3),
-              _buildNavItem(context, 4, LucideIcons.clapperboard, 'Reels', isActive: widget.currentIndex == 4),
+              _buildNavItem(context, 3, LucideIcons.megaphone, 'Boosts', isActive: widget.currentIndex == 3),
+              _buildNavItem(context, 4, LucideIcons.clapperboard, 'bSparks', isActive: widget.currentIndex == 4),
             ],
           ),
         ),

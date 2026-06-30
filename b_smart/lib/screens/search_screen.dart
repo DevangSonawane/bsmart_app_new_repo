@@ -560,8 +560,8 @@ class _SearchScreenState extends State<SearchScreen> {
     final tabs = [
       {'key': 'all', 'label': 'All'},
       {'key': 'people', 'label': 'People (${_users.length})'},
-      {'key': 'posts', 'label': 'Posts (${_posts.length})'},
-      {'key': 'reels', 'label': 'Reels (${_reels.length})'},
+      {'key': 'posts', 'label': 'Moments (${_posts.length})'},
+      {'key': 'reels', 'label': 'bSparks (${_reels.length})'},
     ];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -804,7 +804,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                     ),
                                   ),
                                 _buildGridSection(
-                                  'Posts',
+                                  'Moments',
                                   filteredPosts,
                                   onLoadMore: () => _loadMore('posts'),
                                   canLoadMore:
@@ -814,7 +814,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                   isReel: false,
                                 ),
                                 _buildGridSection(
-                                  'Reels',
+                                  'bSparks',
                                   filteredReels,
                                   onLoadMore: () => _loadMore('reels'),
                                   canLoadMore:

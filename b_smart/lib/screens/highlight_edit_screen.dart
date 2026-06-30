@@ -315,7 +315,7 @@ class _HighlightEditScreenState extends State<HighlightEditScreen> {
     }
     if (_archiveStories.isEmpty) {
       return const Center(
-        child: Text('No stories', style: TextStyle(color: Colors.white38)),
+        child: Text('No glimpses', style: TextStyle(color: Colors.white38)),
       );
     }
     return GridView.builder(

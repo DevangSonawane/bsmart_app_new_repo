@@ -176,7 +176,7 @@ class _CoinEarnedToast extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            '+$amount Coins Earned!',
+            '+$amount bCoins Earned!',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w800,

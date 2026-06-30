@@ -1087,14 +1087,14 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           ),
           _divider(),
           _dropdownRow(
-            label: 'Posts',
+            label: 'Moments',
             value: (_settings.profileVisibility['posts'] ?? 'everyone')
                 .toString(),
             onTap: _loading || _saving
                 ? () {}
                 : () async {
                     final next = await _showPrivacyPicker(
-                      title: 'Posts',
+                      title: 'Moments',
                       currentValue:
                           (_settings.profileVisibility['posts'] ?? 'everyone')
                               .toString(),
@@ -1106,14 +1106,14 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           ),
           _divider(),
           _dropdownRow(
-            label: 'Stories',
+            label: 'Glimpses',
             value: (_settings.profileVisibility['stories'] ?? 'everyone')
                 .toString(),
             onTap: _loading || _saving
                 ? () {}
                 : () async {
                     final next = await _showPrivacyPicker(
-                      title: 'Stories',
+                      title: 'Glimpses',
                       currentValue:
                           (_settings.profileVisibility['stories'] ?? 'everyone')
                               .toString(),
