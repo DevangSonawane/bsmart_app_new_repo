@@ -668,8 +668,7 @@ class _MessagingScreenState extends State<MessagingScreen>
 
   Widget _buildSearchBar(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2);
+    final bg = theme.cardColor;
     return Container(
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -877,8 +876,7 @@ class _MessagingScreenState extends State<MessagingScreen>
   Widget _buildFilterToggles(BuildContext context) {
     const labels = ['Primary', 'Unread', 'Community', 'Requests'];
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final track = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2);
+    final track = theme.cardColor;
 
     return SizedBox(
       height: 34,
@@ -974,15 +972,13 @@ class _MessagingScreenState extends State<MessagingScreen>
 
   Widget _buildRequestHeader(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final border =
-        (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06);
+    final border = theme.colorScheme.onSurface.withValues(alpha: 0.08);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF111827) : Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: border),
       ),

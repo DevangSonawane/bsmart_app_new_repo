@@ -1382,12 +1382,9 @@ class _PostCardState extends State<PostCard> {
     String s(dynamic v) => (v ?? '').toString().trim();
 
     final colors = theme.colorScheme;
-    final bg = theme.brightness == Brightness.dark
-        ? const Color(0xFF0B0B0C)
-        : Colors.white;
-    final border = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.10)
-        : const Color(0xFFE5E7EB);
+    final bg = theme.cardColor;
+    final border = colors.onSurface.withValues(alpha: 0.08);
+    final placeholderColor = colors.onSurface.withValues(alpha: 0.06);
 
     Widget productCard(Map<String, dynamic> p) {
       final image = UrlHelper.normalizeUrl(
@@ -1434,14 +1431,12 @@ class _PostCardState extends State<PostCard> {
                   width: 84,
                   height: 84,
                   child: image.isEmpty
-                      ? const ColoredBox(color: Color(0xFFF3F4F6))
+                      ? ColoredBox(color: placeholderColor)
                       : SafeNetworkImage(
                           url: image,
                           fit: BoxFit.cover,
-                          placeholder:
-                              const ColoredBox(color: Color(0xFFF3F4F6)),
-                          errorWidget:
-                              const ColoredBox(color: Color(0xFFF3F4F6)),
+                          placeholder: ColoredBox(color: placeholderColor),
+                          errorWidget: ColoredBox(color: placeholderColor),
                         ),
                 ),
               ),
@@ -1907,8 +1902,10 @@ class _TweetImagePreviewScreenState extends State<_TweetImagePreviewScreen> {
   @override
   Widget build(BuildContext context) {
     final total = widget.urls.length;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
         child: Stack(
           children: [
@@ -1935,7 +1932,7 @@ class _TweetImagePreviewScreenState extends State<_TweetImagePreviewScreen> {
               left: 10,
               child: IconButton(
                 onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.close, color: Colors.white),
+                icon: Icon(Icons.close, color: cs.onSurface),
               ),
             ),
             if (total > 1)
@@ -1946,16 +1943,16 @@ class _TweetImagePreviewScreenState extends State<_TweetImagePreviewScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.55),
+                    color: cs.onSurface.withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.12),
+                      color: cs.onSurface.withValues(alpha: 0.12),
                     ),
                   ),
                   child: Text(
                     '${_index + 1}/$total',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: cs.onSurface,
                       fontWeight: FontWeight.w800,
                       fontSize: 12,
                     ),

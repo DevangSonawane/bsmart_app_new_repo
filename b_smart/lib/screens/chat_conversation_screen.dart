@@ -1655,287 +1655,334 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         color: DesignTokens.instaPink),
                   )
                 : ClipRect(
-                    child: RefreshIndicator(
-                      onRefresh: () => _load(page: 1, replace: true),
-                      child: Chat(
-                        messages: _chatUiMessages(),
-                        onSendPressed: _handleSendPressed,
-                        user: _chatUiUser,
-                        scrollPhysics: const ClampingScrollPhysics(),
-                        showUserAvatars: false,
-                        showUserNames: false,
-                        isAttachmentUploading: _sending || _uploadingMedia,
-                        isLastPage: !_hasMore,
-                        customBottomWidget: const SizedBox.shrink(),
-                        messageWidthRatio: 0.62,
-                        onMessageDoubleTap: (context, message) {
-                          final raw = _rawMessageById(message.id);
-                          if (raw == null || raw['isDeleted'] == true) return;
-                          _reactToMessage(raw, '❤️');
-                        },
-                        onMessageLongPress: (context, message) {
-                          final raw = _rawMessageById(message.id);
-                          if (raw == null || raw['isDeleted'] == true) return;
-                          final mine = message.author.id ==
-                              (_currentUserId ?? '').trim();
-                          _showMessageActions(context, raw, mine: mine);
-                        },
-                        textMessageBuilder: (text,
-                            {required messageWidth, required showName}) {
-                          return GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onDoubleTap: () {
-                              final raw = _rawMessageById(text.id);
+                    child: Builder(
+                      builder: (context) {
+                        final theme = Theme.of(context);
+                        final chatTheme = theme.brightness == Brightness.dark
+                            ? DarkChatTheme(
+                                backgroundColor: theme.scaffoldBackgroundColor,
+                                inputBackgroundColor: theme.cardColor,
+                                inputSurfaceTintColor: theme.cardColor,
+                                primaryColor: theme.colorScheme.primary,
+                                secondaryColor: theme.cardColor,
+                              )
+                            : DefaultChatTheme(
+                                backgroundColor: theme.scaffoldBackgroundColor,
+                                inputBackgroundColor: theme.cardColor,
+                                inputSurfaceTintColor: theme.cardColor,
+                                primaryColor: theme.colorScheme.primary,
+                                secondaryColor: theme.colorScheme.surface,
+                              );
+                        return RefreshIndicator(
+                          onRefresh: () => _load(page: 1, replace: true),
+                          child: Chat(
+                            theme: chatTheme,
+                            messages: _chatUiMessages(),
+                            onSendPressed: _handleSendPressed,
+                            user: _chatUiUser,
+                            scrollPhysics: const ClampingScrollPhysics(),
+                            showUserAvatars: false,
+                            showUserNames: false,
+                            isAttachmentUploading:
+                                _sending || _uploadingMedia,
+                            isLastPage: !_hasMore,
+                            customBottomWidget: const SizedBox.shrink(),
+                            messageWidthRatio: 0.62,
+                            onMessageDoubleTap: (context, message) {
+                              final raw = _rawMessageById(message.id);
                               if (raw == null || raw['isDeleted'] == true) {
                                 return;
                               }
                               _reactToMessage(raw, '❤️');
                             },
-                            child: TextMessage(
-                              emojiEnlargementBehavior:
-                                  EmojiEnlargementBehavior.multi,
-                              hideBackgroundOnEmojiMessages: true,
-                              message: text,
-                              showName: showName,
-                              usePreviewData: true,
-                            ),
-                          );
-                        },
-                        bubbleBuilder: (child,
-                            {required message, required nextMessageInGroup}) {
-                          final mine = message.author.id ==
-                              (_currentUserId ?? '').trim();
-                          final cs = Theme.of(context).colorScheme;
-                          final bubbleColor = mine ? cs.primary : cs.surface;
-                          final textColor = mine ? Colors.white : cs.onSurface;
-                          final radius = BorderRadius.only(
-                            topLeft: const Radius.circular(22),
-                            topRight: const Radius.circular(22),
-                            bottomLeft: Radius.circular(mine ? 22 : 8),
-                            bottomRight: Radius.circular(mine ? 8 : 22),
-                          );
-                          final raw = _rawMessageById(message.id);
-                          final shared = raw == null ? null : _sharedContentFor(raw);
-                          final reaction = raw == null
-                              ? const <ChatReaction>[]
-                              : _reactionBadgesFor(raw);
-                          final reactionLabel =
-                              reaction.isNotEmpty ? reaction.first.label : null;
-                          final seenLabel = _readReceiptLabelForMessage(
-                            message.id,
-                            context: context,
-                          );
+                            onMessageLongPress: (context, message) {
+                              final raw = _rawMessageById(message.id);
+                              if (raw == null || raw['isDeleted'] == true) {
+                                return;
+                              }
+                              final mine = message.author.id ==
+                                  (_currentUserId ?? '').trim();
+                              _showMessageActions(context, raw, mine: mine);
+                            },
+                            textMessageBuilder: (text,
+                                {required messageWidth, required showName}) {
+                              return GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onDoubleTap: () {
+                                  final raw = _rawMessageById(text.id);
+                                  if (raw == null || raw['isDeleted'] == true) {
+                                    return;
+                                  }
+                                  _reactToMessage(raw, '❤️');
+                                },
+                                child: TextMessage(
+                                  emojiEnlargementBehavior:
+                                      EmojiEnlargementBehavior.multi,
+                                  hideBackgroundOnEmojiMessages: true,
+                                  message: text,
+                                  showName: showName,
+                                  usePreviewData: true,
+                                ),
+                              );
+                            },
+                            bubbleBuilder: (child,
+                                {required message,
+                                required nextMessageInGroup}) {
+                              final mine = message.author.id ==
+                                  (_currentUserId ?? '').trim();
+                              final cs = Theme.of(context).colorScheme;
+                              final bubbleColor =
+                                  mine ? cs.primary : cs.surface;
+                              final textColor =
+                                  mine ? Colors.white : cs.onSurface;
+                              final radius = BorderRadius.only(
+                                topLeft: const Radius.circular(22),
+                                topRight: const Radius.circular(22),
+                                bottomLeft: Radius.circular(mine ? 22 : 8),
+                                bottomRight: Radius.circular(mine ? 8 : 22),
+                              );
+                              final raw = _rawMessageById(message.id);
+                              final shared =
+                                  raw == null ? null : _sharedContentFor(raw);
+                              final reaction = raw == null
+                                  ? const <ChatReaction>[]
+                                  : _reactionBadgesFor(raw);
+                              final reactionLabel = reaction.isNotEmpty
+                                  ? reaction.first.label
+                                  : null;
+                              final seenLabel = _readReceiptLabelForMessage(
+                                message.id,
+                                context: context,
+                              );
 
-                          Widget footer = const SizedBox.shrink();
-                          if (reactionLabel != null || seenLabel != null) {
-                            footer = Padding(
-                              padding: const EdgeInsets.only(
-                                top: 2,
-                                right: 6,
-                              ),
-                              child: Column(
+                              Widget footer = const SizedBox.shrink();
+                              if (reactionLabel != null || seenLabel != null) {
+                                footer = Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 2,
+                                    right: 6,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: mine
+                                        ? CrossAxisAlignment.end
+                                        : CrossAxisAlignment.start,
+                                    children: [
+                                      if (seenLabel != null)
+                                        Text(
+                                          seenLabel,
+                                          textAlign: mine
+                                              ? TextAlign.right
+                                              : TextAlign.left,
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.48),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      if (reactionLabel != null) ...[
+                                        if (seenLabel != null)
+                                          const SizedBox(height: 2),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.06),
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            reactionLabel,
+                                            textAlign: mine
+                                                ? TextAlign.right
+                                                : TextAlign.left,
+                                            style: TextStyle(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                                  .withValues(alpha: 0.78),
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              }
+
+                              if (shared != null &&
+                                  _hasRenderableSharedContent(shared)) {
+                                return Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: mine
+                                      ? CrossAxisAlignment.end
+                                      : CrossAxisAlignment.start,
+                                  children: [
+                                    _sharedContentCard(shared, mine),
+                                    footer,
+                                  ],
+                                );
+                              }
+
+                              return Column(
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: mine
                                     ? CrossAxisAlignment.end
                                     : CrossAxisAlignment.start,
                                 children: [
-                                  if (seenLabel != null)
-                                    Text(
-                                      seenLabel,
-                                      textAlign: mine
-                                          ? TextAlign.right
-                                          : TextAlign.left,
-                                      style: TextStyle(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withValues(alpha: 0.48),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  if (reactionLabel != null) ...[
-                                    if (seenLabel != null)
-                                      const SizedBox(height: 2),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
+                                  Padding(
+                                    padding:
+                                        EdgeInsets.only(right: mine ? 12 : 0),
+                                    child: Container(
                                       decoration: BoxDecoration(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withValues(alpha: 0.06),
-                                        borderRadius:
-                                            BorderRadius.circular(999),
+                                        color: bubbleColor,
+                                        borderRadius: radius,
+                                        boxShadow: mine
+                                            ? const []
+                                            : [
+                                                BoxShadow(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.04),
+                                                  blurRadius: 8,
+                                                  offset: const Offset(0, 3),
+                                                ),
+                                              ],
                                       ),
-                                      child: Text(
-                                        reactionLabel,
-                                        textAlign: mine
-                                            ? TextAlign.right
-                                            : TextAlign.left,
-                                        style: TextStyle(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withValues(alpha: 0.78),
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
+                                      child: ClipRRect(
+                                        borderRadius: radius,
+                                        child: DefaultTextStyle.merge(
+                                          style: TextStyle(color: textColor),
+                                          child: IconTheme.merge(
+                                            data: IconThemeData(
+                                              color: textColor,
+                                            ),
+                                            child: child,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ],
-                                ],
-                              ),
-                            );
-                          }
-
-                          if (shared != null &&
-                              _hasRenderableSharedContent(shared)) {
-                            return Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: mine
-                                  ? CrossAxisAlignment.end
-                                  : CrossAxisAlignment.start,
-                              children: [
-                                _sharedContentCard(shared, mine),
-                                footer,
-                              ],
-                            );
-                          }
-
-                          return Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: mine
-                                ? CrossAxisAlignment.end
-                                : CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: EdgeInsets.only(right: mine ? 12 : 0),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: bubbleColor,
-                                    borderRadius: radius,
-                                    boxShadow: mine
-                                        ? const []
-                                        : [
-                                            BoxShadow(
-                                              color: Colors.black
-                                                  .withValues(alpha: 0.04),
-                                              blurRadius: 8,
-                                              offset: const Offset(0, 3),
-                                            ),
-                                          ],
                                   ),
-                                  child: ClipRRect(
-                                    borderRadius: radius,
-                                    child: DefaultTextStyle.merge(
-                                      style: TextStyle(color: textColor),
-                                      child: IconTheme.merge(
-                                        data: IconThemeData(color: textColor),
-                                        child: child,
-                                      ),
+                                  footer,
+                                ],
+                              );
+                            },
+                            imageMessageBuilder: (image,
+                                {required messageWidth}) {
+                              return GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onDoubleTap: () {
+                                  final raw = _rawMessageById(image.id);
+                                  if (raw == null || raw['isDeleted'] == true) {
+                                    return;
+                                  }
+                                  _reactToMessage(raw, '❤️');
+                                },
+                                child: ImageMessageContent(
+                                  urls: [UrlHelper.normalizeUrl(image.uri)],
+                                  caption: '',
+                                  isOutgoing:
+                                      image.author.id ==
+                                          (_currentUserId ?? '').trim(),
+                                ),
+                              );
+                            },
+                            fileMessageBuilder: (file,
+                                {required messageWidth}) {
+                              return GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onDoubleTap: () {
+                                  final raw = _rawMessageById(file.id);
+                                  if (raw == null || raw['isDeleted'] == true) {
+                                    return;
+                                  }
+                                  _reactToMessage(raw, '❤️');
+                                },
+                                child: FileMessage(
+                                  message: file,
+                                ),
+                              );
+                            },
+                            systemMessageBuilder: (message) {
+                              if (message.id == _headerSystemMessageId()) {
+                                return Container(
+                                  width: double.infinity,
+                                  color: Theme.of(context)
+                                      .scaffoldBackgroundColor,
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      12,
+                                      12,
+                                      12,
+                                    ),
+                                    child: _conversationHeader(
+                                      userId: otherId,
+                                      username: otherName,
+                                      avatarUrl: otherAvatar ?? '',
+                                    ),
+                                  ),
+                                );
+                              }
+                              final cs = Theme.of(context).colorScheme;
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    message.text,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: cs.onSurface
+                                          .withValues(alpha: 0.55),
                                     ),
                                   ),
                                 ),
-                              ),
-                              footer,
-                            ],
-                          );
-                        },
-                        imageMessageBuilder: (image, {required messageWidth}) {
-                          return GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onDoubleTap: () {
-                              final raw = _rawMessageById(image.id);
-                              if (raw == null || raw['isDeleted'] == true) {
-                                return;
-                              }
-                              _reactToMessage(raw, '❤️');
+                              );
                             },
-                            child: ImageMessageContent(
-                              urls: [UrlHelper.normalizeUrl(image.uri)],
-                              caption: '',
-                              isOutgoing: image.author.id ==
-                                  (_currentUserId ?? '').trim(),
-                            ),
-                          );
-                        },
-                        fileMessageBuilder: (file, {required messageWidth}) {
-                          return GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onDoubleTap: () {
-                              final raw = _rawMessageById(file.id);
-                              if (raw == null || raw['isDeleted'] == true) {
-                                return;
-                              }
-                              _reactToMessage(raw, '❤️');
-                            },
-                            child: FileMessage(
-                              message: file,
-                            ),
-                          );
-                        },
-                        systemMessageBuilder: (message) {
-                          if (message.id == _headerSystemMessageId()) {
-                            return Container(
-                              width: double.infinity,
-                              color: Theme.of(context).scaffoldBackgroundColor,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                                child: _conversationHeader(
-                                  userId: otherId,
-                                  username: otherName,
-                                  avatarUrl: otherAvatar ?? '',
+                            audioMessageBuilder: (audio,
+                                {required messageWidth}) {
+                              return GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onDoubleTap: () {
+                                  final raw = _rawMessageById(audio.id);
+                                  if (raw == null || raw['isDeleted'] == true) {
+                                    return;
+                                  }
+                                  _reactToMessage(raw, '❤️');
+                                },
+                                child: VoiceMessageContent(
+                                  audioUrl: UrlHelper.normalizeUrl(
+                                      audio.uri),
+                                  totalDurationSeconds:
+                                      audio.duration.inSeconds,
+                                  isOutgoing:
+                                      audio.author.id ==
+                                          (_currentUserId ?? '').trim(),
                                 ),
-                              ),
-                            );
-                          }
-                          final cs = Theme.of(context).colorScheme;
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            child: Center(
-                              child: Text(
-                                message.text,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: cs.onSurface.withValues(alpha: 0.55),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                        audioMessageBuilder: (audio, {required messageWidth}) {
-                          return GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onDoubleTap: () {
-                              final raw = _rawMessageById(audio.id);
-                              if (raw == null || raw['isDeleted'] == true) {
-                                return;
-                              }
-                              _reactToMessage(raw, '❤️');
+                              );
                             },
-                            child: VoiceMessageContent(
-                              audioUrl: UrlHelper.normalizeUrl(audio.uri),
-                              totalDurationSeconds: audio.duration.inSeconds,
-                              isOutgoing: audio.author.id ==
-                                  (_currentUserId ?? '').trim(),
-                            ),
-                          );
-                        },
-                        onEndReached: () async {
-                          if (_loadingMore || _loading) return;
-                          if (!_hasMore) return;
-                          await _load(page: _page + 1, replace: false);
-                        },
-                      ),
+                            onEndReached: () async {
+                              if (_loadingMore || _loading) return;
+                              if (!_hasMore) return;
+                              await _load(page: _page + 1, replace: false);
+                            },
+                          ),
+                        );
+                      },
                     ),
                   ),
           ),
@@ -2556,10 +2603,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black54,
       builder: (_) {
-        final cs = Theme.of(context).colorScheme;
-        final sheetBg = Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF111111)
-            : Colors.white;
+        final theme = Theme.of(context);
+        final cs = theme.colorScheme;
+        final sheetBg = theme.cardColor;
         return SafeArea(
           top: false,
           child: Padding(
@@ -3447,26 +3493,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final isReelShare = type == 'reel' || type == 'ad';
     final isPostOrTweetShare = type == 'post' || type == 'tweet';
 
-    final cardBg = isDark ? theme.cardColor : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : Colors.black.withValues(alpha: 0.10);
-    final textColor = isDark ? Colors.white : cs.onSurface;
-    final mutedText = isDark
-        ? Colors.white.withValues(alpha: 0.75)
-        : cs.onSurface.withValues(alpha: 0.70);
-    final pillBg = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : Colors.black.withValues(alpha: 0.06);
-    final pillBorder = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : Colors.black.withValues(alpha: 0.08);
-    final headerBg = isDark
-        ? Colors.black.withValues(alpha: 0.10)
-        : Colors.black.withValues(alpha: 0.03);
-    final captionBg = isDark
-        ? Colors.black.withValues(alpha: 0.12)
-        : Colors.black.withValues(alpha: 0.04);
+    final cardBg = theme.cardColor;
+    final borderColor = cs.onSurface.withValues(alpha: isDark ? 0.12 : 0.08);
+    final textColor = cs.onSurface;
+    final mutedText = cs.onSurface.withValues(alpha: 0.70);
+    final pillBg = cs.onSurface.withValues(alpha: 0.06);
+    final pillBorder = cs.onSurface.withValues(alpha: 0.08);
+    final headerBg = cs.onSurface.withValues(alpha: 0.03);
+    final captionBg = cs.onSurface.withValues(alpha: 0.04);
 
     Widget typePill() {
       IconData icon = LucideIcons.share2;
@@ -3520,9 +3554,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             : Container(
                 width: 28,
                 height: 28,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.10)
-                    : Colors.black.withValues(alpha: 0.06),
+                color: cs.onSurface.withValues(alpha: 0.08),
                 alignment: Alignment.center,
                 child: Text(
                   (creator.isNotEmpty ? creator : 'U')
@@ -3597,9 +3629,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     Widget previewPlaceholder(String label, {double height = 260}) {
       return Container(
         height: height,
-        color: isDark
-            ? Colors.black.withValues(alpha: 0.20)
-            : Colors.black.withValues(alpha: 0.06),
+        color: cs.onSurface.withValues(alpha: isDark ? 0.10 : 0.05),
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Text(
@@ -3653,8 +3683,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Colors.black.withValues(alpha: 0.34),
-                Colors.black.withValues(alpha: 0.72),
+                cs.onSurface.withValues(alpha: 0.18),
+                cs.onSurface.withValues(alpha: 0.42),
               ],
             ),
           ),
@@ -3665,11 +3695,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               Container(
                 width: 54,
                 height: 54,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
+              decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: 0.10),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.20),
+                    color: cs.onSurface.withValues(alpha: 0.14),
                   ),
                 ),
                 alignment: Alignment.center,
@@ -3700,9 +3730,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
           final width = min(availableWidth, maxCardWidth);
           final height = width / frameAspect;
           final bg = contain
-              ? (isDark
-                  ? Colors.black.withValues(alpha: 0.18)
-                  : Colors.black.withValues(alpha: 0.04))
+              ? cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.04)
               : Colors.transparent;
           return SizedBox(
             width: width,
@@ -3766,7 +3794,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                Colors.black.withValues(alpha: 0.65),
+                                cs.onSurface.withValues(alpha: 0.55),
                                 Colors.transparent,
                               ],
                             ),
@@ -3808,7 +3836,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                           width: 34,
                           height: 34,
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.55),
+                            color: cs.onSurface.withValues(alpha: 0.55),
                             shape: BoxShape.circle,
                           ),
                           alignment: Alignment.center,
@@ -3902,9 +3930,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final images = urls.where((e) => e.trim().isNotEmpty).toList();
     if (images.isEmpty) return;
     final start = initialIndex.clamp(0, images.length - 1);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     showDialog(
       context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.95),
+      barrierColor: cs.scrim.withValues(alpha: 0.92),
       builder: (ctx) {
         final controller = PageController(initialPage: start);
         return GestureDetector(
@@ -3935,7 +3965,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                   left: 8,
                   child: IconButton(
                     onPressed: () => Navigator.of(ctx).pop(),
-                    icon: const Icon(Icons.close, color: Colors.white),
+                    icon: Icon(Icons.close, color: cs.onSurface),
                   ),
                 ),
               ],

@@ -2687,6 +2687,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       itemBuilder: (ctx, i) {
         final r = _userReels[i];
+        final theme = Theme.of(ctx);
+        final placeholderColor = theme.scaffoldBackgroundColor;
         final thumbRaw = r.thumbnailUrl?.trim();
         final thumb = _resolveReelThumbSource(thumbRaw);
         final videoUrl = _absoluteReelUrl(r.videoUrl);
@@ -2701,7 +2703,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Container(color: Colors.black),
+                Container(color: placeholderColor),
                 if (videoThumb.isNotEmpty)
                   _buildReelThumbnailFallback(
                     cacheId: r.id,
@@ -2733,6 +2735,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String cacheId,
     required String videoUrl,
   }) {
+    final theme = Theme.of(context);
+    final fallbackColor = theme.scaffoldBackgroundColor;
     final future = _reelThumbFutures.putIfAbsent(cacheId, () async {
       try {
         final bytes = await VideoThumbnail.thumbnailData(
@@ -2752,7 +2756,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (context, snap) {
         final bytes = snap.data;
         if (bytes == null || bytes.isEmpty) {
-          return Container(color: Colors.black);
+          return Container(color: fallbackColor);
         }
         return Image.memory(
           bytes,
@@ -3652,7 +3656,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       SliverPersistentHeader(
                         pinned: true,
                         delegate: _SliverTabBarDelegate(
-                          TabBar(
+                          tabBar: TabBar(
                             tabs: tabs,
                             isScrollable: false,
                             indicator: const UnderlineTabIndicator(
@@ -3662,6 +3666,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             unselectedLabelColor: theme.colorScheme.onSurface
                                 .withValues(alpha: 0.6),
                           ),
+                          backgroundColor: theme.scaffoldBackgroundColor,
+                          borderColor:
+                              theme.dividerColor.withValues(alpha: 0.55),
                         ),
                       ),
                     ],
@@ -3681,8 +3688,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
 class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar tabBar;
+  final Color backgroundColor;
+  final Color borderColor;
 
-  _SliverTabBarDelegate(this.tabBar);
+  _SliverTabBarDelegate({
+    required this.tabBar,
+    required this.backgroundColor,
+    required this.borderColor,
+  });
 
   @override
   double get minExtent => 48;
@@ -3696,8 +3709,8 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
     return Container(
       height: 48,
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+        color: backgroundColor,
+        border: Border(top: BorderSide(color: borderColor)),
       ),
       child: tabBar,
     );
@@ -3706,7 +3719,9 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) {
     if (oldDelegate is! _SliverTabBarDelegate) return true;
-    return oldDelegate.tabBar.tabs.length != tabBar.tabs.length;
+    return oldDelegate.tabBar.tabs.length != tabBar.tabs.length ||
+        oldDelegate.backgroundColor != backgroundColor ||
+        oldDelegate.borderColor != borderColor;
   }
 }
 

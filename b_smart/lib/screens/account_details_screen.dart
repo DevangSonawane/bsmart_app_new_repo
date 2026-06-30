@@ -894,22 +894,26 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: theme.appBarTheme.backgroundColor ??
+            theme.scaffoldBackgroundColor,
+        surfaceTintColor: theme.appBarTheme.surfaceTintColor ??
+            theme.scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: true,
         leadingWidth: 56,
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: Colors.black),
+          icon: Icon(LucideIcons.arrowLeft, color: cs.onSurface),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
+        title: Text(
           'Account',
           style: TextStyle(
-            color: Colors.black,
+            color: cs.onSurface,
             fontSize: 20,
             fontWeight: FontWeight.w700,
           ),
@@ -1053,13 +1057,17 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   }
 
   Widget _avatarCard() {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final surface = theme.cardColor;
+    final border = cs.onSurface.withValues(alpha: 0.08);
     final avatar = UrlHelper.normalizeUrl(_avatarUrl);
     final initials = _initials(_fullNameController.text.isNotEmpty
         ? _fullNameController.text
         : _usernameController.text);
 
     return Material(
-      color: const Color(0xFFFFF3F8),
+      color: surface,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: _uploadingAvatar ? null : _pickAvatar,
@@ -1073,15 +1081,16 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   Container(
                     width: 72,
                     height: 72,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [
-                          DesignTokens.instaPink.withValues(alpha: 0.16),
-                          DesignTokens.instaOrange.withValues(alpha: 0.16),
-                        ],
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [
+                            DesignTokens.instaPink.withValues(alpha: 0.16),
+                            DesignTokens.instaOrange.withValues(alpha: 0.16),
+                          ],
+                        ),
+                        border: Border.all(color: border),
                       ),
-                    ),
                     padding: const EdgeInsets.all(3),
                     child: Container(
                       decoration: const BoxDecoration(shape: BoxShape.circle),
@@ -1093,10 +1102,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                               height: 66,
                               fit: BoxFit.cover,
                               placeholder: Container(
-                                color: Colors.grey.shade200,
+                                color: cs.onSurface.withValues(alpha: 0.06),
                               ),
                               errorWidget: Container(
-                                color: Colors.grey.shade200,
+                                color: cs.onSurface.withValues(alpha: 0.06),
                                 child: Center(
                                   child: Text(
                                     initials,
@@ -1109,7 +1118,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                               ),
                             )
                           : Container(
-                              color: Colors.grey.shade200,
+                              color: cs.onSurface.withValues(alpha: 0.06),
                               child: Center(
                                 child: Text(
                                   initials,
@@ -1125,8 +1134,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   if (_uploadingAvatar)
                     Positioned.fill(
                       child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.4),
+                    decoration: BoxDecoration(
+                          color: cs.scrim.withValues(alpha: 0.4),
                           shape: BoxShape.circle,
                         ),
                         child: const Center(
@@ -1144,7 +1153,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                 ],
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1153,16 +1162,13 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF24364B),
+                        color: cs.onSurface,
                       ),
                     ),
-                    SizedBox(height: 3),
+                    const SizedBox(height: 3),
                     Text(
                       'Tap to change your avatar',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF6B7280),
-                      ),
+                      style: TextStyle(fontSize: 12, color: cs.onSurface.withValues(alpha: 0.65)),
                     ),
                   ],
                 ),
@@ -1176,11 +1182,11 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   Widget _dateTile() {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF5D5E1);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF526071);
+    final cs = theme.colorScheme;
+    final fillColor = theme.cardColor;
+    final borderColor = cs.onSurface.withValues(alpha: 0.08);
+    final labelColor = cs.onSurface;
+    final hintColor = cs.onSurface.withValues(alpha: 0.65);
 
     return InkWell(
       onTap: _pickDob,
@@ -1240,7 +1246,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                const Icon(Icons.chevron_right, color: Color(0xFF526071), size: 20),
+                Icon(Icons.chevron_right, color: hintColor, size: 20),
               ],
             ),
           ],
@@ -1251,11 +1257,11 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   Widget _genderTile() {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFFFF3F8);
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF6CFE0);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
-    final valueColor = isDark ? const Color(0xFF9CA3AF) : DesignTokens.instaPink;
+    final cs = theme.colorScheme;
+    final fillColor = theme.cardColor;
+    final borderColor = cs.onSurface.withValues(alpha: 0.08);
+    final labelColor = cs.onSurface;
+    final valueColor = cs.onSurface.withValues(alpha: 0.70);
     const items = <String>[
       'Male',
       'Female',
@@ -1312,8 +1318,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                       size: 18,
                       color: DesignTokens.instaPink,
                     ),
-                    dropdownColor:
-                        isDark ? const Color(0xFF1F1F1F) : const Color(0xFFFFF3F8),
+                    dropdownColor: theme.cardColor,
                     style: TextStyle(
                       color: valueColor,
                       fontSize: 13,
@@ -1346,11 +1351,11 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   Widget _interestTile() {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFFFF3F8);
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF6CFE0);
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF526071);
+    final cs = theme.colorScheme;
+    final fillColor = theme.cardColor;
+    final borderColor = cs.onSurface.withValues(alpha: 0.08);
+    final labelColor = cs.onSurface;
+    final hintColor = cs.onSurface.withValues(alpha: 0.65);
 
     return InkWell(
       onTap: _editInterests,
@@ -1426,11 +1431,11 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     int maxValueLines = 1,
   }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF5D5E1);
-    final titleColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
-    final valueColor = isDark ? const Color(0xFFB6BBC6) : const Color(0xFF526071);
+    final cs = theme.colorScheme;
+    final fillColor = theme.cardColor;
+    final borderColor = cs.onSurface.withValues(alpha: 0.08);
+    final titleColor = cs.onSurface;
+    final valueColor = cs.onSurface.withValues(alpha: 0.65);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -1590,11 +1595,11 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     VoidCallback? onTap,
   }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF242424) : const Color(0xFFFFF3F8);
-    final borderColor = isDark ? const Color(0xFF444444) : const Color(0xFFF6CFE0);
-    final titleColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF24364B);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF526071);
+    final cs = theme.colorScheme;
+    final fillColor = theme.cardColor;
+    final borderColor = cs.onSurface.withValues(alpha: 0.08);
+    final titleColor = cs.onSurface;
+    final hintColor = cs.onSurface.withValues(alpha: 0.65);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 5),
