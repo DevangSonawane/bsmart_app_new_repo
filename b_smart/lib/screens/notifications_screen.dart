@@ -4,8 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/auth_api.dart';
+import '../api/chat_api.dart';
 import '../api/follow_requests_api.dart';
 import '../models/notification_model.dart';
+import 'chat_conversation_screen.dart';
+import 'messaging_screen.dart';
 import '../services/notification_service.dart';
 import '../utils/timezone_service.dart';
 import 'follow_requests_screen.dart';
@@ -159,6 +162,104 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await _notificationService.deleteNotification(notificationId);
   }
 
+  bool _isMessageNotification(NotificationItem notification) {
+    final type = notification.typeKey.trim().toLowerCase();
+    return type.contains('message') || type.contains('chat') || type.contains('dm');
+  }
+
+  String _stringFromMap(
+    Map<String, dynamic>? map,
+    List<String> keys,
+  ) {
+    if (map == null) return '';
+    for (final key in keys) {
+      final value = map[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
+  String _conversationIdFromNotification(NotificationItem notification) {
+    return _stringFromMap(notification.metadata, const [
+      'conversationId',
+      'conversation_id',
+      'chatId',
+      'chat_id',
+      'threadId',
+      'thread_id',
+      'messageThreadId',
+      'message_thread_id',
+    ]);
+  }
+
+  String _participantIdFromNotification(NotificationItem notification) {
+    final sender = notification.sender ?? const <String, dynamic>{};
+    final fromSender = _stringFromMap(sender, const [
+      '_id',
+      'id',
+      'user_id',
+      'userId',
+    ]);
+    if (fromSender.isNotEmpty) return fromSender;
+
+    final fromMetadata = _stringFromMap(notification.metadata, const [
+      'participantId',
+      'participant_id',
+      'senderId',
+      'sender_id',
+      'fromUserId',
+      'from_user_id',
+      'userId',
+      'user_id',
+    ]);
+    if (fromMetadata.isNotEmpty) return fromMetadata;
+
+    return notification.relatedId?.trim() ?? '';
+  }
+
+  Future<void> _openMessageNotification(NotificationItem notification) async {
+    final conversationId = _conversationIdFromNotification(notification);
+    if (conversationId.isNotEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatConversationScreen(
+            conversationId: conversationId,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final participantId = _participantIdFromNotification(notification);
+    if (participantId.isNotEmpty) {
+      try {
+        final conversation =
+            await ChatApi().createOrGetConversation(participantId: participantId);
+        if (!mounted) return;
+        final id = (conversation['_id'] ?? conversation['id'])?.toString().trim() ?? '';
+        if (id.isNotEmpty) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ChatConversationScreen(
+                conversationId: id,
+                initialConversation: Map<String, dynamic>.from(conversation),
+              ),
+            ),
+          );
+          return;
+        }
+      } catch (_) {
+        // Fall through to the messaging inbox below.
+      }
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MessagingScreen()),
+    );
+  }
+
   String _requesterIdOf(NotificationItem notification) {
     final sender = notification.sender ?? const <String, dynamic>{};
     final fromSender =
@@ -217,6 +318,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await _markAsRead(notification.id);
     }
     if (!mounted) return;
+
+    if (_isMessageNotification(notification)) {
+      await _openMessageNotification(notification);
+      return;
+    }
 
     final link = notification.link?.trim();
     if (link != null && link.isNotEmpty) {
