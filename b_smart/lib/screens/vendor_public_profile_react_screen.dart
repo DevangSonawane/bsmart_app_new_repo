@@ -219,9 +219,11 @@ class _VendorPublicProfileReactScreenState
     setState(() => _followLoading = true);
 
     try {
+      String nextState = previousState;
       if (_followState == 'following') {
         await _followsApi.unfollow(targetId);
         await _supabase.syncFollowStatus(targetId, false);
+        nextState = 'not_following';
       } else if (_followState == 'requested') {
         await _followRequestsApi.cancelFollowRequest(targetId);
         ContentSyncService().publishFollow(
@@ -229,9 +231,10 @@ class _VendorPublicProfileReactScreenState
           followed: false,
           followState: 'not_following',
         );
+        nextState = 'not_following';
       } else {
         final response = await _followsApi.follow(targetId);
-        final nextState = _followStateFromResponse(response);
+        nextState = _followStateFromResponse(response);
         if (nextState == 'requested') {
           ContentSyncService().publishFollow(
             userId: targetId,
@@ -240,15 +243,13 @@ class _VendorPublicProfileReactScreenState
           );
         } else {
           await _supabase.syncFollowStatus(targetId, true);
+          nextState = 'following';
         }
       }
 
       if (!mounted) return;
-      final refreshedState = _followState == 'requested'
-          ? 'requested'
-          : (_followState == 'following' ? 'following' : 'not_following');
       setState(() {
-        _followState = refreshedState;
+        _followState = nextState;
       });
       unawaited(_refreshFollowersCount(targetId));
     } catch (_) {
@@ -796,15 +797,6 @@ class _VendorPublicProfileReactScreenState
     final vendor = _map(data['vendor']);
     final vendorUser = _map(data['user'] ?? data['userId'] ?? data['user_id']);
 
-    final followersCount = _readCount(
-      stats.isNotEmpty ? stats : data,
-      const [
-        'followers_count',
-        'followersCount',
-        'followers',
-        'followerCount',
-      ],
-    );
     final followingCount = _readCount(
       stats.isNotEmpty ? stats : data,
       const [
@@ -828,8 +820,8 @@ class _VendorPublicProfileReactScreenState
           'followers',
           'followerCount',
         ]);
-    final canFollow = (_currentUserId ?? '').trim().isNotEmpty &&
-        (_currentUserId ?? '').trim() != (_vendorUserId ?? widget.userId).trim();
+    final canFollow = (_currentUserId == null) ||
+        (_currentUserId!.trim() != (_vendorUserId ?? widget.userId).trim());
 
     return Scaffold(
       backgroundColor: background,
@@ -959,6 +951,10 @@ class _VendorHeader extends StatelessWidget {
   final int followersCount;
   final int followingCount;
   final String? categoryLabel;
+  final String followState;
+  final bool followLoading;
+  final bool showFollowButton;
+  final VoidCallback onFollowPressed;
 
   const _VendorHeader({
     required this.isDark,
@@ -979,6 +975,10 @@ class _VendorHeader extends StatelessWidget {
     required this.followersCount,
     required this.followingCount,
     required this.categoryLabel,
+    required this.followState,
+    required this.followLoading,
+    required this.showFollowButton,
+    required this.onFollowPressed,
   });
 
   @override
@@ -994,7 +994,101 @@ class _VendorHeader extends StatelessWidget {
       children: [
         Builder(builder: (context) {
           final infoHeight =
-              MediaQuery.sizeOf(context).width >= 600 ? 148.0 : 132.0;
+              MediaQuery.sizeOf(context).width >= 600 ? 188.0 : 172.0;
+          final isFollowing = followState == 'following';
+          final isRequested = followState == 'requested';
+          final buttonText = isFollowing
+              ? 'Following'
+              : (isRequested ? 'Requested' : 'Follow');
+          final buttonGradient = isFollowing
+              ? LinearGradient(
+                  colors: [
+                    isDark
+                        ? Colors.white.withValues(alpha: 0.10)
+                        : Colors.black.withValues(alpha: 0.08),
+                    isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : Colors.black.withValues(alpha: 0.05),
+                  ],
+                )
+              : (isRequested
+                  ? const LinearGradient(
+                      colors: [Color(0xFFF59E0B), Color(0xFFF97316)],
+                    )
+                  : const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFFB923C), Color(0xFFEC4899), Color(0xFF8B5CF6)],
+                    ));
+          final buttonFg = isFollowing || isRequested ? text : Colors.white;
+          Widget followButton() {
+            return SizedBox(
+              width: double.infinity,
+              height: 38,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: followLoading ? null : onFollowPressed,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      gradient: buttonGradient,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.16),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (followLoading)
+                              SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.8,
+                                  color: buttonFg,
+                                ),
+                              )
+                            else
+                              Icon(
+                                isFollowing
+                                    ? Icons.check
+                                    : (isRequested
+                                        ? Icons.schedule
+                                        : Icons.person_add_alt_1),
+                                size: 14,
+                                color: buttonFg,
+                              ),
+                            const SizedBox(width: 8),
+                            Text(
+                              buttonText,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                                color: buttonFg,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
           return SizedBox(
             height: coverHeight + infoHeight,
             width: double.infinity,
@@ -1166,7 +1260,7 @@ class _VendorHeader extends StatelessWidget {
                             fontSize: 13,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 6),
                         Container(
                           height: 1,
                           color: border,
@@ -1236,6 +1330,13 @@ class _VendorHeader extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (showFollowButton)
+                  Positioned(
+                    left: 16 + avatarSize + 16,
+                    right: 16,
+                    top: coverHeight + 12 + avatarSize + 4,
+                    child: followButton(),
+                  ),
               ],
             ),
           );
