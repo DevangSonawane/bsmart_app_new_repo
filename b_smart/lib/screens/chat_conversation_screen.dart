@@ -1637,11 +1637,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               icon: const Icon(LucideIcons.video),
             ),
           IconButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Coming soon')),
-              );
-            },
+            onPressed: otherId.isEmpty
+                ? null
+                : () => Navigator.of(context).pushNamed('/profile/$otherId'),
             icon: const Icon(LucideIcons.info),
           ),
         ],
