@@ -2664,6 +2664,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return out;
   }
 
+  String _promoteReelIdForPost(FeedPost post) {
+    final id = post.id.trim();
+    if (id.startsWith('promote-')) {
+      return id.substring('promote-'.length);
+    }
+    return id;
+  }
+
   Widget _buildReelsGrid({required bool isMe}) {
     if (_userReels.isEmpty) {
       return _emptyGridPlaceholder(
@@ -3473,10 +3481,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         )
                       : PostsGrid(
                           posts: promotePosts,
-                          onTap: (_) => Navigator.of(context).push(
-                            MaterialPageRoute(
-                                builder: (_) => const PromoteScreen()),
-                          ),
+                          onTap: (post) {
+                            final reelId = _promoteReelIdForPost(post);
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => PromoteScreen(
+                                  initialReelId: reelId.isEmpty ? null : reelId,
+                                ),
+                              ),
+                            );
+                          },
                         ))),
         ];
 
