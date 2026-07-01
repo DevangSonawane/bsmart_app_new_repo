@@ -18,6 +18,7 @@ class ContactSupportScreen extends StatefulWidget {
 
 class _ContactSupportScreenState extends State<ContactSupportScreen> {
   final SupportQueriesApi _supportQueriesApi = SupportQueriesApi();
+  final ChatSocketService _chatSocket = ChatSocketService();
   final TextEditingController _searchController = TextEditingController();
 
   bool _loading = true;
@@ -25,11 +26,17 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
   String? _error;
   String _statusFilter = 'all';
   List<Map<String, dynamic>> _queries = const [];
+  Timer? _supportRefreshDebounce;
+  String? _currentUserId;
+  SocketHandler? _onSupportReply;
+  SocketHandler? _onSupportStatusChanged;
+  final Set<String> _joinedSupportRoomIds = <String>{};
 
   @override
   void initState() {
     super.initState();
     _loadQueries();
+    _bindRealtimeSupport();
     _searchController.addListener(() {
       if (!mounted) return;
       setState(() {});
@@ -38,8 +45,82 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
 
   @override
   void dispose() {
+    _supportRefreshDebounce?.cancel();
+    if (_onSupportReply != null) {
+      _chatSocket.off('support_reply', _onSupportReply!);
+    }
+    if (_onSupportStatusChanged != null) {
+      _chatSocket.off('support_status_changed', _onSupportStatusChanged!);
+    }
+    for (final roomId in _joinedSupportRoomIds) {
+      _chatSocket.leaveRoom(roomId);
+    }
+    _joinedSupportRoomIds.clear();
     _searchController.dispose();
     super.dispose();
+  }
+
+  String _supportRoomId(String queryId) => 'support_query_${queryId.trim()}';
+
+  String _queryId(Map<String, dynamic> query) {
+    return (query['_id'] ?? query['id'] ?? query['queryId'] ?? query['query_id'])
+        .toString()
+        .trim();
+  }
+
+  Future<void> _bindRealtimeSupport() async {
+    final token = await ApiClient().getToken();
+    if (!mounted) return;
+    if (token == null || token.trim().isEmpty) return;
+
+    _currentUserId ??= await CurrentUser.id;
+    if (!mounted) return;
+
+    _chatSocket.connect(token: token, userId: _currentUserId);
+    _syncSupportRooms();
+
+    _onSupportReply ??= (data) {
+      final map = data is Map ? Map<String, dynamic>.from(data) : null;
+      if (map == null) return;
+      final queryId = (map['query_id'] ?? map['queryId']).toString().trim();
+      if (queryId.isEmpty) return;
+      if (!_queries.any((q) => _queryId(q) == queryId)) return;
+      _scheduleSupportRefresh();
+    };
+    _onSupportStatusChanged ??= (data) {
+      final map = data is Map ? Map<String, dynamic>.from(data) : null;
+      if (map == null) return;
+      final queryId = (map['query_id'] ?? map['queryId']).toString().trim();
+      if (queryId.isEmpty) return;
+      if (!_queries.any((q) => _queryId(q) == queryId)) return;
+      _scheduleSupportRefresh();
+    };
+
+    _chatSocket.on('support_reply', _onSupportReply!);
+    _chatSocket.on('support_status_changed', _onSupportStatusChanged!);
+  }
+
+  void _syncSupportRooms() {
+    final activeIds = _queries.map(_queryId).where((id) => id.isNotEmpty).toSet();
+    for (final roomId in _joinedSupportRoomIds.difference(
+      activeIds.map(_supportRoomId).toSet(),
+    )) {
+      _chatSocket.leaveRoom(roomId);
+    }
+    _joinedSupportRoomIds
+      ..clear()
+      ..addAll(activeIds.map(_supportRoomId));
+    for (final id in activeIds) {
+      _chatSocket.joinRoom(_supportRoomId(id));
+    }
+  }
+
+  void _scheduleSupportRefresh() {
+    _supportRefreshDebounce?.cancel();
+    _supportRefreshDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      unawaited(_loadQueries(showLoading: false));
+    });
   }
 
   Future<void> _loadQueries({bool showLoading = true}) async {
@@ -59,6 +140,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
       );
       if (!mounted) return;
       setState(() => _queries = data);
+      _syncSupportRooms();
     } catch (e, st) {
       AppErrorHandler.logError('contact-support-load', e, st);
       if (!mounted) return;
@@ -187,12 +269,6 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
         SnackBar(content: Text(AppErrorHandler.userMessage(e))),
       );
     }
-  }
-
-  String _queryId(Map<String, dynamic> query) {
-    return (query['_id'] ?? query['id'] ?? query['queryId'] ?? query['query_id'])
-        .toString()
-        .trim();
   }
 
   @override
