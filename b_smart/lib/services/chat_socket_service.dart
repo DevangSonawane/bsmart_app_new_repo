@@ -25,6 +25,8 @@ class ChatSocketService {
     'group-member-added': <SocketHandler>{},
     'group-member-removed': <SocketHandler>{},
     'online-users-updated': <SocketHandler>{},
+    'support_reply': <SocketHandler>{},
+    'support_status_changed': <SocketHandler>{},
   };
 
   bool get isConnected => _socket?.connected == true;

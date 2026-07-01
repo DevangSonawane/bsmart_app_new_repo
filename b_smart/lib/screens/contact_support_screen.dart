@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/api.dart';
+import '../services/chat_socket_service.dart';
 import '../theme/design_tokens.dart';
+import '../utils/current_user.dart';
 import '../utils/app_error_handler.dart';
 
 class ContactSupportScreen extends StatefulWidget {
@@ -707,11 +709,15 @@ class _SupportQueryChatScreen extends StatefulWidget {
 
 class _SupportQueryChatScreenState extends State<_SupportQueryChatScreen> {
   final SupportQueriesApi _supportQueriesApi = SupportQueriesApi();
+  final ChatSocketService _chatSocket = ChatSocketService();
   final TextEditingController _replyController = TextEditingController();
   bool _loading = true;
   bool _sending = false;
   String? _error;
   Map<String, dynamic>? _query;
+  String? _currentUserId;
+  SocketHandler? _onSupportReply;
+  SocketHandler? _onSupportStatusChanged;
 
   @override
   void initState() {
@@ -721,8 +727,94 @@ class _SupportQueryChatScreenState extends State<_SupportQueryChatScreen> {
 
   @override
   void dispose() {
+    _unbindSocket();
     _replyController.dispose();
     super.dispose();
+  }
+
+  String _roomId() => 'support_query_${widget.queryId.trim()}';
+
+  String _queryIdOf(Map<String, dynamic>? query) {
+    final source = query ?? _query;
+    return (source?['_id'] ??
+            source?['id'] ??
+            source?['queryId'] ??
+            source?['query_id'])
+        .toString()
+        .trim();
+  }
+
+  void _unbindSocket() {
+    if (_onSupportReply != null) {
+      _chatSocket.off('support_reply', _onSupportReply!);
+      _onSupportReply = null;
+    }
+    if (_onSupportStatusChanged != null) {
+      _chatSocket.off('support_status_changed', _onSupportStatusChanged!);
+      _onSupportStatusChanged = null;
+    }
+    _chatSocket.leaveRoom(_roomId());
+  }
+
+  Future<void> _ensureSocketJoined() async {
+    final queryId = _queryIdOf(_query);
+    if (queryId.isEmpty) return;
+    final token = await ApiClient().getToken();
+    if (!mounted) return;
+    if (token == null || token.trim().isEmpty) return;
+
+    _currentUserId ??= await CurrentUser.id;
+    if (!mounted) return;
+
+    _chatSocket.connect(token: token, userId: _currentUserId);
+    _chatSocket.joinRoom(_roomId());
+
+    _onSupportReply ??= (data) {
+      final map = data is Map ? Map<String, dynamic>.from(data) : null;
+      if (map == null) return;
+      final eventQueryId = (map['query_id'] ?? map['queryId']).toString().trim();
+      if (eventQueryId.isNotEmpty && eventQueryId != queryId) return;
+      final reply = map['reply'];
+      if (reply is! Map) return;
+      final replyMap = Map<String, dynamic>.from(reply);
+      if (!mounted) return;
+      setState(() {
+        final next = Map<String, dynamic>.from(_query ?? const <String, dynamic>{});
+        final replies = (next['replies'] is List)
+            ? (next['replies'] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+            : <Map<String, dynamic>>[];
+        final replyId = (replyMap['_id'] ?? replyMap['id']).toString().trim();
+        final exists = replyId.isNotEmpty &&
+            replies.any((r) =>
+                (r['_id'] ?? r['id']).toString().trim() == replyId);
+        if (!exists) replies.add(replyMap);
+        next['replies'] = replies;
+        final status = (map['status'] ?? replyMap['status']).toString().trim();
+        if (status.isNotEmpty) next['status'] = status;
+        _query = next;
+      });
+    };
+
+    _onSupportStatusChanged ??= (data) {
+      final map = data is Map ? Map<String, dynamic>.from(data) : null;
+      if (map == null) return;
+      final eventQueryId = (map['query_id'] ?? map['queryId']).toString().trim();
+      if (eventQueryId.isNotEmpty && eventQueryId != queryId) return;
+      final nextStatus = (map['status'] ?? '').toString().trim();
+      if (nextStatus.isEmpty || !mounted) return;
+      setState(() {
+        _query = {
+          ...?_query,
+          'status': nextStatus,
+        };
+      });
+    };
+
+    _chatSocket.on('support_reply', _onSupportReply!);
+    _chatSocket.on('support_status_changed', _onSupportStatusChanged!);
   }
 
   String _status(String value) {
@@ -1112,6 +1204,7 @@ class _SupportQueryChatScreenState extends State<_SupportQueryChatScreen> {
       final data = await _supportQueriesApi.getMySupportQuery(widget.queryId);
       if (!mounted) return;
       setState(() => _query = data);
+      await _ensureSocketJoined();
     } catch (e, st) {
       AppErrorHandler.logError('support-query-details', e, st);
       if (!mounted) return;
