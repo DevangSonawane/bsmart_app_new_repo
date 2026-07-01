@@ -914,6 +914,7 @@ export default function ChatPage() {
   const fetchConversationsPromiseRef = useRef(null);
   const activatingConversationRef = useRef({ conversationId: '', promise: null });
   const fetchedSharedReelIdsRef = useRef(new Set());
+  const autoDownloadImagesRef = useRef(false);
 
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
@@ -989,9 +990,20 @@ export default function ChatPage() {
   useEffect(() => { currentUserIdRef.current = currentUserId; }, [currentUserId]);
 
   const filteredConversations = useMemo(() => {
+    const withoutSelf = conversations.filter((conversation) => {
+      if (conversation?.isGroup) return true;
+      const participants = conversation?.participants || [];
+      if (participants.length <= 1) {
+        const onlyId = String(participants[0]?._id || participants[0]?.id || '');
+        if (onlyId === String(currentUserId)) return false;
+      }
+      const other = otherParticipant(conversation, currentUserId);
+      const otherId = String(other?._id || other?.id || '');
+      return otherId !== String(currentUserId);
+    });
     const query = search.trim().toLowerCase();
-    if (!query) return conversations;
-    return conversations.filter((conversation) => {
+    if (!query) return withoutSelf;
+    return withoutSelf.filter((conversation) => {
       const other = otherParticipant(conversation, currentUserId);
       return [
         getConversationTitle(conversation, currentUserId),
@@ -1217,6 +1229,28 @@ export default function ChatPage() {
           messagesRef.current = seenMessages;
           dispatch(setMessages(seenMessages));
         } catch (error) { console.error('Failed to auto-mark seen:', error); }
+
+        // Auto-download incoming image if the setting is enabled
+        if (
+          autoDownloadImagesRef.current &&
+          message.mediaUrl &&
+          message.mediaType !== 'audio' &&
+          !isVideoUrl(message.mediaUrl)
+        ) {
+          fetch(message.mediaUrl)
+            .then(r => r.blob())
+            .then(blob => {
+              const objectUrl = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = objectUrl;
+              a.download = message.mediaUrl.split('/').pop().split('?')[0] || 'image';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(objectUrl);
+            })
+            .catch(err => console.error('Auto-download failed:', err));
+        }
       }
       return;
     }
@@ -1396,6 +1430,16 @@ export default function ChatPage() {
     };
   }, [showEmojiPicker]);
 
+  // Load messaging settings and keep the ref in sync
+  useEffect(() => {
+    api.get('/settings/messaging')
+      .then(res => {
+        const d = res.data?.settings || res.data || {};
+        autoDownloadImagesRef.current = Boolean(d.auto_download_images ?? true);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const missingReelIds = [];
     for (const message of messages) {
@@ -1419,7 +1463,8 @@ export default function ChatPage() {
           const reel = data?.data || data?.reel || data;
           const media0 = reel?.media?.[0] || {};
           const previewUrl =
-            media0?.thumbnail?.fileUrl
+            (Array.isArray(media0?.thumbnail) ? media0.thumbnail[0]?.fileUrl : null)
+            || media0?.thumbnail?.fileUrl
             || media0?.thumbnails?.[0]?.fileUrl
             || media0?.fileUrl
             || '';
@@ -2249,17 +2294,17 @@ export default function ChatPage() {
   }, [currentUserId, messages, otherUserId]);
 
   return (
-    <div className="h-[100dvh] bg-white dark:bg-black text-gray-900 dark:text-white md:h-screen">
+    <div className="h-[100dvh] bg-white dark:bg-black text-gray-900 dark:text-white md:h-screen max-w-[1300px] ml-auto">
       <div className="flex h-full">
 
         {/* ═══════════════════════════════════════════════════════════
-            SIDEBAR — Mobile: Instagram dark style | Desktop: unchanged
+            SIDEBAR — Mobile: bSmart dark style | Desktop: unchanged
             ═══════════════════════════════════════════════════════════ */}
         <aside className={`
           ${activeId ? 'hidden' : 'flex'}
           h-full w-full flex-shrink-0 flex-col
           bg-white dark:bg-black text-gray-900 dark:text-white
-          md:flex md:w-[380px]
+          md:flex md:w-[40%]
           md:bg-gray-50/50 md:dark:bg-[#0a0a0a]
           md:border-r md:border-gray-100 md:dark:border-white/10
         `}>
@@ -2761,7 +2806,7 @@ export default function ChatPage() {
                         @{otherUser?.username || getUserName(otherUser).toLowerCase().replace(/\s+/g, '_')}
                       </p>
                       <p className="mt-1 w-full text-sm text-gray-500 dark:text-gray-400">
-                        {otherUser?.username || getUserName(otherUser)} · Instagram
+                        {otherUser?.username || getUserName(otherUser)} · bSmart
                       </p>
                       <Link
                         to={`/profile/${otherUserId}`}

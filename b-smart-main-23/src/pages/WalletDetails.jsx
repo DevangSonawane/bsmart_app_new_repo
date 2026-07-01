@@ -165,7 +165,7 @@ const WalletDetails = () => {
 
   return (
     <div
-      className="h-screen overflow-hidden flex flex-col bg-gray-50 dark:bg-[#0a0a0a]"
+      className="h-screen overflow-hidden flex flex-col bg-gray-50 dark:bg-[#0a0a0a] max-w-[1100px] mx-auto"
       style={{  fontFamily: "'DM Sans', system-ui, sans-serif" }}
     >
       {/* ── Google Font ── */}

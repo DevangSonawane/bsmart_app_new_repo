@@ -1,31 +1,43 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import PageLoader from './PageLoader';
+
+const getTopSegment = (pathname) => {
+  const seg = pathname.split('/').filter(Boolean)[0];
+  return seg || '/';
+};
+
+const SKIP_LOADER = new Set(['settings', 'profile', 'wallet', 'notifications', 'search']);
 
 const GlobalLoader = () => {
   const location = useLocation();
   const [loading, setLoading] = useState(false);
-  const [displayLoader, setDisplayLoader] = useState(false);
+  const prevSegmentRef = useRef(getTopSegment(location.pathname));
+  const showTimerRef = useRef(null);
+  const hideTimerRef = useRef(null);
 
   useEffect(() => {
-    // Show loader on route change
-    setLoading(true);
-    setDisplayLoader(true);
+    const currentSegment = getTopSegment(location.pathname);
+    const prevSegment = prevSegmentRef.current;
+    prevSegmentRef.current = currentSegment;
 
-    // Hide loader after a delay
-    const timer = setTimeout(() => {
-      setLoading(false);
-      // Extra time for fade out animation if we add one
-      setTimeout(() => setDisplayLoader(false), 300);
-    }, 600); // Adjust duration as needed
+    if (currentSegment === prevSegment || SKIP_LOADER.has(currentSegment)) return;
 
-    return () => clearTimeout(timer);
+    clearTimeout(showTimerRef.current);
+    clearTimeout(hideTimerRef.current);
+    showTimerRef.current = setTimeout(() => setLoading(true), 0);
+    hideTimerRef.current = setTimeout(() => setLoading(false), 700);
+
+    return () => {
+      clearTimeout(showTimerRef.current);
+      clearTimeout(hideTimerRef.current);
+    };
   }, [location.pathname]);
 
-  if (!displayLoader) return null;
+  if (!loading) return null;
 
   return (
-    <div className={`fixed inset-0 z-[99999] transition-opacity duration-300 ${loading ? 'opacity-100' : 'opacity-0'} pointer-events-none`}>
+    <div className="fixed inset-0 z-[99999] pointer-events-none">
       <PageLoader />
     </div>
   );

@@ -125,7 +125,7 @@ const Suggestions = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black">
+    <div className="min-h-screen bg-white dark:bg-black max-w-[1100px] mx-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 flex items-center gap-4 px-4 h-14 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
         <button onClick={() => navigate(-1)} className="p-1 -ml-1 text-gray-900 dark:text-white">

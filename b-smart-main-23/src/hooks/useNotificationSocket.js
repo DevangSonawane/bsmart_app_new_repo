@@ -50,8 +50,9 @@ export function useNotificationSocket({ limit = 20, page = 1, typeFilter = "" } 
       ]);
 
       if (!mountedRef.current) return;
-      const data = Array.isArray(listRes.data) ? listRes.data
+      const raw = Array.isArray(listRes.data) ? listRes.data
         : listRes.data?.notifications || [];
+      const data = typeFilter === "unread" ? raw.filter(n => !n.isRead) : raw;
       setNotifications(data);
       setTotal(listRes.data?.total ?? data.length);
       setUnreadCount(countRes.data?.count ?? countRes.data?.unreadCount ?? 0);

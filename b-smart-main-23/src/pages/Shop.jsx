@@ -18,7 +18,7 @@ const Shop = () => {
   ];
 
   return (
-    <div className="pb-16 pt-2 max-w-7xl mx-auto">
+    <div className="pb-16 pt-2 max-w-[1100px] mx-auto">
       <div className="flex flex-col md:flex-row gap-6">
         {/* Filter Sidebar (Desktop) */}
         <div className="hidden md:block w-64 flex-shrink-0">

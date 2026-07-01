@@ -1177,7 +1177,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             }
           });
 
-          const { fileName: serverFileName, url: serverUrl, fileUrl: serverFileUrl, media: uploadedTweetMedia, hls: uploadedHls, processing: uploadedProcessing } = uploadResponse.data;
+          const { fileName: serverFileName, url: serverUrl, fileUrl: serverFileUrl, media: uploadedTweetMedia, hls: uploadedHls } = uploadResponse.data;
           const finalUrl = uploadedTweetMedia?.url || serverFileUrl || serverUrl;
 
           // Generate Filter CSS
@@ -1241,8 +1241,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                 fileUrl: finalUrl,
                 url: finalUrl,
                 media_type: item.type === 'video' ? 'video' : 'image',
-                hls: uploadedHls ?? false,
-                processing: uploadedProcessing ?? false,
+                hls: uploadedHls === true ? true : (serverFileName || '').endsWith('.m3u8'),
+                processing: false,
               };
 
           if (postType !== 'tweet' && item.type === 'video') {

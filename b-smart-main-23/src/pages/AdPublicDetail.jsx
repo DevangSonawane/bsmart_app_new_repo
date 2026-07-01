@@ -636,7 +636,7 @@ export default function AdPublicDetail() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 font-sans">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 font-sans max-w-[1100px] mx-auto">
 
       {/* ── Sticky Header ─────────────────────────────────────────── */}
       <div className="sticky top-0 z-40 bg-white/95 dark:bg-black/95 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">

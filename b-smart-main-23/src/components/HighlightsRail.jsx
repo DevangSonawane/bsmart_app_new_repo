@@ -652,7 +652,7 @@ export default function HighlightsRail({ users = [], variant = 'chat', allowCrea
           <div className="mb-3 flex items-center justify-between">
             <div>
               <p className="text-[13px] font-bold uppercase tracking-[0.22em] text-white/40 md:text-[11px] md:text-gray-400">Highlights</p>
-              <p className="mt-1 text-xs text-white/55 md:text-gray-500 md:dark:text-gray-400">Instagram-style saved stories for you and your chats.</p>
+              <p className="mt-1 text-xs text-white/55 md:text-gray-500 md:dark:text-gray-400">bSmart-style saved stories for you and your chats.</p>
             </div>
             {loading ? <Loader2 size={16} className="animate-spin text-white/50 md:text-gray-400" /> : null}
           </div>

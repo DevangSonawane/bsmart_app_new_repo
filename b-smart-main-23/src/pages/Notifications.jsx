@@ -1,8 +1,8 @@
 /**
- * Notifications.jsx — Instagram-style notification feed
+ * Notifications.jsx — bSmart-style notification feed
  */
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Bell, Heart, MessageCircle, UserPlus, AtSign,
@@ -12,6 +12,9 @@ import {
 import { useNotificationSocket } from "../hooks/useNotificationSocket";
 import { acceptFollowRequest, declineFollowRequest } from "../services/followService";
 import Avatar from '../components/Avatar';
+import PostDetailModal from '../components/PostDetailModal';
+import TweetDetailModal from '../components/TweetDetailModal';
+import api from '../lib/api';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const timeAgo = (d) => {
@@ -68,27 +71,57 @@ const FILTER_TABS = [
 const LIMIT = 20;
 
 // ─── Single notification row ───────────────────────────────────────────────────
-const NotifRow = ({ notif, onMarkRead, onDelete, onFollowDecision, actionState }) => {
+const getPostThumb = (post) => {
+  if (!post?.media?.[0]) return null;
+  const m = post.media[0];
+  if (Array.isArray(m.thumbnails) && m.thumbnails[0]?.fileUrl) return m.thumbnails[0].fileUrl;
+  if (Array.isArray(m.thumbnail) && m.thumbnail[0]?.fileUrl) return m.thumbnail[0].fileUrl;
+  if (m.thumbnail?.fileUrl) return m.thumbnail.fileUrl;
+  if (m.type !== 'video' && m.media_type !== 'video' && m.fileUrl) return m.fileUrl;
+  return null;
+};
+
+const NotifRow = ({ notif, onMarkRead, onDelete, onFollowDecision, actionState, onOpenDetail }) => {
   const navigate = useNavigate();
   const cfg = getType(notif.type);
   const Icon = cfg.icon;
   const sender = notif.sender?.full_name || notif.sender?.username || "Someone";
+  const senderAvatar = notif.sender?.avatar_url || null;
   const isFollowRequest = notif.type === "follow_request";
   const isActing = Boolean(actionState);
+  const postThumb = notif.thumbnail_url || getPostThumb(notif.relatedPost);
 
   const handleClick = async () => {
     if (!notif.isRead) await onMarkRead(notif._id);
-    if (notif.link) navigate(notif.link);
+    if (!notif.link) return;
+    const link = notif.link;
+    const postMatch = link.match(/^\/posts?\/([a-f0-9]+)/i);
+    const tweetMatch = link.match(/^\/tweets?\/([a-f0-9]+)/i);
+    if (window.innerWidth >= 768 && (postMatch || tweetMatch)) {
+      const id = postMatch?.[1] || tweetMatch?.[1];
+      const type = tweetMatch ? 'tweet' : 'post';
+      if (notif.relatedPost) {
+        onOpenDetail?.(id, type, notif.relatedPost);
+      } else {
+        onOpenDetail?.(id, type);
+      }
+    } else {
+      navigate(link.replace(/^\/posts\//, '/post/'));
+    }
   };
 
   return (
     <div
       onClick={handleClick}
-      className={`group flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors active:bg-gray-50 dark:active:bg-white/5 ${!notif.isRead ? "bg-blue-50/40 dark:bg-blue-950/10" : "hover:bg-gray-50 dark:hover:bg-white/[0.02]"}`}
+      className={`group flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors active:bg-gray-50 dark:active:bg-white/5 ${!notif.isRead ? "bg-blue-50/40 dark:bg-blue-950/10" : "hover:bg-gray-50 dark:hover:bg-white/[0.02]"}`}
     >
       {/* Avatar + type badge */}
-      <div className="relative shrink-0 mt-0.5">
-        <Avatar name={sender} url={notif.sender?.avatar_url} size="md" />
+      <div className="relative shrink-0">
+        {senderAvatar ? (
+          <img src={senderAvatar} alt={sender} className="w-11 h-11 rounded-full object-cover" />
+        ) : (
+          <Avatar name={sender} size="md" />
+        )}
         <div className={`absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full ${cfg.bg} flex items-center justify-center ring-2 ring-white dark:ring-black`}>
           <Icon size={10} className="text-white" strokeWidth={2.5} />
         </div>
@@ -124,13 +157,13 @@ const NotifRow = ({ notif, onMarkRead, onDelete, onFollowDecision, actionState }
         )}
       </div>
 
-      {/* Right side: thumbnail OR actions */}
+      {/* Right side: post thumbnail */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {notif.thumbnail_url && !isFollowRequest && (
+        {postThumb && !isFollowRequest && (
           <img
-            src={notif.thumbnail_url}
+            src={postThumb}
             alt=""
-            className="w-11 h-11 rounded object-cover border border-gray-100 dark:border-gray-800"
+            className="w-11 h-11 rounded-md object-cover border border-gray-100 dark:border-gray-800"
           />
         )}
         {/* Mark read + delete — visible on hover/press */}
@@ -166,10 +199,13 @@ const SectionLabel = ({ label }) => (
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function Notifications() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("all");
   const [page, setPage] = useState(1);
   const [markingAll, setMarkingAll] = useState(false);
   const [followActionLoading, setFollowActionLoading] = useState({});
+  const [selectedPost, setSelectedPost] = useState(null);
+  const [selectedTweet, setSelectedTweet] = useState(null);
 
   const {
     notifications, unreadCount, total, loading, error, wsStatus,
@@ -184,6 +220,24 @@ export default function Notifications() {
     await markAllRead();
     setMarkingAll(false);
   };
+
+  const handleOpenDetail = useCallback(async (id, type, existingPost) => {
+    try {
+      if (type === 'tweet') {
+        const { data } = await api.get(`/tweets/${id}`);
+        const tweet = data?.tweet || data?.data || data;
+        if (tweet) setSelectedTweet(tweet);
+      } else if (existingPost) {
+        setSelectedPost(existingPost);
+      } else {
+        const { data } = await api.get(`/posts/${id}`);
+        const post = data?.post || data?.data || data;
+        if (post) setSelectedPost(post);
+      }
+    } catch {
+      navigate(type === 'tweet' ? `/tweet/${id}` : `/post/${id}`);
+    }
+  }, [navigate]);
 
   const handleFollowDecision = async (notif, decision) => {
     const notifId = notif?._id;
@@ -213,7 +267,7 @@ export default function Notifications() {
   };
 
   return (
-    <div className="min-h-screen max-w-[700px] mx-auto px-4 py-8 bg-white dark:bg-black">
+    <div className="min-h-screen max-w-[1100px] mx-auto px-4 py-8 bg-white dark:bg-black">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="sticky top-[56px] md:top-0 z-20 bg-white/95 dark:bg-black/95 backdrop-blur-sm border-b border-gray-100 dark:border-gray-900">
         <div className="flex items-center justify-between px-4 pt-4 pb-3">
@@ -239,7 +293,7 @@ export default function Notifications() {
         </div>
 
         {/* Filter chips */}
-        {/* <div className="flex gap-2 overflow-x-auto px-4 pb-3 scrollbar-hide">
+        <div className="flex gap-2 overflow-x-auto px-4 pb-3 scrollbar-hide">
           {FILTER_TABS.map(tab => (
             <button
               key={tab.key}
@@ -258,7 +312,7 @@ export default function Notifications() {
               )}
             </button>
           ))}
-        </div> */}
+        </div>
       </div>
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
@@ -304,6 +358,7 @@ export default function Notifications() {
                   onDelete={deleteNotif}
                   onFollowDecision={handleFollowDecision}
                   actionState={followActionLoading[n._id] || ""}
+                  onOpenDetail={handleOpenDetail}
                 />
               ))}
             </>
@@ -321,6 +376,7 @@ export default function Notifications() {
                   onDelete={deleteNotif}
                   onFollowDecision={handleFollowDecision}
                   actionState={followActionLoading[n._id] || ""}
+                  onOpenDetail={handleOpenDetail}
                 />
               ))}
             </>
@@ -338,6 +394,7 @@ export default function Notifications() {
                   onDelete={deleteNotif}
                   onFollowDecision={handleFollowDecision}
                   actionState={followActionLoading[n._id] || ""}
+                  onOpenDetail={handleOpenDetail}
                 />
               ))}
             </>
@@ -377,6 +434,17 @@ export default function Notifications() {
           )}
         </div>
       )}
+
+      <PostDetailModal
+        isOpen={!!selectedPost}
+        post={selectedPost}
+        onClose={() => setSelectedPost(null)}
+      />
+      <TweetDetailModal
+        isOpen={!!selectedTweet}
+        tweet={selectedTweet}
+        onClose={() => setSelectedTweet(null)}
+      />
     </div>
   );
 }

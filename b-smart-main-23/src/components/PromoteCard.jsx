@@ -120,12 +120,25 @@ const CardMedia = ({ item }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [videoReady, setVideoReady] = useState(false);
   const [videoPlaying, setVideoPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(() => {
+    const saved = window.__bsmart_feed_muted;
+    return saved === undefined ? false : saved;
+  });
   const [userPaused, setUserPaused] = useState(false);
 
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const isVisibleRef = useRef(false);
+
+  useEffect(() => {
+    const handler = (e) => {
+      const muted = e.detail?.muted ?? false;
+      setIsMuted(muted);
+      if (videoRef.current) videoRef.current.muted = muted;
+    };
+    window.addEventListener('bsmart:mute-sync', handler);
+    return () => window.removeEventListener('bsmart:mute-sync', handler);
+  }, []);
 
   const currentMedia = mediaItems[currentIndex] || {};
   const mediaSrc = getMediaUrl(currentMedia);
@@ -166,8 +179,11 @@ const CardMedia = ({ item }) => {
 
   const toggleMute = (e) => {
     e.stopPropagation();
-    if (videoRef.current) videoRef.current.muted = !isMuted;
-    setIsMuted(m => !m);
+    const newMuted = !isMuted;
+    if (videoRef.current) videoRef.current.muted = newMuted;
+    setIsMuted(newMuted);
+    window.__bsmart_feed_muted = newMuted;
+    window.dispatchEvent(new CustomEvent('bsmart:mute-sync', { detail: { muted: newMuted } }));
   };
   const togglePlayPause = (e) => {
     e.stopPropagation();

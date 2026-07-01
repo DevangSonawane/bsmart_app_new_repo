@@ -10,7 +10,12 @@ import '../utils/current_user.dart';
 import '../utils/app_error_handler.dart';
 
 class ContactSupportScreen extends StatefulWidget {
-  const ContactSupportScreen({super.key});
+  final String? initialQueryId;
+
+  const ContactSupportScreen({
+    super.key,
+    this.initialQueryId,
+  });
 
   @override
   State<ContactSupportScreen> createState() => _ContactSupportScreenState();
@@ -27,16 +32,23 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
   String _statusFilter = 'all';
   List<Map<String, dynamic>> _queries = const [];
   Timer? _supportRefreshDebounce;
+  Timer? _supportAutoRefreshTimer;
   String? _currentUserId;
   SocketHandler? _onSupportReply;
   SocketHandler? _onSupportStatusChanged;
   final Set<String> _joinedSupportRoomIds = <String>{};
+  final Map<String, Map<String, dynamic>> _pendingSupportReplies =
+      <String, Map<String, dynamic>>{};
+  final Map<String, Map<String, dynamic>> _pendingSupportStatuses =
+      <String, Map<String, dynamic>>{};
+  String? _openedInitialQueryId;
 
   @override
   void initState() {
     super.initState();
     _loadQueries();
     _bindRealtimeSupport();
+    _startSupportAutoRefresh();
     _searchController.addListener(() {
       if (!mounted) return;
       setState(() {});
@@ -46,6 +58,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
   @override
   void dispose() {
     _supportRefreshDebounce?.cancel();
+    _supportAutoRefreshTimer?.cancel();
     if (_onSupportReply != null) {
       _chatSocket.off('support_reply', _onSupportReply!);
     }
@@ -56,6 +69,8 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
       _chatSocket.leaveRoom(roomId);
     }
     _joinedSupportRoomIds.clear();
+    _pendingSupportReplies.clear();
+    _pendingSupportStatuses.clear();
     _searchController.dispose();
     super.dispose();
   }
@@ -84,7 +99,8 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
       if (map == null) return;
       final queryId = (map['query_id'] ?? map['queryId']).toString().trim();
       if (queryId.isEmpty) return;
-      if (!_queries.any((q) => _queryId(q) == queryId)) return;
+      _pendingSupportReplies[queryId] = map;
+      _applySupportReply(map);
       _scheduleSupportRefresh();
     };
     _onSupportStatusChanged ??= (data) {
@@ -92,7 +108,8 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
       if (map == null) return;
       final queryId = (map['query_id'] ?? map['queryId']).toString().trim();
       if (queryId.isEmpty) return;
-      if (!_queries.any((q) => _queryId(q) == queryId)) return;
+      _pendingSupportStatuses[queryId] = map;
+      _applySupportStatus(map);
       _scheduleSupportRefresh();
     };
 
@@ -123,6 +140,178 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
     });
   }
 
+  void _startSupportAutoRefresh() {
+    _supportAutoRefreshTimer?.cancel();
+    _supportAutoRefreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      unawaited(_loadQueries(showLoading: false));
+    });
+  }
+
+  void _applySupportReply(Map<String, dynamic> payload) {
+    final queryId = (payload['query_id'] ?? payload['queryId']).toString().trim();
+    final reply = payload['reply'];
+    if (queryId.isEmpty || reply is! Map) return;
+
+    final replyMap = Map<String, dynamic>.from(reply);
+    final replyId = (replyMap['_id'] ?? replyMap['id']).toString().trim();
+    final replyMessage =
+        (replyMap['message'] ?? replyMap['text'] ?? '').toString().trim();
+    final replyStatus = (payload['status'] ?? replyMap['status'])
+        .toString()
+        .trim();
+    final replyCreatedAt = replyMap['createdAt'] ?? replyMap['created_at'];
+
+    if (!mounted) return;
+    setState(() {
+      _queries = _queries.map((query) {
+        if (_queryId(query) != queryId) return query;
+
+        final updated = Map<String, dynamic>.from(query);
+        final replies = (updated['replies'] is List)
+            ? (updated['replies'] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+            : <Map<String, dynamic>>[];
+        final exists = replyId.isNotEmpty &&
+            replies.any((item) =>
+                (item['_id'] ?? item['id']).toString().trim() == replyId);
+        if (!exists) {
+          replies.add(replyMap);
+        }
+        updated['replies'] = replies;
+        if (replyMessage.isNotEmpty) {
+          updated['message'] = replyMessage;
+        }
+        if (replyStatus.isNotEmpty) {
+          updated['status'] = replyStatus;
+        }
+        if (replyCreatedAt != null) {
+          updated['updatedAt'] = replyCreatedAt;
+        }
+        return updated;
+      }).toList(growable: false);
+    });
+  }
+
+  void _applySupportStatus(Map<String, dynamic> payload) {
+    final queryId = (payload['query_id'] ?? payload['queryId']).toString().trim();
+    final nextStatus = (payload['status'] ?? '').toString().trim();
+    if (queryId.isEmpty || nextStatus.isEmpty || !mounted) return;
+
+    setState(() {
+      _queries = _queries.map((query) {
+        if (_queryId(query) != queryId) return query;
+        final updated = Map<String, dynamic>.from(query);
+        updated['status'] = nextStatus;
+        final updatedAt = payload['updatedAt'] ?? payload['updated_at'];
+        if (updatedAt != null) {
+          updated['updatedAt'] = updatedAt;
+        }
+        return updated;
+      }).toList(growable: false);
+    });
+  }
+
+  Map<String, dynamic> _mergeSupportQueryFromEvent(
+    Map<String, dynamic> query,
+    Map<String, dynamic> payload,
+  ) {
+    final queryId = (payload['query_id'] ?? payload['queryId']).toString().trim();
+    final reply = payload['reply'];
+    if (queryId.isEmpty || reply is! Map) return query;
+
+    final replyMap = Map<String, dynamic>.from(reply);
+    final replyId = (replyMap['_id'] ?? replyMap['id']).toString().trim();
+    final replyMessage =
+        (replyMap['message'] ?? replyMap['text'] ?? '').toString().trim();
+    final replyStatus = (payload['status'] ?? replyMap['status'])
+        .toString()
+        .trim();
+    final replyCreatedAt = replyMap['createdAt'] ?? replyMap['created_at'];
+
+    final updated = Map<String, dynamic>.from(query);
+    final replies = (updated['replies'] is List)
+        ? (updated['replies'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : <Map<String, dynamic>>[];
+    final exists = replyId.isNotEmpty &&
+        replies.any((item) =>
+            (item['_id'] ?? item['id']).toString().trim() == replyId);
+    if (!exists) {
+      replies.add(replyMap);
+    }
+    updated['replies'] = replies;
+    if (replyMessage.isNotEmpty) {
+      updated['message'] = replyMessage;
+    }
+    if (replyStatus.isNotEmpty) {
+      updated['status'] = replyStatus;
+    }
+    if (replyCreatedAt != null) {
+      updated['updatedAt'] = replyCreatedAt;
+    }
+    return updated;
+  }
+
+  Map<String, dynamic> _mergeSupportStatusFromEvent(
+    Map<String, dynamic> query,
+    Map<String, dynamic> payload,
+  ) {
+    final queryId = (payload['query_id'] ?? payload['queryId']).toString().trim();
+    final nextStatus = (payload['status'] ?? '').toString().trim();
+    if (queryId.isEmpty || nextStatus.isEmpty) return query;
+
+    final updated = Map<String, dynamic>.from(query);
+    updated['status'] = nextStatus;
+    final updatedAt = payload['updatedAt'] ?? payload['updated_at'];
+    if (updatedAt != null) {
+      updated['updatedAt'] = updatedAt;
+    }
+    return updated;
+  }
+
+  List<Map<String, dynamic>> _normalizedReplies(Map<String, dynamic> query) {
+    final replies = query['replies'];
+    if (replies is! List) return const <Map<String, dynamic>>[];
+    return replies
+        .whereType<Map>()
+        .map((reply) => Map<String, dynamic>.from(reply))
+        .toList();
+  }
+
+  Map<String, dynamic> _mergeSupportQuery(
+    Map<String, dynamic> incoming, {
+    Map<String, dynamic>? existing,
+  }) {
+    if (existing == null) return Map<String, dynamic>.from(incoming);
+
+    final merged = Map<String, dynamic>.from(incoming);
+    final incomingAt = _readAt(incoming);
+    final existingAt = _readAt(existing);
+    if (existingAt.isAfter(incomingAt)) {
+      final replies = _normalizedReplies(existing);
+      if (replies.isNotEmpty) {
+        merged['replies'] = replies;
+      }
+      final existingMessage = (existing['message'] ?? '').toString().trim();
+      if (existingMessage.isNotEmpty) {
+        merged['message'] = existingMessage;
+      }
+      final existingStatus = (existing['status'] ?? '').toString().trim();
+      if (existingStatus.isNotEmpty) {
+        merged['status'] = existingStatus;
+      }
+      if (existing['updatedAt'] != null) {
+        merged['updatedAt'] = existing['updatedAt'];
+      }
+    }
+    return merged;
+  }
+
   Future<void> _loadQueries({bool showLoading = true}) async {
     if (_refreshing) return;
     if (showLoading) {
@@ -139,8 +328,34 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
         status: _statusFilter == 'all' ? null : _statusFilter,
       );
       if (!mounted) return;
-      setState(() => _queries = data);
+      final previousById = <String, Map<String, dynamic>>{
+        for (final query in _queries)
+          if (_queryId(query).isNotEmpty) _queryId(query): query,
+      };
+      final merged = data
+          .map(
+            (query) => _mergeSupportQuery(
+              query,
+              existing: previousById[_queryId(query)],
+            ),
+          )
+          .toList(growable: false);
+      final hydrated = merged.map((query) {
+        final queryId = _queryId(query);
+        var current = query;
+        final pendingReply = _pendingSupportReplies[queryId];
+        if (pendingReply != null) {
+          current = _mergeSupportQueryFromEvent(current, pendingReply);
+        }
+        final pendingStatus = _pendingSupportStatuses[queryId];
+        if (pendingStatus != null) {
+          current = _mergeSupportStatusFromEvent(current, pendingStatus);
+        }
+        return current;
+      }).toList(growable: false);
+      setState(() => _queries = hydrated);
       _syncSupportRooms();
+      _openInitialQueryIfNeeded();
     } catch (e, st) {
       AppErrorHandler.logError('contact-support-load', e, st);
       if (!mounted) return;
@@ -223,6 +438,27 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
         builder: (_) => _SupportQueryChatScreen(queryId: _queryId(query)),
       ),
     );
+  }
+
+  void _openInitialQueryIfNeeded() {
+    final initialQueryId = widget.initialQueryId?.trim() ?? '';
+    if (initialQueryId.isEmpty) return;
+    if (_openedInitialQueryId == initialQueryId) return;
+
+    Map<String, dynamic>? target;
+    for (final query in _queries) {
+      if (_queryId(query) == initialQueryId) {
+        target = query;
+        break;
+      }
+    }
+    if (target == null) return;
+
+    _openedInitialQueryId = initialQueryId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showQueryDetails(target!);
+    });
   }
 
   Future<void> _deleteQuery(Map<String, dynamic> query) async {
@@ -655,16 +891,80 @@ class _SupportQueryTile extends StatelessWidget {
     }
   }
 
+  String _previewText(Map<String, dynamic> query) {
+    final replies = query['replies'];
+    if (replies is List && replies.isNotEmpty) {
+      final parsed = replies
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      parsed.sort((a, b) {
+        DateTime parseAt(Map<String, dynamic> item) {
+          final raw = item['createdAt'] ?? item['created_at'];
+          if (raw is DateTime) return raw;
+          if (raw is String) {
+            return DateTime.tryParse(raw) ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+          }
+          if (raw is num) {
+            return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
+          }
+          return DateTime.fromMillisecondsSinceEpoch(0);
+        }
+
+        return parseAt(a).compareTo(parseAt(b));
+      });
+      final latest = parsed.last;
+      final latestMessage =
+          (latest['message'] ?? latest['text'] ?? '').toString().trim();
+      if (latestMessage.isNotEmpty) return latestMessage;
+    }
+
+    final fallback = (query['message'] ?? '').toString().trim();
+    if (fallback.isNotEmpty) return fallback;
+    return 'No message';
+  }
+
+  bool _hasNewReply(Map<String, dynamic> query) {
+    final replies = query['replies'];
+    if (replies is! List || replies.isEmpty) return false;
+
+    final parsed = replies
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    parsed.sort((a, b) {
+      DateTime parseAt(Map<String, dynamic> item) {
+        final raw = item['createdAt'] ?? item['created_at'];
+        if (raw is DateTime) return raw;
+        if (raw is String) {
+          return DateTime.tryParse(raw) ?? DateTime.fromMillisecondsSinceEpoch(0);
+        }
+        if (raw is num) {
+          return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
+        }
+        return DateTime.fromMillisecondsSinceEpoch(0);
+      }
+
+      return parseAt(a).compareTo(parseAt(b));
+    });
+
+    final latest = parsed.last;
+    final senderType = (latest['sender_type'] ?? '').toString().trim().toLowerCase();
+    return senderType.isNotEmpty && senderType != 'user';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final status = _status(query);
     final subject = (query['subject'] ?? '').toString().trim();
-    final message = (query['message'] ?? '').toString().trim();
     final category = (query['category'] ?? '').toString().trim();
     final replies = query['replies'];
     final replyCount = replies is List ? replies.length : 0;
+    final hasNewReply = _hasNewReply(query);
+    final previewColor = theme.colorScheme.onSurface;
 
     return Material(
       color: isDark ? const Color(0xFF111827) : Colors.white,
@@ -701,13 +1001,33 @@ class _SupportQueryTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Text(
-                _preview(message),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: theme.textTheme.bodyMedium?.color ?? Colors.grey,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _preview(_previewText(query)),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: previewColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (hasNewReply) ...[
+                    const SizedBox(width: 10),
+                    Container(
+                      width: 9,
+                      height: 9,
+                      margin: const EdgeInsets.only(top: 5),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 12),
               Wrap(

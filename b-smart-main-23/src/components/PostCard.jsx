@@ -302,33 +302,62 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [videoReady, setVideoReady]     = useState(false);
   const [videoPlaying, setVideoPlaying] = useState(false);
-  const [isMuted, setIsMuted]           = useState(true);
-  // userPaused: true when the user manually tapped to pause — prevents IntersectionObserver
-  // from auto-resuming until they scroll away and back
+  const [videoBuffering, setVideoBuffering] = useState(true);
+  const [isMuted, setIsMuted]           = useState(() => {
+    const saved = window.__bsmart_feed_muted;
+    return saved === undefined ? false : saved;
+  });
   const [userPaused, setUserPaused]     = useState(false);
 
   const videoRef      = useRef(null);
   const containerRef  = useRef(null);
   const isVisibleRef  = useRef(false);
 
-  const toAbsoluteUrl = (value) => {
-    if (!value) return '';
-    const str = String(value);
-    if (str.startsWith('http')) return str;
-    const normalized = str.replace(/^\/+/, '');
-    return `${BASE_URL}/${normalized.startsWith('uploads/') ? normalized : `uploads/${normalized}`}`;
-  };
+  useEffect(() => {
+    const handler = (e) => {
+      const muted = e.detail?.muted ?? false;
+      setIsMuted(muted);
+      if (videoRef.current) videoRef.current.muted = muted;
+    };
+    window.addEventListener('bsmart:mute-sync', handler);
+    return () => window.removeEventListener('bsmart:mute-sync', handler);
+  }, []);
+
+  const fixUrl = (u) => u ? String(u).replace(/^http:\/\//i, 'https://') : '';
 
   const currentItem = mediaItems[currentIndex] || {};
-  const mediaSrc = toAbsoluteUrl(currentItem.fileUrl || currentItem.url || currentItem.fileName);
+  const mediaSrc = fixUrl(currentItem.fileUrl || currentItem.url || currentItem.fileName);
   const isVideo = currentItem.type === 'video'
     || currentItem.media_type === 'video'
     || /\.(mp4|mov|webm|ogg|mkv|m4v|m3u8)(\?.*)?$/i.test(String(mediaSrc));
 
   const getThumbnailUrl = (item) => {
     if (!item) return null;
-    if (Array.isArray(item.thumbnails) && item.thumbnails[0]?.fileUrl) return item.thumbnails[0].fileUrl;
-    if (Array.isArray(item.thumbnail) && item.thumbnail[0]?.fileUrl) return item.thumbnail[0].fileUrl;
+    // Try all fileUrl paths FIRST
+    if (Array.isArray(item.thumbnails) && item.thumbnails[0]) {
+      const t = item.thumbnails[0];
+      if (t.fileUrl) return t.fileUrl;
+    }
+    if (Array.isArray(item.thumbnail) && item.thumbnail[0]) {
+      const t = item.thumbnail[0];
+      if (t.fileUrl) return t.fileUrl;
+    }
+    if (item.thumbnail && typeof item.thumbnail === 'object' && !Array.isArray(item.thumbnail)) {
+      if (item.thumbnail.fileUrl) return item.thumbnail.fileUrl;
+    }
+    if (typeof item.thumbnail_url === 'string') return item.thumbnail_url;
+    // Now try fileName paths as fallback
+    if (Array.isArray(item.thumbnails) && item.thumbnails[0]) {
+      const t = item.thumbnails[0];
+      if (t.fileName) return t.fileName;
+    }
+    if (Array.isArray(item.thumbnail) && item.thumbnail[0]) {
+      const t = item.thumbnail[0];
+      if (t.fileName) return t.fileName;
+    }
+    if (item.thumbnail && typeof item.thumbnail === 'object' && !Array.isArray(item.thumbnail)) {
+      if (item.thumbnail.fileName) return item.thumbnail.fileName;
+    }
     if (typeof item.thumbnail === 'string') return item.thumbnail;
     if (typeof item.poster === 'string') return item.poster;
     return null;
@@ -352,9 +381,9 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
     return { start, end };
   };
 
-  const thumbnailUrl = getThumbnailUrl(currentItem);
+  const thumbnailUrl = fixUrl(getThumbnailUrl(currentItem)) || null;
   const { start: trimStart, end: trimEnd } = getVideoTiming(currentItem);
-  const showThumb = thumbnailUrl && !videoReady;
+  const showThumb = !videoPlaying;
 
   // ── IntersectionObserver: auto play when ≥50% visible, pause when not ───────
   useEffect(() => {
@@ -403,8 +432,11 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
   };
   const toggleMute = (e) => {
     e.stopPropagation();
-    if (videoRef.current) videoRef.current.muted = !isMuted;
-    setIsMuted(m => !m);
+    const newMuted = !isMuted;
+    if (videoRef.current) videoRef.current.muted = newMuted;
+    setIsMuted(newMuted);
+    window.__bsmart_feed_muted = newMuted;
+    window.dispatchEvent(new CustomEvent('bsmart:mute-sync', { detail: { muted: newMuted } }));
   };
   const togglePlayPause = (e) => {
     e.stopPropagation();
@@ -431,19 +463,29 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
   return (
     <div ref={containerRef} className="w-full bg-black overflow-hidden relative group">
       {isVideo ? (
-        <div className="relative w-full">
-          {/* Thumbnail shown until video is ready */}
-          {thumbnailUrl && (
+        <div className="relative w-full" style={{ minHeight: 280 }}>
+          {/* Thumbnail — visible until video is actually playing */}
+          {thumbnailUrl && showThumb && (
             <img src={thumbnailUrl} alt="thumbnail"
-              className="w-full object-contain"
-              style={{ display: showThumb ? 'block' : 'none', maxHeight: 'min(560px, 100vw)' }} />
+              className="w-full object-contain absolute inset-0 z-[2]"
+              style={{ maxHeight: 'min(560px, 100vw)' }} />
+          )}
+          {/* Buffering spinner — shown while video is not yet playing */}
+          {!videoPlaying && (
+            <div className="absolute inset-0 z-[3] flex items-center justify-center">
+              <div className="relative w-12 h-12">
+                <div className="absolute inset-0 rounded-full bg-black/30 backdrop-blur-sm" />
+                <div className="absolute inset-0 rounded-full border-[3px] border-white/20" />
+                <div className="absolute inset-0 rounded-full border-[3px] border-t-white border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+              </div>
+            </div>
           )}
           <video
             ref={videoRef}
             key={`${mediaSrc}-${currentIndex}`}
             src={mediaSrc}
-            className="w-full object-contain"
-            style={{ display: videoReady ? 'block' : 'none', maxHeight: 'min(560px, 100vw)' }}
+            className="w-full object-contain relative z-[1]"
+            style={{ maxHeight: 'min(560px, 100vw)' }}
             muted={isMuted}
             playsInline
             loop={false}
@@ -454,17 +496,16 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
               setVideoReady(true);
               const s = Number(e.currentTarget.dataset.start || 0);
               if (s > 0 && isFinite(s)) e.currentTarget.currentTime = s;
-              // Auto-play if visible and not user-paused
               if (isVisibleRef.current && !userPaused) {
                 e.currentTarget.play().catch(() => {});
               }
             }}
             onCanPlay={() => setVideoReady(true)}
-            onPlay={() => setVideoPlaying(true)}
+            onWaiting={() => setVideoBuffering(true)}
+            onPlaying={() => { setVideoPlaying(true); setVideoBuffering(false); }}
             onPause={() => setVideoPlaying(false)}
             onEnded={() => {
               setVideoPlaying(false);
-              // Loop back to trim start
               const s = trimStart > 0 ? trimStart : 0;
               if (videoRef.current) { videoRef.current.currentTime = s; videoRef.current.play().catch(() => {}); }
             }}
@@ -480,15 +521,15 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
           />
           {/* Tap to play/pause overlay */}
           <div className="absolute inset-0 z-[5] cursor-pointer flex items-center justify-center" onClick={togglePlayPause}>
-            {!videoPlaying && (
+            {!videoPlaying && videoReady && !videoBuffering && (
               <div className="w-14 h-14 rounded-full bg-black/40 flex items-center justify-center pointer-events-none">
                 <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
               </div>
             )}
           </div>
-          {/* Mute button */}
+          {/* Mute button — always visible when video is playing */}
           <button onClick={toggleMute}
-            className="absolute bottom-3 right-3 z-20 bg-black/55 hover:bg-black/75 text-white p-2 rounded-full transition-all opacity-0 group-hover:opacity-100">
+            className={`absolute bottom-3 right-3 z-20 bg-black/55 hover:bg-black/75 text-white p-2 rounded-full transition-all ${videoPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
             {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
           </button>
           <PeopleTagsOverlay tags={peopleTags} />
@@ -496,7 +537,7 @@ const MediaRenderer = ({ mediaItems, isAdType, peopleTags = [] }) => {
       ) : (
         <div className="relative w-full">
           <img
-            src={mediaSrc || currentItem.image}
+            src={mediaSrc || fixUrl(currentItem.image)}
             alt="Post"
             className="w-full object-contain"
             style={{ maxHeight: 'min(560px, 100vw)', ...(currentItem.image_editing?.filter?.css ? { filter: currentItem.image_editing.filter.css } : {}) }}

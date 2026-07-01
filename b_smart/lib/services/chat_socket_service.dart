@@ -29,6 +29,30 @@ class ChatSocketService {
     'support_status_changed': <SocketHandler>{},
   };
 
+  void _attachListener(io.Socket socket, String eventName) {
+    socket.off(eventName);
+    socket.on(eventName, (data) {
+      final handlers = _subscribers[eventName];
+      if (handlers == null || handlers.isEmpty) return;
+      for (final cb in List<SocketHandler>.from(handlers)) {
+        try {
+          cb(data);
+        } catch (e) {
+          developer.log(
+            '[ChatSocket] subscriber error event=$eventName error=$e',
+            name: 'ChatSocket',
+          );
+        }
+      }
+    });
+  }
+
+  void _attachListeners(io.Socket socket) {
+    for (final eventName in _subscribers.keys) {
+      _attachListener(socket, eventName);
+    }
+  }
+
   bool get isConnected => _socket?.connected == true;
 
   String _socketOrigin() {
@@ -67,26 +91,7 @@ class ChatSocketService {
     );
     _socket = socket;
 
-    void attachListeners() {
-      for (final entry in _subscribers.entries) {
-        final eventName = entry.key;
-        socket.off(eventName);
-        socket.on(eventName, (data) {
-          for (final cb in List<SocketHandler>.from(entry.value)) {
-            try {
-              cb(data);
-            } catch (e) {
-              developer.log(
-                '[ChatSocket] subscriber error event=$eventName error=$e',
-                name: 'ChatSocket',
-              );
-            }
-          }
-        });
-      }
-    }
-
-    attachListeners();
+    _attachListeners(socket);
 
     socket.on('connect', (_) {
       developer.log('[ChatSocket] connected id=${socket.id}', name: 'ChatSocket');
@@ -118,12 +123,20 @@ class ChatSocketService {
     final set = _subscribers[event];
     if (set == null) return;
     set.add(handler);
+    final socket = _socket;
+    if (socket != null) {
+      _attachListener(socket, event);
+    }
   }
 
   void off(String event, SocketHandler handler) {
     final set = _subscribers[event];
     if (set == null) return;
     set.remove(handler);
+    final socket = _socket;
+    if (socket != null && set.isEmpty) {
+      socket.off(event);
+    }
   }
 
   void joinRoom(String conversationId) {

@@ -186,7 +186,7 @@ const DesktopFollowButton = ({ targetUserId }) => {
       type="button"
       onClick={handleClick}
       disabled={loading}
-      className="min-w-[56px] text-right text-xs font-semibold text-[#3b82f6] hover:text-[#1d4ed8] dark:text-[#60a5fa] dark:hover:text-white transition-colors disabled:opacity-50"
+      className="min-w-[56px] text-center text-xs font-semibold text-[#3b82f6] hover:text-[#1d4ed8] dark:text-[#60a5fa] dark:hover:text-white transition-colors disabled:opacity-50"
     >
       {loading ? '...' : followState === 'following' ? 'Following' : followState === 'requested' ? 'Requested' : 'Follow'}
     </button>
@@ -315,7 +315,7 @@ const FeedSkeleton = () => (
   </div>
 );
 
-// ── Mobile Suggested Users Card (horizontal scroll, Instagram-style) ──────────
+// ── Mobile Suggested Users Card (horizontal scroll, bSmart-style) ──────────
 const MobileSuggestedUsersCard = ({ users }) => {
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState({});
@@ -359,7 +359,7 @@ const MobileSuggestedUsersCard = ({ users }) => {
                 <X size={10} />
               </button>
               {/* Avatar */}
-              <div className="w-14 h-14 rounded-full overflow-hidden bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center ring-2 ring-offset-1 ring-pink-300/40 shrink-0">
+              <div className="w-14 h-14 rounded-full overflow-hidden bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center shrink-0">
                 {avatar
                   ? <img src={avatar} alt={username} className="w-full h-full object-cover" />
                   : <span className="text-white font-bold text-lg">{username.slice(0,1).toUpperCase()}</span>
@@ -369,7 +369,7 @@ const MobileSuggestedUsersCard = ({ users }) => {
                 <p className="text-[12px] font-bold text-gray-900 dark:text-white truncate">{username}</p>
                 <p className="text-[10px] text-gray-400 truncate mt-0.5">{reason}</p>
               </div>
-              <div onClick={(e) => e.stopPropagation()} className="w-full">
+              <div onClick={(e) => e.stopPropagation()} className="w-full text-center">
                 <DesktopFollowButton targetUserId={String(userId || '')} />
               </div>
             </div>
@@ -396,7 +396,29 @@ const MobileSuggestedReelsCard = ({ reels }) => {
       <div className="flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {reels.map((reel, i) => {
           const media = reel.media?.[0];
-          const thumb = normalizeAssetUrl(media?.thumbnails?.[0]?.fileUrl || media?.thumbnails?.[0]?.fileName || media?.thumbnail_url || media?.fileUrl || media?.fileName);
+          const rawThumb = media?.thumbnail;
+          
+          let rawUrl = null;
+          // Try all possible fileUrl paths FIRST (direct full URLs)
+          if (Array.isArray(rawThumb) && rawThumb[0]?.fileUrl) rawUrl = rawThumb[0].fileUrl;
+          else if (rawThumb && typeof rawThumb === 'object' && !Array.isArray(rawThumb) && rawThumb.fileUrl) rawUrl = rawThumb.fileUrl;
+          else if (Array.isArray(media?.thumbnails) && media.thumbnails[0]?.fileUrl) rawUrl = media.thumbnails[0].fileUrl;
+          else if (media?.thumbnail_url) rawUrl = media.thumbnail_url;
+          else if (media?.fileUrl) rawUrl = media.fileUrl;
+          // Now fallback to fileName only if no fileUrl found
+          else if (Array.isArray(rawThumb) && rawThumb[0]?.fileName) rawUrl = rawThumb[0].fileName;
+          else if (rawThumb && typeof rawThumb === 'object' && !Array.isArray(rawThumb) && rawThumb.fileName) rawUrl = rawThumb.fileName;
+          else if (Array.isArray(media?.thumbnails) && media.thumbnails[0]?.fileName) rawUrl = media.thumbnails[0].fileName;
+          else if (media?.fileName) rawUrl = media.fileName;
+          else if (typeof rawThumb === 'string') rawUrl = rawThumb;
+
+          // Normalize only if it's NOT already a full URL (starts with http/https)
+          let thumb;
+          if (rawUrl && /^https?:\/\//i.test(String(rawUrl))) {
+            thumb = String(rawUrl).replace(/^http:\/\//i, 'https://'); // just fix http to https
+          } else {
+            thumb = normalizeAssetUrl(rawUrl);
+          }
           const username = reel.user_id?.username || reel.user_id?.full_name || 'reel';
           const avatar = normalizeAssetUrl(reel.user_id?.avatar_url);
           const caption = reel.caption || username;
@@ -824,7 +846,7 @@ const Home = () => {
   };
 
   return (
-    <div className="relative md:pt-14 bg-white dark:bg-black overflow-x-hidden">
+    <div className="relative md:pt-14 bg-white dark:bg-black overflow-x-hidden max-w-[1280px] ml-auto">
 
       <LocationBar
         searchQuery={searchQuery}

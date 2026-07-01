@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Heart, MessageCircle, Send, MoreHorizontal, Music2,
   Volume2, VolumeX, Bookmark, Loader2, X, Trash2, ChevronLeft,
-  Search
+  Search, UserPlus, UserCheck
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import Hls from 'hls.js';
@@ -166,13 +166,14 @@ const FollowButton = ({ userId, initialFollowing = false }) => {
     <button
       onClick={handleToggle}
       disabled={loading}
-      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all backdrop-blur-sm flex-shrink-0 disabled:opacity-60 ${
-        following
-          ? 'border border-white/40 bg-white/10 text-white/80'
-          : 'border border-white bg-transparent text-white hover:bg-white/15'
-      }`}
+      className={`shrink-0 whitespace-nowrap flex items-center justify-center gap-1 min-w-[108px] h-7 px-3 rounded-full text-[10px] font-semibold transition-all
+        ${following
+          ? 'border border-white/40 bg-white/20 text-white backdrop-blur-sm'
+          : 'border border-white/40 bg-white/10 text-white backdrop-blur-sm hover:bg-white/20'
+        } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
     >
-      {loading ? <Loader2 size={10} className="animate-spin inline" /> : following ? 'Following' : 'Follow'}
+      {loading ? <Loader2 size={10} className="animate-spin" /> : following ? <UserCheck size={11} /> : <UserPlus size={11} />}
+      <span>{following ? 'Following' : 'Follow'}</span>
     </button>
   );
 };
@@ -933,7 +934,17 @@ const Reels = () => {
   const handleShare = (reel) => setShareReel(reel || null);
 
   const getVideoUrl    = (reel) => reel.media?.[0]?.fileUrl || null;
-  const getThumbnail   = (reel) => reel.media?.[0]?.thumbnail?.fileUrl || reel.user_id?.avatar_url || null;
+  const getThumbnail   = (reel) => {
+    const m = reel.media?.[0];
+    if (!m) return reel.user_id?.avatar_url || null;
+    const t = m.thumbnail;
+    if (Array.isArray(t)) return t[0]?.fileUrl || t[0]?.fileName || null;
+    if (t && typeof t === 'object') return t.fileUrl || t.fileName || null;
+    if (typeof t === 'string') return t;
+    if (Array.isArray(m.thumbnails)) return m.thumbnails[0]?.fileUrl || m.thumbnails[0]?.fileName || null;
+    if (typeof m.thumbnail_url === 'string') return m.thumbnail_url;
+    return reel.user_id?.avatar_url || null;
+  };
 
   const pageHeightClass = 'h-[calc(100dvh-4rem)] md:h-[calc(100dvh-1rem)]';
 
@@ -972,7 +983,7 @@ const Reels = () => {
 
   return (
     <>
-      <div className={`w-full ${pageHeightClass} overflow-hidden flex flex-col dark:bg-black bg-white`}>
+      <div className={`w-full ${pageHeightClass} overflow-hidden max-w-[1100px] mx-auto  flex flex-col dark:bg-black bg-white`}>
         {/* ── Top bar ── */}
         <div className="shrink-0 relative flex items-center px-3 py-2 md:px-4 md:py-2 bg-white dark:bg-black overflow-visible w-full">
           <button onClick={() => navigate(-1)} className={`p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500 mr-1 shrink-0 transition-all duration-300 ${searchOpen ? 'opacity-0 w-0 overflow-hidden mr-0 p-0' : 'opacity-100'}`}>
@@ -1131,7 +1142,7 @@ const Reels = () => {
                 {reels.map((reel, index) => {
                   const reelId    = reel._id || reel.post_id;
                   const videoUrl  = getVideoUrl(reel);
-                  const thumbnail = getThumbnail(reel);
+                  const thumbnail = normalizeAssetUrl(getThumbnail(reel));
                   const hasError  = videoErrors[reelId];
                   const isCurrent = index === currentIndex;
                   const isHls     = reel.media?.[0]?.hls     ?? false;

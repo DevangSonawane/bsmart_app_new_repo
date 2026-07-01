@@ -16,16 +16,11 @@ const Layout = () => {
   const { userObject } = useSelector((state) => state.auth);
   const isMessagesPage = location.pathname.startsWith('/messages');
   const isProfilePage = location.pathname.startsWith('/profile');
-  const isExcludedPage = ['/promote'].includes(location.pathname) || isMessagesPage || isProfilePage;
+  const isSettingsPage = location.pathname.startsWith('/settings');
+  const isExcludedPage = ['/promote'].includes(location.pathname) || isMessagesPage || isProfilePage || isSettingsPage;
   const isFullScreenPage = ['/reels', '/promote', '/ads'].includes(location.pathname);
   const showTopBar = !isExcludedPage && !isFullScreenPage;
 
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
-  useEffect(() => {
-    const handler = (e) => setSidebarExpanded(e.detail?.isOpen ?? false);
-    window.addEventListener('sidebar:toggle', handler);
-    return () => window.removeEventListener('sidebar:toggle', handler);
-  }, []);
 
   const [walletCoins, setWalletCoins] = useState(null);
 
@@ -89,31 +84,7 @@ const Layout = () => {
     setProfileSetupForm(initialSetupState);
   }, [initialSetupState]);
 
-  // Check if profile still needs setup (gender OR age OR any address field missing)
-  const needsProfileSetup = useMemo(() => {
-    if (!userObject) return false;
-    const g = (userObject?.gender || '').toString().toLowerCase();
-    const age = userObject?.age;
-    const a = userObject?.address || {};
-    const addressLine1 = a.address_line1 || a.addressLine1 || '';
-    const pincode = a.pincode || '';
-    const city = a.city || '';
-    const state = a.state || '';
-    const country = a.country || '';
-    return !g || !age || !addressLine1 || !pincode || !city || !state || !country;
-  }, [userObject]);
-
-  // Show modal on login if profile is incomplete and not dismissed this session
-  useEffect(() => {
-    if (!userObject) return;
-    if (!needsProfileSetup) {
-      setShowProfileSetup(false);
-      return;
-    }
-    const key = userId ? `profile_setup_dismissed_${userId}` : 'profile_setup_dismissed';
-    const dismissed = sessionStorage.getItem(key) === '1';
-    if (!dismissed) setShowProfileSetup(true);
-  }, [needsProfileSetup, userId, userObject]);
+  // Profile setup popup disabled — users complete their profile via Settings > Account
 
   const closeProfileSetup = useCallback(() => {
     const key = userId ? `profile_setup_dismissed_${userId}` : 'profile_setup_dismissed';
@@ -236,7 +207,7 @@ const Layout = () => {
     <div className={`flex min-h-screen bg-gray-50 dark:bg-black md:pb-0 ${isFullScreenPage ? 'pb-0' : 'pb-16'}`}>
       <Sidebar onOpenCreateModal={handleOpenCreateModal} />
 
-<div className={`flex-1 min-h-screen transition-all duration-300 ${sidebarExpanded ? 'md:ml-64' : 'md:ml-20'}`}>
+<div className="flex-1 min-h-screen md:ml-20">
         {showTopBar && <TopBar />}
 
         <div className={`

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useSelector, useDispatch } from "react-redux";
+import { useSelector } from "react-redux";
 import api from "../../lib/api";
 import {
   Coins, CreditCard, Receipt, ShieldCheck, CalendarDays,
@@ -86,14 +86,20 @@ const RechargeCoinModal = ({ open, onClose, onSuccess }) => {
   const [result, setResult]         = useState(null); // success state
   const [error, setError]           = useState("");
 
-  // Fetch active package on open to show correct coin preview
+  // Fetch active package on open; reset form state when modal closes (via cleanup)
   useEffect(() => {
-    if (!open) { setResult(null); setError(""); setAmount(""); return; }
+    if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFetchingPkg(true);
     api.get("/vendor-packages/my/active")
       .then(res => setActivePkg(res.data?.active_package || res.data?.package || res.data || null))
       .catch(() => setActivePkg(null))
       .finally(() => setFetchingPkg(false));
+    return () => {
+      setResult(null);
+      setError("");
+      setAmount("");
+    };
   }, [open]);
 
   if (!open) return null;
@@ -114,12 +120,51 @@ const RechargeCoinModal = ({ open, onClose, onSuccess }) => {
     if (!amt || amt <= 0) { setError("Please enter a valid amount."); return; }
     setLoading(true); setError("");
     try {
-      const { data } = await api.post("/wallet/recharge", { recharge_amount: amt });
-      setResult(data);
-      onSuccess?.();
-    } catch (e) {
-      setError(e?.response?.data?.message || "Recharge failed. Please try again.");
-    } finally {
+      // Step 1 — create Razorpay order
+      const { data } = await api.post("/wallet/recharge/create-order", { recharge_amount: amt });
+
+      const loaded = await loadRazorpay();
+      if (!loaded) {
+        setError("Payment gateway failed to load. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      const options = {
+        key: data.key_id,
+        amount: data.order.amount,
+        currency: data.order.currency || "INR",
+        name: "BSmart",
+        description: `Recharge ₹${amt}`,
+        order_id: data.order.order_id,
+        handler: async (paymentResponse) => {
+          // Step 2 — verify payment & credit coins
+          try {
+            const res = await api.post("/wallet/recharge/verify-payment", {
+              razorpay_order_id:   paymentResponse.razorpay_order_id,
+              razorpay_payment_id: paymentResponse.razorpay_payment_id,
+              razorpay_signature:  paymentResponse.razorpay_signature,
+              recharge_amount: amt,
+            });
+            setResult(res.data);
+            onSuccess?.();
+          } catch (e) {
+            setLoading(false);
+            setError(e?.response?.data?.message || "Payment verification failed. Please contact support.");
+          }
+        },
+        modal: { ondismiss: () => setLoading(false) },
+        theme: { color: "#f59e0b" },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', (resp) => {
+        setError(resp?.error?.description || "Payment failed. Please try again.");
+        setLoading(false);
+      });
+      rzp.open();
+    } catch (err) {
+      setError(err?.response?.data?.message || "Failed to initiate recharge. Please try again.");
       setLoading(false);
     }
   };
@@ -378,10 +423,22 @@ const PurchaseSuccessPopup = ({ pkg, onClose }) => {
   );
 };
 
+// ─── Razorpay script loader ───────────────────────────────────────────────────
+const loadRazorpay = () =>
+  new Promise((resolve) => {
+    if (window.Razorpay) { resolve(true); return; }
+    const script = document.createElement('script');
+    script.src    = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload  = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+
 // ─── Buy Confirm Modal ────────────────────────────────────────────────────────
 const BuyConfirmModal = ({ pkg, onClose, onSuccess }) => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError]         = useState("");
   const meta = getTierMeta(pkg.tier);
   const TierIcon = meta.icon;
 
@@ -389,12 +446,54 @@ const BuyConfirmModal = ({ pkg, onClose, onSuccess }) => {
     setLoading(true);
     setError("");
     try {
-      await api.post(`/vendor-packages/${pkg._id}/buy`);
-      onClose();        // close this confirm modal first
-      onSuccess?.(pkg); // parent shows the success popup + refreshes active pkg
+      // Step 1 — create Razorpay order
+      const { data } = await api.post(`/vendor-packages/${pkg._id}/create-order`);
+
+      const loaded = await loadRazorpay();
+      if (!loaded) {
+        setError("Payment gateway failed to load. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      const options = {
+        key: data.key_id,
+        amount: data.order.amount,
+        currency: data.order.currency || "INR",
+        name: "BSmart",
+        description: data.order.package_name,
+        order_id: data.order.order_id,
+        handler: async (paymentResponse) => {
+          // Step 2 — verify payment & activate package
+          setVerifying(true);
+          try {
+            await api.post(`/vendor-packages/${pkg._id}/verify-payment`, {
+              razorpay_order_id:   paymentResponse.razorpay_order_id,
+              razorpay_payment_id: paymentResponse.razorpay_payment_id,
+              razorpay_signature:  paymentResponse.razorpay_signature,
+            });
+            onClose();
+            onSuccess?.(pkg);
+          } catch (e) {
+            setVerifying(false);
+            setLoading(false);
+            setError(e?.response?.data?.message || "Payment verification failed. Please contact support.");
+          }
+        },
+        modal: { ondismiss: () => setLoading(false) },
+        theme: { color: "#f97316" },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', (resp) => {
+        setError(resp?.error?.description || "Payment failed. Please try again.");
+        setLoading(false);
+      });
+      rzp.open();
+      // loading stays true while Razorpay modal is open;
+      // reset via ondismiss / payment.failed / verify handler
     } catch (err) {
-      setError(err?.response?.data?.message || "Purchase failed. Please try again.");
-    } finally {
+      setError(err?.response?.data?.message || "Failed to initiate payment. Please try again.");
       setLoading(false);
     }
   };
@@ -490,11 +589,11 @@ const BuyConfirmModal = ({ pkg, onClose, onSuccess }) => {
               </button>
               <button
                 onClick={handleBuy}
-                disabled={loading}
+                disabled={loading || verifying}
                 className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-orange-500 via-pink-600 to-purple-600 text-white font-bold text-sm hover:opacity-90 disabled:opacity-60 transition-all shadow-lg shadow-pink-500/20 flex items-center justify-center gap-2"
               >
-                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {loading ? "Processing…" : `Confirm & Pay ₹${fmt(pkg.final_price)}`}
+                {(loading || verifying) && <Loader2 className="w-4 h-4 animate-spin" />}
+                {verifying ? "Verifying payment…" : loading ? "Opening payment…" : `Confirm & Pay ₹${fmt(pkg.final_price)}`}
               </button>
             </div>
           </div>
@@ -1246,7 +1345,7 @@ export default function CoinsBilling() {
         {/* ── Packages Section (replaces modal) ── */}
         <div id="packages">
         <PackagesSection
-          onBuySuccess={fetchWallet}
+          onBuySuccess={() => { fetchWallet(); fetchHistory(); }}
           profileCompletion={profileCompletion}
         />
         </div>
@@ -1396,7 +1495,7 @@ export default function CoinsBilling() {
       <RechargeCoinModal
         open={showRechargeModal}
         onClose={() => setShowRechargeModal(false)}
-        onSuccess={fetchWallet}
+        onSuccess={() => { fetchWallet(); fetchHistory(); }}
       />
     </div>
   );

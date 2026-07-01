@@ -88,7 +88,8 @@ const FollowButton = ({ targetUserId }) => {
         const res = await followUser(targetUserId);
         setFollowState(normalizeFollowStateFromStatus(res));
       }
-    } catch {
+    } catch (err) {
+      console.error('Tweet follow action failed:', err?.response?.data?.message || err);
       setFollowState(prev);
     } finally {
       setLoading(false);
@@ -188,12 +189,13 @@ const TweetDetailModal = ({ tweet: initialTweet, isOpen, onClose }) => {
   const emojiPickerRef = useRef(null);
 
   const tweetId = tweet?._id || tweet?.id;
-  const author = tweet?.author || tweet?.user || {};
+  const rawAuthor = tweet?.author || tweet?.user || tweet?.user_id || {};
+  const author = typeof rawAuthor === 'string' ? { _id: rawAuthor } : rawAuthor;
   const username = author.username || 'User';
   const fullName = author.full_name || author.name || '';
   const avatar = author.avatar_url || '';
   const userId = author._id || author.id;
-  const isOwner = currentUserId && String(userId) === String(currentUserId);
+  const isOwner = currentUserId && userId && String(userId) === String(currentUserId);
   const turnOffCommenting = !!(tweet?.turn_off_commenting || tweet?.engagement_controls?.turn_off_commenting);
   const profilePath = `/profile/${username}`;
   const contentText = tweet?.content || tweet?.caption || '';
@@ -212,7 +214,14 @@ const TweetDetailModal = ({ tweet: initialTweet, isOpen, onClose }) => {
       setLikeCount(initialTweet.likes_count || 0);
       setNewComment(''); setReplyTo(null);
       fetchComments(initialTweet._id || initialTweet.id);
-      if (initialTweet._id) { api.get(`/tweets/${initialTweet._id}`).then(({data}) => setTweet(data)).catch(()=>{}); }
+      if (initialTweet._id) {
+        api.get(`/tweets/${initialTweet._id}`)
+          .then(({ data }) => {
+            const fresh = data?.tweet || data?.data || data;
+            if (fresh && (fresh._id || fresh.id)) setTweet(prev => ({ ...prev, ...fresh }));
+          })
+          .catch(() => {});
+      }
     }
   }, [isOpen, initialTweet, fetchComments]);
 

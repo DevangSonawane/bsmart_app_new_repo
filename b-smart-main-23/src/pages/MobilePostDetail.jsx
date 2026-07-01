@@ -524,7 +524,7 @@ const MobilePostDetail = () => {
     };
 
     return (
-        <div className="min-h-screen bg-white dark:bg-black pb-20">
+        <div className="min-h-screen bg-white dark:bg-black pb-20 max-w-[1100px] mx-auto">
             {/* Top Bar */}
             <div className="sticky top-0 bg-white dark:bg-black z-50 px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
                 <button onClick={() => navigate(-1)} className="text-gray-900 dark:text-white">

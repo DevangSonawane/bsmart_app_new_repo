@@ -299,7 +299,7 @@ const PrivacySettings = () => {
 
   /* ── render ───────────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black pb-10">
+    <div className="min-h-screen bg-gray-50 dark:bg-black pb-10 max-w-[1100px] mx-auto">
 
       {/* Toast */}
       {toast && (

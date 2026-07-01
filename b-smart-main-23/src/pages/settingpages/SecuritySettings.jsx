@@ -451,7 +451,7 @@ const SecuritySettings = () => {
   const [strengthText, strengthLevel] = strengthLabel(passwords.newPass.length);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black pb-24">
+    <div className="min-h-screen bg-gray-50 dark:bg-black pb-24 max-w-[1100px] mx-auto">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-20 right-4 z-[80] rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${

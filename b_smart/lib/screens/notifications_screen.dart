@@ -8,6 +8,7 @@ import '../api/chat_api.dart';
 import '../api/follow_requests_api.dart';
 import '../models/notification_model.dart';
 import 'chat_conversation_screen.dart';
+import 'contact_support_screen.dart';
 import 'messaging_screen.dart';
 import '../services/notification_service.dart';
 import '../utils/timezone_service.dart';
@@ -167,6 +168,25 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return type.contains('message') || type.contains('chat') || type.contains('dm');
   }
 
+  bool _isSupportNotification(NotificationItem notification) {
+    final type = notification.typeKey.trim().toLowerCase();
+    if (type.contains('support') || type.contains('help') || type.contains('query')) {
+      return true;
+    }
+    final metadata = notification.metadata ?? const <String, dynamic>{};
+    final hasSupportQueryId = _stringFromMap(metadata, const [
+      'queryId',
+      'query_id',
+      'supportQueryId',
+      'support_query_id',
+      'supportTicketId',
+      'support_ticket_id',
+    ]);
+    if (hasSupportQueryId.isNotEmpty) return true;
+    final link = notification.link?.trim() ?? '';
+    return link.contains('contact-support') || link.contains('support');
+  }
+
   String _stringFromMap(
     Map<String, dynamic>? map,
     List<String> keys,
@@ -192,6 +212,38 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'messageThreadId',
       'message_thread_id',
     ]);
+  }
+
+  String _supportQueryIdFromNotification(NotificationItem notification) {
+    final fromMetadata = _stringFromMap(notification.metadata, const [
+      'queryId',
+      'query_id',
+      'supportQueryId',
+      'support_query_id',
+      'supportTicketId',
+      'support_ticket_id',
+      'threadId',
+      'thread_id',
+      'conversationId',
+      'conversation_id',
+      'relatedId',
+      'related_id',
+    ]);
+    if (fromMetadata.isNotEmpty) return fromMetadata;
+
+    final relatedId = notification.relatedId?.trim() ?? '';
+    if (relatedId.isNotEmpty) return relatedId;
+
+    final link = notification.link?.trim() ?? '';
+    if (link.isNotEmpty) {
+      final uri = Uri.tryParse(link);
+      final lastSegment = uri != null && uri.pathSegments.isNotEmpty
+          ? uri.pathSegments.last.trim()
+          : '';
+      if (lastSegment.isNotEmpty) return lastSegment;
+    }
+
+    return '';
   }
 
   String _participantIdFromNotification(NotificationItem notification) {
@@ -260,6 +312,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
+  Future<void> _openSupportNotification(NotificationItem notification) async {
+    final queryId = _supportQueryIdFromNotification(notification);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ContactSupportScreen(initialQueryId: queryId.isEmpty ? null : queryId),
+      ),
+    );
+  }
+
   String _requesterIdOf(NotificationItem notification) {
     final sender = notification.sender ?? const <String, dynamic>{};
     final fromSender =
@@ -321,6 +382,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     if (_isMessageNotification(notification)) {
       await _openMessageNotification(notification);
+      return;
+    }
+
+    if (_isSupportNotification(notification)) {
+      await _openSupportNotification(notification);
       return;
     }
 

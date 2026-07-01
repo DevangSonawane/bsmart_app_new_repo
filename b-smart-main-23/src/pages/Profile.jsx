@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import StoryViewer from '../components/StoryViewer';
-import { Settings, Video, Menu, Grid, Plus, Heart, MessageCircle, ArrowLeft, MoreHorizontal, Megaphone, Loader2, Eye, Building2, FileText, Hash, Calendar, Briefcase, Share2, Star, Lock, Clock, Play, Image, ChevronLeft, ChevronRight, Wallet } from 'lucide-react';
+import { Settings, Video, Menu, Grid, Plus, Heart, MessageCircle, ArrowLeft, MoreHorizontal, Megaphone, Loader2, Eye, Building2, FileText, Hash, Calendar, Briefcase, Share2, Star, Lock, Clock, Play, Image, ChevronLeft, ChevronRight, Wallet, UserX } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { supabase } from '../lib/supabase';
@@ -444,6 +444,9 @@ const Profile = () => {
     const [notifLoading, setNotifLoading] = useState(false);
     const [isBioExpanded, setIsBioExpanded] = useState(false);
     const [isPrivacyBlocked, setIsPrivacyBlocked] = useState(false);
+    const [isBlocked, setIsBlocked] = useState(false);
+    const [blockLoading, setBlockLoading] = useState(false);
+    const [showBlockConfirm, setShowBlockConfirm] = useState(false);
     const userOptionsMenuRef = useRef(null);
 
     // Close user options menu when clicking outside
@@ -498,7 +501,9 @@ const Profile = () => {
             } else {
                 try {
                     const response = await api.get(`/users/${userId}`);
-                    setProfileUser(response.data?.user || response.data);
+                    const userData = response.data?.user || response.data;
+                    setProfileUser(userData);
+                    setIsBlocked(Boolean(userData?.is_blocked));
                     setIsPrivacyBlocked(false);
                 } catch (error) {
                     // Any 403 from the profile endpoint means privacy-blocked — skip Supabase fallback
@@ -661,7 +666,9 @@ const Profile = () => {
                 const restricted = body.privacy_restricted || { posts: false, pulse: false };
                 setPrivacyRestricted(restricted);
                 const content = body.data || {};
-                setUserPosts(content.posts || []);
+                const reels = (content.reels || []).map(r => ({ ...r, type: r.type || 'reel' }));
+                const posts = content.posts || [];
+                setUserPosts([...posts, ...reels]);
                 setUserTweets(content.tweets || []);
                 setUserPromoteReels(content.promote_reels || []);
             } catch (error) {
@@ -831,6 +838,42 @@ const Profile = () => {
         }
     };
 
+    const handleBlock = async () => {
+        setShowBlockConfirm(false);
+        setShowUserOptionsMenu(false);
+        const prev = isBlocked;
+        setIsBlocked(true);
+        setBlockLoading(true);
+        try {
+            await api.post(`/users/${profileTargetUserId}/block`);
+            setUserPosts([]);
+            setUserTweets([]);
+            setUserPromoteReels([]);
+            setRewardToast({ type: 'success', message: `@${profileUser?.username} has been blocked.` });
+        } catch (e) {
+            setIsBlocked(prev);
+            setRewardToast({ type: 'error', message: e?.response?.data?.message || 'Failed to block user.' });
+        } finally {
+            setBlockLoading(false);
+        }
+    };
+
+    const handleUnblock = async () => {
+        setShowUserOptionsMenu(false);
+        const prev = isBlocked;
+        setIsBlocked(false);
+        setBlockLoading(true);
+        try {
+            await api.delete(`/users/${profileTargetUserId}/block`);
+            setRewardToast({ type: 'success', message: `@${profileUser?.username} has been unblocked.` });
+        } catch (e) {
+            setIsBlocked(prev);
+            setRewardToast({ type: 'error', message: e?.response?.data?.message || 'Failed to unblock user.' });
+        } finally {
+            setBlockLoading(false);
+        }
+    };
+
     const getInitials = (name) => {
         if (!name) return 'U';
         return name.split(' ').map((n) => n[0]).join('').toUpperCase().substring(0, 2);
@@ -931,12 +974,24 @@ const Profile = () => {
     const getPostThumbnail = (post) => {
         const media = post.media?.[0];
         if (!media) return 'https://via.placeholder.com/300';
-        if (media.type === 'video' && media.thumbnails?.length > 0) {
-            const thumbFile = media.thumbnails[0].fileName;
-            const baseUrl = media.fileUrl?.split('/uploads/')[0];
-            if (baseUrl && thumbFile) return `${baseUrl}/uploads/${thumbFile}`;
+        const isVideo = media.type === 'video' || media.media_type === 'video' || post.type === 'reel';
+        if (isVideo) {
+            const rawThumb = media.thumbnail;
+            const thumbFromArr = Array.isArray(rawThumb) ? (rawThumb[0]?.fileUrl || rawThumb[0]?.fileName) : null;
+            const thumbFromObj = rawThumb && typeof rawThumb === 'object' && !Array.isArray(rawThumb) ? (rawThumb.fileUrl || rawThumb.fileName) : null;
+            const thumbFromStr = typeof rawThumb === 'string' ? rawThumb : null;
+            const thumbFromThumbnails = media.thumbnails?.[0]?.fileUrl || media.thumbnails?.[0]?.fileName;
+            const thumbUrl = thumbFromArr || thumbFromObj || thumbFromStr || thumbFromThumbnails || media.thumbnail_url;
+            if (thumbUrl) {
+                if (thumbUrl.startsWith('http')) return thumbUrl;
+                return `${BASE_URL}/uploads/${thumbUrl}`;
+            }
         }
-        return media.fileUrl || media.image || 'https://via.placeholder.com/300';
+        if (media.fileUrl) {
+            if (media.fileUrl.startsWith('http')) return media.fileUrl;
+            return `${BASE_URL}/uploads/${media.fileUrl}`;
+        }
+        return media.image || 'https://via.placeholder.com/300';
     };
 
     const getAdThumbnail = (ad) => {
@@ -954,6 +1009,10 @@ const Profile = () => {
 
     const handlePostClick = (post) => {
         const id = post._id || post.id;
+        if (post.type === 'reel') {
+            navigate(`/reels?id=${id}`);
+            return;
+        }
         if (window.innerWidth < 768 && id) navigate(`/post/${id}`);
         else setSelectedPost(post);
     };
@@ -1099,6 +1158,37 @@ const Profile = () => {
             { key: 'promote_reels',  label: 'Promoted',  icon: <Megaphone size={22} /> },
           ];
 
+    // ── Blocked Content Wall ──────────────────────────────────────────────────
+    const BlockedContentWall = () => (
+        <div className="relative w-full" style={{ minHeight: '420px' }}>
+            <div className="absolute inset-0 grid grid-cols-3 gap-0.5 overflow-hidden">
+                {Array.from({ length: 12 }).map((_, i) => (
+                    <div key={i} className="bg-gray-100 dark:bg-gray-900" />
+                ))}
+            </div>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 dark:bg-black/80 backdrop-blur-sm px-8 text-center">
+                <div className="absolute top-0 left-0 right-0 h-px bg-gray-200 dark:bg-gray-700" />
+                <div className="w-[68px] h-[68px] rounded-full border-[2.5px] border-red-400 bg-red-50 dark:bg-red-900/20 flex items-center justify-center mb-4 shadow-sm">
+                    <UserX size={28} className="text-red-500" />
+                </div>
+                <h3 className="text-[17px] font-bold text-gray-900 dark:text-white mb-2 leading-tight">
+                    You've blocked @{profileUser?.username}
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed max-w-[240px] mb-4">
+                    Their posts are hidden. Unblock to see their content again.
+                </p>
+                <button
+                    onClick={handleUnblock}
+                    disabled={blockLoading}
+                    className="flex items-center gap-2 px-5 py-2 rounded-xl border border-red-300 dark:border-red-800 text-red-500 text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-60"
+                >
+                    {blockLoading ? <Loader2 size={14} className="animate-spin" /> : <UserX size={14} />}
+                    Unblock
+                </button>
+            </div>
+        </div>
+    );
+
     // ── Private Profile Wall ──────────────────────────────────────────────────
     const PrivateProfileWall = () => {
         const isPending = followState === 'requested';
@@ -1191,6 +1281,7 @@ const Profile = () => {
     );
 
     const renderContent = () => {
+        if (isBlocked) return <BlockedContentWall />;
         if (contentLocked) return <PrivateProfileWall />;
         if (activeTab === null) return null;
         if (activeTab === 'ads') return <AdsGrid />;
@@ -1199,6 +1290,7 @@ const Profile = () => {
         return privacyRestricted.posts ? <PrivacyRestrictedPlaceholder message="Posts are private." /> : <PostGrid />;
     };
     const renderContentMobile = () => {
+        if (isBlocked) return <BlockedContentWall />;
         if (contentLocked) return <PrivateProfileWall />;
         if (activeTab === null) return null;
         if (activeTab === 'ads') return <AdsGrid containerClass="" />;
@@ -1469,7 +1561,7 @@ const Profile = () => {
     };
 
     return (
-        <div className="min-h-screen bg-white dark:bg-black md:bg-gray-50 md:dark:bg-black overflow-x-hidden">
+        <div className="min-h-screen bg-white dark:bg-black md:bg-gray-50 md:dark:bg-black overflow-x-hidden max-w-[1300px] ml-auto">
             {rewardToast && (
                 <div className={`fixed top-20 right-4 z-[80] rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg animate-in fade-in slide-in-from-right-4 duration-300 ${
                     rewardToast.type === 'success'
@@ -1649,14 +1741,25 @@ const Profile = () => {
                                                     <MoreHorizontal size={20} />
                                                 </button>
                                                 {showUserOptionsMenu && (
-                                                    <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[180px]">
+                                                    <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[200px]">
+                                                        {/* Block / Unblock */}
                                                         <button
-                                                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                                                            onClick={() => isBlocked ? handleUnblock() : setShowBlockConfirm(true)}
+                                                            disabled={blockLoading}
+                                                        >
+                                                            {blockLoading ? <Loader2 size={16} className="animate-spin" /> : <UserX size={16} />}
+                                                            {isBlocked ? 'Unblock User' : 'Block User'}
+                                                        </button>
+                                                        {/* Report */}
+                                                        <button
+                                                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800"
                                                             onClick={() => { setShowUserOptionsMenu(false); setRewardToast({ type: 'success', message: 'Report submitted successfully.' }); }}
                                                         >
                                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
                                                             Report
                                                         </button>
+                                                        {/* Notifications */}
                                                         <button
                                                             className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800 disabled:opacity-50"
                                                             onClick={handleToggleNotifications}
@@ -1817,11 +1920,22 @@ const Profile = () => {
                                         <MoreHorizontal size={18} />
                                     </button>
                                     {showUserOptionsMenu && (
-                                        <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[200px]">
-                                            <button className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" onClick={() => { setShowUserOptionsMenu(false); setRewardToast({ type: 'success', message: 'Report submitted successfully.' }); }}>
+                                        <div className="absolute left-[-43px] top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden min-w-[200px]">
+                                            {/* Block / Unblock */}
+                                            <button
+                                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                                                onClick={() => isBlocked ? handleUnblock() : setShowBlockConfirm(true)}
+                                                disabled={blockLoading}
+                                            >
+                                                {blockLoading ? <Loader2 size={16} className="animate-spin" /> : <UserX size={16} />}
+                                                {isBlocked ? 'Unblock User' : 'Block User'}
+                                            </button>
+                                            {/* Report */}
+                                            <button className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800" onClick={() => { setShowUserOptionsMenu(false); setRewardToast({ type: 'success', message: 'Report submitted successfully.' }); }}>
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
                                                 Report
                                             </button>
+                                            {/* Notifications */}
                                             <button className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-t border-gray-100 dark:border-gray-800 disabled:opacity-50" onClick={handleToggleNotifications} disabled={notifLoading}>
                                                 {notifLoading ? <Loader2 size={16} className="animate-spin" /> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>}
                                                 {notificationEnabled ? 'Turn Off Notifications' : 'Turn On Notifications'}
@@ -1981,6 +2095,42 @@ const Profile = () => {
                     stories={[profileStory]}
                     onClose={() => setShowStoryViewer(false)}
                 />
+            )}
+
+            {/* Block confirmation dialog */}
+            {showBlockConfirm && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
+                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowBlockConfirm(false)} />
+                    <div className="relative w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
+                        <div className="p-6 text-center">
+                            <div className="w-14 h-14 rounded-full bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 flex items-center justify-center mx-auto mb-4">
+                                <UserX size={24} className="text-red-500" />
+                            </div>
+                            <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">
+                                Block @{profileUser?.username}?
+                            </h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                                They won't be able to see your profile, posts, or contact you. You can unblock them at any time.
+                            </p>
+                        </div>
+                        <div className="flex border-t border-gray-100 dark:border-gray-800">
+                            <button
+                                onClick={() => setShowBlockConfirm(false)}
+                                className="flex-1 py-3.5 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-r border-gray-100 dark:border-gray-800"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleBlock}
+                                disabled={blockLoading}
+                                className="flex-1 py-3.5 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                            >
+                                {blockLoading ? <Loader2 size={14} className="animate-spin" /> : null}
+                                Block
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

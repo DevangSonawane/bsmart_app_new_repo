@@ -31,6 +31,16 @@ import AccountSettings from './pages/settingpages/AccountSettings';
 import PrivacySettings from './pages/settingpages/PrivacySettings';
 import SecuritySettings from './pages/settingpages/SecuritySettings';
 import HelpSettings from './pages/settingpages/HelpSettings';
+import MessagingSettings from './pages/settingpages/MessagingSettings';
+import ContentSettings from './pages/settingpages/ContentSettings';
+import BlockedSettings from './pages/settingpages/BlockedSettings';
+import AppearanceSettings from './pages/settingpages/AppearanceSettings';
+import StorageSettings from './pages/settingpages/StorageSettings';
+import LegalSettings from './pages/settingpages/LegalSettings';
+import AboutSettings from './pages/settingpages/AboutSettings';
+import AccountActionsSettings from './pages/settingpages/AccountActionsSettings';
+import NotificationSettings from './pages/settingpages/NotificationSettings';
+import SavedPosts from './pages/settingpages/SavedPosts';
 import AuthCallback from './pages/AuthCallback';
 import Notifications from './pages/Notifications';
 import VendorNotifications from './pages/vendor-pages/VendorNotifications';
@@ -126,11 +136,22 @@ function App() {
             <Route path="/profile/:userId"  element={<Profile />} />
             <Route path="/edit-profile"     element={<EditProfile />} />
             <Route path="/wallet"           element={<WalletDetails />} />
-            <Route path="/settings"                element={<Settings />} />
-            <Route path="/settings/account"        element={<AccountSettings />} />
-            <Route path="/settings/privacy"        element={<PrivacySettings />} />
-            <Route path="/settings/security"       element={<SecuritySettings />} />
-            <Route path="/settings/help"           element={<HelpSettings />} />
+            <Route path="/settings" element={<Settings />}>
+              <Route path="account"        element={<AccountSettings />} />
+              <Route path="privacy"        element={<PrivacySettings />} />
+              <Route path="security"       element={<SecuritySettings />} />
+              <Route path="help"           element={<HelpSettings />} />
+              <Route path="messaging"      element={<MessagingSettings />} />
+              <Route path="content"        element={<ContentSettings />} />
+              <Route path="blocked"        element={<BlockedSettings />} />
+              <Route path="notifications"  element={<NotificationSettings />} />
+              <Route path="appearance"     element={<AppearanceSettings />} />
+              <Route path="storage"        element={<StorageSettings />} />
+              <Route path="legal"          element={<LegalSettings />} />
+              <Route path="about"          element={<AboutSettings />} />
+              <Route path="saved"           element={<SavedPosts />} />
+              <Route path="account-actions" element={<AccountActionsSettings />} />
+            </Route>
             <Route path="/notifications"    element={<Notifications />} />
             <Route path="/search"           element={<Search />} />
             <Route path="/messages"         element={<ChatPage />} />

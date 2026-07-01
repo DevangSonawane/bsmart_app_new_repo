@@ -360,7 +360,7 @@ export default function SearchPage() {
 
   return (
     <>
-      <div className="min-h-screen bg-white dark:bg-black flex flex-col">
+      <div className="min-h-screen bg-white dark:bg-black flex flex-col max-w-[1100px] mx-auto">
 
         {/* Search bar */}
         <div className="sticky top-0 z-40 bg-white dark:bg-black border-b border-gray-100 dark:border-gray-800 px-3 py-2.5 flex items-center gap-2">
