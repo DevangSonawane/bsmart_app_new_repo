@@ -166,6 +166,10 @@ class AdsService {
     return _applyCategoryFilter(ads, category);
   }
 
+  Future<List<Map<String, dynamic>>> fetchGalleryItems() async {
+    return _adsApi.getGallery();
+  }
+
   Future<List<Ad>> fetchAllAds() async {
     final rawList = await _adsApi.getAllAds();
     return rawList.map(Ad.fromApi).where((ad) => ad.id.isNotEmpty).toList();

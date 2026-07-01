@@ -8,6 +8,7 @@ import '../api/vendors_api.dart';
 import '../api/notification_preferences_api.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
+import '../utils/url_helper.dart';
 import '../widgets/fullscreen_image_viewer.dart';
 import '../widgets/ad_cta_buttons.dart';
 import 'external_link_screen.dart';
@@ -46,6 +47,10 @@ class _VendorPublicProfileReactScreenState
   bool _adsLoading = false;
   String? _adsError;
   List<Ad> _ads = const [];
+
+  bool _galleryLoading = false;
+  String? _galleryError;
+  List<String> _galleryUrls = const [];
 
   @override
   void initState() {
@@ -143,11 +148,51 @@ class _VendorPublicProfileReactScreenState
       });
       _startCoverAutoplayIfNeeded();
       unawaited(_loadAds());
+      unawaited(_loadGallery());
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _error = 'Failed to load vendor profile. Please try again.';
         _loading = false;
+      });
+    }
+  }
+
+  Future<void> _loadGallery() async {
+    if (_galleryLoading) return;
+    setState(() {
+      _galleryLoading = true;
+      _galleryError = null;
+    });
+
+    try {
+      final items = await _adsService.fetchGalleryItems();
+      final urls = <String>[];
+      for (final item in items) {
+        final raw = (item['link'] ?? item['fileUrl'] ?? item['url'] ?? '')
+            .toString()
+            .trim();
+        final url = UrlHelper.normalizeUrl(raw);
+        if (url.isNotEmpty) urls.add(url);
+      }
+
+      final deduped = <String>[];
+      final seen = <String>{};
+      for (final url in urls) {
+        if (seen.add(url)) deduped.add(url);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _galleryUrls = deduped;
+        _galleryLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _galleryError = 'Could not load gallery images.';
+        _galleryUrls = const [];
+        _galleryLoading = false;
       });
     }
   }
@@ -681,9 +726,9 @@ class _VendorPublicProfileReactScreenState
             _ProductsTab(isDark: isDark),
             _GalleryTab(
               isDark: isDark,
-              loading: _adsLoading,
-              error: _adsError,
-              ads: _ads,
+              loading: _galleryLoading,
+              error: _galleryError,
+              imageUrls: _galleryUrls,
             ),
             _AdsTab(
               isDark: isDark,
@@ -1357,14 +1402,14 @@ class _ProductsTab extends StatelessWidget {
 class _GalleryTab extends StatelessWidget {
   final bool loading;
   final String? error;
-  final List<Ad> ads;
+  final List<String> imageUrls;
   final bool isDark;
 
   const _GalleryTab({
     required this.isDark,
     required this.loading,
     required this.error,
-    required this.ads,
+    required this.imageUrls,
   });
 
   @override
@@ -1373,28 +1418,13 @@ class _GalleryTab extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.70)
         : Colors.black.withValues(alpha: 0.55);
 
-    final images = <String>[];
-    for (final ad in ads) {
-      images.addAll(ad.imageUrls.where((u) => u.trim().isNotEmpty));
-      final single = (ad.imageUrl ?? '').trim();
-      if (single.isNotEmpty) images.add(single);
-    }
-    final deduped = <String>[];
-    final seen = <String>{};
-    for (final u in images) {
-      final key = u.trim();
-      if (key.isEmpty || seen.contains(key)) continue;
-      seen.add(key);
-      deduped.add(key);
-    }
-
     if (loading) {
       return const Center(child: CircularProgressIndicator());
     }
     if (error != null && error!.trim().isNotEmpty) {
       return Center(child: Text(error!, style: TextStyle(color: muted)));
     }
-    if (deduped.isEmpty) {
+    if (imageUrls.isEmpty) {
       return _PlaceholderTab(
         isDark: isDark,
         title: 'Gallery',
@@ -1419,7 +1449,7 @@ class _GalleryTab extends StatelessWidget {
             ),
             delegate: SliverChildBuilderDelegate(
               (context, index) {
-                final url = deduped[index];
+                final url = imageUrls[index];
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => showFullscreenImageViewer(
@@ -1444,7 +1474,7 @@ class _GalleryTab extends StatelessWidget {
                   ),
                 );
               },
-              childCount: deduped.length,
+              childCount: imageUrls.length,
             ),
           ),
         ),

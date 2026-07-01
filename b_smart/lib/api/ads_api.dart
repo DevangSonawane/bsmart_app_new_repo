@@ -109,6 +109,11 @@ class AdsApi {
     return _parseAdsList(res);
   }
 
+  Future<List<Map<String, dynamic>>> getGallery() async {
+    final res = await _client.get('$_basePath/ads/gallery');
+    return _parseAdsList(res);
+  }
+
   Future<List<Map<String, dynamic>>> getUserAds(
     String userId, {
     String? category,
