@@ -441,6 +441,16 @@ class _PromoteScreenState extends State<PromoteScreen>
     final trimmed = caption.trim();
     if (trimmed.isEmpty) return;
 
+    final controller = _controllers[_currentIndex];
+    final wasPlaying = controller != null &&
+        controller.value.isInitialized &&
+        controller.value.isPlaying;
+    if (wasPlaying) {
+      try {
+        await controller?.pause();
+      } catch (_) {}
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -462,38 +472,62 @@ class _PromoteScreenState extends State<PromoteScreen>
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.max,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                      padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
                       child: Row(
                         children: [
-                          const Text(
-                            'Caption',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
+                          Container(
+                            width: 36,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(99),
                             ),
                           ),
                           const Spacer(),
                           IconButton(
-                            icon: const Icon(LucideIcons.x,
-                                color: Colors.white),
                             onPressed: () => Navigator.of(ctx).pop(),
+                            icon: Icon(
+                              Icons.close,
+                              color: Colors.white.withValues(alpha: 0.8),
+                            ),
+                            tooltip: 'Close',
                           ),
                         ],
                       ),
                     ),
-                    Flexible(
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Description',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          0,
+                          16,
+                          16 + media.viewInsets.bottom,
+                        ),
                         child: Text(
                           trimmed,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,
-                            height: 1.35,
+                            height: 1.45,
                           ),
                         ),
                       ),
@@ -506,6 +540,13 @@ class _PromoteScreenState extends State<PromoteScreen>
         );
       },
     );
+
+    if (!mounted) return;
+    if (wasPlaying && _canPlay && !_userPaused) {
+      try {
+        await controller?.play();
+      } catch (_) {}
+    }
   }
 
   void _openSearch() {

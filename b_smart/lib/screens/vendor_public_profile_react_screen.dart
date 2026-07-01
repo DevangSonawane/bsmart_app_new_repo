@@ -5,9 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/vendors_api.dart';
+import '../api/follow_requests_api.dart';
+import '../api/follows_api.dart';
 import '../api/notification_preferences_api.dart';
 import '../models/ad_model.dart';
 import '../services/ads_service.dart';
+import '../services/content_sync_service.dart';
+import '../services/supabase_service.dart';
+import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/fullscreen_image_viewer.dart';
 import '../widgets/ad_cta_buttons.dart';
@@ -30,13 +35,22 @@ class _VendorPublicProfileReactScreenState
     extends State<VendorPublicProfileReactScreen>
     with SingleTickerProviderStateMixin {
   final VendorsApi _vendorsApi = VendorsApi();
+  final FollowsApi _followsApi = FollowsApi();
+  final FollowRequestsApi _followRequestsApi = FollowRequestsApi();
   final AdsService _adsService = AdsService();
+  final SupabaseService _supabase = SupabaseService();
   final NotificationPreferencesApi _prefsApi = NotificationPreferencesApi();
 
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _data;
   String? _vendorUserId;
+  String? _currentUserId;
+  String _followState = 'not_following';
+  bool _followLoading = false;
+  int? _followersCountOverride;
+
+  late final StreamSubscription<ContentSyncEvent> _followSyncSub;
 
   late final TabController _tabController;
 
@@ -56,11 +70,13 @@ class _VendorPublicProfileReactScreenState
   void initState() {
     super.initState();
     _tabController = TabController(length: 7, vsync: this);
+    _followSyncSub = ContentSyncService().changes.listen(_handleContentSync);
     _load();
   }
 
   @override
   void dispose() {
+    _followSyncSub.cancel();
     _coverAutoplayTimer?.cancel();
     _coverController.dispose();
     _tabController.dispose();
@@ -99,6 +115,155 @@ class _VendorPublicProfileReactScreenState
       }
     }
     return 0;
+  }
+
+  String _followStateFromResponse(Map<String, dynamic> response) {
+    final rawStatus = (response['status'] ??
+            response['requestStatus'] ??
+            response['request_status'] ??
+            response['followRequestStatus'] ??
+            response['follow_request_status'])
+        ?.toString()
+        .trim()
+        .toLowerCase();
+    if (rawStatus == 'pending' ||
+        rawStatus == 'requested' ||
+        rawStatus == 'request_pending' ||
+        rawStatus == 'follow_requested') {
+      return 'requested';
+    }
+
+    final isRequested = response['is_requested'] as bool? ??
+        response['requested'] as bool? ??
+        response['requestPending'] as bool? ??
+        response['isPending'] as bool?;
+    if (isRequested == true) return 'requested';
+
+    final isFollowing = response['isFollowing'] == true ||
+        response['is_following'] == true ||
+        response['followed_by_me'] == true ||
+        response['is_followed_by_me'] == true ||
+        response['followed'] == true;
+    if (isFollowing) return 'following';
+
+    return 'not_following';
+  }
+
+  Future<void> _refreshFollowersCount(String userId) async {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    try {
+      final next = await _supabase.getFollowersCount(id);
+      if (!mounted) return;
+      setState(() => _followersCountOverride = next);
+    } catch (_) {
+      // Best-effort only.
+    }
+  }
+
+  Future<void> _loadFollowState() async {
+    final targetId = (_vendorUserId ?? widget.userId).trim();
+    if (targetId.isEmpty) return;
+
+    final meId = await CurrentUser.id;
+    if (!mounted) return;
+    _currentUserId = meId;
+
+    if (meId == null || meId.isEmpty || meId == targetId) {
+      if (!mounted) return;
+      setState(() => _followState = 'not_following');
+      return;
+    }
+
+    final profileState = _followStateFromResponse(_data ?? const <String, dynamic>{});
+    if (profileState != 'not_following') {
+      if (!mounted) return;
+      setState(() => _followState = profileState);
+      return;
+    }
+
+    try {
+      final status = await _followsApi.checkFollowStatus(targetId);
+      if (!mounted) return;
+      setState(() => _followState = _followStateFromResponse(status));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _followState = 'not_following');
+    }
+  }
+
+  void _handleContentSync(ContentSyncEvent event) {
+    final targetId = (_vendorUserId ?? '').trim();
+    if (targetId.isEmpty || event.kind != ContentSyncKind.follow) return;
+    if (event.userId.trim() != targetId) return;
+
+    final nextState = event.followState == 'requested'
+        ? 'requested'
+        : (event.followed == true ? 'following' : 'not_following');
+    if (!mounted) return;
+    setState(() {
+      _followState = nextState;
+    });
+    unawaited(_refreshFollowersCount(targetId));
+  }
+
+  Future<void> _toggleFollow() async {
+    final targetId = (_vendorUserId ?? widget.userId).trim();
+    if (targetId.isEmpty || _followLoading) return;
+
+    if (_currentUserId != null && _currentUserId == targetId) {
+      return;
+    }
+
+    final previousState = _followState;
+    setState(() => _followLoading = true);
+
+    try {
+      if (_followState == 'following') {
+        await _followsApi.unfollow(targetId);
+        await _supabase.syncFollowStatus(targetId, false);
+      } else if (_followState == 'requested') {
+        await _followRequestsApi.cancelFollowRequest(targetId);
+        ContentSyncService().publishFollow(
+          userId: targetId,
+          followed: false,
+          followState: 'not_following',
+        );
+      } else {
+        final response = await _followsApi.follow(targetId);
+        final nextState = _followStateFromResponse(response);
+        if (nextState == 'requested') {
+          ContentSyncService().publishFollow(
+            userId: targetId,
+            followed: false,
+            followState: 'requested',
+          );
+        } else {
+          await _supabase.syncFollowStatus(targetId, true);
+        }
+      }
+
+      if (!mounted) return;
+      final refreshedState = _followState == 'requested'
+          ? 'requested'
+          : (_followState == 'following' ? 'following' : 'not_following');
+      setState(() {
+        _followState = refreshedState;
+      });
+      unawaited(_refreshFollowersCount(targetId));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _followState = previousState);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to update follow status.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _followLoading = false);
+      } else {
+        _followLoading = false;
+      }
+    }
   }
 
   Future<void> _load() async {
@@ -144,11 +309,21 @@ class _VendorPublicProfileReactScreenState
       setState(() {
         _data = data;
         _vendorUserId = vendorUserId.isEmpty ? uid : vendorUserId;
+        _followersCountOverride = _readCount(
+          data['stats'] is Map ? _map(data['stats']) : data,
+          const [
+            'followers_count',
+            'followersCount',
+            'followers',
+            'followerCount',
+          ],
+        );
         _loading = false;
       });
       _startCoverAutoplayIfNeeded();
       unawaited(_loadAds());
       unawaited(_loadGallery());
+      unawaited(_loadFollowState());
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -646,6 +821,15 @@ class _VendorPublicProfileReactScreenState
     final vendorDocId = (data['_id'] ?? data['id'])?.toString().trim() ?? '';
     final notificationTargetId =
         vendorDocId.isNotEmpty ? vendorDocId : (_vendorUserId ?? widget.userId);
+    final followersCount =
+        _followersCountOverride ?? _readCount(data, const [
+          'followers_count',
+          'followersCount',
+          'followers',
+          'followerCount',
+        ]);
+    final canFollow = (_currentUserId ?? '').trim().isNotEmpty &&
+        (_currentUserId ?? '').trim() != (_vendorUserId ?? widget.userId).trim();
 
     return Scaffold(
       backgroundColor: background,
@@ -676,6 +860,10 @@ class _VendorPublicProfileReactScreenState
                 followersCount: followersCount,
                 followingCount: followingCount,
                 categoryLabel: categoryLabel,
+                followState: _followState,
+                followLoading: _followLoading,
+                showFollowButton: canFollow,
+                onFollowPressed: _toggleFollow,
               ),
             ),
             SliverPersistentHeader(
