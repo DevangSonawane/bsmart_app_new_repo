@@ -325,40 +325,22 @@ class _SuggestionCard extends StatelessWidget {
           ),
         ),
       );
-      return Container(
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFEC4899), Color(0xFF8B5CF6), Color(0xFFF59E0B)],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 12,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: ClipOval(
-          child: CachedNetworkImage(
-            imageUrl: url,
-            httpHeaders:
-                UrlHelper.shouldAttachAuthHeader(url) ? imageHeaders : null,
+      return ClipOval(
+        child: CachedNetworkImage(
+          imageUrl: url,
+          httpHeaders:
+              UrlHelper.shouldAttachAuthHeader(url) ? imageHeaders : null,
+          width: avatarSize,
+          height: avatarSize,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => SizedBox(
             width: avatarSize,
             height: avatarSize,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => SizedBox(
-              width: avatarSize,
-              height: avatarSize,
-              child: const DecoratedBox(
-                decoration: BoxDecoration(color: Color(0xFF1B1B1F)),
-              ),
+            child: const DecoratedBox(
+              decoration: BoxDecoration(color: Color(0xFF1B1B1F)),
             ),
-            errorWidget: (_, __, ___) => fallback,
           ),
+          errorWidget: (_, __, ___) => fallback,
         ),
       );
     }
