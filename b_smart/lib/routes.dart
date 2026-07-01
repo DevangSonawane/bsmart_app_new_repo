@@ -5,11 +5,11 @@ import 'screens/auth/forgot_password_screen.dart';
 import 'screens/auth/verify_otp_screen.dart';
 import 'screens/home_dashboard.dart';
 import 'screens/create_upload_screen.dart';
-import 'screens/profile_screen.dart';
 import 'screens/reels_screen.dart';
 import 'screens/ads_page_screen.dart';
 import 'screens/promote_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/account_details_screen.dart';
 import 'screens/wallet_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/privacy_screen.dart';
@@ -102,7 +102,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/search/input': (ctx) => const SearchScreen(),
   '/tweet': (ctx) => const TweetComposerPage(),
   '/auth/google/success': (ctx) => const AuthCallbackScreen(),
-  '/edit-profile': (ctx) => const EditProfileScreen(userId: ''),
+  '/edit-profile': (ctx) => const AccountDetailsScreen(),
   '/story-camera': (ctx) => const StoryCameraScreen(),
   '/own-story-viewer': (ctx) {
     return const OwnStoryViewerScreen(stories: [], userName: 'You');

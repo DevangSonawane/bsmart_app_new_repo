@@ -40,6 +40,7 @@ import '../services/auth/auth_service.dart';
 import '../models/story_model.dart';
 import 'story_viewer_screen.dart';
 import '../api/stories_api.dart';
+import 'account_details_screen.dart';
 import '../models/media_model.dart';
 import 'create_upload_screen.dart';
 import 'chat_conversation_screen.dart';
@@ -2311,11 +2312,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _onEdit() async {
-    final targetId = widget.userId ?? await CurrentUser.id;
-    if (!mounted || targetId == null) return;
-    Navigator.of(context).push(MaterialPageRoute(builder: (ctx) {
-      return EditProfileScreen(userId: targetId);
-    })).then((_) => _load());
+    if (!mounted) return;
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const AccountDetailsScreen()))
+        .then((_) => _load());
   }
 
   void _onFollow() async {

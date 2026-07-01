@@ -7,6 +7,7 @@ import '../api/api.dart';
 import '../services/auth/auth_service.dart';
 import '../utils/app_error_handler.dart';
 import '../utils/timezone_service.dart';
+import '../theme/design_tokens.dart';
 
 const _accent = Color(0xFFFA3F5E);
 const _darkCard = Color(0xFF111827);
@@ -405,19 +406,12 @@ class _SecurityScreenState extends State<SecurityScreen> {
   Widget _card({
     required List<Widget> children,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? _darkCard : Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isDark ? _darkBorder : _lightBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.14 : 0.05),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.08)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(children: children),
@@ -425,11 +419,11 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   Widget _divider() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     return Divider(
       height: 1,
       thickness: 1,
-      color: isDark ? _darkBorder : _lightBorder,
+      color: theme.dividerColor,
     );
   }
 
@@ -443,10 +437,12 @@ class _SecurityScreenState extends State<SecurityScreen> {
     Widget? trailing,
     bool titleRed = false,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final labelColor = titleRed
         ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626))
-        : (isDark ? Colors.white : const Color(0xFF111827));
+        : (isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937));
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -482,7 +478,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                       subtitle,
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? _darkMuted : _lightMuted,
+                        color: hintColor,
                       ),
                     ),
                   ],
@@ -500,7 +496,10 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   Widget _changePasswordCard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
     return _card(
       children: [
         Material(
@@ -514,8 +513,8 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   Container(
                     width: 36,
                     height: 36,
-                    decoration: const BoxDecoration(
-                      color: _lightPink50,
+                    decoration: BoxDecoration(
+                      color: DesignTokens.instaPink.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(LucideIcons.lock, color: _accent, size: 18),
@@ -530,21 +529,18 @@ class _SecurityScreenState extends State<SecurityScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 14,
-                            color: isDark ? Colors.white : const Color(0xFF111827),
+                            color: labelColor,
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'Update your current password',
-                          style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted),
-                        ),
+                        Text('Update your current password', style: TextStyle(fontSize: 12, color: hintColor)),
                       ],
                     ),
                   ),
                   Icon(
                     _showChangePassword ? LucideIcons.chevronDown : LucideIcons.chevronRight,
                     size: 18,
-                    color: isDark ? _darkMuted : const Color(0xFF9CA3AF),
+                    color: hintColor,
                   ),
                 ],
               ),
@@ -631,10 +627,11 @@ class _SecurityScreenState extends State<SecurityScreen> {
     required bool obscureText,
     required VoidCallback onToggleVisibility,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fillColor = isDark ? const Color(0xFF1F2937) : const Color(0xFFFFF3F8);
-    final borderColor = isDark ? const Color(0xFF374151) : const Color(0xFFF6CFE0);
-    final textColor = isDark ? Colors.white : const Color(0xFF111827);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final fillColor = isDark ? theme.cardColor : const Color(0xFFFFF3F8);
+    final borderColor = isDark ? theme.dividerColor : const Color(0xFFF6CFE0);
+    final textColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
     final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
     return TextField(
@@ -703,20 +700,19 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   Widget _resetPasswordTile() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return _card(
       children: [
         _rowCard(
           icon: LucideIcons.keyRound,
           iconColor: _accent,
-          iconBg: isDark ? _darkBorder : _lightPink50,
+          iconBg: DesignTokens.instaPink.withValues(alpha: 0.12),
           title: 'Reset Password',
           subtitle: 'Send a reset link to your email',
           onTap: _openResetPassword,
           trailing: Icon(
             LucideIcons.chevronRight,
             size: 18,
-            color: isDark ? _darkMuted : const Color(0xFF9CA3AF),
+            color: const Color(0xFF9CA3AF),
           ),
         ),
       ],
@@ -724,13 +720,16 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   Widget _twoFaCard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
     final statusBg = _twoFAEnabled
-        ? (isDark ? _green90020 : _green100)
-        : (isDark ? _darkBorder : const Color(0xFFF3F4F6));
+        ? (isDark ? const Color(0x1A22C55E) : _green100)
+        : (isDark ? theme.dividerColor.withValues(alpha: 0.28) : const Color(0xFFF3F4F6));
     final statusFg = _twoFAEnabled
         ? (isDark ? const Color(0xFF34D399) : _green600)
-        : (isDark ? _darkMuted : const Color(0xFF6B7280));
+        : hintColor;
     final methods = <Map<String, dynamic>>[
       <String, dynamic>{
         'key': 'email',
@@ -771,7 +770,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: isDark ? _darkBorder : _lightPink50,
+                      color: DesignTokens.instaPink.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: const Icon(LucideIcons.shieldCheck, color: _accent, size: 18),
@@ -786,14 +785,11 @@ class _SecurityScreenState extends State<SecurityScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 14,
-                            color: isDark ? Colors.white : const Color(0xFF111827),
+                            color: labelColor,
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'Require a code at every login',
-                          style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted),
-                        ),
+                        Text('Require a code at every login', style: TextStyle(fontSize: 12, color: hintColor)),
                       ],
                     ),
                   ),
@@ -820,7 +816,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                       _TwoFaToggle(
                         value: _twoFAEnabled,
                         accent: _accent,
-                        offColor: isDark ? _gray700 : _gray300,
+                        offColor: isDark ? theme.dividerColor.withValues(alpha: 0.7) : _gray300,
                         onChanged: _toggleTwoFa,
                       ),
                     ],
@@ -840,7 +836,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: _isEditing ? _accent : (isDark ? _darkMuted : _lightMuted),
+                  color: _isEditing ? _accent : hintColor,
                   letterSpacing: 0.7,
                 ),
               ),
@@ -861,18 +857,18 @@ class _SecurityScreenState extends State<SecurityScreen> {
                     child: InkWell(
                       onTap: canSelect ? () => setState(() => _twoFAMethod = key) : null,
                       borderRadius: BorderRadius.circular(12),
-                      child: Container(
+                        child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: selected
                                 ? _accent
-                                : (isDark ? _darkBorder : _lightBorder),
+                                : theme.dividerColor,
                           ),
                           color: selected
                               ? _accent.withValues(alpha: 0.05)
-                              : (isDark ? const Color(0xFF0F172A) : Colors.white),
+                              : theme.cardColor,
                         ),
                         child: Row(
                           children: [
@@ -882,13 +878,13 @@ class _SecurityScreenState extends State<SecurityScreen> {
                               decoration: BoxDecoration(
                                 color: selected
                                     ? _accent.withValues(alpha: 0.10)
-                                    : (isDark ? _darkBorder : const Color(0xFFF3F4F6)),
+                                    : theme.dividerColor.withValues(alpha: 0.25),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
                                 icon,
                                 size: 15,
-                                color: selected ? _accent : (isDark ? _darkMuted : _lightMuted),
+                                color: selected ? _accent : hintColor,
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -901,19 +897,11 @@ class _SecurityScreenState extends State<SecurityScreen> {
                                     style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
-                                      color: enabled || selected
-                                          ? (isDark ? Colors.white : const Color(0xFF111827))
-                                          : (isDark ? _darkMuted : _lightMuted),
+                                      color: enabled || selected ? labelColor : hintColor,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    sublabel,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: isDark ? _darkMuted : _lightMuted,
-                                    ),
-                                  ),
+                                  Text(sublabel, style: TextStyle(fontSize: 11, color: hintColor)),
                                 ],
                               ),
                             ),
@@ -924,7 +912,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: selected ? _accent : (isDark ? _darkMuted : _gray300),
+                                  color: selected ? _accent : (isDark ? hintColor : _gray300),
                                   width: 2,
                                 ),
                               ),
@@ -1041,7 +1029,10 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   Widget _loginActivityCard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
     return _card(
       children: [
@@ -1057,7 +1048,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: isDark ? _darkBorder : _blue50,
+                      color: isDark ? theme.dividerColor.withValues(alpha: 0.25) : _blue50,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(LucideIcons.monitor, color: Color(0xFF3B82F6), size: 18),
@@ -1072,21 +1063,18 @@ class _SecurityScreenState extends State<SecurityScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 14,
-                            color: isDark ? Colors.white : const Color(0xFF111827),
+                            color: labelColor,
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'Devices currently logged in',
-                          style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted),
-                        ),
+                        Text('Devices currently logged in', style: TextStyle(fontSize: 12, color: hintColor)),
                       ],
                     ),
                   ),
                   Icon(
                     _showActivity ? LucideIcons.chevronDown : LucideIcons.chevronRight,
                     size: 18,
-                    color: isDark ? _darkMuted : const Color(0xFF9CA3AF),
+                    color: hintColor,
                   ),
                 ],
               ),
@@ -1096,7 +1084,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
         if (_showActivity)
           Container(
             decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: isDark ? _darkBorder : _lightBorder)),
+              border: Border(top: BorderSide(color: theme.dividerColor)),
             ),
             child: _sessionsLoading
                 ? const Padding(
@@ -1142,7 +1130,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                           return Container(
                             decoration: BoxDecoration(
                               border: Border(
-                                top: BorderSide(color: isDark ? _darkBorder : _lightBorder),
+                                top: BorderSide(color: theme.dividerColor),
                               ),
                             ),
                             child: Padding(
@@ -1153,19 +1141,19 @@ class _SecurityScreenState extends State<SecurityScreen> {
                                   Container(
                                     width: 36,
                                     height: 36,
-                                    decoration: BoxDecoration(
-                                      color: isCurrent
-                                          ? (isDark ? const Color(0x1A22C55E) : const Color(0xFFECFDF5))
-                                          : (isDark ? _darkBorder : _gray300.withValues(alpha: 0.45)),
+                                      decoration: BoxDecoration(
+                                        color: isCurrent
+                                            ? (isDark ? const Color(0x1A22C55E) : const Color(0xFFECFDF5))
+                                          : (isDark ? theme.dividerColor.withValues(alpha: 0.25) : _gray300.withValues(alpha: 0.45)),
                                       shape: BoxShape.circle,
                                     ),
                                     child: Icon(
                                       deviceIcon,
                                       size: 16,
-                                      color: isCurrent
-                                          ? (isDark ? const Color(0xFF34D399) : _green600)
-                                          : (isDark ? _darkMuted : _lightMuted),
-                                    ),
+                                        color: isCurrent
+                                            ? (isDark ? const Color(0xFF34D399) : _green600)
+                                          : hintColor,
+                                      ),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -1180,7 +1168,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                                                 style: TextStyle(
                                                   fontSize: 13,
                                                   fontWeight: FontWeight.w600,
-                                                  color: isDark ? Colors.white : const Color(0xFF111827),
+                                                  color: labelColor,
                                                 ),
                                               ),
                                             ),
@@ -1209,12 +1197,12 @@ class _SecurityScreenState extends State<SecurityScreen> {
                                           [location, ip].where((v) => v.trim().isNotEmpty).join(' · ').isNotEmpty
                                               ? [location, ip].where((v) => v.trim().isNotEmpty).join(' · ')
                                               : '—',
-                                          style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted),
+                                          style: TextStyle(fontSize: 12, color: hintColor),
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
                                           _formatDate(lastActive),
-                                          style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _darkMuted),
+                                          style: TextStyle(fontSize: 12, color: hintColor),
                                         ),
                                       ],
                                     ),
@@ -1225,7 +1213,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                                       icon: Icon(
                                         LucideIcons.x,
                                         size: 14,
-                                        color: isDark ? _darkMuted : _lightMuted,
+                                        color: hintColor,
                                       ),
                                       visualDensity: VisualDensity.compact,
                                     ),
@@ -1248,7 +1236,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: isDark ? _darkBorder : _purple50,
+                      color: isDark ? theme.dividerColor.withValues(alpha: 0.25) : _purple50,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(LucideIcons.clock, color: Color(0xFF8B5CF6), size: 18),
@@ -1263,21 +1251,18 @@ class _SecurityScreenState extends State<SecurityScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 14,
-                            color: isDark ? Colors.white : const Color(0xFF111827),
+                            color: labelColor,
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'Recent login activity',
-                          style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted),
-                        ),
+                        Text('Recent login activity', style: TextStyle(fontSize: 12, color: hintColor)),
                       ],
                     ),
                   ),
                   Icon(
                     _showHistory ? LucideIcons.chevronDown : LucideIcons.chevronRight,
                     size: 18,
-                    color: isDark ? _darkMuted : const Color(0xFF9CA3AF),
+                    color: hintColor,
                   ),
                 ],
               ),
@@ -1287,7 +1272,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
         if (_showHistory)
           Container(
             decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: isDark ? _darkBorder : _lightBorder)),
+              border: Border(top: BorderSide(color: theme.dividerColor)),
             ),
             child: _loginHistory.isEmpty
                 ? const Padding(
@@ -1305,7 +1290,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                       return Container(
                         decoration: BoxDecoration(
                           border: Border(
-                            top: BorderSide(color: isDark ? _darkBorder : _lightBorder),
+                            top: BorderSide(color: theme.dividerColor),
                           ),
                         ),
                         child: Padding(
@@ -1332,7 +1317,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                                       style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
-                                        color: isDark ? Colors.white : const Color(0xFF111827),
+                                        color: labelColor,
                                       ),
                                     ),
                                     const SizedBox(height: 2),
@@ -1342,12 +1327,12 @@ class _SecurityScreenState extends State<SecurityScreen> {
                                               .where((v) => v.trim().isNotEmpty && v.trim() != '—')
                                               .join(' · ')
                                           : ip,
-                                      style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted),
+                                      style: TextStyle(fontSize: 12, color: hintColor),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
                                       _formatDate(timestamp),
-                                      style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _darkMuted),
+                                      style: TextStyle(fontSize: 12, color: hintColor),
                                     ),
                                   ],
                                 ),
@@ -1383,13 +1368,14 @@ class _SecurityScreenState extends State<SecurityScreen> {
   }
 
   Widget _securityControlsCard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return _card(
       children: [
         _rowCard(
           icon: LucideIcons.logOut,
           iconColor: const Color(0xFFF97316),
-          iconBg: isDark ? _darkBorder : _orange50,
+          iconBg: isDark ? theme.dividerColor.withValues(alpha: 0.25) : _orange50,
           title: 'Logout from This Device',
           subtitle: 'End the current session',
           onTap: () async {
@@ -1402,7 +1388,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
         _rowCard(
           icon: LucideIcons.trash2,
           iconColor: const Color(0xFFEF4444),
-          iconBg: isDark ? _darkBorder : _red50,
+          iconBg: isDark ? theme.dividerColor.withValues(alpha: 0.25) : _red50,
           title: 'Logout from All Devices',
           subtitle: 'Remove all active sessions everywhere',
           titleRed: true,
@@ -1416,7 +1402,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
               : Icon(
                   LucideIcons.chevronRight,
                   size: 18,
-                  color: isDark ? _darkMuted : const Color(0xFF9CA3AF),
+                  color: const Color(0xFF9CA3AF),
                 ),
         ),
       ],
@@ -1425,14 +1411,12 @@ class _SecurityScreenState extends State<SecurityScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? Colors.black : _lightBg,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: isDark ? Colors.black : Colors.white,
-        foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
-        surfaceTintColor: isDark ? Colors.black : Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(LucideIcons.arrowLeft),
@@ -1448,7 +1432,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
           child: Divider(
             height: 1,
             thickness: 1,
-            color: isDark ? _darkBorder : _topBarBorder,
+            color: theme.dividerColor,
           ),
         ),
         actions: const [],
@@ -1463,14 +1447,14 @@ class _SecurityScreenState extends State<SecurityScreen> {
                     padding: const EdgeInsets.all(12),
                     margin: const EdgeInsets.only(bottom: 12),
                     decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.08),
+                      color: isDark ? const Color(0x1A22C55E) : Colors.green.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.green.withValues(alpha: 0.18)),
+                      border: Border.all(color: isDark ? const Color(0x3322C55E) : Colors.green.withValues(alpha: 0.18)),
                     ),
                     child: Text(
                       _toastMessage!,
-                      style: const TextStyle(
-                        color: Color(0xFF166534),
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF34D399) : const Color(0xFF166534),
                         fontWeight: FontWeight.w600,
                         fontSize: 12,
                       ),
@@ -1668,7 +1652,10 @@ class _TwoFAModalState extends State<_TwoFAModal> {
   @override
   Widget build(BuildContext context) {
     final isEnable = widget.mode == 'enable';
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
     final maxDialogWidth = MediaQuery.sizeOf(context).width - 32;
     final dialogWidth = maxDialogWidth < 360 ? maxDialogWidth : 360.0;
     return Dialog(
@@ -1678,8 +1665,9 @@ class _TwoFAModalState extends State<_TwoFAModal> {
         width: dialogWidth,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: isDark ? _darkCard : Colors.white,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.08)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1705,14 +1693,14 @@ class _TwoFAModalState extends State<_TwoFAModal> {
                     children: [
                       Text(
                         isEnable ? 'Enable 2FA' : 'Disable 2FA',
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: labelColor),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         widget.email,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted),
+                        style: TextStyle(fontSize: 12, color: hintColor),
                       ),
                     ],
                   ),
@@ -1737,7 +1725,7 @@ class _TwoFAModalState extends State<_TwoFAModal> {
                 isEnable
                     ? 'We\'ll send a verification code to your email to confirm enabling two-factor authentication.'
                     : 'To disable 2FA, we need to verify your identity first. A code will be sent to your email.',
-                style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted, height: 1.35),
+                style: TextStyle(fontSize: 12, color: hintColor, height: 1.35),
               ),
               const SizedBox(height: 14),
               SizedBox(
@@ -1767,7 +1755,7 @@ class _TwoFAModalState extends State<_TwoFAModal> {
             ] else ...[
               Text(
                 'Enter the 6-digit code sent to your email',
-                style: TextStyle(fontSize: 12, color: isDark ? _darkMuted : _lightMuted, height: 1.35),
+                style: TextStyle(fontSize: 12, color: hintColor, height: 1.35),
               ),
               const SizedBox(height: 12),
               _otpBoxes(),
@@ -1998,7 +1986,10 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -2006,8 +1997,9 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
         width: 320,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: isDark ? _darkCard : Colors.white,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.08)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2024,18 +2016,18 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
                   child: const Icon(LucideIcons.keyRound, color: _accent, size: 18),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'Reset Password',
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: labelColor),
                       ),
                       SizedBox(height: 2),
                       Text(
                         'via email link',
-                        style: TextStyle(fontSize: 12, color: _lightMuted),
+                        style: TextStyle(fontSize: 12, color: hintColor),
                       ),
                     ],
                   ),
@@ -2052,7 +2044,7 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
               const SizedBox(height: 10),
             ],
             if (_step == 1) ...[
-              const Text(
+              Text(
                 'A reset link will be sent to:',
                 style: TextStyle(fontSize: 12, color: _lightMuted),
               ),
@@ -2061,12 +2053,12 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: isDark ? _darkBorder : const Color(0xFFF9FAFB),
+                  color: isDark ? theme.dividerColor.withValues(alpha: 0.25) : const Color(0xFFF9FAFB),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Text(
                   widget.email,
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: labelColor),
                 ),
               ),
               const SizedBox(height: 14),
@@ -2095,9 +2087,9 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
                 ),
               ),
             ] else if (_step == 2) ...[
-              const Text(
+              Text(
                 'Check your email for the reset token, paste it below and set a new password.',
-                style: TextStyle(fontSize: 12, color: _lightMuted, height: 1.35),
+                style: TextStyle(fontSize: 12, color: hintColor, height: 1.35),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -2160,7 +2152,7 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
                     const SizedBox(height: 12),
                     const Text(
                       'Password Reset!',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2937)),
                     ),
                     const SizedBox(height: 4),
                     const Text(
