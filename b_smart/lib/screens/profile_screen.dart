@@ -3033,28 +3033,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final displayProfile =
             isMe ? (myProfileFromRedux ?? _profile) : _profile;
 
-        if (_profileBlocked && !isMe) {
-          final privateUser = _privateProfilePreview ?? displayProfile;
-          final username =
-              (privateUser?['username'] as String?)?.trim() ?? 'user';
-          final fullName = (privateUser?['full_name'] as String?)?.trim();
-          return Scaffold(
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-            appBar: AppBar(
-              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-              foregroundColor: Theme.of(context).colorScheme.onSurface,
-              title: Text(username),
-            ),
-            body: _buildPrivateProfileWall(
-              context,
-              username: username,
-              fullName: fullName,
-              subtitle:
-                  'Follow them to see their posts, glimpses, and profile content.',
-            ),
-          );
-        }
-
         if (_loading && displayProfile == null) {
           return const Scaffold(
               body: Center(
@@ -3136,6 +3114,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final fgColor = theme.colorScheme.onSurface;
 
         if (contentLocked) {
+          final lockedUser = _privateProfilePreview ?? displayProfile;
+          final lockedUsername =
+              (lockedUser?['username'] as String?)?.trim() ?? username;
+          final lockedFullName = (lockedUser?['full_name'] as String?)?.trim();
+          final lockedSubtitle = _profileBlocked
+              ? 'Follow request must be accepted to view photos, reels, highlights, and moments.'
+              : 'Follow them to see their posts, glimpses, and profile content.';
           return Scaffold(
             backgroundColor: theme.scaffoldBackgroundColor,
             appBar: AppBar(
@@ -3147,7 +3132,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   Flexible(
                     child: Text(
-                      username,
+                      lockedUsername,
                       style: TextStyle(color: fgColor),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -3186,8 +3171,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 padding: EdgeInsets.zero,
                 children: [
                   ProfileHeader(
-                    username: username,
-                    fullName: fullName,
+                    username: lockedUsername,
+                    fullName: lockedFullName,
                     bio: bio,
                     avatarUrl: avatar,
                     avatarHeaders: _reelImageHeaders,
@@ -3265,10 +3250,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 16),
                   _buildPrivateProfileWall(
                     context,
-                    username: username,
-                    fullName: fullName,
-                    subtitle:
-                        'Follow request must be accepted to view photos, reels, highlights, and moments.',
+                    username: lockedUsername,
+                    fullName: lockedFullName,
+                    subtitle: lockedSubtitle,
                   ),
                 ],
               ),
