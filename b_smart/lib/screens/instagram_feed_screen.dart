@@ -718,6 +718,7 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
     final location = (post.locationPlace?.displayText ??
             locationLabelFromDynamic(post.location))
         .trim();
+    final secondaryName = (post.fullName ?? '').trim();
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -753,27 +754,33 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          post.userName,
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                          overflow: TextOverflow.ellipsis,
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                post.userName,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                        if (location.isNotEmpty) ...[
+                        if (secondaryName.isNotEmpty || location.isNotEmpty || post.isAd) ...[
                           const SizedBox(height: 2),
                           Row(
                             children: [
-                              Icon(
-                                LucideIcons.mapPin,
-                                size: 11,
-                                color: InstagramTheme.textGrey,
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
+                              Flexible(
                                 child: Text(
-                                  location,
+                                  post.isAd
+                                      ? 'Sponsored'
+                                      : (secondaryName.isNotEmpty
+                                          ? secondaryName
+                                          : location),
                                   style: Theme.of(context)
                                       .textTheme
                                       .bodyMedium
@@ -784,20 +791,45 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ],
-                          ),
-                        ],
-                        if (post.isAd) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            'Sponsored',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  fontSize: 11,
-                                  color: InstagramTheme.primaryPink,
+                              if (!post.isAd && location.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                const Text(
+                                  '·',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: InstagramTheme.textGrey,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        LucideIcons.mapPin,
+                                        size: 11,
+                                        color: InstagramTheme.textGrey,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          location,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(
+                                                fontSize: 11,
+                                                color: InstagramTheme.textGrey,
+                                              ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ],

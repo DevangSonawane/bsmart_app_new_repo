@@ -6,6 +6,7 @@ import '../models/feed_page_model.dart';
 import '../models/feed_post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
+import '../utils/location_utils.dart';
 import '../utils/url_helper.dart';
 import 'story_cache.dart';
 import 'supabase_service.dart';
@@ -1011,6 +1012,20 @@ class FeedService {
                 item['comments_disabled'] ??
                 item['commentsDisabled'] ??
                 false,
+            location: locationLabelFromDynamic(
+              item['location_place'] ??
+                  item['locationPlace'] ??
+                  item['location_data'] ??
+                  item['locationData'] ??
+                  item['location'],
+            ),
+            locationPlace: locationPlaceFromDynamic(
+              item['location_place'] ??
+                  item['locationPlace'] ??
+                  item['location_data'] ??
+                  item['locationData'] ??
+                  item['location'],
+            ),
             hideLikesCount:
                 item['hide_likes_count'] ?? item['hideLikesCount'] ?? false,
             adTitle: isAdItem

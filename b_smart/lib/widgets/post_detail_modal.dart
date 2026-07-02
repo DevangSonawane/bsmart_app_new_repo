@@ -1353,7 +1353,11 @@ class _PostDetailModalState extends State<PostDetailModal> {
     final avatarUrl = _postUser?['avatar_url'] as String?;
     final caption = (_post?['caption'] ?? _post?['content']) as String? ?? '';
     final locationPlace = locationPlaceFromDynamic(
-      _post?['location_place'] ?? _post?['locationPlace'] ?? _post?['location'],
+      _post?['location_place'] ??
+          _post?['locationPlace'] ??
+          _post?['location_data'] ??
+          _post?['locationData'] ??
+          _post?['location'],
     );
     final location = locationPlace?.displayText ??
         (_post?['location']?.toString().trim() ?? '');

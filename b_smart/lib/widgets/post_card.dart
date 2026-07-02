@@ -1266,7 +1266,7 @@ class _PostCardState extends State<PostCard> {
                 children: [
                   Row(
                     children: [
-                      Expanded(
+                      Flexible(
                         child: Text(
                           post.userName,
                           style: TextStyle(
@@ -1280,39 +1280,42 @@ class _PostCardState extends State<PostCard> {
                     ],
                   ),
                   if (subtitleName.isNotEmpty ||
-                      location.isNotEmpty ||
+                      (!post.isAd && location.isNotEmpty) ||
                       post.isAd ||
                       promoteTime.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          if (subtitleName.isNotEmpty || post.isAd)
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    post.isAd
-                                        ? 'Sponsored'
-                                        : subtitleName,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: secondaryText,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                          Flexible(
+                            child: Text(
+                              post.isAd ? 'Sponsored' : subtitleName,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: secondaryText,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (!post.isAd && location.isNotEmpty) ...[
+                            if (subtitleName.isNotEmpty)
+                              ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  '·',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: secondaryText,
                                   ),
                                 ),
+                                const SizedBox(width: 6),
                               ],
-                            ),
-                          if (!post.isAd && location.isNotEmpty)
-                            InkWell(
-                              onTap: () => _openPostLocation(post),
-                              borderRadius: BorderRadius.circular(6),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 1, horizontal: 0),
+                            Flexible(
+                              child: InkWell(
+                                onTap: () => _openPostLocation(post),
+                                borderRadius: BorderRadius.circular(6),
                                 child: Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
                                       LucideIcons.mapPin,
@@ -1320,7 +1323,7 @@ class _PostCardState extends State<PostCard> {
                                       color: secondaryText,
                                     ),
                                     const SizedBox(width: 4),
-                                    Expanded(
+                                    Flexible(
                                       child: Text(
                                         location,
                                         style: TextStyle(
@@ -1334,22 +1337,26 @@ class _PostCardState extends State<PostCard> {
                                 ),
                               ),
                             ),
-                          if (promoteTime.isNotEmpty)
-                            Padding(
-                              padding: EdgeInsets.only(
-                                top: (subtitleName.isNotEmpty || location.isNotEmpty)
-                                    ? 2
-                                    : 0,
-                              ),
-                              child: Text(
-                                promoteTime,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: secondaryText,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                          ],
+                          if (promoteTime.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              '·',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: secondaryText,
                               ),
                             ),
+                            const SizedBox(width: 6),
+                            Text(
+                              promoteTime,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: secondaryText,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
