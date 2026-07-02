@@ -15,6 +15,7 @@ import 'screens/notifications_screen.dart';
 import 'screens/privacy_screen.dart';
 import 'screens/security_screen.dart';
 import 'screens/contact_support_screen.dart';
+import 'screens/faq_screen.dart';
 import 'screens/auth_callback_screen.dart';
 import 'screens/story_camera_screen.dart';
 import 'screens/own_story_viewer_screen.dart';
@@ -95,6 +96,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/notifications': (ctx) => const NotificationsScreen(),
   '/privacy': (ctx) => const PrivacyScreen(),
   '/contact-support': (ctx) => const ContactSupportScreen(),
+  '/faqs': (ctx) => const FaqScreen(),
   '/follow-requests': (ctx) => const FollowRequestsScreen(),
   '/security': (ctx) => const SecurityScreen(),
   // Explore-first search flow: show explore grid, tap search bar to open search input.

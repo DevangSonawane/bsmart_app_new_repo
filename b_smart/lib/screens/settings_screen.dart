@@ -24,6 +24,7 @@ import 'privacy_screen.dart';
 import 'saved_items_screen.dart';
 import 'security_screen.dart';
 import 'contact_support_screen.dart';
+import 'faq_screen.dart';
 import 'wallet_screen.dart';
 
 String _trFallback(String key, String fallback) {
@@ -1177,7 +1178,9 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.quiz_outlined,
                   title: 'settings_faqs'.tr(),
                   subtitle: 'settings_faqs_subtitle'.tr(),
-                  onTap: () => _showUnavailable(context, 'settings_faqs'.tr()),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FaqScreen()),
+                  ),
                 ),
                 const Divider(height: 1),
                 _actionRow(
