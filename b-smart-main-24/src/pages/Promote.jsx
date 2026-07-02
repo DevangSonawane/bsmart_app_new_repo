@@ -11,6 +11,7 @@ import promoteReelService from '../services/promoteReelService';
 import Hls from 'hls.js';
 import socketService from '../services/socketService';
 import Avatar from '../components/Avatar';
+import LocationLink from '../components/LocationLink';
 
 const BASE_URL = 'https://api.bebsmart.in';
 const IMAGE_DURATION = 15;
@@ -1134,7 +1135,7 @@ const Promote = () => {
                                   <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{item.caption || 'Promoted Reel'}</div>
                                   <div className="flex items-center gap-1.5 mt-0.5">
                                     {user.username && <span className="text-[10px] text-gray-400">@{user.username}</span>}
-                                    {item.location && <span className="text-[10px] text-gray-500 truncate">📍 {item.location}</span>}
+                                    {(item.location_data || item.location) && <LocationLink location={item.location_data || item.location} className="text-[10px] text-gray-500 truncate" iconSize={10} />}
                                   </div>
                                   {item.products?.[0] && (
                                     <div className="text-[9px] text-blue-500 font-bold mt-1">📦 {item.products[0].product_name}</div>

@@ -17,6 +17,7 @@ import {
 } from '../services/followService';
 import ContentReportModal from './ContentReportModal';
 import EditContentModal from './EditContentModal';
+import LocationLink from './LocationLink';
 import OwnerContentOptionsModal from './OwnerContentOptionsModal';
 import ShareContentModal from './ShareContentModal';
 
@@ -1099,7 +1100,7 @@ const PostCard = ({ post, onCommentClick, onDelete }) => {
             <div className="flex items-center gap-1.5">
               {fullName && <span className="text-[11px] text-gray-400 truncate">{fullName}</span>}
               {isAd && <span className="text-[10px] text-gray-400 font-medium">· Sponsored</span>}
-              {!isAd && !isTweet && post.location && <span className="text-[11px] text-gray-400 truncate">{post.location}</span>}
+              {!isAd && !isTweet && (post.location_data || post.location) && <LocationLink location={post.location_data || post.location} className="text-[11px] text-gray-400 truncate" />}
               {isTweet && <span className="text-[11px] text-gray-400 truncate">Tweet</span>}
             </div>
           </div>

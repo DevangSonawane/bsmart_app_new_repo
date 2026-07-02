@@ -403,10 +403,18 @@ class FeedPost {
           json['comments_disabled'] ??
           false,
       location: locationLabelFromDynamic(
-        json['location_place'] ?? json['locationPlace'] ?? json['location'],
+        json['location_place'] ??
+            json['locationPlace'] ??
+            json['location_data'] ??
+            json['locationData'] ??
+            json['location'],
       ),
       locationPlace: locationPlaceFromDynamic(
-        json['location_place'] ?? json['locationPlace'] ?? json['location'],
+        json['location_place'] ??
+            json['locationPlace'] ??
+            json['location_data'] ??
+            json['locationData'] ??
+            json['location'],
       ),
       latestCommentUser: json['latestCommentUser'],
       latestCommentText: json['latestCommentText'],

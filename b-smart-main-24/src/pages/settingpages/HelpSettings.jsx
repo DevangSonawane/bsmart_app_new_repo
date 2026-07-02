@@ -573,52 +573,109 @@ const QueryDetailPanel = ({ queryId, onBack }) => {
 };
 
 // ── FAQs ──────────────────────────────────────────────────────────────────
-const FAQ_ITEMS = [
-  { q: 'How do I change my username?', a: 'Go to Settings > Account > Edit, then change your username field and save.' },
-  { q: 'How do I make my account private?', a: 'Go to Settings > Privacy and toggle "Private Account" on.' },
-  { q: 'How do I reset my password?', a: 'Go to Settings > Security > Change Password, or use "Forgot Password" on the login screen.' },
-  { q: 'How do I earn coins?', a: 'You earn coins by watching ads, engaging with promoted content, and through daily rewards.' },
-  { q: 'How do I create an ad?', a: 'Vendor accounts can create ads via the Create Post modal by selecting the "Ad" type.' },
-  { q: 'How do I delete my account?', a: 'Go to Settings > Account Actions > Delete Account. This action is permanent.' },
-  { q: 'How do I report content?', a: 'Tap the three dots (⋯) on any post, reel, or ad and select "Report".' },
-  { q: 'How do I block a user?', a: 'Go to the user\'s profile, tap the three dots, and select "Block".' },
-  { q: 'Why can\'t I see someone\'s posts?', a: 'Their account may be private. Send a follow request.' },
-  { q: 'How do I contact support?', a: 'Use "Contact Support" on this page, or email support@bebsmart.in.' },
-];
+const FAQ_CATEGORIES = ['all', 'general', 'account', 'payment', 'member', 'ads', 'other'];
 
 const FAQPanel = () => {
-  const [search, setSearch] = useState('');
-  const [openIdx, setOpenIdx] = useState(null);
-  const filtered = search.trim()
-    ? FAQ_ITEMS.filter(f => f.q.toLowerCase().includes(search.toLowerCase()) || f.a.toLowerCase().includes(search.toLowerCase()))
-    : FAQ_ITEMS;
+  const [faqs, setFaqs]           = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+  const [search, setSearch]       = useState('');
+  const [category, setCategory]   = useState('all');
+  const [openId, setOpenId]       = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    const params = { app_source: 'member' };
+    if (category !== 'all') params.category = category;
+    api.get('/faq', { params })
+      .then(res => setFaqs(res.data?.data || []))
+      .catch(() => setError('Failed to load FAQs. Please try again.'))
+      .finally(() => setLoading(false));
+  }, [category]);
+
+  const displayed = search.trim()
+    ? faqs.filter(f =>
+        f.question.toLowerCase().includes(search.toLowerCase()) ||
+        f.answer.toLowerCase().includes(search.toLowerCase())
+      )
+    : faqs;
 
   return (
     <div className="p-5 space-y-4">
+      {/* Header */}
       <div className="flex items-center gap-3 pb-3 border-b border-gray-100 dark:border-gray-800">
-        <div className="w-10 h-10 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center"><BookOpen size={18} className="text-green-500" /></div>
+        <div className="w-10 h-10 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center">
+          <BookOpen size={18} className="text-green-500" />
+        </div>
         <div>
           <p className="text-sm font-bold text-gray-900 dark:text-white">Frequently Asked Questions</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{FAQ_ITEMS.length} questions</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {loading ? 'Loading…' : `${displayed.length} question${displayed.length !== 1 ? 's' : ''}`}
+          </p>
         </div>
       </div>
+
+      {/* Search */}
       <div className="relative">
         <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search FAQs…" className={`${INPUT_CLS} pl-10`} />
+        <input value={search} onChange={e => { setSearch(e.target.value); setOpenId(null); }}
+          placeholder="Search FAQs…" className={`${INPUT_CLS} pl-10`} />
       </div>
-      {filtered.length === 0 ? (
-        <div className="text-center py-10"><p className="text-sm text-gray-400">No FAQs match your search</p></div>
+
+      {/* Category filter tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+        {FAQ_CATEGORIES.map(cat => (
+          <button key={cat} onClick={() => { setCategory(cat); setSearch(''); setOpenId(null); }}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap capitalize transition-all ${
+              category === cat
+                ? 'bg-gray-900 dark:bg-white text-white dark:text-black'
+                : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+            }`}>
+            {cat === 'all' ? 'All' : cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 size={24} className="animate-spin text-gray-300 dark:text-gray-700" />
+        </div>
+      ) : error ? (
+        <div className="text-center py-10 space-y-2">
+          <p className="text-sm text-red-500">{error}</p>
+          <button onClick={() => setCategory(c => c)} className="text-xs text-[#fa3f5e] font-semibold">Retry</button>
+        </div>
+      ) : displayed.length === 0 ? (
+        <div className="text-center py-10">
+          <p className="text-sm text-gray-400">
+            {search.trim() ? 'No FAQs match your search' : 'No FAQs in this category yet'}
+          </p>
+        </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((faq, i) => {
-            const isOpen = openIdx === i;
+          {displayed.map(faq => {
+            const isOpen = openId === faq._id;
             return (
-              <div key={i} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 overflow-hidden">
-                <button onClick={() => setOpenIdx(isOpen ? null : i)} className="w-full flex items-center justify-between px-4 py-3.5 text-left">
-                  <span className="text-sm font-medium text-gray-900 dark:text-white pr-3">{faq.q}</span>
-                  {isOpen ? <ChevronUp size={16} className="text-gray-400 shrink-0" /> : <ChevronDown size={16} className="text-gray-400 shrink-0" />}
+              <div key={faq._id} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+                <button onClick={() => setOpenId(isOpen ? null : faq._id)}
+                  className="w-full flex items-center justify-between px-4 py-3.5 text-left">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white pr-3">{faq.question}</span>
+                  {isOpen
+                    ? <ChevronUp size={16} className="text-gray-400 shrink-0" />
+                    : <ChevronDown size={16} className="text-gray-400 shrink-0" />}
                 </button>
-                {isOpen && <div className="px-4 pb-4"><p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{faq.a}</p></div>}
+                {isOpen && (
+                  <div className="px-4 pb-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{faq.answer}</p>
+                    {faq.category && faq.category !== 'general' && (
+                      <span className="inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 capitalize">
+                        {faq.category}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

@@ -15,6 +15,7 @@ import {
 } from '../services/followService';
 import promoteReelService from '../services/promoteReelService';
 import Avatar from './Avatar';
+import LocationLink from './LocationLink';
 import ShareContentModal from './ShareContentModal';
 import ContentReportModal from './ContentReportModal';
 
@@ -655,7 +656,7 @@ const PromoteDetailModal = ({ promoteReel: initialItem, isOpen, onClose }) => {
                   </span>
                 </div>
                 {fullName && fullName !== username && <p className="text-xs text-gray-500 truncate">{fullName}</p>}
-                {item.location && <p className="text-xs text-gray-400">{item.location}</p>}
+                {(item.location_data || item.location) && <LocationLink location={item.location_data || item.location} className="text-xs text-gray-400" />}
               </div>
             </div>
             <button

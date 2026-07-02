@@ -18,6 +18,7 @@ import adCommentService from '../services/commentServiceJS';
 import tweetCommentService from '../services/tweetCommentService';
 import ContentReportModal from './ContentReportModal';
 import EditContentModal from './EditContentModal';
+import LocationLink from './LocationLink';
 import OwnerContentOptionsModal from './OwnerContentOptionsModal';
 import ShareContentModal from './ShareContentModal';
 
@@ -881,8 +882,8 @@ const PostDetailModal = ({ post: initialPost, isOpen, onClose }) => {
                 {fullName && fullName !== username && (
                   <p className="text-xs text-gray-500 truncate">{fullName}</p>
                 )}
-                {!isAd && !isTweet && post.location && <p className="text-xs text-gray-400">{post.location}</p>}
-                {isAd && post.location && <p className="text-xs text-gray-400">{post.location}</p>}
+                {!isAd && !isTweet && (post.location_data || post.location) && <LocationLink location={post.location_data || post.location} className="text-xs text-gray-400" />}
+                {isAd && (post.location_data || post.location) && <LocationLink location={post.location_data || post.location} className="text-xs text-gray-400" />}
                 {isTweet && <p className="text-xs text-gray-400">Tweet</p>}
               </div>
             </div>

@@ -1695,44 +1695,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       children: [
                         GestureDetector(
                           onTap: _onAuthorTap,
-                          child: Container(
-                            width: 38,
-                            height: 38,
-                            padding: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Color(0xFFFBBF24),
-                                  Color(0xFFF97316),
-                                  Color(0xFFEC4899),
-                                ],
-                              ),
-                            ),
-                            child: Container(
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.transparent,
-                              ),
-                              padding: const EdgeInsets.all(2),
-                              child: CircleAvatar(
-                                backgroundColor:
-                                    theme.colorScheme.surfaceContainerHighest,
-                                backgroundImage:
-                                    avatarUrl != null && avatarUrl.isNotEmpty
-                                        ? NetworkImage(avatarUrl)
-                                        : null,
-                                child: avatarUrl == null || avatarUrl.isEmpty
-                                    ? Text(
-                                        username.isNotEmpty
-                                            ? username[0].toUpperCase()
-                                            : 'U',
-                                        style: TextStyle(color: primaryText))
+                          child: CircleAvatar(
+                            radius: 19,
+                            backgroundColor:
+                                theme.colorScheme.surfaceContainerHighest,
+                            backgroundImage:
+                                avatarUrl != null && avatarUrl.isNotEmpty
+                                    ? NetworkImage(avatarUrl)
                                     : null,
-                              ),
-                            ),
+                            child: avatarUrl == null || avatarUrl.isEmpty
+                                ? Text(
+                                    username.isNotEmpty
+                                        ? username[0].toUpperCase()
+                                        : 'U',
+                                    style: TextStyle(color: primaryText))
+                                : null,
                           ),
                         ),
                         const SizedBox(width: 8),

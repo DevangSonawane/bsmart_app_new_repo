@@ -1394,9 +1394,13 @@ class _PostDetailModalState extends State<PostDetailModal> {
                     children: [
                       CircleAvatar(
                         radius: 18,
+                        backgroundColor:
+                            theme.colorScheme.surfaceContainerHighest,
                         backgroundImage:
-                            avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                        child: avatarUrl == null
+                            avatarUrl != null && avatarUrl.isNotEmpty
+                                ? NetworkImage(avatarUrl)
+                                : null,
+                        child: avatarUrl == null || avatarUrl.isEmpty
                             ? Text(username.isNotEmpty
                                 ? username[0].toUpperCase()
                                 : 'U')
@@ -1425,13 +1429,28 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                 },
                                 borderRadius: BorderRadius.circular(6),
                                 child: Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 1),
-                                  child: Text(location,
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600),
-                                      overflow: TextOverflow.ellipsis),
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        LucideIcons.mapPin,
+                                        size: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          location,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                           ],

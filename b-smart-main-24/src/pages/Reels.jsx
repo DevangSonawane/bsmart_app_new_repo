@@ -12,6 +12,7 @@ import api from '../lib/api';
 import socketService from '../services/socketService';
 import ContentReportModal from '../components/ContentReportModal';
 import EditContentModal from '../components/EditContentModal';
+import LocationLink from '../components/LocationLink';
 import OwnerContentOptionsModal from '../components/OwnerContentOptionsModal';
 import ShareContentModal from '../components/ShareContentModal';
 
@@ -1061,7 +1062,7 @@ const Reels = () => {
                                 <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{reelItem.caption || 'Reel'}</div>
                                 <div className="flex items-center gap-1.5 mt-0.5">
                                   {reelUser.username && <span className="text-[10px] text-gray-400">@{reelUser.username}</span>}
-                                  {reelItem.location && <span className="text-[10px] text-gray-500 truncate">📍 {reelItem.location}</span>}
+                                  {(reelItem.location_data || reelItem.location) && <LocationLink location={reelItem.location_data || reelItem.location} className="text-[10px] text-gray-500 truncate" iconSize={10} />}
                                 </div>
                               </div>
                             </button>

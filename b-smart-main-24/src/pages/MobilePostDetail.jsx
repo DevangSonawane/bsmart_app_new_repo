@@ -8,6 +8,7 @@ import commentService from '../services/commentService';
 import tweetCommentService from '../services/tweetCommentService';
 import ContentReportModal from '../components/ContentReportModal';
 import Avatar from '../components/Avatar';
+import LocationLink from '../components/LocationLink';
 
 const DeleteModal = ({ isOpen, onClose, onConfirm, isDeleting, itemLabel = 'Post' }) => {
     if (!isOpen) return null;
@@ -556,8 +557,8 @@ const MobilePostDetail = () => {
                         <span className="font-semibold text-sm text-gray-900 dark:text-white leading-tight">
                             {postUser?.username || postUser?.name || 'User'}
                         </span>
-                        {post.location && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400 leading-tight">{post.location}</span>
+                        {(post.location_data || post.location) && (
+                            <LocationLink location={post.location_data || post.location} className="text-xs text-gray-500 dark:text-gray-400 leading-tight" />
                         )}
                     </div>
                 </div>

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep -l \"location\")",
+      "Bash(grep -v \"//\\\\|import\\\\|useState\\\\|setLocation\\\\|target_location\\\\|location_data\")",
+      "Bash(grep -v \"//\\\\|import\\\\|useState\\\\|setLocation\\\\|target_location\\\\|window.location\\\\|location_data\")",
+      "Bash(grep -v \"//\\\\|import\\\\|useState\\\\|window.location\\\\|location_data\\\\|target_location\")"
+    ]
+  }
+}

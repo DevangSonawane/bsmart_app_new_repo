@@ -337,6 +337,58 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
     }
   }, []);
 
+  const searchLocation = useCallback(async (query) => {
+    if (query.length < 2) { setLocationResults([]); return; }
+    setLocationLoading(true);
+    try {
+      const res = await api.get('/location/search', {
+        params: { query, sessionToken: locationSessionToken.current }
+      });
+      setLocationResults(res.data?.places || []);
+    } catch {
+      setLocationResults([]);
+    } finally {
+      setLocationLoading(false);
+    }
+  }, []);
+
+  const handleLocationChange = (e) => {
+    const val = e.target.value;
+    setLocationQuery(val);
+    setLocationData(null);
+    setLocation(val);
+    clearTimeout(locationDebounceRef.current);
+    if (!val) {
+      setLocationResults([]);
+      setShowLocationDropdown(false);
+      return;
+    }
+    setShowLocationDropdown(true);
+    locationDebounceRef.current = setTimeout(() => searchLocation(val), 300);
+  };
+
+  const handleLocationSelect = (place) => {
+    setLocation(place.fullText);
+    setLocationQuery(place.fullText);
+    setLocationData(place);
+    setLocationResults([]);
+    setShowLocationDropdown(false);
+    locationSessionToken.current = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : Math.random().toString(36);
+  };
+
+  const handleLocationClear = () => {
+    setLocation('');
+    setLocationQuery('');
+    setLocationData(null);
+    setLocationResults([]);
+    setShowLocationDropdown(false);
+    locationSessionToken.current = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : Math.random().toString(36);
+  };
+
   const [media, setMedia] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -347,6 +399,14 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
 
   const [caption, setCaption] = useState('');
   const [location, setLocation] = useState('');
+  const [locationData, setLocationData] = useState(null); // { placeId, name, address, fullText }
+  const [locationQuery, setLocationQuery] = useState('');
+  const [locationResults, setLocationResults] = useState([]);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const locationSessionToken = useRef(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36));
+  const locationDebounceRef = useRef(null);
+  const locationContainerRef = useRef(null);
   const [hideLikes, setHideLikes] = useState(false);
   const [turnOffCommenting, setTurnOffCommenting] = useState(false);
   const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
@@ -1318,6 +1378,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           const payload = {
             caption,
             location,
+            location_data: locationData || undefined,
             media: processedMedia
               .filter(m => m.media_type === 'video')
               .map(m => { const copy = { ...m }; delete copy._fileUrl; return copy; }),
@@ -1349,6 +1410,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           const payload = {
             caption,
             location,
+            location_data: locationData || undefined,
             media: processedMedia
               .filter(m => m.media_type === 'video')
               .map(m => { const copy = { ...m }; delete copy._fileUrl; return copy; }),
@@ -1407,6 +1469,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
             ad_description: adDescription,
             caption,
             location,
+            location_data: locationData || undefined,
             ad_type: adType,
             content_type: media.some(m => m.type === 'video') ? 'reel' : 'post',
             status: submitMode === 'draft' ? 'draft' : 'pending',
@@ -1491,6 +1554,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           const payload = {
             caption,
             location,
+            location_data: locationData || undefined,
             media: processedMedia.map(m => { const copy = { ...m }; delete copy.fileUrl; return copy; }),
             tags: hashtags,
             people_tags: tags.map(t => ({
@@ -1637,11 +1701,27 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
     };
   }, [showEmojiPicker]);
 
+  useEffect(() => {
+    if (!showLocationDropdown) return undefined;
+    const handler = (e) => {
+      if (locationContainerRef.current && !locationContainerRef.current.contains(e.target)) {
+        setShowLocationDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showLocationDropdown]);
+
   const handleClose = useCallback(() => {
     setStep('select');
     setMedia([]);
     setCurrentIndex(0);
     setCaption('');
+    setLocation('');
+    setLocationQuery('');
+    setLocationData(null);
+    setLocationResults([]);
+    setShowLocationDropdown(false);
     setAdMedia([]);
     setPromoteProducts([]);
     setProductDraft(null);
@@ -3481,14 +3561,51 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
               </div>
 
               {/* Location */}
-              <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-                <input
-                  type="text"
-                  placeholder="Add location"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="w-full text-sm bg-transparent outline-none dark:text-white placeholder-gray-400"
-                />
+              <div ref={locationContainerRef} className="border-b border-gray-100 dark:border-gray-800">
+                <div className="flex items-center gap-2 px-4 py-3">
+                  <MapPin size={14} className="flex-shrink-0 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search city, area, building..."
+                    value={locationQuery}
+                    onChange={handleLocationChange}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onFocus={() => {
+                      if (locationQuery.length >= 2 && locationResults.length > 0) setShowLocationDropdown(true);
+                    }}
+                    className="flex-1 text-sm bg-transparent outline-none dark:text-white placeholder-gray-400"
+                  />
+                  {locationLoading && (
+                    <div className="w-3.5 h-3.5 border-2 border-gray-300 dark:border-gray-600 border-t-gray-500 dark:border-t-gray-300 rounded-full animate-spin flex-shrink-0" />
+                  )}
+                  {locationQuery && !locationLoading && (
+                    <button onClick={handleLocationClear} className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                {showLocationDropdown && locationResults.length > 0 && (
+                  <ul className="border-t border-gray-100 dark:border-gray-800 max-h-52 overflow-y-auto">
+                    {locationResults.map((place) => (
+                      <li
+                        key={place.placeId}
+                        onClick={() => handleLocationSelect(place)}
+                        className="flex items-start gap-2.5 px-4 py-2.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-100 dark:border-gray-800 last:border-0"
+                      >
+                        <MapPin size={13} className="flex-shrink-0 mt-0.5 text-blue-500" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white leading-snug">{place.name}</p>
+                          <p className="text-xs text-gray-400 leading-snug">{place.address}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {showLocationDropdown && !locationLoading && locationResults.length === 0 && locationQuery.length >= 2 && (
+                  <div className="border-t border-gray-100 dark:border-gray-800 px-4 py-3 text-xs text-gray-400">
+                    No places found
+                  </div>
+                )}
               </div>
 
               {/* Ad-specific fields — Share/Ad Setup step: ONLY targeting + budget */}
@@ -3993,7 +4110,6 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           handleClose();
           setMedia([]);
           setCaption('');
-          setLocation('');
           setTags([]);
           navigate(postType === 'ad' ? '/vendor/ads-management' : '/');
         };

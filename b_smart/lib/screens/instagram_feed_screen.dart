@@ -17,6 +17,7 @@ import '../theme/instagram_theme.dart';
 import '../widgets/clay_container.dart';
 import '../widgets/share_content_modal.dart';
 import '../utils/url_helper.dart';
+import '../utils/location_utils.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
 import '../utils/current_user.dart';
@@ -714,6 +715,9 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
   }
 
   Widget _buildPostHeader(FeedPost post) {
+    final location = (post.locationPlace?.displayText ??
+            locationLabelFromDynamic(post.location))
+        .trim();
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -757,6 +761,32 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                                   ),
                           overflow: TextOverflow.ellipsis,
                         ),
+                        if (location.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
+                                LucideIcons.mapPin,
+                                size: 11,
+                                color: InstagramTheme.textGrey,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  location,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        fontSize: 11,
+                                        color: InstagramTheme.textGrey,
+                                      ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         if (post.isAd) ...[
                           const SizedBox(height: 2),
                           Text(

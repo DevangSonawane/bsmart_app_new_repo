@@ -1283,86 +1283,75 @@ class _PostCardState extends State<PostCard> {
                       location.isNotEmpty ||
                       post.isAd ||
                       promoteTime.isNotEmpty)
-                    Row(
-                      children: [
-                        if (promoteTime.isNotEmpty)
-                          Text(
-                            promoteTime,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: secondaryText,
-                              fontWeight: FontWeight.w600,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (subtitleName.isNotEmpty || post.isAd)
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    post.isAd
+                                        ? 'Sponsored'
+                                        : subtitleName,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: secondaryText,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        if (promoteTime.isNotEmpty &&
-                            (subtitleName.isNotEmpty ||
-                                location.isNotEmpty ||
-                                post.isAd))
-                          Text(
-                            ' · ',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: secondaryText,
-                            ),
-                          ),
-                        if (subtitleName.isNotEmpty)
-                          Flexible(
-                            child: Text(
-                              subtitleName,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: secondaryText,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        if (post.isAd) ...[
-                          if (subtitleName.isNotEmpty)
-                            Text(
-                              ' · ',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: secondaryText,
-                              ),
-                            ),
-                          Text(
-                            'Sponsored',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              color: secondaryText,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                        if (!post.isAd && location.isNotEmpty) ...[
-                          if (subtitleName.isNotEmpty)
-                            Text(
-                              ' · ',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: secondaryText,
-                              ),
-                            ),
-                          Flexible(
-                            child: InkWell(
+                          if (!post.isAd && location.isNotEmpty)
+                            InkWell(
                               onTap: () => _openPostLocation(post),
                               borderRadius: BorderRadius.circular(6),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 2, vertical: 1),
-                                child: Text(
-                                  location,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: secondaryText,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                                    vertical: 1, horizontal: 0),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      LucideIcons.mapPin,
+                                      size: 11,
+                                      color: secondaryText,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        location,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: secondaryText,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                          ),
+                          if (promoteTime.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                top: (subtitleName.isNotEmpty || location.isNotEmpty)
+                                    ? 2
+                                    : 0,
+                              ),
+                              child: Text(
+                                promoteTime,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: secondaryText,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                         ],
-                      ],
+                      ),
                     ),
                 ],
               ),
