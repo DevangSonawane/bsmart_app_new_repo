@@ -14,6 +14,7 @@ import '../config/api_config.dart';
 import '../api/api_client.dart';
 import '../utils/timezone_service.dart';
 import '../utils/app_error_handler.dart';
+import '../utils/location_utils.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
@@ -1351,7 +1352,11 @@ class _PostDetailModalState extends State<PostDetailModal> {
     final username = _postUser?['username'] as String? ?? 'User';
     final avatarUrl = _postUser?['avatar_url'] as String?;
     final caption = (_post?['caption'] ?? _post?['content']) as String? ?? '';
-    final location = _post?['location'] as String?;
+    final locationPlace = locationPlaceFromDynamic(
+      _post?['location_place'] ?? _post?['locationPlace'] ?? _post?['location'],
+    );
+    final location = locationPlace?.displayText ??
+        (_post?['location']?.toString().trim() ?? '');
     final createdAt = _post?['created_at'] as String? ?? '';
 
     return Column(
@@ -1407,12 +1412,28 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w600, fontSize: 14),
                                 overflow: TextOverflow.ellipsis),
-                            if (location != null && location.isNotEmpty)
-                              Text(location,
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade600),
-                                  overflow: TextOverflow.ellipsis),
+                            if (location.isNotEmpty)
+                              InkWell(
+                                onTap: () async {
+                                  final place = locationPlace ??
+                                      locationPlaceFromDynamic(location);
+                                  if (place == null ||
+                                      place.searchText.isEmpty) {
+                                    return;
+                                  }
+                                  await openLocationInMaps(place);
+                                },
+                                borderRadius: BorderRadius.circular(6),
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 1),
+                                  child: Text(location,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                              ),
                           ],
                         ),
                       ),

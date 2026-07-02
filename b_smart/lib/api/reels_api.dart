@@ -29,6 +29,7 @@ class ReelsApi {
     required List<Map<String, dynamic>> media,
     String? caption,
     String? location,
+    Map<String, dynamic>? locationPlace,
     List<String>? tags,
     List<Map<String, dynamic>>? peopleTags,
     bool? hideLikesCount,
@@ -38,7 +39,10 @@ class ReelsApi {
       'media': media,
     };
     if (caption != null) body['caption'] = caption;
-    if (location != null) body['location'] = location;
+    if (location != null && location.isNotEmpty) body['location'] = location;
+    if (locationPlace != null && locationPlace.isNotEmpty) {
+      body['location_place'] = locationPlace;
+    }
     if (tags != null && tags.isNotEmpty) body['tags'] = tags;
     if (peopleTags != null && peopleTags.isNotEmpty) {
       body['people_tags'] = peopleTags;
@@ -70,4 +74,3 @@ class ReelsApi {
     return res as Map<String, dynamic>;
   }
 }
-

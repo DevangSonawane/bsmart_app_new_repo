@@ -12,7 +12,9 @@ import '../api/upload_api.dart';
 import '../api/posts_api.dart';
 import '../services/create_service.dart';
 import '../models/media_model.dart';
+import '../models/location_place.dart';
 import 'tag_people_screen.dart';
+import 'location_search_screen.dart';
 import '../utils/app_navigator.dart';
 import '../services/upload_progress_overlay.dart';
 
@@ -463,7 +465,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   PageController? _overlayPageController;
 
   // Share step
-  final String _location = '';
+  LocationPlace? _location;
   bool _hideLikes = false;
   bool _turnOffCommenting = false;
   bool _hideShares = false;
@@ -901,6 +903,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
   }
 
+  Future<void> _openLocationSearch() async {
+    final selected = await Navigator.of(context).push<LocationPlace>(
+      MaterialPageRoute(builder: (_) => const LocationSearchScreen()),
+    );
+    if (!mounted || selected == null) return;
+    setState(() => _location = selected);
+  }
+
   Future<void> _submit() async {
     if (_isSubmitting || _media.isEmpty) return;
     final userId = await CurrentUser.id;
@@ -1111,7 +1121,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         final created = await PostsApi().createPost(
           media: processedMedia.cast<Map<String, dynamic>>(),
           caption: _captionCtl.text.trim(),
-          location: _location.isEmpty ? null : _location,
+          location: _location?.fullText,
+          locationPlace: _location?.toJson(),
           tags: hashtagMatches,
           hideLikesCount: _hideLikes,
           turnOffCommenting: _turnOffCommenting,
@@ -1672,7 +1683,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       })(),
                       onTap: _openTagPeople,
                     ),
-                    optionRow(icon: LucideIcons.mapPin, label: 'Add location'),
+                    optionRow(
+                      icon: LucideIcons.mapPin,
+                      label: 'Add location',
+                      subtitle: _location?.searchText ?? '',
+                      onTap: _openLocationSearch,
+                    ),
                     const SizedBox(height: 8),
                     Divider(
                       color: theme.brightness == Brightness.dark

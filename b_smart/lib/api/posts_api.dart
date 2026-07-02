@@ -36,6 +36,7 @@ class PostsApi {
     required List<Map<String, dynamic>> media,
     String? caption,
     String? location,
+    Map<String, dynamic>? locationPlace,
     List<String>? tags,
     bool? hideLikesCount,
     bool? turnOffCommenting,
@@ -49,6 +50,9 @@ class PostsApi {
     };
     if (caption != null && caption.isNotEmpty) body['caption'] = caption;
     if (location != null && location.isNotEmpty) body['location'] = location;
+    if (locationPlace != null && locationPlace.isNotEmpty) {
+      body['location_place'] = locationPlace;
+    }
     if (tags != null && tags.isNotEmpty) body['tags'] = tags;
     if (hideLikesCount != null) body['hide_likes_count'] = hideLikesCount;
     if (turnOffCommenting != null) body['turn_off_commenting'] = turnOffCommenting;

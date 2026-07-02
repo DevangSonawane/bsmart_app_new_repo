@@ -468,7 +468,7 @@ class SupabaseService {
       await _postsApi.createPost(
         media: media.cast<Map<String, dynamic>>(),
         caption: postData['caption'] as String?,
-        location: postData['location'] as String?,
+        location: postData['location'],
         tags: (postData['tags'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList(),
@@ -494,7 +494,7 @@ class SupabaseService {
         await _postsApi.createPost(
           media: media,
           caption: postData['caption'] as String?,
-          location: postData['location'] as String?,
+          location: postData['location'],
           hideShareCount: postData['hide_share_count'] as bool?,
           type: postData['type'] as String? ?? 'post',
         );

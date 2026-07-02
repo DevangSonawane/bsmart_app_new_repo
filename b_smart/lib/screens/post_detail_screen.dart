@@ -14,6 +14,7 @@ import '../config/api_config.dart';
 import '../api/api_client.dart';
 import '../utils/timezone_service.dart';
 import '../utils/app_error_handler.dart';
+import '../utils/location_utils.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
@@ -1643,7 +1644,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             _postUser?['profile_pic'])
         ?.toString();
     final caption = _post?['caption'] as String? ?? '';
-    final location = _post?['location'] as String?;
+    final locationPlace = locationPlaceFromDynamic(
+      _post?['location_place'] ?? _post?['locationPlace'] ?? _post?['location'],
+    );
+    final location = locationPlace?.displayText ??
+        (_post?['location']?.toString().trim() ?? '');
     final createdAt = _parsePostCreatedAt();
     final createdAtLabel = createdAt == null
         ? ''
@@ -1745,12 +1750,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       color: primaryText),
                                 ),
                               ),
-                              if (location != null && location.isNotEmpty)
-                                Text(
-                                  location,
-                                  style: TextStyle(
-                                    color: secondaryText,
-                                    fontSize: 12,
+                              if (location.isNotEmpty)
+                                InkWell(
+                                  onTap: () async {
+                                    final place = locationPlace ??
+                                        locationPlaceFromDynamic(location);
+                                    if (place == null ||
+                                        place.searchText.isEmpty) {
+                                      return;
+                                    }
+                                    await openLocationInMaps(place);
+                                  },
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Padding(
+                                    padding:
+                                        const EdgeInsets.symmetric(vertical: 1),
+                                    child: Text(
+                                      location,
+                                      style: TextStyle(
+                                        color: secondaryText,
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   ),
                                 ),
                             ],

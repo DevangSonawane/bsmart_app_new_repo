@@ -1,3 +1,5 @@
+import '../models/location_place.dart';
+import '../utils/location_utils.dart';
 import '../utils/url_helper.dart';
 
 enum PostMediaType {
@@ -46,6 +48,7 @@ class FeedPost {
   final List<String>? targetLanguages;
   final bool commentsDisabled;
   final String? location; // Added location field
+  final LocationPlace? locationPlace;
   final String? latestCommentUser;
   final String? latestCommentText;
   final List<Map<String, dynamic>>? rawLikes;
@@ -92,6 +95,7 @@ class FeedPost {
     this.targetLanguages = const [],
     this.commentsDisabled = false,
     this.location, // Added
+    this.locationPlace,
     this.latestCommentUser,
     this.latestCommentText,
     this.rawLikes,
@@ -398,7 +402,12 @@ class FeedPost {
           json['commentsDisabled'] ??
           json['comments_disabled'] ??
           false,
-      location: json['location'], // Map location
+      location: locationLabelFromDynamic(
+        json['location_place'] ?? json['locationPlace'] ?? json['location'],
+      ),
+      locationPlace: locationPlaceFromDynamic(
+        json['location_place'] ?? json['locationPlace'] ?? json['location'],
+      ),
       latestCommentUser: json['latestCommentUser'],
       latestCommentText: json['latestCommentText'],
       rawLikes: (json['likes_data'] as List?)
@@ -470,6 +479,7 @@ class FeedPost {
     List<String>? targetLocations,
     List<String>? targetLanguages,
     bool? commentsDisabled,
+    LocationPlace? locationPlace,
     String? latestCommentUser,
     String? latestCommentText,
     List<Map<String, dynamic>>? rawLikes,
@@ -515,6 +525,7 @@ class FeedPost {
       targetLocations: targetLocations ?? this.targetLocations,
       targetLanguages: targetLanguages ?? this.targetLanguages,
       commentsDisabled: commentsDisabled ?? this.commentsDisabled,
+      locationPlace: locationPlace ?? this.locationPlace,
       latestCommentUser: latestCommentUser ?? this.latestCommentUser,
       latestCommentText: latestCommentText ?? this.latestCommentText,
       rawLikes: rawLikes ?? this.rawLikes,

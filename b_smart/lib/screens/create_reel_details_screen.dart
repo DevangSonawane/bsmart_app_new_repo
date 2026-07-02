@@ -15,6 +15,8 @@ import '../config/api_config.dart';
 import '../utils/current_user.dart';
 import '../utils/app_navigator.dart';
 import '../services/upload_progress_overlay.dart';
+import '../models/location_place.dart';
+import 'location_search_screen.dart';
 
 class CreateReelDetailsScreen extends StatefulWidget {
   final MediaItem media;
@@ -43,7 +45,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   final SupabaseService _svc = SupabaseService();
   final TextEditingController _captionCtl = TextEditingController();
 
-  final String _location = '';
+  LocationPlace? _location;
   bool _hideLikes = false;
   bool _turnOffCommenting = false;
   bool _advancedOpen = false;
@@ -169,6 +171,14 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
       _selectedThumbnailTimeSec = picked.timeSec;
       _selectedThumbnailPath = null;
     });
+  }
+
+  Future<void> _openLocationSearch() async {
+    final selected = await Navigator.of(context).push<LocationPlace>(
+      MaterialPageRoute(builder: (_) => const LocationSearchScreen()),
+    );
+    if (!mounted || selected == null) return;
+    setState(() => _location = selected);
   }
 
   Future<Uint8List?> _buildCoverPreviewBytes(String videoPath) async {
@@ -493,7 +503,8 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         final created = await ReelsApi().createReel(
           media: [mediaItem],
           caption: captionText.isEmpty ? null : captionText,
-          location: _location.isEmpty ? null : _location,
+          location: _location?.fullText,
+          locationPlace: _location?.toJson(),
           tags: tags,
           peopleTags: peopleTags,
           hideLikesCount: _hideLikes,
@@ -770,10 +781,9 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
             ListTile(
               leading: const Icon(LucideIcons.mapPin),
               title: const Text('Add location'),
+              subtitle: _location != null ? Text(_location!.searchText) : null,
               trailing: const Icon(LucideIcons.chevronRight),
-              onTap: () {
-                // TODO: Location picker
-              },
+              onTap: _openLocationSearch,
             ),
             const Divider(),
             Padding(

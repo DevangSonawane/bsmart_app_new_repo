@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../models/feed_post_model.dart';
 import '../services/video_pool.dart';
 import '../utils/url_helper.dart';
+import '../utils/location_utils.dart';
 import '../utils/timezone_service.dart';
 import 'dynamic_media_widget.dart';
 import 'safe_network_image.dart';
@@ -191,6 +192,13 @@ class _PostCardState extends State<PostCard> {
   void _togglePeopleTags() {
     if ((widget.post.peopleTags?.isNotEmpty ?? false) == false) return;
     setState(() => _showPeopleTags = !_showPeopleTags);
+  }
+
+  Future<void> _openPostLocation(FeedPost post) async {
+    final place = post.locationPlace ??
+        locationPlaceFromDynamic(post.location);
+    if (place == null || place.searchText.isEmpty) return;
+    await openLocationInMaps(place);
   }
 
   String _tagUsername(Map<String, dynamic> t) {
@@ -1211,7 +1219,8 @@ class _PostCardState extends State<PostCard> {
         : (post.isAd && adCompany.isNotEmpty && adCompany != post.userName
             ? adCompany
             : '');
-    final location = (post.location ?? '').trim();
+    final location = (post.locationPlace?.displayText ?? post.location ?? '')
+        .trim();
     final primaryText =
         theme.brightness == Brightness.dark ? Colors.white : Colors.black;
     final secondaryText = theme.brightness == Brightness.dark
@@ -1335,13 +1344,21 @@ class _PostCardState extends State<PostCard> {
                               ),
                             ),
                           Flexible(
-                            child: Text(
-                              location,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: secondaryText,
+                            child: InkWell(
+                              onTap: () => _openPostLocation(post),
+                              borderRadius: BorderRadius.circular(6),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 2, vertical: 1),
+                                child: Text(
+                                  location,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: secondaryText,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -1738,14 +1755,23 @@ class _PostCardState extends State<PostCard> {
                 ],
               ),
             const SizedBox(height: 4),
-            if ((post.location ?? '').trim().isNotEmpty)
-              Text(
-                post.location!.trim(),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: secondaryText,
+            if ((post.locationPlace?.displayText ?? post.location ?? '')
+                .trim()
+                .isNotEmpty)
+              InkWell(
+                onTap: () => _openPostLocation(post),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 1),
+                  child: Text(
+                    (post.locationPlace?.displayText ?? post.location!).trim(),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: secondaryText,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                overflow: TextOverflow.ellipsis,
               ),
             if ((post.targetLocations ?? const <String>[]).isNotEmpty ||
                 (post.targetLanguages ?? const <String>[]).isNotEmpty)
