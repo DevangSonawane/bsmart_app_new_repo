@@ -241,7 +241,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                 keyboardType: TextInputType.number,
                 maxLength: 6,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 18, letterSpacing: 6, fontFamily: 'monospace'),
+                style: const TextStyle(fontSize: 18, letterSpacing: 6, fontFamily: 'Montserrat'),
                 decoration: InputDecoration(
                   hintText: '000000',
                   counterText: '',

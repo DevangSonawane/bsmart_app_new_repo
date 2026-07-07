@@ -340,7 +340,7 @@ class _VoiceMessageContentState extends State<VoiceMessageContent> {
               color: muted,
               fontSize: 10.5,
               fontWeight: FontWeight.w800,
-              fontFamily: 'monospace',
+              fontFamily: 'Montserrat',
             ),
             textScaler: MediaQuery.textScalerOf(context),
           ),

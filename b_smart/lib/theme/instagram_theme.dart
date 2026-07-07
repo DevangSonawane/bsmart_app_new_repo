@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class InstagramTheme {
   // Instagram-inspired Color Palette
@@ -52,6 +53,7 @@ class InstagramTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: GoogleFonts.montserrat().fontFamily,
       scaffoldBackgroundColor: backgroundGrey,
       primaryColor: primaryPink,
       

@@ -77,7 +77,7 @@ class _SidebarState extends State<Sidebar> {
                           shaderCallback: (bounds) => const LinearGradient(
                             colors: [DesignTokens.instaPurple, DesignTokens.instaPink, DesignTokens.instaOrange],
                           ).createShader(bounds),
-                          child: const Text('B-Smart', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22, fontFamily: 'cursive')),
+                          child: const Text('B-Smart', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22, fontFamily: 'Montserrat')),
                         ),
                       ],
                     )

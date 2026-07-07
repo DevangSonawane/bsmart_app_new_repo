@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class PremiumTheme {
   // Premium Color Palette
@@ -39,6 +40,7 @@ class PremiumTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: GoogleFonts.montserrat().fontFamily,
       scaffoldBackgroundColor: primaryBlack,
       primaryColor: goldAccent,
       
@@ -65,7 +67,6 @@ class PremiumTheme {
           fontSize: 20,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.5,
-          fontFamily: 'Poppins', // Assuming standard font or system font for now
         ),
       ),
 

@@ -365,29 +365,29 @@ class _InstagramTextEditorState extends State<InstagramTextEditor> {
   TextStyle _baseTextStyle() {
     switch (_selectedFont) {
       case 'Classic':
-        return GoogleFonts.playfairDisplay(
+        return GoogleFonts.montserrat(
           fontSize: _fontSize(),
           fontWeight: FontWeight.w600,
         );
       case 'Signature':
-        return GoogleFonts.dancingScript(
+        return GoogleFonts.montserrat(
           fontSize: _fontSize() + 6,
           fontWeight: FontWeight.w600,
           fontStyle: FontStyle.italic,
         );
       case 'Neon':
-        return GoogleFonts.lato(
+        return GoogleFonts.montserrat(
           fontSize: _fontSize(),
           fontWeight: FontWeight.bold,
         );
       case 'Contour':
-        return GoogleFonts.lato(
+        return GoogleFonts.montserrat(
           fontSize: _fontSize(),
           fontWeight: FontWeight.bold,
         );
       case 'Modern':
       default:
-        return GoogleFonts.lato(
+        return GoogleFonts.montserrat(
           fontSize: _fontSize(),
           fontWeight: FontWeight.bold,
         );

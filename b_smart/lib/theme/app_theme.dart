@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'design_tokens.dart';
 
 class AppTheme {
@@ -14,6 +15,7 @@ class AppTheme {
 
   static ThemeData get theme {
     return ThemeData(
+      fontFamily: GoogleFonts.montserrat().fontFamily,
       primaryColor: DesignTokens.instaPurple,
       colorScheme: ColorScheme.fromSwatch().copyWith(
         primary: DesignTokens.instaPurple,
@@ -33,12 +35,18 @@ class AppTheme {
           ),
         ),
       ),
-      textTheme: const TextTheme(
+      textTheme: GoogleFonts.montserratTextTheme(const TextTheme(
         headlineLarge: TextStyle(fontSize: 28.0, fontWeight: FontWeight.bold),
         headlineMedium: TextStyle(fontSize: 22.0, fontWeight: FontWeight.w600),
         bodyLarge: TextStyle(fontSize: 16.0),
         bodyMedium: TextStyle(fontSize: 14.0, color: Colors.black54),
-      ),
+      )),
+      primaryTextTheme: GoogleFonts.montserratTextTheme(const TextTheme(
+        headlineLarge: TextStyle(fontSize: 28.0, fontWeight: FontWeight.bold),
+        headlineMedium: TextStyle(fontSize: 22.0, fontWeight: FontWeight.w600),
+        bodyLarge: TextStyle(fontSize: 16.0),
+        bodyMedium: TextStyle(fontSize: 14.0, color: Colors.black54),
+      )),
     );
   }
 
@@ -93,6 +101,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: GoogleFonts.montserrat().fontFamily,
       primaryColor: DesignTokens.instaPurple,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: _darkScaffold,
@@ -235,7 +244,7 @@ class AppTheme {
         indicatorColor: DesignTokens.instaPink,
         dividerColor: _darkBorder,
       ),
-      textTheme: const TextTheme(
+      textTheme: GoogleFonts.montserratTextTheme(const TextTheme(
         headlineLarge: TextStyle(fontSize: 28.0, fontWeight: FontWeight.bold, color: _darkTextPrimary),
         headlineMedium: TextStyle(fontSize: 22.0, fontWeight: FontWeight.w600, color: _darkTextPrimary),
         headlineSmall: TextStyle(fontSize: 20.0, fontWeight: FontWeight.w600, color: _darkTextPrimary),
@@ -248,7 +257,21 @@ class AppTheme {
         labelLarge: TextStyle(fontSize: 14.0, fontWeight: FontWeight.w600, color: _darkTextPrimary),
         labelMedium: TextStyle(fontSize: 12.0, fontWeight: FontWeight.w600, color: _darkTextSecondary),
         labelSmall: TextStyle(fontSize: 11.0, fontWeight: FontWeight.w600, color: _darkTextMuted),
-      ),
+      )),
+      primaryTextTheme: GoogleFonts.montserratTextTheme(const TextTheme(
+        headlineLarge: TextStyle(fontSize: 28.0, fontWeight: FontWeight.bold, color: _darkTextPrimary),
+        headlineMedium: TextStyle(fontSize: 22.0, fontWeight: FontWeight.w600, color: _darkTextPrimary),
+        headlineSmall: TextStyle(fontSize: 20.0, fontWeight: FontWeight.w600, color: _darkTextPrimary),
+        titleLarge: TextStyle(fontSize: 18.0, fontWeight: FontWeight.w600, color: _darkTextPrimary),
+        titleMedium: TextStyle(fontSize: 16.0, fontWeight: FontWeight.w600, color: _darkTextPrimary),
+        titleSmall: TextStyle(fontSize: 14.0, fontWeight: FontWeight.w600, color: _darkTextPrimary),
+        bodyLarge: TextStyle(fontSize: 16.0, color: _darkTextPrimary),
+        bodyMedium: TextStyle(fontSize: 14.0, color: _darkTextSecondary),
+        bodySmall: TextStyle(fontSize: 12.0, color: _darkTextMuted),
+        labelLarge: TextStyle(fontSize: 14.0, fontWeight: FontWeight.w600, color: _darkTextPrimary),
+        labelMedium: TextStyle(fontSize: 12.0, fontWeight: FontWeight.w600, color: _darkTextSecondary),
+        labelSmall: TextStyle(fontSize: 11.0, fontWeight: FontWeight.w600, color: _darkTextMuted),
+      )),
     );
   }
 

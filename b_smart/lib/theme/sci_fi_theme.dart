@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class SciFiTheme {
   // Sci-Fi Color Palette
@@ -69,6 +70,7 @@ class SciFiTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: GoogleFonts.montserrat().fontFamily,
       scaffoldBackgroundColor: primaryDark,
       colorScheme: const ColorScheme.dark(
         primary: accentCyan,

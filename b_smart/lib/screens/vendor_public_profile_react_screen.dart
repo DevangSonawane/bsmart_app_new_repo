@@ -2147,7 +2147,7 @@ class _KeyValue extends StatelessWidget {
           style: TextStyle(
             color: text,
             fontWeight: FontWeight.w900,
-            fontFamily: mono ? 'monospace' : null,
+            fontFamily: mono ? 'Montserrat' : null,
           ),
         ),
       ],

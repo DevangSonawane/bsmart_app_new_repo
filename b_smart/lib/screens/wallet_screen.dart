@@ -156,7 +156,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                       const SizedBox(width: 8),
                       Text(
                         'Vault',
-                        style: GoogleFonts.dmSans(fontWeight: FontWeight.w800, fontSize: 16, color: titleColor),
+                        style: GoogleFonts.montserrat(fontWeight: FontWeight.w800, fontSize: 16, color: titleColor),
                       ),
                     ],
                   ),
@@ -181,7 +181,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   sliver: SliverToBoxAdapter(
                     child: DefaultTextStyle(
-                      style: GoogleFonts.dmSans(color: titleColor),
+                      style: GoogleFonts.montserrat(color: titleColor),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -347,7 +347,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                       const SizedBox(width: 10),
                       Text(
                         'Available Balance',
-                        style: GoogleFonts.dmSans(
+                        style: GoogleFonts.montserrat(
                           color: Colors.white.withValues(alpha: 0.75),
                           fontWeight: FontWeight.w600,
                           fontSize: 12,
@@ -358,7 +358,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                   const Spacer(),
                   Text(
                     _isLifeTime ? 'Lifetime' : _monthName(DateTime.now().month),
-                    style: GoogleFonts.dmSans(
+                    style: GoogleFonts.montserrat(
                       color: Colors.white.withValues(alpha: 0.85),
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -397,7 +397,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                     const SizedBox(width: 10),
                     Text(
                       'Loading…',
-                      style: GoogleFonts.dmSans(color: Colors.white.withValues(alpha: 0.7), fontWeight: FontWeight.w600),
+                      style: GoogleFonts.montserrat(color: Colors.white.withValues(alpha: 0.7), fontWeight: FontWeight.w600),
                     ),
                   ],
                 )
@@ -407,7 +407,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                   children: [
                     Text(
                       _formatCoins(_coinBalance),
-                      style: GoogleFonts.dmMono(
+                      style: GoogleFonts.montserrat(
                         color: Colors.white,
                         fontSize: 46,
                         fontWeight: FontWeight.w800,
@@ -419,7 +419,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
                         'bCoins',
-                        style: GoogleFonts.dmSans(color: Colors.white.withValues(alpha: 0.85), fontSize: 16, fontWeight: FontWeight.w700),
+                        style: GoogleFonts.montserrat(color: Colors.white.withValues(alpha: 0.85), fontSize: 16, fontWeight: FontWeight.w700),
                       ),
                     ),
                   ],
@@ -462,13 +462,13 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
               _errorMessage ?? 'Failed to load vault data',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.dmSans(color: const Color(0xFFFB7185), fontWeight: FontWeight.w600),
+              style: GoogleFonts.montserrat(color: const Color(0xFFFB7185), fontWeight: FontWeight.w600),
             ),
           ),
           TextButton(
             onPressed: _loadWallet,
             style: TextButton.styleFrom(foregroundColor: const Color(0xFFFB923C)),
-            child: Text('Retry', style: GoogleFonts.dmSans(fontWeight: FontWeight.w700)),
+            child: Text('Retry', style: GoogleFonts.montserrat(fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -535,7 +535,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                   const SizedBox(height: 8),
                   Text(
                     'No transactions yet',
-                    style: GoogleFonts.dmSans(color: emptyColor, fontWeight: FontWeight.w600),
+                    style: GoogleFonts.montserrat(color: emptyColor, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -687,12 +687,12 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                         name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.dmSans(fontWeight: FontWeight.w800, fontSize: 14, color: titleColor),
+                        style: GoogleFonts.montserrat(fontWeight: FontWeight.w800, fontSize: 14, color: titleColor),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '@$username',
-                        style: GoogleFonts.dmSans(fontWeight: FontWeight.w600, fontSize: 12, color: subColor),
+                        style: GoogleFonts.montserrat(fontWeight: FontWeight.w600, fontSize: 12, color: subColor),
                       ),
                     ],
                   ),
@@ -707,7 +707,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                     ),
                     child: Text(
                       role.toUpperCase(),
-                      style: GoogleFonts.dmSans(
+                      style: GoogleFonts.montserrat(
                         color: const Color(0xFFFB923C),
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
@@ -749,7 +749,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                       const SizedBox(width: 8),
                       Text(
                         'Company Details',
-                        style: GoogleFonts.dmSans(
+                        style: GoogleFonts.montserrat(
                           fontWeight: FontWeight.w800,
                           color: isDark ? Colors.white.withValues(alpha: 0.7) : Colors.black.withValues(alpha: 0.7),
                         ),
@@ -882,7 +882,7 @@ class _AccordionItem extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w800, color: titleColor, fontSize: 14),
+                    style: GoogleFonts.montserrat(fontWeight: FontWeight.w800, color: titleColor, fontSize: 14),
                   ),
                   if (badge != null && badge! > 0) ...[
                     const SizedBox(width: 8),
@@ -895,7 +895,7 @@ class _AccordionItem extends StatelessWidget {
                       ),
                       child: Text(
                         badge.toString(),
-                        style: GoogleFonts.dmSans(fontWeight: FontWeight.w900, fontSize: 10, color: const Color(0xFFFB923C)),
+                        style: GoogleFonts.montserrat(fontWeight: FontWeight.w900, fontSize: 10, color: const Color(0xFFFB923C)),
                       ),
                     ),
                   ],
@@ -946,7 +946,7 @@ class _StatPill extends StatelessWidget {
             label.toUpperCase(),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.dmSans(
+            style: GoogleFonts.montserrat(
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.2,
@@ -954,7 +954,7 @@ class _StatPill extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
-          Text(value, style: GoogleFonts.dmSans(fontSize: 18, fontWeight: FontWeight.w900, color: color)),
+          Text(value, style: GoogleFonts.montserrat(fontSize: 18, fontWeight: FontWeight.w900, color: color)),
         ],
       ),
     );
@@ -986,7 +986,7 @@ class _FilterTab extends StatelessWidget {
           ),
           child: Text(
             label,
-            style: GoogleFonts.dmSans(
+            style: GoogleFonts.montserrat(
               fontWeight: FontWeight.w800,
               fontSize: 12,
               color: isActive ? Colors.white : inactive,
@@ -1069,20 +1069,20 @@ class _TransactionTile extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.dmSans(fontWeight: FontWeight.w800, color: titleColor, fontSize: 13),
+                  style: GoogleFonts.montserrat(fontWeight: FontWeight.w800, color: titleColor, fontSize: 13),
                 ),
                 const SizedBox(height: 4),
                 Wrap(
                   spacing: 6,
                   children: [
-                    Text(formatDate(tx.timestamp), style: GoogleFonts.dmMono(fontSize: 11, color: dateColor)),
+                    Text(formatDate(tx.timestamp), style: GoogleFonts.montserrat(fontSize: 11, color: dateColor)),
                     if (adTitle.isNotEmpty) ...[
-                      Text('·', style: GoogleFonts.dmSans(fontSize: 11, color: dotColor)),
+                      Text('·', style: GoogleFonts.montserrat(fontSize: 11, color: dotColor)),
                       Text(
                         adTitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.dmSans(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xB3FB923C)),
+                        style: GoogleFonts.montserrat(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xB3FB923C)),
                       ),
                     ],
                   ],
@@ -1093,7 +1093,7 @@ class _TransactionTile extends StatelessWidget {
                     description,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.dmSans(fontSize: 11, color: descColor, fontWeight: FontWeight.w600),
+                    style: GoogleFonts.montserrat(fontSize: 11, color: descColor, fontWeight: FontWeight.w600),
                   ),
                 ],
               ],
@@ -1105,14 +1105,14 @@ class _TransactionTile extends StatelessWidget {
             children: [
               Text(
                 '${isCredit ? '+' : '-'}$amount',
-                style: GoogleFonts.dmMono(fontWeight: FontWeight.w900, color: amountColor, fontSize: 13),
+                style: GoogleFonts.montserrat(fontWeight: FontWeight.w900, color: amountColor, fontSize: 13),
               ),
               const SizedBox(height: 6),
               if (status.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: statusBg),
-                  child: Text(status, style: GoogleFonts.dmSans(fontWeight: FontWeight.w800, fontSize: 10, color: statusColor)),
+                  child: Text(status, style: GoogleFonts.montserrat(fontWeight: FontWeight.w800, fontSize: 10, color: statusColor)),
                 ),
             ],
           ),
@@ -1200,7 +1200,7 @@ class _AccountRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(label, style: GoogleFonts.dmSans(color: labelColor, fontWeight: FontWeight.w700, fontSize: 12)),
+          Text(label, style: GoogleFonts.montserrat(color: labelColor, fontWeight: FontWeight.w700, fontSize: 12)),
           const Spacer(),
           Icon(icon, size: 14, color: iconColor),
           const SizedBox(width: 8),
@@ -1210,7 +1210,7 @@ class _AccountRow extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
-              style: GoogleFonts.dmSans(color: valueCol, fontWeight: FontWeight.w800, fontSize: 13),
+              style: GoogleFonts.montserrat(color: valueCol, fontWeight: FontWeight.w800, fontSize: 13),
             ),
           ),
         ],
@@ -1248,14 +1248,14 @@ class _CompanyChip extends StatelessWidget {
             label.toUpperCase(),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.dmSans(fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.9, color: labelColor),
+            style: GoogleFonts.montserrat(fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.9, color: labelColor),
           ),
           const SizedBox(height: 2),
           Text(
             v.isEmpty ? '—' : v,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.dmSans(fontSize: 12, fontWeight: FontWeight.w800, color: valueColor),
+            style: GoogleFonts.montserrat(fontSize: 12, fontWeight: FontWeight.w800, color: valueColor),
           ),
         ],
       ),
@@ -1293,7 +1293,7 @@ class _HelpRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  style: GoogleFonts.dmSans(color: labelColor, fontWeight: FontWeight.w700),
+                  style: GoogleFonts.montserrat(color: labelColor, fontWeight: FontWeight.w700),
                 ),
               ),
               Icon(LucideIcons.chevronRight, size: 18, color: iconColor),
