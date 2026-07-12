@@ -637,63 +637,10 @@ class _PolicyDocumentScreenState extends State<PolicyDocumentScreen> {
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: theme.cardColor,
-                  border: Border.all(
-                    color: theme.dividerColor.withValues(alpha: 0.08),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: widget.doc.iconBg,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        widget.doc.icon,
-                        color: widget.doc.iconColor,
-                        size: 21,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _title.isEmpty ? widget.doc.label : _title,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.doc.subtitle,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.4,
-                              color: theme.hintColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
