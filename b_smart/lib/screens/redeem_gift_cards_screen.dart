@@ -873,15 +873,15 @@ class _GiftCardRedemptionSuccessScreenState
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
                 child: IntrinsicHeight(
                   child: Column(
                     children: [
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 36),
                       SizedBox(
-                        height: 150,
+                        height: 180,
                         child: Center(
                           child: AnimatedBuilder(
                             animation: _confettiController,
@@ -892,8 +892,8 @@ class _GiftCardRedemptionSuccessScreenState
                                 children: [
                                   ..._buildConfettiDots(t),
                                   Container(
-                                    width: 72,
-                                    height: 72,
+                                    width: 76,
+                                    height: 76,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       color: const Color(0xFF22C55E),
@@ -909,7 +909,7 @@ class _GiftCardRedemptionSuccessScreenState
                                     child: const Icon(
                                       Icons.check,
                                       color: Colors.white,
-                                      size: 40,
+                                      size: 44,
                                     ),
                                   ),
                                 ],
@@ -1009,7 +1009,7 @@ class _GiftCardRedemptionSuccessScreenState
                           ),
                         ],
                       ),
-                      const Spacer(),
+                      const SizedBox(height: 70),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
