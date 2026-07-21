@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -564,14 +566,7 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
 
   Future<void> _redeemNow() async {
     final selected = widget.card.values[_selectedValueIndex];
-    if (_availableBalance < selected.coins) {
-      await _showInsufficientCoinsDialog(
-        requiredCoins: selected.coins,
-        availableCoins: _availableBalance,
-      );
-      return;
-    }
-
+    // Temporary test mode: allow redemption to complete even when balance is low.
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -582,134 +577,6 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
           newBalance: _availableBalance - selected.coins,
         ),
       ),
-    );
-  }
-
-  Future<void> _showInsufficientCoinsDialog({
-    required int requiredCoins,
-    required int availableCoins,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? const Color(0xFF141414) : Colors.white;
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.06);
-    final titleColor = isDark ? Colors.white : const Color(0xFF111111);
-    final subColor = isDark
-        ? Colors.white.withValues(alpha: 0.68)
-        : Colors.black.withValues(alpha: 0.62);
-    final mutedBg =
-        isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF8F8FB);
-
-    return showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-            decoration: BoxDecoration(
-              color: surface,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: border),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x22000000),
-                  blurRadius: 30,
-                  offset: Offset(0, 18),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Color(0x11FF6B00),
-                  ),
-                  child: const Icon(
-                    Icons.warning_amber_outlined,
-                    size: 32,
-                    color: Color(0xFFF97316),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Insufficient Coins',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.montserrat(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: titleColor,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: mutedBg,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: border),
-                  ),
-                  child: Column(
-                    children: [
-                      _DialogAmountRow(
-                        label: 'Required',
-                        value: '${_formatCoins(requiredCoins)} bCoins',
-                      ),
-                      const SizedBox(height: 16),
-                      _DialogAmountRow(
-                        label: 'Available',
-                        value: '${_formatCoins(availableCoins)} bCoins',
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'Please earn more coins to redeem this gift card.',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.montserrat(
-                    fontSize: 13,
-                    height: 1.45,
-                    fontWeight: FontWeight.w500,
-                    color: subColor,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFF97316),
-                      side: const BorderSide(
-                          color: Color(0xFFF97316), width: 1.4),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      'Close',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -864,7 +731,14 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
               valueColor:
                   canRedeem ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 16),
+            _TermsAndConditionsCard(
+              titleColor: titleColor,
+              mutedColor: subColor,
+              borderColor: mutedBorder,
+              backgroundColor: cardSurface,
+            ),
+            const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -908,7 +782,7 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
   }
 }
 
-class _GiftCardRedemptionSuccessScreen extends StatelessWidget {
+class _GiftCardRedemptionSuccessScreen extends StatefulWidget {
   final _GiftCard card;
   final _GiftCardValue selectedValue;
   final int deductedCoins;
@@ -922,9 +796,72 @@ class _GiftCardRedemptionSuccessScreen extends StatelessWidget {
   });
 
   @override
+  State<_GiftCardRedemptionSuccessScreen> createState() =>
+      _GiftCardRedemptionSuccessScreenState();
+}
+
+class _GiftCardRedemptionSuccessScreenState
+    extends State<_GiftCardRedemptionSuccessScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _confettiController;
+
+  static const List<_ConfettiDot> _confettiDots = <_ConfettiDot>[
+    _ConfettiDot(
+      angle: -2.35,
+      radius: 42,
+      size: 5,
+      color: Color(0xFFE11D48),
+      phase: 0.10,
+    ),
+    _ConfettiDot(
+      angle: -1.15,
+      radius: 38,
+      size: 4,
+      color: Color(0xFFF59E0B),
+      phase: 0.55,
+    ),
+    _ConfettiDot(
+      angle: -0.15,
+      radius: 40,
+      size: 5,
+      color: Color(0xFFEC4899),
+      phase: 0.90,
+    ),
+    _ConfettiDot(
+      angle: 0.85,
+      radius: 39,
+      size: 4,
+      color: Color(0xFF8B5CF6),
+      phase: 0.25,
+    ),
+    _ConfettiDot(
+      angle: 1.85,
+      radius: 41,
+      size: 5,
+      color: Color(0xFF22C55E),
+      phase: 0.70,
+    ),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _confettiController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _confettiController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final scaffoldBg = isDark ? const Color(0xFFF8F8F8) : Colors.white;
+    final scaffoldBg = isDark ? const Color(0xFFF9F9F9) : Colors.white;
     const titleColor = Color(0xFF111111);
     final subColor = Colors.black.withValues(alpha: 0.62);
     const cardSurface = Colors.white;
@@ -933,219 +870,237 @@ class _GiftCardRedemptionSuccessScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: scaffoldBg,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  _HeaderButton(
-                    icon: LucideIcons.arrowLeft,
-                    onTap: () => Navigator.of(context).maybePop(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 240,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ..._confettiDots(),
-                    Container(
-                      width: 92,
-                      height: 92,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color(0xFF22C55E),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 150,
+                        child: Center(
+                          child: AnimatedBuilder(
+                            animation: _confettiController,
+                            builder: (_, __) {
+                              final t = _confettiController.value;
+                              return Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  ..._buildConfettiDots(t),
+                                  Container(
+                                    width: 72,
+                                    height: 72,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: const Color(0xFF22C55E),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF22C55E)
+                                              .withValues(alpha: 0.18),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 8),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.check,
+                                      color: Colors.white,
+                                      size: 40,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.check,
-                        color: Colors.white,
-                        size: 54,
+                      Text(
+                        'Redemption Successful!',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: titleColor,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                'Redemption Successful!',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.montserrat(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: titleColor,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'You have successfully redeemed',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.montserrat(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: subColor,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${card.name} (${selectedValue.rupeesValueLabel})',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.montserrat(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: titleColor,
-                ),
-              ),
-              const SizedBox(height: 28),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: cardSurface,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: border),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _SuccessMetric(
-                        label: 'Deducted',
-                        value: '${_formatCoins(deductedCoins)} bCoins',
-                        valueColor: const Color(0xFF111111),
+                      const SizedBox(height: 4),
+                      Text(
+                        'You have successfully redeemed',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: subColor,
+                        ),
                       ),
-                    ),
-                    Container(
-                      width: 1,
-                      height: 56,
-                      color: border,
-                    ),
-                    Expanded(
-                      child: _SuccessMetric(
-                        label: 'New Balance',
-                        value: '${_signedCoins(newBalance)} bCoins',
-                        valueColor: newBalance >= 0
-                            ? const Color(0xFF111111)
-                            : const Color(0xFFEF4444),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${widget.card.name} (${widget.selectedValue.rupeesValueLabel})',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: titleColor,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(11),
+                        decoration: BoxDecoration(
+                          color: cardSurface,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: border),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _SuccessMetric(
+                                label: 'Deducted',
+                                value:
+                                    '${_formatCoins(widget.deductedCoins)} bCoins',
+                                valueColor: const Color(0xFF111111),
+                              ),
+                            ),
+                            Container(width: 1, height: 40, color: border),
+                            Expanded(
+                              child: _SuccessMetric(
+                                label: 'New Balance',
+                                value:
+                                    '${_signedCoins(widget.newBalance)} bCoins',
+                                valueColor: widget.newBalance >= 0
+                                    ? const Color(0xFF111111)
+                                    : const Color(0xFFEF4444),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Your gift card voucher will be delivered\nwithin 2 hours via',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 11,
+                          height: 1.35,
+                          fontWeight: FontWeight.w500,
+                          color: subColor,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _DeliveryChannel(
+                            icon: LucideIcons.bell,
+                            label: 'Notification',
+                          ),
+                          _DeliveryChannel(
+                            icon: LucideIcons.mail,
+                            label: 'Email',
+                          ),
+                          _DeliveryChannel(
+                            icon: LucideIcons.messageCircle,
+                            label: 'In-App Message',
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(context).pushNamed('/wallet');
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFF97316),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: Text(
+                            'View Redemption History',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                              builder: (_) => const RedeemGiftCardsScreen(),
+                            ),
+                          );
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFF97316),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
+                        ),
+                        child: Text(
+                          'Back to Redeem',
+                          style: GoogleFonts.montserrat(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 32),
-              Text(
-                'Your gift card voucher will be delivered\nwithin 2 hours via',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.montserrat(
-                  fontSize: 14,
-                  height: 1.55,
-                  fontWeight: FontWeight.w500,
-                  color: subColor,
-                ),
-              ),
-              const SizedBox(height: 22),
-              const Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _DeliveryChannel(
-                    icon: LucideIcons.bell,
-                    label: 'Notification',
-                  ),
-                  _DeliveryChannel(
-                    icon: LucideIcons.mail,
-                    label: 'Email',
-                  ),
-                  _DeliveryChannel(
-                    icon: LucideIcons.messageCircle,
-                    label: 'In-App Message',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pushNamed('/wallet');
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF97316),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  child: Text(
-                    'View Redemption History',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => const RedeemGiftCardsScreen(),
-                    ),
-                  );
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFFF97316),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                ),
-                child: Text(
-                  'Back to Redeem',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
   }
 
-  List<Widget> _confettiDots() {
-    const placements = <_ConfettiDot>[
-      _ConfettiDot(top: 26, left: 28, color: Color(0xFFE11D48)),
-      _ConfettiDot(top: 38, left: 88, color: Color(0xFFF59E0B)),
-      _ConfettiDot(top: 18, left: 160, color: Color(0xFFEC4899)),
-      _ConfettiDot(top: 72, left: 18, color: Color(0xFF8B5CF6)),
-      _ConfettiDot(top: 86, left: 58, color: Color(0xFF22C55E)),
-      _ConfettiDot(top: 84, left: 130, color: Color(0xFFF97316)),
-      _ConfettiDot(top: 116, left: 38, color: Color(0xFF0EA5E9)),
-      _ConfettiDot(top: 124, left: 102, color: Color(0xFF14B8A6)),
-      _ConfettiDot(top: 118, left: 178, color: Color(0xFFEF4444)),
-      _ConfettiDot(top: 52, left: 210, color: Color(0xFFA855F7)),
-    ];
+  List<Widget> _buildConfettiDots(double t) {
+    return _confettiDots.map((dot) {
+      final wobble = math.sin((t * math.pi * 2) + dot.phase) * 4.0;
+      final pulse = 0.6 + (math.sin((t * math.pi * 2) + dot.phase) + 1) * 0.18;
+      final scale = 0.85 + (math.sin((t * math.pi * 2) + dot.phase) + 1) * 0.08;
+      final x = math.cos(dot.angle) * (dot.radius + wobble);
+      final y = math.sin(dot.angle) * (dot.radius + wobble);
 
-    return placements
-        .map(
-          (dot) => Positioned(
-            top: dot.top,
-            left: dot.left,
+      return Transform.translate(
+        offset: Offset(x, y),
+        child: Opacity(
+          opacity: pulse,
+          child: Transform.scale(
+            scale: scale,
             child: Container(
-              width: 6,
-              height: 6,
+              width: dot.size,
+              height: dot.size,
               decoration: BoxDecoration(
                 color: dot.color,
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: dot.color.withValues(alpha: 0.25),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
             ),
           ),
-        )
-        .toList();
+        ),
+      );
+    }).toList();
   }
 
   String _formatCoins(int n) {
@@ -1210,49 +1165,97 @@ class _GiftCardBannerFallback extends StatelessWidget {
   }
 }
 
-class _DialogAmountRow extends StatelessWidget {
-  final String label;
-  final String value;
+class _TermsAndConditionsCard extends StatelessWidget {
+  final Color titleColor;
+  final Color mutedColor;
+  final Color borderColor;
+  final Color backgroundColor;
 
-  const _DialogAmountRow({
-    required this.label,
-    required this.value,
+  const _TermsAndConditionsCard({
+    required this.titleColor,
+    required this.mutedColor,
+    required this.borderColor,
+    required this.backgroundColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? Colors.white : const Color(0xFF111111);
-    final valueColor = isDark ? Colors.white : const Color(0xFF111111);
-    const coinColor = Color(0xFFF59E0B);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Terms & Conditions',
             style: GoogleFonts.montserrat(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
               color: titleColor,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _TermBullet(
+            text: 'Valid for 12 months',
+            color: mutedColor,
+          ),
+          const SizedBox(height: 10),
+          _TermBullet(
+            text: 'One-time use',
+            color: mutedColor,
+          ),
+          const SizedBox(height: 10),
+          _TermBullet(
+            text: 'Cannot be exchanged for cash',
+            color: mutedColor,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TermBullet extends StatelessWidget {
+  final String text;
+  final Color color;
+
+  const _TermBullet({
+    required this.text,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 7),
+          child: Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
             ),
           ),
         ),
         const SizedBox(width: 12),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.circle, size: 12, color: coinColor),
-            const SizedBox(width: 8),
-            Text(
-              value,
-              style: GoogleFonts.montserrat(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: valueColor,
-              ),
+        Expanded(
+          child: Text(
+            text,
+            style: GoogleFonts.montserrat(
+              fontSize: 12,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+              color: color,
             ),
-          ],
+          ),
         ),
       ],
     );
@@ -1277,17 +1280,17 @@ class _SuccessMetric extends StatelessWidget {
         Text(
           label,
           style: GoogleFonts.montserrat(
-            fontSize: 13,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
             color: Colors.black.withValues(alpha: 0.52),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 7),
         Text(
           value,
           textAlign: TextAlign.center,
           style: GoogleFonts.montserrat(
-            fontSize: 22,
+            fontSize: 18,
             fontWeight: FontWeight.w900,
             color: valueColor,
           ),
@@ -1310,13 +1313,13 @@ class _DeliveryChannel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Icon(icon, size: 30, color: const Color(0xFF111111)),
-        const SizedBox(height: 10),
+        Icon(icon, size: 24, color: const Color(0xFF111111)),
+        const SizedBox(height: 6),
         Text(
           label,
           textAlign: TextAlign.center,
           style: GoogleFonts.montserrat(
-            fontSize: 12,
+            fontSize: 10,
             fontWeight: FontWeight.w700,
             color: const Color(0xFF111111),
           ),
@@ -1327,14 +1330,18 @@ class _DeliveryChannel extends StatelessWidget {
 }
 
 class _ConfettiDot {
-  final double top;
-  final double left;
+  final double angle;
+  final double radius;
+  final double size;
   final Color color;
+  final double phase;
 
   const _ConfettiDot({
-    required this.top,
-    required this.left,
+    required this.angle,
+    required this.radius,
+    required this.size,
     required this.color,
+    required this.phase,
   });
 }
 
