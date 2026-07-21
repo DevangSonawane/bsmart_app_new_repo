@@ -267,7 +267,7 @@ class _InfoRow extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              textAlign: TextAlign.center,
+              textAlign: TextAlign.left,
               style: GoogleFonts.montserrat(
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
