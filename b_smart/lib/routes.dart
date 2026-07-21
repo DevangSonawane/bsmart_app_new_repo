@@ -11,6 +11,7 @@ import 'screens/promote_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/account_details_screen.dart';
 import 'screens/wallet_screen.dart';
+import 'screens/redeem_gift_cards_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/privacy_screen.dart';
 import 'screens/security_screen.dart';
@@ -93,6 +94,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   },
   '/settings': (ctx) => const SettingsScreen(),
   '/wallet': (ctx) => const WalletScreen(),
+  '/wallet/redeem-gift-cards': (ctx) => const RedeemGiftCardsScreen(),
   '/notifications': (ctx) => const NotificationsScreen(),
   '/privacy': (ctx) => const PrivacyScreen(),
   '/contact-support': (ctx) => const ContactSupportScreen(),
