@@ -10,7 +10,7 @@ import '../models/ledger_model.dart';
 import '../widgets/floating_message_overlay.dart';
 import 'messaging_screen.dart';
 
-enum _WalletSection { none, transaction, account, help }
+enum _WalletSection { none, transaction, redemptionRequest, account, help }
 
 enum _TransactionQuickFilter { all, earned, spent }
 
@@ -214,6 +214,20 @@ class _WalletScreenState extends State<WalletScreen>
                           ),
                           const SizedBox(height: 12),
                           _buildRedeemGiftCardsCard(),
+                          const SizedBox(height: 12),
+                          _AccordionItem(
+                            title: 'Redemption Request',
+                            badge: 4,
+                            isOpen: _openSection ==
+                                _WalletSection.redemptionRequest,
+                            onToggle: () => setState(() {
+                              _openSection = _openSection ==
+                                      _WalletSection.redemptionRequest
+                                  ? _WalletSection.none
+                                  : _WalletSection.redemptionRequest;
+                            }),
+                            child: _buildRedemptionRequestCard(),
+                          ),
                           const SizedBox(height: 12),
                           _AccordionItem(
                             title: 'Account Details',
@@ -1049,6 +1063,91 @@ class _WalletScreenState extends State<WalletScreen>
                   const SizedBox(height: 4),
                   Text(
                     'Open the redemption flow to enter a gift card code and claim your balance.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      height: 1.35,
+                      color: subColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(LucideIcons.chevronRight, color: subColor, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRedemptionRequestCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg =
+        isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.06);
+    final titleColor = isDark ? Colors.white : const Color(0xFF0A0A0A);
+    final subColor = isDark
+        ? Colors.white.withValues(alpha: 0.5)
+        : Colors.black.withValues(alpha: 0.5);
+    return InkWell(
+      onTap: () =>
+          Navigator.of(context).pushNamed('/wallet/redemption-requests'),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: border),
+          color: cardBg,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF2874F0), Color(0xFFF97316)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x332874F0),
+                    blurRadius: 18,
+                    offset: Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                LucideIcons.receiptText,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Redemption Request',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                      color: titleColor,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Track your recent gift card requests and voucher status.',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.montserrat(

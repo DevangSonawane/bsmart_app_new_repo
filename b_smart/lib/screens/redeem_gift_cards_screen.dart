@@ -566,7 +566,14 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
 
   Future<void> _redeemNow() async {
     final selected = widget.card.values[_selectedValueIndex];
-    // Temporary test mode: allow redemption to complete even when balance is low.
+    if (_availableBalance < selected.coins) {
+      await _showInsufficientCoinsDialog(
+        requiredCoins: selected.coins,
+        availableCoins: _availableBalance,
+      );
+      return;
+    }
+
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -578,6 +585,147 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showInsufficientCoinsDialog({
+    required int requiredCoins,
+    required int availableCoins,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? const Color(0xFF141414) : Colors.white;
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.06);
+    final titleColor = isDark ? Colors.white : const Color(0xFF111111);
+    final subColor = isDark
+        ? Colors.white.withValues(alpha: 0.68)
+        : Colors.black.withValues(alpha: 0.62);
+    final mutedBg =
+        isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF8F8FB);
+
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: border),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x22000000),
+                  blurRadius: 30,
+                  offset: Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0x11FF6B00),
+                  ),
+                  child: const Icon(
+                    Icons.warning_amber_outlined,
+                    size: 32,
+                    color: Color(0xFFF97316),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Insufficient Coins',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.montserrat(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: titleColor,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: mutedBg,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: border),
+                  ),
+                  child: Column(
+                    children: [
+                      _DialogAmountRow(
+                        label: 'Required',
+                        value: '${_formatCoins(requiredCoins)} bCoins',
+                      ),
+                      const SizedBox(height: 16),
+                      _DialogAmountRow(
+                        label: 'Available',
+                        value: '${_formatCoins(availableCoins)} bCoins',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Please earn more coins to redeem this gift card.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.montserrat(
+                    fontSize: 13,
+                    height: 1.45,
+                    fontWeight: FontWeight.w500,
+                    color: subColor,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFF97316),
+                      side: const BorderSide(
+                          color: Color(0xFFF97316), width: 1.4),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      'Close',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatCoins(int n) {
+    final str = n.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < str.length; i++) {
+      final indexFromEnd = str.length - i;
+      buffer.write(str[i]);
+      if (indexFromEnd > 1 && indexFromEnd % 3 == 1) {
+        buffer.write(',');
+      }
+    }
+    return buffer.toString();
   }
 
   @override
@@ -766,19 +914,6 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
         ),
       ),
     );
-  }
-
-  String _formatCoins(int n) {
-    final str = n.toString();
-    final buffer = StringBuffer();
-    for (var i = 0; i < str.length; i++) {
-      final indexFromEnd = str.length - i;
-      buffer.write(str[i]);
-      if (indexFromEnd > 1 && indexFromEnd % 3 == 1) {
-        buffer.write(',');
-      }
-    }
-    return buffer.toString();
   }
 }
 
@@ -1119,6 +1254,55 @@ class _GiftCardRedemptionSuccessScreenState
 
   String _signedCoins(int n) =>
       n >= 0 ? _formatCoins(n) : '-${_formatCoins(n)}';
+}
+
+class _DialogAmountRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _DialogAmountRow({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? Colors.white : const Color(0xFF111111);
+    final valueColor = isDark ? Colors.white : const Color(0xFF111111);
+    const coinColor = Color(0xFFF59E0B);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: titleColor,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.circle, size: 12, color: coinColor),
+            const SizedBox(width: 8),
+            Text(
+              value,
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: valueColor,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 class _GiftCardBannerFallback extends StatelessWidget {
