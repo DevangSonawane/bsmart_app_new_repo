@@ -363,11 +363,11 @@ class _GiftCardTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(26),
         child: Container(
           decoration: BoxDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(26),
             border: Border.all(color: border),
           ),
           child: Column(
@@ -377,7 +377,7 @@ class _GiftCardTile extends StatelessWidget {
                 flex: 58,
                 child: ClipRRect(
                   borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
+                      const BorderRadius.vertical(top: Radius.circular(26)),
                   child: Container(
                     width: double.infinity,
                     color: _bannerBackground(card.name),
@@ -421,7 +421,7 @@ class _GiftCardTile extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${card.startsFrom.toStringAsFixed(0)} bCoins',
+                        '${_formatCoins(card.startsFrom.toInt())} bCoins',
                         style: GoogleFonts.montserrat(
                           fontSize: 15,
                           fontWeight: FontWeight.w900,
@@ -437,6 +437,20 @@ class _GiftCardTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _formatCoins(int n) {
+    final abs = n.abs();
+    final str = abs.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < str.length; i++) {
+      final indexFromEnd = str.length - i;
+      buffer.write(str[i]);
+      if (indexFromEnd > 1 && indexFromEnd % 3 == 1) {
+        buffer.write(',');
+      }
+    }
+    return buffer.toString();
   }
 
   Widget _fallbackBanner(_GiftCard card, Color titleColor) {
@@ -815,7 +829,7 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
                 crossAxisCount: 3,
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                childAspectRatio: 1.08,
+                childAspectRatio: 1.42,
               ),
               itemBuilder: (context, index) {
                 final value = widget.card.values[index];
@@ -1359,12 +1373,12 @@ class _ValueTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: border),
           ),
           child: Column(
@@ -1374,17 +1388,17 @@ class _ValueTile extends StatelessWidget {
                 value.rupeesValueLabel,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.montserrat(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.w900,
                   color: titleColor,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 '${_formatCoins(value.coins)} bCoins',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.montserrat(
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w700,
                   color: subColor,
                 ),
