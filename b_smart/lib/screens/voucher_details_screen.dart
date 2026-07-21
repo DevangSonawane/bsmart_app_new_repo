@@ -249,11 +249,12 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasAction = actionLabel != null && onAction != null;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
-            width: 110,
+            width: 118,
             child: Text(
               label,
               style: GoogleFonts.montserrat(
@@ -281,6 +282,7 @@ class _InfoRow extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(LucideIcons.copy,
                         size: 15, color: Color(0xFF6B7280)),
@@ -298,7 +300,7 @@ class _InfoRow extends StatelessWidget {
               ),
             )
           else
-            const SizedBox(width: 54),
+            const SizedBox(width: 12),
         ],
       ),
     );
