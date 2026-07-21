@@ -34,6 +34,17 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
       dateLabel: '20 Jul 2024, 11:20 AM',
       status: 'Completed',
       assetPath: 'assets/giftcards/flipkartgiftcard.avif',
+      voucherCode: 'FLIP-8742-2211-ABCD',
+      pin: '4589',
+      expiryLabel: '31 Dec 2026',
+      redeemSteps: <String>[
+        'Visit flipkart.com',
+        'Add products to cart and go to payment',
+        'Choose gift card / voucher option',
+        'Enter the voucher code and PIN to pay',
+      ],
+      actionLabel: 'Go to Flipkart',
+      actionUrl: 'https://www.flipkart.com/',
     ),
     _RedemptionRequest(
       name: 'Myntra Gift Card',
@@ -69,58 +80,66 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
       backgroundColor: scaffoldBg,
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
           children: [
-            Row(
-              children: [
-                _HeaderButton(
-                  icon: LucideIcons.arrowLeft,
-                  onTap: () => Navigator.of(context).maybePop(),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'My Redemption Requests',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: titleColor,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  _HeaderButton(
+                    icon: LucideIcons.arrowLeft,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'My Redemption Requests',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: titleColor,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              height: 40,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _filters.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (context, index) {
-                  final label = _filters[index];
-                  final selected = label == _filter;
-                  return ChoiceChip(
-                    label: Text(label),
-                    selected: selected,
-                    onSelected: (_) => setState(() => _filter = label),
-                    selectedColor: const Color(0xFFF97316),
-                    backgroundColor: chipBg,
-                    showCheckmark: false,
-                    labelStyle: GoogleFonts.montserrat(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                      color: selected ? Colors.white : subColor,
-                    ),
-                    side: BorderSide(
-                      color: selected ? Colors.transparent : border,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                  );
-                },
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                height: 34,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _filters.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final label = _filters[index];
+                    final selected = label == _filter;
+                    return ChoiceChip(
+                      label: Text(label),
+                      selected: selected,
+                      onSelected: (_) => setState(() => _filter = label),
+                      selectedColor: const Color(0xFFF97316),
+                      backgroundColor: chipBg,
+                      showCheckmark: false,
+                      labelStyle: GoogleFonts.montserrat(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                        color: selected ? Colors.white : subColor,
+                      ),
+                      side: BorderSide(
+                        color: selected ? Colors.transparent : border,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    );
+                  },
+                ),
               ),
             ),
             const SizedBox(height: 18),
@@ -147,7 +166,10 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
               Column(
                 children: [
                   for (final request in _visibleRequests) ...[
-                    _RequestCard(request: request),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: _RequestCard(request: request),
+                    ),
                     const SizedBox(height: 14),
                   ],
                 ],
@@ -169,26 +191,38 @@ class _RequestCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final surface =
         isDark ? Colors.white.withValues(alpha: 0.03) : Colors.white;
-    final border = Colors.black.withValues(alpha: 0.08);
+    final shadow = isDark
+        ? Colors.black.withValues(alpha: 0.24)
+        : Colors.black.withValues(alpha: 0.06);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.06);
     const titleColor = Color(0xFF111111);
     final subColor = Colors.black.withValues(alpha: 0.55);
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: surface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: shadow,
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 86,
-            height: 86,
+            width: 72,
+            height: 72,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
               color: const Color(0xFFF3F4F6),
             ),
             child: Image.asset(
@@ -199,65 +233,89 @@ class _RequestCard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  request.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.montserrat(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: titleColor,
+            child: SizedBox(
+              height: 72,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    request.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: titleColor,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  request.amountLabel,
-                  style: GoogleFonts.montserrat(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                    color: titleColor,
+                  const SizedBox(height: 2),
+                  Text(
+                    request.amountLabel,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: titleColor,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  request.dateLabel,
-                  style: GoogleFonts.montserrat(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: subColor,
+                  const Spacer(),
+                  Text(
+                    request.dateLabel,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: subColor,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               _StatusPill(status: request.status),
               if (request.status == 'Completed') ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 OutlinedButton(
-                  onPressed: () {},
+                  onPressed: () => Navigator.of(context).pushNamed(
+                    '/wallet/voucher-details',
+                    arguments: {
+                      'brandName': request.name,
+                      'amountLabel': request.amountLabel,
+                      'assetPath': request.assetPath,
+                      'voucherCode':
+                          request.voucherCode ?? 'FLIP-8742-2211-ABCD',
+                      'pin': request.pin ?? '4589',
+                      'expiryLabel': request.expiryLabel ?? '31 Dec 2026',
+                      'redeemSteps': request.redeemSteps ??
+                          <String>[
+                            'Visit flipkart.com',
+                            'Add products to cart and go to payment',
+                            'Choose gift card / voucher option',
+                            'Enter the voucher code and PIN to pay',
+                          ],
+                      'actionLabel': request.actionLabel ?? 'Go to Flipkart',
+                      'actionUrl':
+                          request.actionUrl ?? 'https://www.flipkart.com/',
+                    },
+                  ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF3B82F6),
                     side:
                         const BorderSide(color: Color(0xFF93C5FD), width: 1.2),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                   child: Text(
                     'View Voucher',
                     style: GoogleFonts.montserrat(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -296,15 +354,15 @@ class _StatusPill extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
         status,
         style: GoogleFonts.montserrat(
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.w800,
           color: fg,
         ),
@@ -341,7 +399,7 @@ class _HeaderButton extends StatelessWidget {
           height: 42,
           decoration: BoxDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: border),
           ),
           child: Icon(icon, size: 18, color: iconColor),
@@ -357,6 +415,12 @@ class _RedemptionRequest {
   final String dateLabel;
   final String status;
   final String assetPath;
+  final String? voucherCode;
+  final String? pin;
+  final String? expiryLabel;
+  final List<String>? redeemSteps;
+  final String? actionLabel;
+  final String? actionUrl;
 
   const _RedemptionRequest({
     required this.name,
@@ -364,5 +428,11 @@ class _RedemptionRequest {
     required this.dateLabel,
     required this.status,
     required this.assetPath,
+    this.voucherCode,
+    this.pin,
+    this.expiryLabel,
+    this.redeemSteps,
+    this.actionLabel,
+    this.actionUrl,
   });
 }

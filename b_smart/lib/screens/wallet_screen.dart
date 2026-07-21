@@ -10,7 +10,7 @@ import '../models/ledger_model.dart';
 import '../widgets/floating_message_overlay.dart';
 import 'messaging_screen.dart';
 
-enum _WalletSection { none, transaction, redemptionRequest, account, help }
+enum _WalletSection { none, transaction, account, help }
 
 enum _TransactionQuickFilter { all, earned, spent }
 
@@ -215,19 +215,7 @@ class _WalletScreenState extends State<WalletScreen>
                           const SizedBox(height: 12),
                           _buildRedeemGiftCardsCard(),
                           const SizedBox(height: 12),
-                          _AccordionItem(
-                            title: 'Redemption Request',
-                            badge: 4,
-                            isOpen: _openSection ==
-                                _WalletSection.redemptionRequest,
-                            onToggle: () => setState(() {
-                              _openSection = _openSection ==
-                                      _WalletSection.redemptionRequest
-                                  ? _WalletSection.none
-                                  : _WalletSection.redemptionRequest;
-                            }),
-                            child: _buildRedemptionRequestCard(),
-                          ),
+                          _buildRedemptionRequestCard(),
                           const SizedBox(height: 12),
                           _AccordionItem(
                             title: 'Account Details',
@@ -1027,27 +1015,6 @@ class _WalletScreenState extends State<WalletScreen>
         ),
         child: Row(
           children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFF97316), Color(0xFFFB923C)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                      color: Color(0x33F97316),
-                      blurRadius: 18,
-                      offset: Offset(0, 10)),
-                ],
-              ),
-              child:
-                  const Icon(LucideIcons.gift, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1075,7 +1042,7 @@ class _WalletScreenState extends State<WalletScreen>
                 ],
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Icon(LucideIcons.chevronRight, color: subColor, size: 18),
           ],
         ),
@@ -1108,31 +1075,6 @@ class _WalletScreenState extends State<WalletScreen>
         ),
         child: Row(
           children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF2874F0), Color(0xFFF97316)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x332874F0),
-                    blurRadius: 18,
-                    offset: Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                LucideIcons.receiptText,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1160,7 +1102,7 @@ class _WalletScreenState extends State<WalletScreen>
                 ],
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Icon(LucideIcons.chevronRight, color: subColor, size: 18),
           ],
         ),
