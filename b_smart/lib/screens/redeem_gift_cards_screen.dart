@@ -201,36 +201,52 @@ class _RedeemGiftCardsScreenState extends State<RedeemGiftCardsScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              SizedBox(
-                height: 36,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _categories.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final label = _categories[index];
-                    final isSelected = label == _category;
-                    return ChoiceChip(
-                      label: Text(label),
-                      selected: isSelected,
-                      onSelected: (_) => setState(() => _category = label),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      labelStyle: GoogleFonts.montserrat(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                        color: isSelected ? Colors.white : chipIdleText,
-                      ),
-                      selectedColor: const Color(0xFFF97316),
-                      backgroundColor: chipIdleBg,
-                      side: BorderSide(
-                          color: isSelected ? Colors.transparent : border),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      showCheckmark: false,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    );
-                  },
+              Transform.translate(
+                offset: const Offset(-16, 0),
+                child: SizedBox(
+                  width: MediaQuery.sizeOf(context).width,
+                  height: 36,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    clipBehavior: Clip.none,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < _categories.length; i++) ...[
+                          ChoiceChip(
+                            label: Text(_categories[i]),
+                            selected: _categories[i] == _category,
+                            onSelected: (_) =>
+                                setState(() => _category = _categories[i]),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            labelStyle: GoogleFonts.montserrat(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                              color: _categories[i] == _category
+                                  ? Colors.white
+                                  : chipIdleText,
+                            ),
+                            selectedColor: const Color(0xFFF97316),
+                            backgroundColor: chipIdleBg,
+                            side: BorderSide(
+                              color: _categories[i] == _category
+                                  ? Colors.transparent
+                                  : border,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            showCheckmark: false,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                          if (i != _categories.length - 1)
+                            const SizedBox(width: 8),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
