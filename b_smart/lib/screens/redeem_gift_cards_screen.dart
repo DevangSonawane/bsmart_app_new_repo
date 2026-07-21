@@ -739,9 +739,6 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
         : Colors.black.withValues(alpha: 0.58);
     final cardSurface =
         isDark ? Colors.white.withValues(alpha: 0.04) : Colors.white;
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.07)
-        : Colors.black.withValues(alpha: 0.06);
     final mutedBorder = isDark
         ? Colors.white.withValues(alpha: 0.09)
         : Colors.black.withValues(alpha: 0.08);
@@ -779,11 +776,11 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
             const SizedBox(height: 18),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(18),
+              height: 170,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: cardSurface,
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: border),
+                borderRadius: BorderRadius.circular(18),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.04),
@@ -792,20 +789,14 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
                   ),
                 ],
               ),
-              child: AspectRatio(
-                aspectRatio: 1.9,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: widget.card.assetPath.isNotEmpty
-                      ? Image.asset(
-                          widget.card.assetPath,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _GiftCardBannerFallback(card: widget.card),
-                        )
-                      : _GiftCardBannerFallback(card: widget.card),
-                ),
-              ),
+              child: widget.card.assetPath.isNotEmpty
+                  ? Image.asset(
+                      widget.card.assetPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _GiftCardBannerFallback(card: widget.card),
+                    )
+                  : _GiftCardBannerFallback(card: widget.card),
             ),
             const SizedBox(height: 18),
             Text(
