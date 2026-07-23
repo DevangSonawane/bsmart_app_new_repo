@@ -660,20 +660,14 @@ class _RequestActionSheet extends StatefulWidget {
 }
 
 class _RequestActionSheetState extends State<_RequestActionSheet> {
-  double _sliderValue = 0;
-  bool _confirmed = false;
-
   @override
   Widget build(BuildContext context) {
-    final isDone = _sliderValue >= 0.98;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final sheetBg = isDark ? const Color(0xFF121212) : Colors.white;
     final titleColor = isDark ? Colors.white : const Color(0xFF111111);
     final subColor = isDark
         ? Colors.white.withValues(alpha: 0.66)
         : Colors.black.withValues(alpha: 0.58);
-    final trackBg =
-        isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF3F4F6);
 
     return SafeArea(
       top: false,
@@ -744,70 +738,34 @@ class _RequestActionSheetState extends State<_RequestActionSheet> {
                 ),
               ),
               const SizedBox(height: 22),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: trackBg,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: widget.accentColor.withValues(alpha: 0.18),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: isDone
-                            ? widget.accentColor
-                            : widget.accentColor.withValues(alpha: 0.18),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        LucideIcons.chevronRight,
-                        color: isDone ? Colors.white : widget.accentColor,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 6,
-                          activeTrackColor: widget.accentColor,
-                          inactiveTrackColor: Colors.transparent,
-                          thumbColor: Colors.white,
-                          overlayColor:
-                              widget.accentColor.withValues(alpha: 0.12),
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 14,
-                          ),
-                        ),
-                        child: Slider(
-                          value: _sliderValue,
-                          onChanged: (value) {
-                            if (_confirmed) return;
-                            setState(() => _sliderValue = value);
-                            if (value >= 0.98) {
-                              _confirmAction();
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
               Text(
-                isDone
-                    ? 'Release to confirm ${widget.actionLabel.toLowerCase()}'
-                    : 'Slide to ${widget.actionLabel.toLowerCase()}',
+                'Tap to confirm ${widget.actionLabel.toLowerCase()}',
                 style: GoogleFonts.montserrat(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: subColor,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _confirmAction,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.accentColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    widget.actionLabel,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -830,8 +788,6 @@ class _RequestActionSheetState extends State<_RequestActionSheet> {
   }
 
   void _confirmAction() {
-    if (_confirmed) return;
-    _confirmed = true;
     Navigator.of(context).pop();
     widget.onConfirm();
   }
