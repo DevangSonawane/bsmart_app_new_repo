@@ -29,4 +29,5 @@ export 'support_queries_api.dart';
 export 'faq_api.dart';
 export 'suggestions_api.dart';
 export 'wallet_api.dart';
+export 'gift_cards_api.dart';
 export 'views_api.dart';

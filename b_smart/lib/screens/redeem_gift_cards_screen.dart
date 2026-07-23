@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../api/gift_cards_api.dart';
+import '../api/api_exceptions.dart';
 import '../services/wallet_service.dart';
 
 class RedeemGiftCardsScreen extends StatefulWidget {
@@ -15,18 +17,16 @@ class RedeemGiftCardsScreen extends StatefulWidget {
 
 class _RedeemGiftCardsScreenState extends State<RedeemGiftCardsScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final GiftCardsApi _giftCardsApi = GiftCardsApi();
   String _query = '';
   String _category = 'All';
 
-  static const List<String> _categories = <String>[
-    'All',
-    'Shopping',
-    'Food',
-    'Entertainment',
-    'Travel',
-  ];
+  bool _isLoading = true;
+  String? _loadError;
+  List<_GiftCard> _giftCards = <_GiftCard>[];
+  int _loadRequestId = 0;
 
-  static const List<_GiftCard> _giftCards = <_GiftCard>[
+  static const List<_GiftCard> _fallbackGiftCards = <_GiftCard>[
     _GiftCard(
       name: 'Amazon Pay Gift Card',
       assetPath: 'assets/giftcards/amazongiftcard.webp',
@@ -83,13 +83,85 @@ class _RedeemGiftCardsScreenState extends State<RedeemGiftCardsScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadGiftCards();
+  }
+
+  Future<void> _loadGiftCards() async {
+    final requestId = ++_loadRequestId;
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    }
+
+    try {
+      final cards = await _giftCardsApi.getActiveGiftCards();
+
+      final mapped =
+          cards.map((raw) => _GiftCard.fromApi(raw)).toList(growable: false);
+      final normalized = _normalizePopularCards(mapped);
+
+      if (!mounted || requestId != _loadRequestId) return;
+      setState(() {
+        _giftCards = normalized;
+        _isLoading = false;
+        if (_category != 'All' &&
+            !_categoriesFor(normalized).contains(_category)) {
+          _category = 'All';
+        }
+      });
+    } catch (err) {
+      if (!mounted || requestId != _loadRequestId) return;
+      setState(() {
+        _giftCards = _fallbackGiftCards;
+        _isLoading = false;
+        _loadError = err.toString();
+      });
+    }
+  }
+
+  List<_GiftCard> _normalizePopularCards(List<_GiftCard> cards) {
+    if (cards.isEmpty) return cards;
+    if (cards.any((card) => card.isPopular)) return cards;
+
+    return cards.asMap().entries.map((entry) {
+      return entry.value.copyWith(isPopular: entry.key < 3);
+    }).toList(growable: false);
+  }
+
+  List<String> _categoriesFor(List<_GiftCard> cards) {
+    final categories = cards
+        .map((card) => card.category.trim())
+        .where((category) => category.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+
+    if (categories.isEmpty) {
+      return const <String>[
+        'All',
+        'Shopping',
+        'Food',
+        'Entertainment',
+        'Travel',
+      ];
+    }
+
+    return <String>['All', ...categories];
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
 
   List<_GiftCard> get _filteredCards {
-    return _giftCards.where((card) {
+    final cards = _giftCards.isEmpty ? _fallbackGiftCards : _giftCards;
+    return cards.where((card) {
       final matchesCategory = _category == 'All' || card.category == _category;
       final matchesQuery = _query.isEmpty ||
           card.name.toLowerCase().contains(_query.toLowerCase()) ||
@@ -103,6 +175,10 @@ class _RedeemGiftCardsScreenState extends State<RedeemGiftCardsScreen> {
 
   List<_GiftCard> get _allCards =>
       _filteredCards.where((card) => !card.isPopular).toList();
+
+  List<String> get _categories => _categoriesFor(
+        _giftCards.isEmpty ? _fallbackGiftCards : _giftCards,
+      );
 
   void _showCardDetails(_GiftCard card) {
     Navigator.of(context).push(
@@ -136,9 +212,7 @@ class _RedeemGiftCardsScreenState extends State<RedeemGiftCardsScreen> {
       backgroundColor: scaffoldBg,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () async {
-            setState(() {});
-          },
+          onRefresh: _loadGiftCards,
           color: const Color(0xFFF97316),
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -175,6 +249,36 @@ class _RedeemGiftCardsScreenState extends State<RedeemGiftCardsScreen> {
                 ],
               ),
               const SizedBox(height: 16),
+              if (_loadError != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.wifi_off_rounded,
+                        size: 18,
+                        color: Color(0xFFB91C1C),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Using saved gift cards right now. Pull to refresh when the network is back.',
+                          style: GoogleFonts.montserrat(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF7F1D1D),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               Container(
                 decoration: BoxDecoration(
                   color: surface,
@@ -252,35 +356,64 @@ class _RedeemGiftCardsScreenState extends State<RedeemGiftCardsScreen> {
                 ),
               ),
               const SizedBox(height: 28),
-              Text(
-                'Popular Gift Cards',
-                style: GoogleFonts.montserrat(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: titleColor,
+              if (_isLoading && _giftCards.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 48),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Color(0xFFF97316),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Loading active gift cards...',
+                          style: GoogleFonts.montserrat(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: subColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else ...[
+                Text(
+                  'Popular Gift Cards',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: titleColor,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              _GiftCardGrid(
-                cards: _popularCards,
-                onTap: _showCardDetails,
-                emptyText: 'No popular gift cards match your search.',
-              ),
-              const SizedBox(height: 28),
-              Text(
-                'All Gift Cards',
-                style: GoogleFonts.montserrat(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: titleColor,
+                const SizedBox(height: 14),
+                _GiftCardGrid(
+                  cards: _popularCards,
+                  onTap: _showCardDetails,
+                  emptyText: 'No popular gift cards match your search.',
                 ),
-              ),
-              const SizedBox(height: 14),
-              _GiftCardGrid(
-                cards: _allCards,
-                onTap: _showCardDetails,
-                emptyText: 'No more gift cards match your search.',
-              ),
+                const SizedBox(height: 28),
+                Text(
+                  'All Gift Cards',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: titleColor,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _GiftCardGrid(
+                  cards: _allCards,
+                  onTap: _showCardDetails,
+                  emptyText: 'No more gift cards match your search.',
+                ),
+              ],
             ],
           ),
         ),
@@ -383,15 +516,33 @@ class _GiftCardTile extends StatelessWidget {
                   child: Container(
                     width: double.infinity,
                     color: _bannerBackground(card.name),
-                    child: card.assetPath.isNotEmpty
-                        ? Image.asset(
-                            card.assetPath,
+                    child: card.imageUrl != null && card.imageUrl!.isNotEmpty
+                        ? Image.network(
+                            card.imageUrl!,
                             fit: BoxFit.cover,
                             width: double.infinity,
-                            errorBuilder: (_, __, ___) =>
-                                _fallbackBanner(card, titleColor),
+                            errorBuilder: (_, __, ___) {
+                              if (card.assetPath.isNotEmpty) {
+                                return Image.asset(
+                                  card.assetPath,
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  errorBuilder: (_, __, ___) =>
+                                      _fallbackBanner(card, titleColor),
+                                );
+                              }
+                              return _fallbackBanner(card, titleColor);
+                            },
                           )
-                        : _fallbackBanner(card, titleColor),
+                        : card.assetPath.isNotEmpty
+                            ? Image.asset(
+                                card.assetPath,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                errorBuilder: (_, __, ___) =>
+                                    _fallbackBanner(card, titleColor),
+                              )
+                            : _fallbackBanner(card, titleColor),
                   ),
                 ),
               ),
@@ -538,8 +689,10 @@ class _GiftCardDetailScreen extends StatefulWidget {
 
 class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
   final WalletService _walletService = WalletService();
+  final GiftCardsApi _giftCardsApi = GiftCardsApi();
   int _availableBalance = 0;
   bool _isLoadingBalance = true;
+  bool _isPurchasing = false;
   int _selectedValueIndex = 0;
 
   @override
@@ -565,6 +718,7 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
   }
 
   Future<void> _redeemNow() async {
+    if (_isPurchasing) return;
     final selected = widget.card.values[_selectedValueIndex];
     if (_availableBalance < selected.coins) {
       await _showInsufficientCoinsDialog(
@@ -574,17 +728,81 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
       return;
     }
 
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => _GiftCardRedemptionSuccessScreen(
-          card: widget.card,
-          selectedValue: selected,
-          deductedCoins: selected.coins,
-          newBalance: _availableBalance - selected.coins,
+    final giftCardId = widget.card.id?.trim() ?? '';
+    if (giftCardId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This gift card cannot be purchased right now.'),
+          backgroundColor: Colors.red,
         ),
-      ),
-    );
+      );
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _isPurchasing = true);
+    }
+
+    try {
+      await _giftCardsApi.createGiftCardOrder(
+        giftCardId: giftCardId,
+        bcoins: selected.coins,
+      );
+
+      if (!mounted) return;
+      final newBalance = math.max(0, _availableBalance - selected.coins);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => _GiftCardRedemptionSuccessScreen(
+            card: widget.card,
+            selectedValue: selected,
+            deductedCoins: selected.coins,
+            newBalance: newBalance,
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      final message = _giftCardOrderErrorMessage(e);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not place the gift card order.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isPurchasing = false);
+      }
+    }
+  }
+
+  String _giftCardOrderErrorMessage(ApiException e) {
+    final body = e.body;
+    if (body is Map<String, dynamic>) {
+      final message = body['message']?.toString().trim();
+      if (message != null && message.isNotEmpty) {
+        return message;
+      }
+      final requiredCoins = body['bcoins_required'];
+      final balance = body['bcoins_balance'];
+      final shortfall = body['shortfall'];
+      if (requiredCoins != null && balance != null && shortfall != null) {
+        return 'Insufficient balance. You need $requiredCoins coins for this gift card.';
+      }
+    }
+    return e.message.isNotEmpty
+        ? e.message
+        : 'Could not place the gift card order.';
   }
 
   Future<void> _showInsufficientCoinsDialog({
@@ -789,14 +1007,31 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
                   ),
                 ],
               ),
-              child: widget.card.assetPath.isNotEmpty
-                  ? Image.asset(
-                      widget.card.assetPath,
+              child: widget.card.imageUrl != null &&
+                      widget.card.imageUrl!.isNotEmpty
+                  ? Image.network(
+                      widget.card.imageUrl!,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _GiftCardBannerFallback(card: widget.card),
+                      errorBuilder: (_, __, ___) {
+                        if (widget.card.assetPath.isNotEmpty) {
+                          return Image.asset(
+                            widget.card.assetPath,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _GiftCardBannerFallback(card: widget.card),
+                          );
+                        }
+                        return _GiftCardBannerFallback(card: widget.card);
+                      },
                     )
-                  : _GiftCardBannerFallback(card: widget.card),
+                  : widget.card.assetPath.isNotEmpty
+                      ? Image.asset(
+                          widget.card.assetPath,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              _GiftCardBannerFallback(card: widget.card),
+                        )
+                      : _GiftCardBannerFallback(card: widget.card),
             ),
             const SizedBox(height: 18),
             Text(
@@ -807,6 +1042,17 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
                 color: titleColor,
               ),
             ),
+            if ((widget.card.vendor ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                widget.card.vendor!,
+                style: GoogleFonts.montserrat(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: subColor,
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Text(
               widget.card.description,
@@ -872,6 +1118,7 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
             ),
             const SizedBox(height: 16),
             _TermsAndConditionsCard(
+              terms: widget.card.termsAndConditions,
               titleColor: titleColor,
               mutedColor: subColor,
               borderColor: mutedBorder,
@@ -881,7 +1128,8 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _isLoadingBalance ? null : _redeemNow,
+                onPressed:
+                    (_isLoadingBalance || _isPurchasing) ? null : _redeemNow,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: selectedBg,
                   foregroundColor: Colors.white,
@@ -893,7 +1141,7 @@ class _GiftCardDetailScreenState extends State<_GiftCardDetailScreen> {
                   ),
                 ),
                 child: Text(
-                  'Redeem Now',
+                  _isPurchasing ? 'Purchasing...' : 'Redeem Now',
                   style: GoogleFonts.montserrat(
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
@@ -1341,12 +1589,14 @@ class _GiftCardBannerFallback extends StatelessWidget {
 }
 
 class _TermsAndConditionsCard extends StatelessWidget {
+  final List<String> terms;
   final Color titleColor;
   final Color mutedColor;
   final Color borderColor;
   final Color backgroundColor;
 
   const _TermsAndConditionsCard({
+    required this.terms,
     required this.titleColor,
     required this.mutedColor,
     required this.borderColor,
@@ -1375,20 +1625,19 @@ class _TermsAndConditionsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          _TermBullet(
-            text: 'Valid for 12 months',
-            color: mutedColor,
-          ),
-          const SizedBox(height: 10),
-          _TermBullet(
-            text: 'One-time use',
-            color: mutedColor,
-          ),
-          const SizedBox(height: 10),
-          _TermBullet(
-            text: 'Cannot be exchanged for cash',
-            color: mutedColor,
-          ),
+          if (terms.isEmpty)
+            _TermBullet(
+              text: 'No terms available',
+              color: mutedColor,
+            )
+          else
+            for (var i = 0; i < terms.length; i++) ...[
+              _TermBullet(
+                text: terms[i],
+                color: mutedColor,
+              ),
+              if (i != terms.length - 1) const SizedBox(height: 10),
+            ],
         ],
       ),
     );
@@ -1660,21 +1909,154 @@ class _SummaryRow extends StatelessWidget {
 
 class _GiftCard {
   final String name;
+  final String? id;
+  final String? vendor;
   final String assetPath;
   final String category;
   final double startsFrom;
   final bool isPopular;
   final String description;
+  final String? imageUrl;
+  final List<String> termsAndConditions;
   final List<_GiftCardValue> values;
 
   const _GiftCard({
     required this.name,
+    this.id,
+    this.vendor,
     required this.assetPath,
     required this.category,
     required this.startsFrom,
     required this.isPopular,
     required this.description,
-  }) : values = _standardValues;
+    this.imageUrl,
+    List<String>? termsAndConditions,
+    List<_GiftCardValue>? values,
+  })  : termsAndConditions = termsAndConditions ?? const <String>[],
+        values = values ?? _standardValues;
+
+  factory _GiftCard.fromApi(
+    Map<String, dynamic> json, {
+    bool isPopularFallback = false,
+  }) {
+    final name = _pickString(json, const [
+          'title',
+          'name',
+          'brand_name',
+          'brandName',
+          'gift_card_name',
+          'giftCardName',
+        ]) ??
+        'Gift Card';
+    final category = _pickString(json, const [
+          'category',
+          'category_name',
+          'gift_card_category',
+          'giftCardCategory',
+          'type',
+        ]) ??
+        'Gift Card';
+    final description = _pickString(json, const [
+          'description',
+          'summary',
+          'short_description',
+          'shortDescription',
+          'details',
+        ]) ??
+        'Redeem this gift card from the app.';
+    final vendor = _pickString(json, const [
+      'vendor',
+      'merchant',
+      'brand',
+    ]);
+    final startsFrom = _pickDouble(json, const [
+          'starts_from',
+          'startFrom',
+          'min_amount',
+          'minimum_amount',
+          'amount',
+          'value',
+          'starting_from',
+        ]) ??
+        0;
+    final imageUrl = _pickString(json, const [
+          'image_url',
+          'imageUrl',
+          'logo_url',
+          'logoUrl',
+          'banner_url',
+          'bannerUrl',
+          'thumbnail_url',
+          'thumbnailUrl',
+        ]) ??
+        _mediaUrl(json['media']);
+    final popular = _pickBool(json, const [
+          'is_popular',
+          'popular',
+          'featured',
+          'is_featured',
+        ]) ??
+        isPopularFallback;
+    final id = _pickString(json, const [
+      'gift_card_id',
+      'giftCardId',
+      'id',
+      '_id',
+    ]);
+    final terms = _parseStringList(json['terms_and_conditions']) ??
+        _parseStringList(json['termsAndConditions']) ??
+        const <String>[];
+    final assetPath = _fallbackAssetPathForName(name);
+    final values = _parseGiftCardValues(json);
+    final derivedStartsFrom = values.isNotEmpty
+        ? values
+            .map((value) => value.coins)
+            .reduce((a, b) => a < b ? a : b)
+            .toDouble()
+        : 0.0;
+
+    return _GiftCard(
+      name: name,
+      id: id,
+      vendor: vendor,
+      assetPath: assetPath,
+      category: category,
+      startsFrom: startsFrom > 0 ? startsFrom : derivedStartsFrom,
+      isPopular: popular,
+      description: description,
+      imageUrl: imageUrl,
+      termsAndConditions: terms,
+      values: values.isEmpty ? null : values,
+    );
+  }
+
+  _GiftCard copyWith({
+    String? name,
+    String? id,
+    String? vendor,
+    String? assetPath,
+    String? category,
+    double? startsFrom,
+    bool? isPopular,
+    String? description,
+    String? imageUrl,
+    List<String>? termsAndConditions,
+    List<_GiftCardValue>? values,
+  }) {
+    return _GiftCard(
+      name: name ?? this.name,
+      id: id ?? this.id,
+      vendor: vendor ?? this.vendor,
+      assetPath: assetPath ?? this.assetPath,
+      category: category ?? this.category,
+      startsFrom: startsFrom ?? this.startsFrom,
+      isPopular: isPopular ?? this.isPopular,
+      description: description ?? this.description,
+      imageUrl: imageUrl ?? this.imageUrl,
+      termsAndConditions: termsAndConditions ?? this.termsAndConditions,
+      values: values ?? this.values,
+    );
+  }
 
   String get shortName {
     final parts = name.trim().split(RegExp(r'\s+'));
@@ -1708,3 +2090,166 @@ const List<_GiftCardValue> _standardValues = <_GiftCardValue>[
   _GiftCardValue(rupees: 1000, coins: 50000),
   _GiftCardValue(rupees: 2000, coins: 100000),
 ];
+
+String _fallbackAssetPathForName(String name) {
+  switch (name.trim().toLowerCase()) {
+    case 'amazon pay gift card':
+    case 'amazon gift card':
+    case 'amazon':
+      return 'assets/giftcards/amazongiftcard.webp';
+    case 'flipkart gift card':
+    case 'flipkart':
+      return 'assets/giftcards/flipkartgiftcard.avif';
+    case 'myntra gift card':
+    case 'myntra':
+      return 'assets/giftcards/myntra.jpeg';
+    case 'zomato gift card':
+    case 'zomato':
+      return 'assets/giftcards/zomatogiftcard.avif';
+    case 'uber gift card':
+    case 'uber':
+      return 'assets/giftcards/ubergiftcard.png';
+    case 'ajio gift card':
+    case 'ajio':
+      return 'assets/giftcards/ajiogiftcard.jpg';
+    default:
+      return '';
+  }
+}
+
+String? _pickString(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value != null) {
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+  }
+  return null;
+}
+
+double? _pickDouble(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final cleaned = value.replaceAll(RegExp(r'[^0-9.]'), '');
+      final parsed = double.tryParse(cleaned);
+      if (parsed != null) return parsed;
+    }
+  }
+  return null;
+}
+
+Map<String, dynamic>? _asMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return null;
+}
+
+String? _mediaUrl(dynamic media) {
+  final map = _asMap(media);
+  if (map == null) return null;
+  return _pickString(map, const ['url', 'image_url', 'imageUrl']);
+}
+
+List<String>? _parseStringList(dynamic value) {
+  if (value is! List) return null;
+  final items = value
+      .map((item) => item?.toString().trim())
+      .whereType<String>()
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
+  return items;
+}
+
+bool? _pickBool(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized.isEmpty) continue;
+      if (normalized == 'true' ||
+          normalized == '1' ||
+          normalized == 'yes' ||
+          normalized == 'y') {
+        return true;
+      }
+      if (normalized == 'false' ||
+          normalized == '0' ||
+          normalized == 'no' ||
+          normalized == 'n') {
+        return false;
+      }
+    }
+  }
+  return null;
+}
+
+List<_GiftCardValue> _parseGiftCardValues(Map<String, dynamic> json) {
+  final candidates = <dynamic>[
+    json['values'],
+    json['denominations'],
+    json['amounts'],
+    json['tiers'],
+    json['price_points'],
+    json['pricePoints'],
+  ];
+
+  final values = <_GiftCardValue>[];
+  for (final candidate in candidates) {
+    if (candidate is! List) continue;
+    for (final item in candidate) {
+      if (item is num) {
+        final rupees = item.toInt();
+        values.add(_GiftCardValue(rupees: rupees, coins: rupees * 50));
+        continue;
+      }
+      if (item is String) {
+        final parsed = double.tryParse(
+          item.replaceAll(RegExp(r'[^0-9.]'), ''),
+        );
+        if (parsed != null) {
+          final rupees = parsed.round();
+          values.add(_GiftCardValue(rupees: rupees, coins: rupees * 50));
+        }
+        continue;
+      }
+      if (item is Map) {
+        final map = Map<String, dynamic>.from(item);
+        final rupees = _pickDouble(map, const [
+          'rupees',
+          'amount',
+          'value',
+          'denomination',
+          'price',
+        ])?.round();
+        final coins = _pickDouble(map, const [
+          'coins',
+          'coin',
+          'points',
+          'bcoins',
+        ])?.round();
+
+        if (rupees != null && coins != null) {
+          values.add(_GiftCardValue(rupees: rupees, coins: coins));
+        } else if (rupees != null) {
+          values.add(_GiftCardValue(rupees: rupees, coins: rupees * 50));
+        } else if (coins != null) {
+          final derivedRupees = coins ~/ 50;
+          values.add(
+            _GiftCardValue(
+              rupees: derivedRupees > 0 ? derivedRupees : coins,
+              coins: coins,
+            ),
+          );
+        }
+      }
+    }
+    if (values.isNotEmpty) break;
+  }
+
+  return values;
+}
