@@ -139,4 +139,32 @@ class GiftCardsApi {
         .map((item) => Map<String, dynamic>.from(item))
         .toList(growable: false);
   }
+
+  /// `PATCH /api/gift-card-orders/{id}/cancel` - cancel a pending order.
+  Future<Map<String, dynamic>> cancelGiftCardOrder(String id) async {
+    final orderId = id.trim();
+    if (orderId.isEmpty) {
+      throw ArgumentError('id cannot be empty');
+    }
+
+    final res = await _client.patch(
+      '$_basePath/gift-card-orders/$orderId/cancel',
+    );
+
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  /// `DELETE /api/gift-card-orders/{id}` - delete a cancelled order.
+  Future<Map<String, dynamic>> deleteGiftCardOrder(String id) async {
+    final orderId = id.trim();
+    if (orderId.isEmpty) {
+      throw ArgumentError('id cannot be empty');
+    }
+
+    final res = await _client.delete(
+      '$_basePath/gift-card-orders/$orderId',
+    );
+
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
 }

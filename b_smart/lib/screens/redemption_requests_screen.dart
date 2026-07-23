@@ -127,19 +127,11 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
       _showActionSheet(
         title: 'Cancel this gift card',
         subtitle:
-            'Slide to confirm cancellation. This will keep the order in your history.',
+            'This will cancel the pending order and refund your coins immediately.',
         actionLabel: 'Cancel Gift Card',
         accentColor: const Color(0xFFF97316),
         icon: LucideIcons.circleX,
-        onConfirm: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  Text('${request.name} cancellation is ready to connect.'),
-              backgroundColor: const Color(0xFFF97316),
-            ),
-          );
-        },
+        onConfirm: () => _cancelGiftCardOrder(request),
       );
       return;
     }
@@ -148,21 +140,96 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
       _showActionSheet(
         title: 'Delete this gift card',
         subtitle:
-            'Slide to confirm deletion. This will remove the cancelled order from the list.',
+            'This will permanently remove the cancelled order from your history.',
         actionLabel: 'Delete Gift Card',
         accentColor: const Color(0xFFEF4444),
         icon: LucideIcons.trash2,
-        onConfirm: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  Text('${request.name} delete action is ready to connect.'),
-              backgroundColor: const Color(0xFFEF4444),
-            ),
-          );
-        },
+        onConfirm: () => _deleteGiftCardOrder(request),
       );
     }
+  }
+
+  Future<bool> _cancelGiftCardOrder(_RedemptionRequest request) async {
+    final orderId = request.id?.trim();
+    if (orderId == null || orderId.isEmpty) {
+      _showSnackBar(
+        'Missing order id for this gift card.',
+        backgroundColor: const Color(0xFFEF4444),
+      );
+      return false;
+    }
+
+    try {
+      await _giftCardsApi.cancelGiftCardOrder(orderId);
+      if (!mounted) return false;
+      _showSnackBar(
+        '${request.name} cancelled and coins refunded.',
+        backgroundColor: const Color(0xFFF97316),
+      );
+      await _loadRequests();
+      return true;
+    } on ApiException catch (e) {
+      if (!mounted) return false;
+      _showSnackBar(
+        e.message,
+        backgroundColor: const Color(0xFFEF4444),
+      );
+    } catch (_) {
+      if (!mounted) return false;
+      _showSnackBar(
+        'Could not cancel this gift card right now.',
+        backgroundColor: const Color(0xFFEF4444),
+      );
+    }
+    return false;
+  }
+
+  Future<bool> _deleteGiftCardOrder(_RedemptionRequest request) async {
+    final orderId = request.id?.trim();
+    if (orderId == null || orderId.isEmpty) {
+      _showSnackBar(
+        'Missing order id for this gift card.',
+        backgroundColor: const Color(0xFFEF4444),
+      );
+      return false;
+    }
+
+    try {
+      await _giftCardsApi.deleteGiftCardOrder(orderId);
+      if (!mounted) return false;
+      _showSnackBar(
+        '${request.name} deleted from your history.',
+        backgroundColor: const Color(0xFFEF4444),
+      );
+      await _loadRequests();
+      return true;
+    } on ApiException catch (e) {
+      if (!mounted) return false;
+      _showSnackBar(
+        e.message,
+        backgroundColor: const Color(0xFFEF4444),
+      );
+    } catch (_) {
+      if (!mounted) return false;
+      _showSnackBar(
+        'Could not delete this gift card right now.',
+        backgroundColor: const Color(0xFFEF4444),
+      );
+    }
+    return false;
+  }
+
+  void _showSnackBar(
+    String message, {
+    required Color backgroundColor,
+  }) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: backgroundColor,
+      ),
+    );
   }
 
   void _showActionSheet({
@@ -171,7 +238,7 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
     required String actionLabel,
     required Color accentColor,
     required IconData icon,
-    required VoidCallback onConfirm,
+    required Future<bool> Function() onConfirm,
   }) {
     showModalBottomSheet<void>(
       context: context,
@@ -644,7 +711,7 @@ class _RequestActionSheet extends StatefulWidget {
   final String actionLabel;
   final Color accentColor;
   final IconData icon;
-  final VoidCallback onConfirm;
+  final Future<bool> Function() onConfirm;
 
   const _RequestActionSheet({
     required this.title,
@@ -660,6 +727,8 @@ class _RequestActionSheet extends StatefulWidget {
 }
 
 class _RequestActionSheetState extends State<_RequestActionSheet> {
+  bool _processing = false;
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -750,7 +819,7 @@ class _RequestActionSheetState extends State<_RequestActionSheet> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _confirmAction,
+                  onPressed: _processing ? null : _confirmAction,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: widget.accentColor,
                     foregroundColor: Colors.white,
@@ -759,20 +828,31 @@ class _RequestActionSheetState extends State<_RequestActionSheet> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: Text(
-                    widget.actionLabel,
-                    style: GoogleFonts.montserrat(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  child: _processing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : Text(
+                          widget.actionLabel,
+                          style: GoogleFonts.montserrat(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
                 child: TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed:
+                      _processing ? null : () => Navigator.of(context).pop(),
                   style: TextButton.styleFrom(
                     foregroundColor: subColor,
                     padding: const EdgeInsets.symmetric(vertical: 12),
@@ -787,9 +867,20 @@ class _RequestActionSheetState extends State<_RequestActionSheet> {
     );
   }
 
-  void _confirmAction() {
-    Navigator.of(context).pop();
-    widget.onConfirm();
+  Future<void> _confirmAction() async {
+    if (_processing) return;
+    setState(() => _processing = true);
+    try {
+      final success = await widget.onConfirm();
+      if (!mounted) return;
+      if (success) {
+        Navigator.of(context).pop();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _processing = false);
+      }
+    }
   }
 }
 
