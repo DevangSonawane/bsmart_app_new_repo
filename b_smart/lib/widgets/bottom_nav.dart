@@ -20,40 +20,46 @@ class _BottomNavState extends State<BottomNav> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final inactiveColor = theme.colorScheme.onSurface.withValues(alpha: 0.6);
-    const activeColor = DesignTokens.instaPink;
+    final borderColor = isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade200;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
-        border: Border(
-          top: BorderSide(
-            color: isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade200,
-            width: 0.5,
-          ),
-        ),
-      ),
-      padding: EdgeInsets.zero,
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 42,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(context, 0, LucideIcons.house, 'Home', isActive: widget.currentIndex == 0),
-              _buildNavItem(context, 1, LucideIcons.target, 'Spotlights', isActive: widget.currentIndex == 1),
-              _buildCreateButton(context),
-              _buildNavItem(context, 3, LucideIcons.megaphone, 'Boosts', isActive: widget.currentIndex == 3),
-              _buildNavItem(context, 4, LucideIcons.clapperboard, 'bSparks', isActive: widget.currentIndex == 4),
-            ],
-          ),
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        height: 42,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _BottomNavShapePainter(
+                  backgroundColor: theme.scaffoldBackgroundColor,
+                  borderColor: borderColor,
+                ),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem(context, 0, LucideIcons.house, 'Home',
+                    isActive: widget.currentIndex == 0),
+                _buildNavItem(context, 1, LucideIcons.target, 'Spotlights',
+                    isActive: widget.currentIndex == 1),
+                _buildCreateButton(context),
+                _buildNavItem(context, 3, LucideIcons.megaphone, 'Boosts',
+                    isActive: widget.currentIndex == 3),
+                _buildNavItem(context, 4, LucideIcons.clapperboard, 'bSparks',
+                    isActive: widget.currentIndex == 4),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildNavItem(BuildContext context, int index, IconData icon, String label, {required bool isActive}) {
+  Widget _buildNavItem(
+      BuildContext context, int index, IconData icon, String label,
+      {required bool isActive}) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     return InkWell(
@@ -64,14 +70,15 @@ class _BottomNavState extends State<BottomNav> {
         child: Icon(
           icon,
           size: 26,
-          color: isActive ? DesignTokens.instaPink : (isDark ? Colors.white : Colors.black),
+          color: isActive
+              ? DesignTokens.instaPink
+              : (isDark ? Colors.white : Colors.black),
         ),
       ),
     );
   }
 
   Widget _buildCreateButton(BuildContext context) {
-    final theme = Theme.of(context);
     return Transform.translate(
       offset: const Offset(0, -8),
       child: GestureDetector(
@@ -118,5 +125,71 @@ class _BottomNavState extends State<BottomNav> {
         ),
       ),
     );
+  }
+}
+
+class _BottomNavShapePainter extends CustomPainter {
+  final Color backgroundColor;
+  final Color borderColor;
+
+  const _BottomNavShapePainter({
+    required this.backgroundColor,
+    required this.borderColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = backgroundColor
+      ..style = PaintingStyle.fill;
+
+    final borderPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    final path = _buildPath(size);
+    canvas.drawPath(path, paint);
+    canvas.drawPath(path, borderPaint);
+  }
+
+  Path _buildPath(Size size) {
+    const notchWidth = 86.0;
+    const notchDepth = 36.0;
+    const shoulderWidth = 20.0;
+    final centerX = size.width / 2;
+    final notchLeft = centerX - notchWidth / 2;
+    final notchRight = centerX + notchWidth / 2;
+
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(notchLeft - shoulderWidth, 0)
+      ..cubicTo(
+        notchLeft + 2,
+        0,
+        centerX - 28,
+        notchDepth,
+        centerX,
+        notchDepth,
+      )
+      ..cubicTo(
+        centerX + 28,
+        notchDepth,
+        notchRight - 2,
+        0,
+        notchRight + shoulderWidth,
+        0,
+      )
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    return path;
+  }
+
+  @override
+  bool shouldRepaint(covariant _BottomNavShapePainter oldDelegate) {
+    return oldDelegate.backgroundColor != backgroundColor ||
+        oldDelegate.borderColor != borderColor;
   }
 }
