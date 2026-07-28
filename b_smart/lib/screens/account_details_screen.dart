@@ -146,7 +146,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     }
   }
 
-  Future<void> _checkUsernameAvailability(String value, {bool force = false}) async {
+  Future<void> _checkUsernameAvailability(String value,
+      {bool force = false}) async {
     final username = value.trim();
     if (!mounted) return;
 
@@ -190,7 +191,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
       setState(() {
         _usernameChecking = false;
         _usernameAvailable = result.available;
-        _usernameError = result.available ? null : 'This username is already taken.';
+        _usernameError =
+            result.available ? null : 'This username is already taken.';
       });
     } catch (_) {
       if (!mounted || currentEpoch != _usernameCheckEpoch) return;
@@ -226,8 +228,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   int? _calculateAge(DateTime dob) {
     final now = DateTime.now();
     var age = now.year - dob.year;
-    final hadBirthday = now.month > dob.month ||
-        (now.month == dob.month && now.day >= dob.day);
+    final hadBirthday =
+        now.month > dob.month || (now.month == dob.month && now.day >= dob.day);
     if (!hadBirthday) age--;
     return age < 0 ? null : age;
   }
@@ -321,7 +323,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     try {
       final raw = await _authApi.me();
       final user = _normalizeUser(raw);
-      final userId = (user['id'] ?? user['_id'] ?? user['user_id'])?.toString().trim();
+      final userId =
+          (user['id'] ?? user['_id'] ?? user['user_id'])?.toString().trim();
       if (userId == null || userId.isEmpty) {
         throw Exception('Unable to resolve your account id.');
       }
@@ -389,8 +392,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         );
         _genderController.text = _gender;
         _dateOfBirth = dob;
-        _dobController.text =
-            dob == null ? '' : _dobDisplayFormat.format(dob);
+        _dobController.text = dob == null ? '' : _dobDisplayFormat.format(dob);
         _ageOnRecord = int.tryParse(
           _pickString(user, ['age']) ?? '',
         );
@@ -792,10 +794,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
           _websiteController.text =
               _pickString(updated, ['website', 'website_url', 'websiteUrl']) ??
                   _websiteController.text;
-          _locationController.text =
-              _locationFromUser(updated).isNotEmpty
-                  ? _locationFromUser(updated)
-                  : _locationController.text;
+          _locationController.text = _locationFromUser(updated).isNotEmpty
+              ? _locationFromUser(updated)
+              : _locationController.text;
           _phoneController.text =
               _pickString(updated, ['phone', 'phone_number', 'phoneNumber']) ??
                   _phoneController.text;
@@ -817,8 +818,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
             _dobController.text = _dobDisplayFormat.format(updatedDob);
           }
           _ageOnRecord = int.tryParse(
-            _pickString(updated, ['age']) ?? '',
-          ) ?? _ageOnRecord;
+                _pickString(updated, ['age']) ?? '',
+              ) ??
+              _ageOnRecord;
           _interestsController.text = _interests.join(', ');
         });
       }
@@ -855,7 +857,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     if (digitsOnly.length < 7 || digitsOnly.length > 15) {
       return 'Please enter a valid phone number.';
     }
-    if (digits.startsWith('+') && !RegExp(r'^\+[1-9]\d{1,14}$').hasMatch(digits)) {
+    if (digits.startsWith('+') &&
+        !RegExp(r'^\+[1-9]\d{1,14}$').hasMatch(digits)) {
       return 'Please enter a valid phone number.';
     }
     return null;
@@ -899,10 +902,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: theme.appBarTheme.backgroundColor ??
-            theme.scaffoldBackgroundColor,
-        surfaceTintColor: theme.appBarTheme.surfaceTintColor ??
-            theme.scaffoldBackgroundColor,
+        backgroundColor:
+            theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor,
+        surfaceTintColor:
+            theme.appBarTheme.surfaceTintColor ?? theme.scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: true,
         leadingWidth: 56,
@@ -1081,16 +1084,16 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   Container(
                     width: 72,
                     height: 72,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [
-                            DesignTokens.instaPink.withValues(alpha: 0.16),
-                            DesignTokens.instaOrange.withValues(alpha: 0.16),
-                          ],
-                        ),
-                        border: Border.all(color: border),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [
+                          DesignTokens.instaPink.withValues(alpha: 0.16),
+                          DesignTokens.instaOrange.withValues(alpha: 0.16),
+                        ],
                       ),
+                      border: Border.all(color: border),
+                    ),
                     padding: const EdgeInsets.all(3),
                     child: Container(
                       decoration: const BoxDecoration(shape: BoxShape.circle),
@@ -1134,7 +1137,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   if (_uploadingAvatar)
                     Positioned.fill(
                       child: Container(
-                    decoration: BoxDecoration(
+                        decoration: BoxDecoration(
                           color: cs.scrim.withValues(alpha: 0.4),
                           shape: BoxShape.circle,
                         ),
@@ -1168,7 +1171,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                     const SizedBox(height: 3),
                     Text(
                       'Tap to change your avatar',
-                      style: TextStyle(fontSize: 12, color: cs.onSurface.withValues(alpha: 0.65)),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: cs.onSurface.withValues(alpha: 0.65)),
                     ),
                   ],
                 ),
@@ -1308,9 +1313,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                 const SizedBox(height: 3),
                 DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
-                    value: items.contains(_gender)
-                        ? _gender
-                        : 'Prefer Not to Say',
+                    value:
+                        items.contains(_gender) ? _gender : 'Prefer Not to Say',
                     isExpanded: true,
                     isDense: true,
                     icon: const Icon(
@@ -1398,7 +1402,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    _interests.isEmpty ? 'No interests selected' : _interests.join(', '),
+                    _interests.isEmpty
+                        ? 'No interests selected'
+                        : _interests.join(', '),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: hintColor, fontSize: 13),
@@ -1414,7 +1420,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   style: TextStyle(fontSize: 12, color: hintColor),
                 ),
                 const SizedBox(height: 4),
-                const Icon(Icons.chevron_right, color: Color(0xFF526071), size: 20),
+                const Icon(Icons.chevron_right,
+                    color: Color(0xFF526071), size: 20),
               ],
             ),
           ],
@@ -1441,11 +1448,11 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
       margin: const EdgeInsets.only(bottom: 6),
       child: Material(
         color: fillColor,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        child: Container(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
@@ -1490,7 +1497,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(Icons.chevron_right, color: Color(0xFF526071), size: 20),
+                const Icon(Icons.chevron_right,
+                    color: Color(0xFF526071), size: 20),
               ],
             ),
           ),
@@ -1517,11 +1525,11 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   size: 24,
                 )
               : TextButton(
-                  onPressed: (_verifyingEmail || _emailVerified)
-                      ? null
-                      : _verifyEmail,
+                  onPressed:
+                      (_verifyingEmail || _emailVerified) ? null : _verifyEmail,
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(
@@ -1558,7 +1566,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                       ? null
                       : _verifyMobile,
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(
@@ -1649,7 +1658,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                     if (onChanged != null) onChanged(value);
                     if (label == 'Email Address' && _emailError != null) {
                       setState(() => _emailError = null);
-                    } else if (label == 'Mobile Number' && _phoneError != null) {
+                    } else if (label == 'Mobile Number' &&
+                        _phoneError != null) {
                       setState(() => _phoneError = null);
                     } else if (label == 'Website' && _websiteError != null) {
                       setState(() => _websiteError = null);
@@ -1734,7 +1744,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(tempController.text.trim()),
+              onPressed: () =>
+                  Navigator.of(ctx).pop(tempController.text.trim()),
               child: const Text('Save'),
             ),
           ],
@@ -1802,6 +1813,7 @@ class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
   final _accountVerificationApi = AccountVerificationApi();
   final List<TextEditingController> _otpControllers =
       List.generate(6, (_) => TextEditingController());
+  final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
 
   bool _loading = false;
   bool _sent = false;
@@ -1821,6 +1833,9 @@ class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
     _timer?.cancel();
     for (final controller in _otpControllers) {
       controller.dispose();
+    }
+    for (final focusNode in _otpFocusNodes) {
+      focusNode.dispose();
     }
     super.dispose();
   }
@@ -1851,7 +1866,9 @@ class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
       _sent = false;
     });
     try {
-      await _accountVerificationApi.send(type: widget.type);
+      await _accountVerificationApi.send(
+        type: widget.type,
+      );
       if (!mounted) return;
       setState(() => _sent = true);
       await _startCooldown();
@@ -1880,7 +1897,10 @@ class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
       _success = null;
     });
     try {
-      await _accountVerificationApi.confirm(type: widget.type, otp: otp);
+      await _accountVerificationApi.confirm(
+        type: widget.type,
+        otp: otp,
+      );
       await widget.onVerified();
       if (!mounted) return;
       setState(() => _success = widget.successMessage);
@@ -1921,6 +1941,7 @@ class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
                 height: 42,
                 child: TextField(
                   controller: _otpControllers[index],
+                  focusNode: _otpFocusNodes[index],
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
                   maxLength: 1,
@@ -1930,12 +1951,21 @@ class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
                   ),
                   onChanged: (value) {
                     final digits = value.replaceAll(RegExp(r'\D'), '');
-                    final cleaned = digits.isEmpty ? '' : digits.substring(0, 1);
+                    final cleaned =
+                        digits.isEmpty ? '' : digits.substring(0, 1);
                     if (cleaned != value) {
                       _otpControllers[index].text = cleaned;
-                      _otpControllers[index].selection = TextSelection.fromPosition(
-                        TextPosition(offset: _otpControllers[index].text.length),
+                      _otpControllers[index].selection =
+                          TextSelection.fromPosition(
+                        TextPosition(
+                            offset: _otpControllers[index].text.length),
                       );
+                    }
+                    if (cleaned.isNotEmpty && index < 5) {
+                      _otpFocusNodes[index + 1].requestFocus();
+                    }
+                    if (cleaned.isEmpty && index > 0 && value.isEmpty) {
+                      _otpFocusNodes[index - 1].requestFocus();
                     }
                   },
                 ),
@@ -1996,7 +2026,8 @@ class _VerificationOtpDialogState extends State<_VerificationOtpDialog> {
                   ),
                 ),
                 IconButton(
-                  onPressed: _loading ? null : () => Navigator.of(context).pop(),
+                  onPressed:
+                      _loading ? null : () => Navigator.of(context).pop(),
                   icon: const Icon(LucideIcons.x, size: 16),
                 ),
               ],

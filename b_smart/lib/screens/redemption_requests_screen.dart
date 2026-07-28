@@ -288,7 +288,7 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'My Redemption Requests',
+                        'Redemption Request',
                         style: GoogleFonts.montserrat(
                           fontSize: 22,
                           fontWeight: FontWeight.w900,

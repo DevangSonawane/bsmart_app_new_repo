@@ -36,8 +36,9 @@ class _WalletScreenState extends State<WalletScreen>
   List<LedgerTransaction> _transactions = [];
   bool _isLoading = false;
   String? _errorMessage;
-  _WalletSection _openSection = _WalletSection.transaction;
+  _WalletSection _openSection = _WalletSection.none;
   _TransactionQuickFilter _transactionQuickFilter = _TransactionQuickFilter.all;
+  int? _openHelpTopic;
 
   @override
   void initState() {
@@ -198,6 +199,10 @@ class _WalletScreenState extends State<WalletScreen>
                           const SizedBox(height: 12),
                           if (_errorMessage != null) _buildErrorBanner(),
                           const SizedBox(height: 12),
+                          _buildRedeemGiftCardsCard(),
+                          const SizedBox(height: 12),
+                          _buildRedemptionRequestCard(),
+                          const SizedBox(height: 12),
                           _AccordionItem(
                             title: 'Transaction History',
                             badge: _transactions.isEmpty
@@ -212,10 +217,6 @@ class _WalletScreenState extends State<WalletScreen>
                             }),
                             child: _buildTransactionHistory(),
                           ),
-                          const SizedBox(height: 12),
-                          _buildRedeemGiftCardsCard(),
-                          const SizedBox(height: 12),
-                          _buildRedemptionRequestCard(),
                           const SizedBox(height: 12),
                           _AccordionItem(
                             title: 'Account Details',
@@ -236,6 +237,9 @@ class _WalletScreenState extends State<WalletScreen>
                               _openSection = _openSection == _WalletSection.help
                                   ? _WalletSection.none
                                   : _WalletSection.help;
+                              if (_openSection == _WalletSection.none) {
+                                _openHelpTopic = null;
+                              }
                             }),
                             child: _buildHelp(),
                           ),
@@ -973,18 +977,295 @@ class _WalletScreenState extends State<WalletScreen>
   }
 
   Widget _buildHelp() {
-    final items = [
-      'How do bCoins work?',
-      'Why is my balance changed?',
-      'Contact support'
+    final topics = [
+      _HelpTopic(
+        title: 'Earning BCoins',
+        icon: LucideIcons.sparkles,
+        sections: [
+          _HelpSection(
+            question: 'How do I earn BCoins?',
+            answer:
+                'You can earn Coins through eligible in-app activity and special rewards.',
+            bullets: const [
+              'Watching eligible videos or content.',
+              'Participating in campaigns, challenges, or events.',
+              'Completing tasks and activities within the app.',
+              'Receiving promotional or bonus rewards during special events.',
+            ],
+          ),
+        ],
+      ),
+      _HelpTopic(
+        title: 'Redeeming BCoins',
+        icon: LucideIcons.gift,
+        sections: [
+          _HelpSection(
+            question: 'How do I redeem bCoins?',
+            answer:
+                'Open Vault, tap Redeem Gift Cards, choose a card, pick the required value, and confirm the request.',
+            bullets: const [
+              'Go to Vault.',
+              'Tap Redeem Gift Cards.',
+              'Choose your preferred gift card.',
+              'Select the required card value.',
+              'Ensure you have enough Coins.',
+              'Confirm the redemption request.',
+              'Track the status under Redemption Request.',
+            ],
+          ),
+          _HelpSection(
+            question: 'Is there a minimum number of bCoins required?',
+            answer:
+                'Yes. Each gift card has its own minimum Coin requirement, which is shown before you redeem.',
+          ),
+          _HelpSection(
+            question: 'Can I cancel a redemption request?',
+            answer:
+                'Usually not after submission and processing. If you need help, contact Support.',
+          ),
+          _HelpSection(
+            question: 'Why can’t I redeem my bCoins?',
+            answer: 'Common reasons include:',
+            bullets: const [
+              'Insufficient bCoins balance.',
+              'Temporary service maintenance.',
+              'Reward currently unavailable.',
+              'Account verification is incomplete.',
+              'Daily or monthly redemption limit has been reached.',
+            ],
+          ),
+        ],
+      ),
+      _HelpTopic(
+        title: 'Balance & Processing',
+        icon: LucideIcons.wallet,
+        sections: [
+          _HelpSection(
+            question: 'Why is my bCoin balance different?',
+            answer:
+                'Your balance can change after successful redemptions, new earnings, expired promotional Coins, or while a transaction is processing.',
+            bullets: const [
+              'Coins were successfully redeemed.',
+              'New Coins were added after eligible activity.',
+              'Promotional or bonus Coins expired.',
+              'A transaction is still being processed.',
+            ],
+            footer:
+                'Check Transaction History for the full breakdown of earned and spent Coins.',
+          ),
+          _HelpSection(
+            question: 'How long does redemption take?',
+            answer:
+                'Most redemption requests are processed within 2 to 72 hours, depending on the reward provider.',
+          ),
+          _HelpSection(
+            question: 'Do bCoins expire?',
+            answer:
+                'Some promotional or bonus Coins may expire. Check the campaign or offer details for the validity period.',
+          ),
+        ],
+      ),
+      _HelpTopic(
+        title: 'Notifications & Status',
+        icon: LucideIcons.bell,
+        sections: [
+          _HelpSection(
+            question: 'How will I be notified after voucher redemption?',
+            answer:
+                'You may receive an in-app notification, an email, or an SMS depending on your notification settings and service availability.',
+            bullets: const [
+              'In-App Notification',
+              'Email',
+              'SMS (Text Message)',
+            ],
+            footer:
+                'You can also view the redemption status and voucher details anytime under Wallet & Coins → Redemption Request.',
+          ),
+          _HelpSection(
+            question: 'Where can I check my redemption status?',
+            answer: 'Open Redemption Request to view:',
+            bullets: const [
+              'Pending requests',
+              'Processing requests',
+              'Successful redemptions',
+              'Failed or cancelled requests',
+            ],
+          ),
+        ],
+      ),
+      _HelpTopic(
+        title: 'Support & Tips',
+        icon: LucideIcons.info,
+        sections: [
+          _HelpSection(
+            question: 'How can I contact Support?',
+            answer:
+                'Go to Profile → Settings → Help & Support → Raise a Ticket.',
+            bullets: const [
+              'Go to Profile.',
+              'Open Settings.',
+              'Navigate to Help & Support.',
+              'Select Raise a Ticket or Contact Support.',
+              'Submit your issue and the support team will review it.',
+            ],
+          ),
+          _HelpSection(
+            question: 'Tips',
+            answer: 'A few things that help keep your rewards smooth:',
+            bullets: const [
+              'Complete your profile to unlock more earning opportunities.',
+              'Check the app regularly for bonus campaigns and limited-time offers.',
+              'Review your Transaction History to track earned and redeemed Coins.',
+              'Ensure your account details are up to date before redeeming rewards.',
+              'Do not share your account credentials with anyone.',
+              'Follow the app’s Terms & Conditions to avoid forfeiture of Coins.',
+            ],
+          ),
+        ],
+      ),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
       child: Column(
         children: [
-          for (final item in items) ...[
-            _HelpRow(label: item, onTap: () {}),
-            if (item != items.last) const SizedBox(height: 10),
+          for (var i = 0; i < topics.length; i++) ...[
+            _AccordionItem(
+              title: topics[i].title,
+              isOpen: _openHelpTopic == i,
+              onToggle: () => setState(() {
+                _openHelpTopic = _openHelpTopic == i ? null : i;
+              }),
+              child: _buildHelpTopicBody(topics[i]),
+            ),
+            if (i != topics.length - 1) const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHelpTopicBody(_HelpTopic topic) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sectionBorder = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.06);
+    final questionColor = isDark ? Colors.white : const Color(0xFF0A0A0A);
+    final answerColor = isDark
+        ? Colors.white.withValues(alpha: 0.72)
+        : Colors.black.withValues(alpha: 0.68);
+    final bulletColor = isDark
+        ? Colors.white.withValues(alpha: 0.55)
+        : Colors.black.withValues(alpha: 0.55);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: const Color(0xFFF97316).withValues(alpha: 0.10),
+                ),
+                child:
+                    Icon(topic.icon, size: 16, color: const Color(0xFFF97316)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Tap a topic below to expand the answer',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: answerColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          for (var i = 0; i < topic.sections.length; i++) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: sectionBorder),
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.03)
+                    : const Color(0xFFFDFDFE),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    topic.sections[i].question,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: questionColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    topic.sections[i].answer,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      height: 1.45,
+                      fontWeight: FontWeight.w500,
+                      color: answerColor,
+                    ),
+                  ),
+                  if (topic.sections[i].bullets.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    for (final bullet in topic.sections[i].bullets) ...[
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '•',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: bulletColor,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              bullet,
+                              style: GoogleFonts.montserrat(
+                                fontSize: 12,
+                                height: 1.45,
+                                fontWeight: FontWeight.w500,
+                                color: answerColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                  if (topic.sections[i].footer != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      topic.sections[i].footer!,
+                      style: GoogleFonts.montserrat(
+                        fontSize: 12,
+                        height: 1.45,
+                        fontWeight: FontWeight.w500,
+                        color: answerColor,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (i != topic.sections.length - 1) const SizedBox(height: 10),
           ],
         ],
       ),
@@ -1664,52 +1945,28 @@ class _CompanyChip extends StatelessWidget {
   }
 }
 
-class _HelpRow extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
+class _HelpTopic {
+  final String title;
+  final IconData icon;
+  final List<_HelpSection> sections;
 
-  const _HelpRow({required this.label, required this.onTap});
+  const _HelpTopic({
+    required this.title,
+    required this.icon,
+    required this.sections,
+  });
+}
 
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg =
-        isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.05)
-        : Colors.black.withValues(alpha: 0.06);
-    final labelColor = isDark
-        ? Colors.white.withValues(alpha: 0.55)
-        : Colors.black.withValues(alpha: 0.60);
-    final iconColor = isDark
-        ? Colors.white.withValues(alpha: 0.25)
-        : Colors.black.withValues(alpha: 0.25);
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: border),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: GoogleFonts.montserrat(
-                      color: labelColor, fontWeight: FontWeight.w700),
-                ),
-              ),
-              Icon(LucideIcons.chevronRight, size: 18, color: iconColor),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+class _HelpSection {
+  final String question;
+  final String answer;
+  final List<String> bullets;
+  final String? footer;
+
+  const _HelpSection({
+    required this.question,
+    required this.answer,
+    this.bullets = const <String>[],
+    this.footer,
+  });
 }
