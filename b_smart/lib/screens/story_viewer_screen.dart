@@ -12,6 +12,7 @@ import '../services/story_cache.dart';
 import '../utils/timezone_service.dart';
 import '../utils/url_helper.dart';
 import '../widgets/offline_retry_banner.dart';
+import '../widgets/content_report_sheet.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/api.dart';
 
@@ -641,6 +642,37 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                 PopupMenuButton<String>(
                                   icon: const Icon(Icons.more_horiz,
                                       color: Colors.white),
+                                  onSelected: (value) {
+                                    if (value == 'report') {
+                                      final storyId =
+                                          currentStory?.id.trim() ?? '';
+                                      if (storyId.isNotEmpty) {
+                                        ContentReportSheet.show(
+                                          context,
+                                          contentType: 'story',
+                                          contentId: storyId,
+                                        );
+                                      }
+                                    } else if (value == 'mute') {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Mute $currentAuthorName\'s story coming soon',
+                                          ),
+                                        ),
+                                      );
+                                    } else if (value == 'close_friends') {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Close Friends action coming soon',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
                                   itemBuilder: (_) => [
                                     const PopupMenuItem(
                                         value: 'report', child: Text('Report')),
@@ -1363,9 +1395,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   bool? _cachedLikeStateForStory(Story story) {
-    final normalizedUrl = story.mediaUrl.isNotEmpty
-        ? UrlHelper.normalizeUrl(story.mediaUrl)
-        : '';
+    final normalizedUrl =
+        story.mediaUrl.isNotEmpty ? UrlHelper.normalizeUrl(story.mediaUrl) : '';
     final cached = StoryCache.getById(story.id) ??
         (normalizedUrl.isNotEmpty ? StoryCache.get(normalizedUrl) : null);
     if (cached == null) return null;
@@ -1428,12 +1459,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     try {
       final res = await _storiesApi.likeItem(itemId);
       if (!mounted) return;
-      final likedNow =
-          _boolFromAny(res['liked']) ??
-              _boolFromAny(res['liked_by_me']) ??
-              _boolFromAny(res['is_liked']) ??
-              _boolFromAny(res['is_liked_by_me']) ??
-              !liked;
+      final likedNow = _boolFromAny(res['liked']) ??
+          _boolFromAny(res['liked_by_me']) ??
+          _boolFromAny(res['is_liked']) ??
+          _boolFromAny(res['is_liked_by_me']) ??
+          !liked;
       final likesCount = _intFromAny(res['likes_count'] ?? res['likesCount']);
       _updateStoryLikeCache(itemId, likedNow, likesCount);
       setState(() {

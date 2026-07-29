@@ -20,6 +20,7 @@ import '../state/app_state.dart';
 import '../state/feed_actions.dart';
 import '../models/feed_post_model.dart';
 import '../widgets/share_content_modal.dart';
+import '../widgets/content_report_sheet.dart';
 import '../utils/value_parsers.dart';
 
 class PostDetailScreen extends StatefulWidget {
@@ -1790,11 +1791,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                         title: const Text('Report'),
                                         onTap: () {
                                           Navigator.pop(ctx);
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                                content:
-                                                    Text('Report submitted')),
+                                          ContentReportSheet.show(
+                                            context,
+                                            contentType:
+                                                _isTweet ? 'tweet' : 'post',
+                                            contentId: widget.postId,
                                           );
                                         },
                                       ),
@@ -2481,7 +2482,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                       icon: Icon(
                                                         rLiked
                                                             ? Icons.favorite
-                                                            : Icons.favorite_border,
+                                                            : Icons
+                                                                .favorite_border,
                                                         size: 13,
                                                         color: rLiked
                                                             ? Colors.red

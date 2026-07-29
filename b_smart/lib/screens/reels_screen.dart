@@ -21,6 +21,7 @@ import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
+import '../widgets/content_report_sheet.dart';
 import '../widgets/offline_retry_banner.dart';
 import '../routes.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
@@ -137,7 +138,8 @@ class _ReelsScreenState extends State<ReelsScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted || _reels.isEmpty) return;
         if (initialId == null || initialId.isEmpty) {
-          final savedIndex = await UiSurfaceMemoryService.instance.loadReelsIndex();
+          final savedIndex =
+              await UiSurfaceMemoryService.instance.loadReelsIndex();
           if (!mounted || _reels.isEmpty) return;
           if (savedIndex != null) {
             final clamped = savedIndex.clamp(0, _reels.length - 1).toInt();
@@ -162,8 +164,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   }
 
   void _listenConnectivity() {
-    _connectivitySub =
-        Connectivity().onConnectivityChanged.listen((results) {
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       final offline = results.contains(ConnectivityResult.none);
       if (!mounted) return;
       if (_isOffline != offline) {
@@ -363,7 +364,8 @@ class _ReelsScreenState extends State<ReelsScreen>
         final idx = reels.indexWhere((r) => r.id == initialId);
         if (idx >= 0) nextIndex = idx;
       } else {
-        final savedIndex = await UiSurfaceMemoryService.instance.loadReelsIndex();
+        final savedIndex =
+            await UiSurfaceMemoryService.instance.loadReelsIndex();
         if (savedIndex != null && reels.isNotEmpty) {
           nextIndex = savedIndex.clamp(0, reels.length - 1).toInt();
         }
@@ -978,6 +980,17 @@ class _ReelsScreenState extends State<ReelsScreen>
     );
   }
 
+  Future<void> _reportCurrentReel() async {
+    if (_reels.isEmpty) return;
+    final reelId = _reels[_currentIndex].id.trim();
+    if (reelId.isEmpty) return;
+    await ContentReportSheet.show(
+      context,
+      contentType: 'reel',
+      contentId: reelId,
+    );
+  }
+
   void _goToIndex(int index) {
     if (_isCommentsOpen) return;
     if (_isNavigating) return;
@@ -1175,19 +1188,37 @@ class _ReelsScreenState extends State<ReelsScreen>
                   Positioned(
                     right: 4,
                     top: topSystemInset + 8,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 36,
-                        height: 36,
-                      ),
-                      icon: const Icon(
-                        LucideIcons.search,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                      onPressed: () =>
-                          Navigator.of(context).pushNamed('/search'),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 36,
+                            height: 36,
+                          ),
+                          icon: const Icon(
+                            LucideIcons.search,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                          onPressed: () =>
+                              Navigator.of(context).pushNamed('/search'),
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 36,
+                            height: 36,
+                          ),
+                          icon: const Icon(
+                            Icons.more_horiz,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                          onPressed: _reportCurrentReel,
+                        ),
+                      ],
                     ),
                   ),
                   if (_isOffline && _offlineRetryAttempts >= 2)
@@ -1556,7 +1587,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                           } catch (_) {
                             videoSize = null;
                           }
-                                                  if (!_isControllerInitialized(controller) ||
+                          if (!_isControllerInitialized(controller) ||
                               videoSize == null ||
                               videoSize.isEmpty) {
                             return const SizedBox.shrink();
@@ -1899,6 +1930,7 @@ class _ReelsScreenState extends State<ReelsScreen>
         ),
       );
     }
+
     if (!hasCaption && !hasHashtags) {
       const usernameStyle = TextStyle(
         color: Colors.white,
@@ -1991,7 +2023,9 @@ class _ReelsScreenState extends State<ReelsScreen>
                               Text(
                                 _isFollowLoading
                                     ? '...'
-                                    : (reel.isFollowing ? 'Following' : 'Follow'),
+                                    : (reel.isFollowing
+                                        ? 'Following'
+                                        : 'Follow'),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 13,
@@ -2032,10 +2066,10 @@ class _ReelsScreenState extends State<ReelsScreen>
       children: [
         SizedBox(
           height: 44,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                const gapAfterAvatar = 10.0;
-                return Row(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const gapAfterAvatar = 10.0;
+              return Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   InkWell(
@@ -2126,9 +2160,9 @@ class _ReelsScreenState extends State<ReelsScreen>
                   ],
                 ],
               );
-              },
-            ),
+            },
           ),
+        ),
         buildAudioLine(),
         const SizedBox(height: 8),
         if (caption.isNotEmpty)

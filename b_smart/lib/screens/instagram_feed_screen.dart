@@ -16,6 +16,7 @@ import '../models/user_account_model.dart';
 import '../theme/instagram_theme.dart';
 import '../widgets/clay_container.dart';
 import '../widgets/share_content_modal.dart';
+import '../widgets/content_report_sheet.dart';
 import '../utils/url_helper.dart';
 import '../utils/location_utils.dart';
 import '../state/app_state.dart';
@@ -770,7 +771,9 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
                             ),
                           ],
                         ),
-                        if (secondaryName.isNotEmpty || location.isNotEmpty || post.isAd) ...[
+                        if (secondaryName.isNotEmpty ||
+                            location.isNotEmpty ||
+                            post.isAd) ...[
                           const SizedBox(height: 2),
                           Row(
                             children: [
@@ -931,7 +934,8 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
     final accountService = UserAccountService();
     final currentAccount = accountService.getCurrentAccount();
     final canBoost = currentAccount.accountType != AccountType.regular;
-    final messenger = ScaffoldMessenger.of(this.context);
+    final pageContext = this.context;
+    final messenger = ScaffoldMessenger.of(pageContext);
 
     showModalBottomSheet(
       context: context,
@@ -961,8 +965,17 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
               title: const Text('Report'),
               onTap: () {
                 Navigator.pop(context);
-                messenger.showSnackBar(
-                    const SnackBar(content: Text('Report submitted')));
+                ContentReportSheet.show(
+                  pageContext,
+                  contentType: post.isTweet
+                      ? 'tweet'
+                      : post.isAd
+                          ? 'ad'
+                          : (post.mediaType == PostMediaType.reel
+                              ? 'reel'
+                              : 'post'),
+                  contentId: post.id,
+                );
               },
             ),
             ListTile(

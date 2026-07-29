@@ -23,6 +23,7 @@ import '../widgets/post_card.dart';
 import '../widgets/stories_row.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/sidebar.dart';
+import '../widgets/content_report_sheet.dart';
 import '../theme/design_tokens.dart';
 import '../models/story_model.dart';
 import '../models/feed_post_model.dart';
@@ -2514,8 +2515,16 @@ class _HomeDashboardState extends State<HomeDashboard>
               title: const Text('Report'),
               onTap: () {
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Report submitted')),
+                ContentReportSheet.show(
+                  context,
+                  contentType: post.isTweet
+                      ? 'tweet'
+                      : post.isAd
+                          ? 'ad'
+                          : (post.mediaType == PostMediaType.reel
+                              ? 'reel'
+                              : 'post'),
+                  contentId: post.id,
                 );
               },
             ),

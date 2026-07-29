@@ -26,6 +26,7 @@ import 'saved_items_screen.dart';
 import 'security_screen.dart';
 import 'contact_support_screen.dart';
 import 'bug_reports_screen.dart';
+import 'report_content_screen.dart';
 import 'faq_screen.dart';
 import 'wallet_screen.dart';
 
@@ -156,6 +157,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _openBugReportsPage() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const BugReportsScreen()),
+    );
+  }
+
+  Future<void> _openReportContentPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ReportContentScreen()),
     );
   }
 
@@ -388,6 +395,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => _push(_HelpSupportScreen(
               onContactSupport: _openContactSupportPage,
               onReportBug: _openBugReportsPage,
+              onReportContent: _openReportContentPage,
             )),
           ),
           _settingTile(
@@ -1126,10 +1134,12 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
 class _HelpSupportScreen extends StatelessWidget {
   final Future<void> Function() onContactSupport;
   final Future<void> Function() onReportBug;
+  final Future<void> Function() onReportContent;
 
   const _HelpSupportScreen({
     required this.onContactSupport,
     required this.onReportBug,
+    required this.onReportContent,
   });
 
   @override
@@ -1227,8 +1237,9 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.flag_outlined,
                   title: 'settings_report_content'.tr(),
                   subtitle: 'settings_report_content_subtitle'.tr(),
-                  onTap: () =>
-                      _showUnavailable(context, 'settings_report_content'.tr()),
+                  onTap: () async {
+                    await onReportContent();
+                  },
                 ),
                 const Divider(height: 1),
                 _actionRow(

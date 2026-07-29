@@ -30,6 +30,7 @@ import '../widgets/app_popups/popup_visibility_controller.dart';
 import '../widgets/app_popups/view_recorded_popup_card.dart';
 import '../widgets/app_popups/view_reward_popup_card.dart';
 import '../widgets/ad_image_gallery.dart';
+import '../widgets/content_report_sheet.dart';
 import '../widgets/share_content_modal.dart';
 import '../widgets/offline_retry_banner.dart';
 import '../routes.dart';
@@ -546,12 +547,14 @@ class _AdsPageScreenState extends State<AdsPageScreen>
       return;
     }
     if (_sessionViewedAdIds.contains(adId)) {
-      _logAdRewardDebug('Skip view record: already sent this session for adId=$adId');
+      _logAdRewardDebug(
+          'Skip view record: already sent this session for adId=$adId');
       return;
     }
     await _ensurePersistViewedLoaded();
     if (_wasAdViewedPersisted(adId)) {
-      _logAdRewardDebug('Skip view record: ad already persisted as viewed for adId=$adId');
+      _logAdRewardDebug(
+          'Skip view record: ad already persisted as viewed for adId=$adId');
       return;
     }
 
@@ -605,12 +608,14 @@ class _AdsPageScreenState extends State<AdsPageScreen>
       return;
     }
     if (res.containsKey('rewarded') || res.containsKey('view_count')) {
-      _logAdRewardDebug('View recorded without reward adId=${ad.id} viewCount=$viewCount');
+      _logAdRewardDebug(
+          'View recorded without reward adId=${ad.id} viewCount=$viewCount');
       if (_showViewRecordedPopupEnabled) {
         await _showViewRecordedPopup(viewCount: viewCount);
       }
     } else {
-      _logAdRewardDebug('Reward response missing expected keys for adId=${ad.id}');
+      _logAdRewardDebug(
+          'Reward response missing expected keys for adId=${ad.id}');
     }
   }
 
@@ -1699,6 +1704,16 @@ class _AdVideoItemState extends State<AdVideoItem>
     }
   }
 
+  Future<void> _reportAd() async {
+    final adId = widget.ad.id.trim();
+    if (adId.isEmpty) return;
+    await ContentReportSheet.show(
+      context,
+      contentType: 'ad',
+      contentId: adId,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1721,8 +1736,7 @@ class _AdVideoItemState extends State<AdVideoItem>
   }
 
   void _listenConnectivity() {
-    _connectivitySub =
-        Connectivity().onConnectivityChanged.listen((results) {
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       final offline = results.contains(ConnectivityResult.none);
       if (!mounted) return;
       if (_isOffline != offline) {
@@ -1900,9 +1914,8 @@ class _AdVideoItemState extends State<AdVideoItem>
       _videoProgressBaseTimestamp = null;
       return;
     }
-    final progress =
-        (value.position.inMilliseconds / duration.inMilliseconds)
-            .clamp(0.0, 1.0);
+    final progress = (value.position.inMilliseconds / duration.inMilliseconds)
+        .clamp(0.0, 1.0);
     if (updateDisplay &&
         (_videoProgressController.value - progress).abs() > 0.001) {
       _videoProgressController.value = progress;
@@ -1944,7 +1957,10 @@ class _AdVideoItemState extends State<AdVideoItem>
 
     final value = controller.value;
     if (!value.isInitialized || value.hasError) return;
-    if (!widget.isActive || _userPaused || !value.isPlaying || value.isBuffering) {
+    if (!widget.isActive ||
+        _userPaused ||
+        !value.isPlaying ||
+        value.isBuffering) {
       return;
     }
 
@@ -1958,9 +1974,11 @@ class _AdVideoItemState extends State<AdVideoItem>
       return;
     }
 
-    final estimatedPosition = basePosition + DateTime.now().difference(baseTimestamp);
-    final progress = (estimatedPosition.inMilliseconds / duration.inMilliseconds)
-        .clamp(0.0, 1.0);
+    final estimatedPosition =
+        basePosition + DateTime.now().difference(baseTimestamp);
+    final progress =
+        (estimatedPosition.inMilliseconds / duration.inMilliseconds)
+            .clamp(0.0, 1.0);
 
     if ((_videoProgressController.value - progress).abs() > 0.001) {
       _videoProgressController.value = progress;
@@ -2849,7 +2867,9 @@ class _AdVideoItemState extends State<AdVideoItem>
               child: media,
             ),
           ),
-          if (_isVideoAd && _controller != null && (!_isInitialized || isBuffering))
+          if (_isVideoAd &&
+              _controller != null &&
+              (!_isInitialized || isBuffering))
             const Positioned.fill(
               child: IgnorePointer(
                 child: Center(
@@ -3030,7 +3050,8 @@ class _AdVideoItemState extends State<AdVideoItem>
                   if (_isVideoAd) ...[
                     const SizedBox(height: 16),
                     _buildGlassAction(
-                      icon: _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
+                      icon:
+                          _isMuted ? LucideIcons.volumeX : LucideIcons.volume2,
                       label: '',
                       onTap: () {
                         setState(() {
@@ -3038,6 +3059,12 @@ class _AdVideoItemState extends State<AdVideoItem>
                           unawaited(_safeSetVolume(_isMuted ? 0 : 1));
                         });
                       },
+                    ),
+                    const SizedBox(height: 16),
+                    _buildGlassAction(
+                      icon: Icons.more_horiz,
+                      label: '',
+                      onTap: _reportAd,
                     ),
                   ],
                 ],
@@ -3159,8 +3186,8 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 ),
                               ),
                           ],
-                          ),
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -3198,8 +3225,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 Text(
                                   ' • ',
                                   style: TextStyle(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.55),
+                                    color: Colors.white.withValues(alpha: 0.55),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -3222,8 +3248,7 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 Text(
                                   ' • ',
                                   style: TextStyle(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.55),
+                                    color: Colors.white.withValues(alpha: 0.55),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -4694,140 +4719,152 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
     return Container(
       color: surface,
       padding: EdgeInsets.symmetric(vertical: isReply ? 8 : 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _avatar(
-            avatarUrl,
-            author.isNotEmpty ? author[0].toUpperCase() : 'U',
-            size: isReply ? 12 : 14,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    style: textStyle,
-                    children: [
-                      TextSpan(text: author, style: nameStyle),
-                      if (isVerified)
-                        const WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: Padding(
-                            padding: EdgeInsets.only(left: 4, right: 4),
-                            child: Icon(Icons.check_circle,
-                                size: 13, color: Colors.blueAccent),
-                          ),
-                        )
-                      else
-                        const TextSpan(text: '  '),
-                      TextSpan(text: text.isEmpty ? '-' : text),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    if (timeLabel.isNotEmpty)
-                      Text(
-                        timeLabel,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize: 11,
-                        ),
-                      ),
-                    if (likeCount > 0) ...[
-                      const SizedBox(width: 10),
-                      Text(
-                        '$likeCount likes',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(width: 10),
-                    TextButton(
-                      onPressed: id.isEmpty
-                          ? null
-                          : () {
-                              setState(() {
-                                _replyParentId = isReply ? parentId : id;
-                                _replyingTo = author;
-                              });
-                              _focusNode.requestFocus();
-                            },
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(0, 0),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        'Reply',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                    if (isOwner && id.isNotEmpty) ...[
-                      const Spacer(),
-                      IconButton(
-                        icon: Icon(LucideIcons.trash2,
-                            size: 14,
-                            color: theme.colorScheme.onSurfaceVariant),
-                        onPressed: () => _deleteComment(
-                          commentId: id,
-                          isReply: isReply,
-                          parentId: parentId,
-                        ),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: id.isEmpty
+            ? null
+            : () {
+                ContentReportSheet.show(
+                  context,
+                  contentType: 'comment',
+                  contentId: id,
+                );
+              },
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _avatar(
+              avatarUrl,
+              author.isNotEmpty ? author[0].toUpperCase() : 'U',
+              size: isReply ? 12 : 14,
             ),
-          ),
-          const SizedBox(width: 10),
-          if (id.isNotEmpty)
-            SizedBox(
-              width: 34,
+            const SizedBox(width: 10),
+            Expanded(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    icon: Icon(
-                      liked ? Icons.favorite : LucideIcons.heart,
-                      size: isReply ? 14 : 16,
-                      color: liked
-                          ? Colors.red
-                          : theme.colorScheme.onSurfaceVariant,
+                  RichText(
+                    text: TextSpan(
+                      style: textStyle,
+                      children: [
+                        TextSpan(text: author, style: nameStyle),
+                        if (isVerified)
+                          const WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: Padding(
+                              padding: EdgeInsets.only(left: 4, right: 4),
+                              child: Icon(Icons.check_circle,
+                                  size: 13, color: Colors.blueAccent),
+                            ),
+                          )
+                        else
+                          const TextSpan(text: '  '),
+                        TextSpan(text: text.isEmpty ? '-' : text),
+                      ],
                     ),
-                    onPressed: () => _toggleCommentLike(
-                      commentId: id,
-                      isReply: isReply,
-                      parentId: parentId,
-                    ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
                   ),
-                  if (likeCount > 0)
-                    Text(
-                      '$likeCount',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontSize: 10,
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      if (timeLabel.isNotEmpty)
+                        Text(
+                          timeLabel,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                        ),
+                      if (likeCount > 0) ...[
+                        const SizedBox(width: 10),
+                        Text(
+                          '$likeCount likes',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 10),
+                      TextButton(
+                        onPressed: id.isEmpty
+                            ? null
+                            : () {
+                                setState(() {
+                                  _replyParentId = isReply ? parentId : id;
+                                  _replyingTo = author;
+                                });
+                                _focusNode.requestFocus();
+                              },
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(0, 0),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          'Reply',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      if (isOwner && id.isNotEmpty) ...[
+                        const Spacer(),
+                        IconButton(
+                          icon: Icon(LucideIcons.trash2,
+                              size: 14,
+                              color: theme.colorScheme.onSurfaceVariant),
+                          onPressed: () => _deleteComment(
+                            commentId: id,
+                            isReply: isReply,
+                            parentId: parentId,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            if (id.isNotEmpty)
+              SizedBox(
+                width: 34,
+                child: Column(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        liked ? Icons.favorite : LucideIcons.heart,
+                        size: isReply ? 14 : 16,
                         color: liked
                             ? Colors.red
                             : theme.colorScheme.onSurfaceVariant,
                       ),
+                      onPressed: () => _toggleCommentLike(
+                        commentId: id,
+                        isReply: isReply,
+                        parentId: parentId,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                     ),
-                ],
+                    if (likeCount > 0)
+                      Text(
+                        '$likeCount',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 10,
+                          color: liked
+                              ? Colors.red
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

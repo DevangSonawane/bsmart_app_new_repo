@@ -19,6 +19,7 @@ import 'package:flutter_redux/flutter_redux.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
 import '../widgets/share_content_modal.dart';
+import '../widgets/content_report_sheet.dart';
 
 /// Modal matching React PostDetailModal: image left, details + comments right.
 class PostDetailModal extends StatefulWidget {
@@ -195,8 +196,9 @@ class _PostDetailModalState extends State<PostDetailModal> {
         final currentCount = _commentLikesCount(comment);
         final updated = Map<String, dynamic>.from(comment);
         _applyCommentLikeState(updated, liked);
-        updated['likes_count'] =
-            liked ? currentCount + 1 : (currentCount > 0 ? currentCount - 1 : 0);
+        updated['likes_count'] = liked
+            ? currentCount + 1
+            : (currentCount > 0 ? currentCount - 1 : 0);
         _comments[i] = updated;
       }
     });
@@ -1494,9 +1496,10 @@ class _PostDetailModalState extends State<PostDetailModal> {
                             title: const Text('Report'),
                             onTap: () {
                               Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Report submitted')),
+                              ContentReportSheet.show(
+                                context,
+                                contentType: _isTweet ? 'tweet' : 'post',
+                                contentId: widget.postId,
                               );
                             },
                           ),
@@ -1848,9 +1851,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                             ),
                             IconButton(
                               icon: Icon(
-                                liked
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
+                                liked ? Icons.favorite : Icons.favorite_border,
                                 size: 14,
                                 color: liked ? Colors.red : Colors.black87,
                               ),

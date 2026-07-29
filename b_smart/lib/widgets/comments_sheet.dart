@@ -12,6 +12,7 @@ import '../theme/design_tokens.dart';
 import '../state/app_state.dart';
 import '../state/feed_actions.dart';
 import '../models/feed_post_model.dart';
+import '../widgets/content_report_sheet.dart';
 
 class CommentsSheet extends StatefulWidget {
   final String postId;
@@ -271,7 +272,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
         (post['item_type'] ?? post['itemType'] ?? '').toString().toLowerCase();
     if (itemType == 'ad') return true;
     if (post['vendor_id'] != null || post['vendorId'] != null) return true;
-    if (post['total_budget_coins'] != null || post['totalBudgetCoins'] != null) {
+    if (post['total_budget_coins'] != null ||
+        post['totalBudgetCoins'] != null) {
       return true;
     }
     return false;
@@ -782,90 +784,6 @@ class _CommentsSheetState extends State<CommentsSheet> {
     }
   }
 
-  Future<void> _delete(Map<String, dynamic> c, int index) async {
-    final id = _commentIdOf(c);
-    if (id.isEmpty) return;
-    final hasToken = await ApiClient().hasToken;
-    if (!hasToken) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please log in to delete comments')),
-      );
-      return;
-    }
-    if (id.startsWith('temp-')) {
-      setState(() => _comments.removeAt(index));
-      return;
-    }
-    final ok = await _svc.deleteComment(id, isTweet: _isTweet);
-    if (ok) {
-      setState(() {
-        _comments.removeAt(index);
-      });
-      _dispatchCommentsDelta(-1);
-      return;
-    }
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Failed to delete comment')),
-    );
-  }
-
-  Future<void> _deleteReply(String parentId, int replyIndex) async {
-    final list = _replies[parentId];
-    if (list == null || replyIndex < 0 || replyIndex >= list.length) return;
-    final reply = Map<String, dynamic>.from(list[replyIndex]);
-    final id = _commentIdOf(reply);
-    if (id.isEmpty) return;
-    final hasToken = await ApiClient().hasToken;
-    if (!hasToken) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please log in to delete comments')),
-      );
-      return;
-    }
-
-    if (id.startsWith('temp-')) {
-      setState(() {
-        final next = List<Map<String, dynamic>>.from(list);
-        next.removeAt(replyIndex);
-        _replies[parentId] = next;
-        _svc.setRepliesCache(parentId, next);
-      });
-      return;
-    }
-
-    final ok = await _svc.deleteComment(id, isTweet: _isTweet);
-    if (!mounted) return;
-    if (ok) {
-      setState(() {
-        final next = List<Map<String, dynamic>>.from(list);
-        next.removeAt(replyIndex);
-        _replies[parentId] = next;
-        _svc.setRepliesCache(parentId, next);
-
-        final parentIndex = _comments.indexWhere((c) {
-          return _commentIdOf(c) == parentId;
-        });
-        if (parentIndex >= 0) {
-          final updatedParent =
-              Map<String, dynamic>.from(_comments[parentIndex]);
-          final rc = (updatedParent['replies_count'] as int?) ??
-              (updatedParent['replyCount'] as int?) ??
-              (updatedParent['repliesCount'] as int?) ??
-              0;
-          updatedParent['replies_count'] = (rc - 1).clamp(0, 1 << 31);
-          _comments[parentIndex] = updatedParent;
-        }
-      });
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Failed to delete reply')),
-    );
-  }
-
   Future<void> _loadRepliesFor(String commentId) async {
     if (_loadingReplies.contains(commentId)) return;
     setState(() => _loadingReplies.add(commentId));
@@ -936,41 +854,27 @@ class _CommentsSheetState extends State<CommentsSheet> {
     });
   }
 
-  void _showDeleteSheet({
-    required VoidCallback onDelete,
-  }) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('Delete'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                onDelete();
-              },
-            ),
-            ListTile(
-              title: const Text('Cancel'),
-              onTap: () => Navigator.of(ctx).pop(),
-            ),
-          ],
-        ),
-      ),
+  void _onLongPressComment(Map<String, dynamic> c, bool isMine, int index) {
+    final id = _commentIdOf(c);
+    if (id.isEmpty) return;
+    if (!mounted) return;
+    ContentReportSheet.show(
+      context,
+      contentType: 'comment',
+      contentId: id,
     );
   }
 
-  void _onLongPressComment(Map<String, dynamic> c, bool isMine, int index) {
-    if (!isMine) return;
-    _showDeleteSheet(onDelete: () => _delete(c, index));
-  }
-
   void _onLongPressReply(String parentId, int replyIndex, bool isMine) {
-    if (!isMine) return;
-    _showDeleteSheet(onDelete: () => _deleteReply(parentId, replyIndex));
+    final reply = _replies[parentId]?[replyIndex];
+    final id = reply == null ? '' : _commentIdOf(reply);
+    if (id.isEmpty) return;
+    if (!mounted) return;
+    ContentReportSheet.show(
+      context,
+      contentType: 'comment',
+      contentId: id,
+    );
   }
 
   String _relative(String dateString) {

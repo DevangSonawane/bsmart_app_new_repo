@@ -11,6 +11,7 @@ import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/ad_public_gallery_section.dart';
+import '../widgets/content_report_sheet.dart';
 import 'external_link_screen.dart';
 
 class AdPublicDetailScreen extends StatefulWidget {
@@ -717,8 +718,9 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                 Positioned(
                   top: 12,
                   right: 12,
-                  child: Row(
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       if (hasVideo)
                         InkWell(
@@ -740,6 +742,34 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                             ),
                           ),
                         ),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: () {
+                          final contentId = ad.id.trim();
+                          if (contentId.isEmpty) return;
+                          ContentReportSheet.show(
+                            context,
+                            contentType: 'ad',
+                            contentId: contentId,
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(999),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.14),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.more_horiz,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1219,7 +1249,9 @@ class _TopCommentsSection extends StatelessWidget {
 
     final dividerColor =
         isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black12;
-    final items = commentsLoading ? const <Map<String, dynamic>>[] : comments.take(3).toList();
+    final items = commentsLoading
+        ? const <Map<String, dynamic>>[]
+        : comments.take(3).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1253,11 +1285,13 @@ class _TopCommentsSection extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: items.length,
-            separatorBuilder: (_, __) => Divider(height: 18, color: dividerColor),
+            separatorBuilder: (_, __) =>
+                Divider(height: 18, color: dividerColor),
             itemBuilder: (context, index) {
               final raw = items[index];
               return _TopCommentRow(
                 isDark: isDark,
+                raw: Map<String, dynamic>.from(raw),
                 avatarUrl: _pickAvatarUrl(Map.from(raw)),
                 username: _pickUsername(Map.from(raw)),
                 text: _pickText(Map.from(raw)),
@@ -1271,12 +1305,14 @@ class _TopCommentsSection extends StatelessWidget {
 
 class _TopCommentRow extends StatelessWidget {
   final bool isDark;
+  final Map<String, dynamic> raw;
   final String avatarUrl;
   final String username;
   final String text;
 
   const _TopCommentRow({
     required this.isDark,
+    required this.raw,
     required this.avatarUrl,
     required this.username,
     required this.text,
@@ -1292,28 +1328,54 @@ class _TopCommentRow extends StatelessWidget {
 
     final name = (username.trim().isEmpty ? 'User' : username.trim());
     final initials = name.isEmpty ? 'U' : name.substring(0, 1).toUpperCase();
+    final commentId =
+        (raw['_id'] ?? raw['id'] ?? raw['comment_id'] ?? raw['commentId'])
+                ?.toString()
+                .trim() ??
+            '';
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: 38,
-          height: 38,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: avatarBorder),
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : Colors.black.withValues(alpha: 0.04),
-            ),
-            child: ClipOval(
-              child: avatarUrl.trim().isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: avatarUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => const SizedBox.expand(),
-                      errorWidget: (_, __, ___) => Center(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () {
+        if (commentId.isEmpty) return;
+        ContentReportSheet.show(
+          context,
+          contentType: 'comment',
+          contentId: commentId,
+        );
+      },
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 38,
+            height: 38,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: avatarBorder),
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.black.withValues(alpha: 0.04),
+              ),
+              child: ClipOval(
+                child: avatarUrl.trim().isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: avatarUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => const SizedBox.expand(),
+                        errorWidget: (_, __, ___) => Center(
+                          child: Text(
+                            initials,
+                            style: TextStyle(
+                              color: textColor.withValues(alpha: 0.9),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Center(
                         child: Text(
                           initials,
                           style: TextStyle(
@@ -1323,51 +1385,41 @@ class _TopCommentRow extends StatelessWidget {
                           ),
                         ),
                       ),
-                    )
-                  : Center(
-                      child: Text(
-                        initials,
-                        style: TextStyle(
-                          color: textColor.withValues(alpha: 0.9),
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13,
-                        ),
-                      ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: name,
+                    style: TextStyle(
+                      color: textColor.withValues(alpha: 0.95),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
                     ),
+                  ),
+                  const TextSpan(text: '  '),
+                  TextSpan(
+                    text: text.trim().isEmpty ? '-' : text.trim(),
+                    style: TextStyle(
+                      color: textColor,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.start,
             ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(
-                  text: name,
-                  style: TextStyle(
-                    color: textColor.withValues(alpha: 0.95),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                ),
-                const TextSpan(text: '  '),
-                TextSpan(
-                  text: text.trim().isEmpty ? '-' : text.trim(),
-                  style: TextStyle(
-                    color: textColor,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    height: 1.25,
-                  ),
-                ),
-              ],
-            ),
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.start,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -1,221 +1,395 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import '../services/content_moderation_service.dart';
-import '../theme/instagram_theme.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import '../api/api.dart';
+import '../theme/design_tokens.dart';
+import '../utils/app_error_handler.dart';
 
 class ReportContentScreen extends StatefulWidget {
-  final String reelId;
-
-  const ReportContentScreen({
-    super.key,
-    required this.reelId,
-  });
+  const ReportContentScreen({super.key});
 
   @override
   State<ReportContentScreen> createState() => _ReportContentScreenState();
 }
 
 class _ReportContentScreenState extends State<ReportContentScreen> {
-  final ContentModerationService _moderationService = ContentModerationService();
-  String? _selectedReportType;
-  final TextEditingController _reasonController = TextEditingController();
-  bool _isSubmitting = false;
-
-  final List<Map<String, dynamic>> _reportTypes = [
-    {'id': 'sexual_content', 'title': 'Sexual Content', 'icon': Icons.block},
-    {'id': 'inappropriate', 'title': 'Inappropriate', 'icon': Icons.warning},
-    {'id': 'spam', 'title': 'Spam', 'icon': Icons.report},
-    {'id': 'violence', 'title': 'Violence', 'icon': Icons.dangerous},
-    {'id': 'harassment', 'title': 'Harassment', 'icon': Icons.person_off},
-    {'id': 'other', 'title': 'Other', 'icon': Icons.more_horiz},
-  ];
+  final ContentReportsApi _contentReportsApi = ContentReportsApi();
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _reports = const [];
 
   @override
-  void dispose() {
-    _reasonController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _loadReports();
   }
 
-  Future<void> _submitReport() async {
-    if (_selectedReportType == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a report type')),
-      );
-      return;
+  String _typeLabel(String raw) {
+    switch (raw.trim().toLowerCase()) {
+      case 'post':
+        return 'Post';
+      case 'reel':
+        return 'Reel';
+      case 'story':
+        return 'Story';
+      case 'ad':
+        return 'Ad';
+      case 'tweet':
+        return 'Tweet';
+      case 'comment':
+        return 'Comment';
+      default:
+        return raw.trim().isEmpty ? 'Content' : raw.trim();
     }
+  }
 
+  String _statusLabel(String raw) {
+    switch (raw.trim().toLowerCase()) {
+      case 'pending':
+        return 'Pending';
+      case 'reviewing':
+        return 'Reviewing';
+      case 'resolved':
+      case 'closed':
+        return 'Resolved';
+      case 'rejected':
+        return 'Rejected';
+      default:
+        return raw.trim().isEmpty ? 'Pending' : raw.trim();
+    }
+  }
+
+  Color _statusColor(String raw, ThemeData theme) {
+    switch (raw.trim().toLowerCase()) {
+      case 'resolved':
+      case 'closed':
+        return Colors.green;
+      case 'rejected':
+        return Colors.redAccent;
+      case 'reviewing':
+        return Colors.orange;
+      default:
+        return theme.colorScheme.primary;
+    }
+  }
+
+  String _formatDate(dynamic raw) {
+    DateTime? dt;
+    if (raw is DateTime) {
+      dt = raw;
+    } else if (raw is String) {
+      dt = DateTime.tryParse(raw);
+    } else if (raw is num) {
+      dt = DateTime.fromMillisecondsSinceEpoch(raw.toInt());
+    }
+    if (dt == null) return '';
+    final local = dt.toLocal();
+    final month = _monthName(local.month);
+    return '${local.day} $month ${local.year}';
+  }
+
+  String _monthName(int month) {
+    const months = <String>[
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    if (month < 1 || month > months.length) return '';
+    return months[month - 1];
+  }
+
+  Future<void> _loadReports({bool showLoading = true}) async {
+    if (!mounted) return;
     setState(() {
-      _isSubmitting = true;
+      if (showLoading) _loading = true;
+      _error = null;
     });
-
-    final success = await _moderationService.reportContent(
-      reelId: widget.reelId,
-      reportType: _selectedReportType!,
-      reason: _reasonController.text.trim().isNotEmpty
-          ? _reasonController.text.trim()
-          : null,
-    );
-
-    setState(() {
-      _isSubmitting = false;
-    });
-
-    if (mounted) {
-      if (success) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Report submitted. We will review this content.'),
-            backgroundColor: Colors.green,
-          ),
+    try {
+      final reports = await _contentReportsApi.getMyReports();
+      if (!mounted) return;
+      reports.sort((a, b) {
+        final aRaw = a['createdAt'] ?? a['created_at'] ?? a['updatedAt'];
+        final bRaw = b['createdAt'] ?? b['created_at'] ?? b['updatedAt'];
+        final aDt = DateTime.tryParse(aRaw?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bDt = DateTime.tryParse(bRaw?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return bDt.compareTo(aDt);
+      });
+      setState(() {
+        _reports = reports;
+      });
+    } catch (e, st) {
+      AppErrorHandler.logError('content-reports-load', e, st);
+      if (!mounted) return;
+      setState(() {
+        _error = AppErrorHandler.userMessage(
+          e,
+          fallback: 'Unable to load your reports right now.',
         );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to submit report. Please try again.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
       }
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Report Content'),
-        backgroundColor: Colors.transparent,
-        foregroundColor: InstagramTheme.textBlack,
+  Widget _buildReportTile(Map<String, dynamic> report, ThemeData theme) {
+    final type = _typeLabel((report['content_type'] ?? '').toString());
+    final reason = (report['reason'] ?? '').toString().trim();
+    final status = (report['status'] ?? '').toString();
+    final details = (report['details'] ?? '').toString().trim();
+    final contentId = (report['content_id'] ?? '').toString().trim();
+    final createdAt = _formatDate(report['createdAt'] ?? report['created_at']);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: theme.brightness == Brightness.dark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.06),
+        ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Why are you reporting this content?',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Your report will be reviewed by our moderation team.',
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Report Type Selection
-            ..._reportTypes.map((type) {
-              final isSelected = _selectedReportType == type['id'];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                color: isSelected ? Colors.blue[50] : null,
-                child: ListTile(
-                  leading: Icon(
-                    type['icon'] as IconData,
-                    color: isSelected ? Colors.blue : Colors.grey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  type,
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
                   ),
-                  title: Text(type['title']!),
-                  trailing: isSelected
-                      ? const Icon(Icons.check_circle, color: Colors.blue)
-                      : null,
-                  onTap: () {
-                    setState(() {
-                      _selectedReportType = type['id'];
-                    });
-                  },
                 ),
-              );
-            }),
-
-            const SizedBox(height: 24),
-
-            // Additional Details
-            const Text(
-              'Additional Details (Optional)',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
               ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _reasonController,
-              maxLines: 4,
-              decoration: InputDecoration(
-                hintText: 'Provide more details about your report...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _statusColor(status, theme).withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(999),
                 ),
-                filled: true,
-                fillColor: Colors.grey[50],
-              ),
-            ),
-
-            const SizedBox(height: 32),
-
-            // Submit Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isSubmitting ? null : _submitReport,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: _isSubmitting
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Text(
-                        'Submit Report',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Info Box
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue[200]!),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'False reports may result in account restrictions.',
-                      style: TextStyle(
-                        color: Colors.blue[900],
-                        fontSize: 12,
-                      ),
-                    ),
+                child: Text(
+                  _statusLabel(status),
+                  style: TextStyle(
+                    color: _statusColor(status, theme),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
                   ),
-                ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            reason.isNotEmpty ? reason : 'Report',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (details.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              details,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.35,
               ),
             ),
           ],
+          if (contentId.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Content ID: $contentId',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (createdAt.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              createdAt,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text('settings_report_content'.tr()),
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(LucideIcons.arrowLeft),
+          onPressed: () => Navigator.of(context).maybePop(),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(LucideIcons.refreshCw),
+            onPressed: _loading ? null : () => _loadReports(showLoading: false),
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => _loadReports(showLoading: false),
+        child: _loading
+            ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 240),
+                  Center(
+                    child: CircularProgressIndicator(
+                      color: DesignTokens.instaPink,
+                    ),
+                  ),
+                ],
+              )
+            : _error != null
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      const SizedBox(height: 48),
+                      const Icon(
+                        LucideIcons.circleAlert,
+                        color: Colors.redAccent,
+                        size: 32,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(_error!, textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => _loadReports(),
+                          icon: const Icon(LucideIcons.refreshCw, size: 16),
+                          label: const Text('Retry'),
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color:
+                              isDark ? const Color(0xFF111827) : Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: (isDark ? Colors.white : Colors.black)
+                                .withValues(alpha: 0.06),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'My Reports',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Reports you submitted from posts, reels, stories, ads, tweets, and comments.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_reports.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color:
+                                isDark ? const Color(0xFF111827) : Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: (isDark ? Colors.white : Colors.black)
+                                  .withValues(alpha: 0.06),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              const Icon(
+                                Icons.flag_outlined,
+                                size: 36,
+                                color: DesignTokens.instaPink,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'No reports yet',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Your submitted content reports will show up here.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        ..._reports.map(
+                          (report) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildReportTile(report, theme),
+                          ),
+                        ),
+                    ],
+                  ),
       ),
     );
   }

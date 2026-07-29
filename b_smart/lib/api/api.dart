@@ -21,6 +21,7 @@ export 'stories_api.dart';
 export 'follows_api.dart';
 export 'follow_requests_api.dart';
 export 'ads_api.dart';
+export 'content_reports_api.dart';
 export 'highlights_api.dart';
 export 'notification_preferences_api.dart';
 export 'policy_api.dart';

@@ -7,6 +7,7 @@ import '../api/promote_reels_api.dart';
 import '../services/comment_sync_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
+import '../widgets/content_report_sheet.dart';
 import '../widgets/safe_network_image.dart';
 
 class PromoteCommentsSheet extends StatefulWidget {
@@ -143,7 +144,8 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
         if (_commentId(c) != id) continue;
         final currentLiked = _liked.contains(id);
         if (currentLiked == liked) return;
-        final cur = _toInt(c['likes_count'] ?? c['likesCount'] ?? c['like_count']);
+        final cur =
+            _toInt(c['likes_count'] ?? c['likesCount'] ?? c['like_count']);
         c['is_liked_by_me'] = liked;
         c['liked_by_me'] = liked;
         c['liked'] = liked;
@@ -286,7 +288,8 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
         _controller.clear();
         if (_replyParentId != null && _replyParentId!.isNotEmpty) {
           final pid = _replyParentId!;
-          final list = List<Map<String, dynamic>>.from(_replies[pid] ?? const []);
+          final list =
+              List<Map<String, dynamic>>.from(_replies[pid] ?? const []);
           list.insert(0, map);
           _replies[pid] = list;
         } else {
@@ -348,7 +351,8 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
     bool updateIn(List<Map<String, dynamic>> list) {
       for (final c in list) {
         if (_commentId(c) != commentId) continue;
-        final cur = _toInt(c['likes_count'] ?? c['likesCount'] ?? c['like_count']);
+        final cur =
+            _toInt(c['likes_count'] ?? c['likesCount'] ?? c['like_count']);
         c['likes_count'] = (cur + delta) < 0 ? 0 : (cur + delta);
         return true;
       }
@@ -361,7 +365,8 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
     }
   }
 
-  Future<void> _deleteComment(String commentId, {required bool isReply, String? parentId}) async {
+  Future<void> _deleteComment(String commentId,
+      {required bool isReply, String? parentId}) async {
     if (commentId.isEmpty) return;
     try {
       if (isReply) {
@@ -411,35 +416,61 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
     final name = _userName(user);
     final avatar = _userAvatar(user);
     final text = (c['text'] ?? c['comment'] ?? '').toString();
-    final created = (c['created_at'] ?? c['createdAt'] ?? c['created'] ?? '')
-        .toString();
-    final likesCount = _toInt(c['likes_count'] ?? c['likesCount'] ?? c['like_count']);
+    final created =
+        (c['created_at'] ?? c['createdAt'] ?? c['created'] ?? '').toString();
+    final likesCount =
+        _toInt(c['likes_count'] ?? c['likesCount'] ?? c['like_count']);
     final isLiked = _liked.contains(id);
     final mine = _myId != null && _myId!.isNotEmpty && _userId(user) == _myId;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 34,
-            height: 34,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(17),
-              child: avatar.isNotEmpty
-                  ? SafeNetworkImage(
-                      url: avatar,
-                      width: 34,
-                      height: 34,
-                      fit: BoxFit.cover,
-                      placeholder: Container(
-                        color: DesignTokens.instaPurple.withValues(alpha: 0.18),
-                        alignment: Alignment.center,
-                        child: const Icon(LucideIcons.user,
-                            color: Colors.white70, size: 18),
-                      ),
-                      errorWidget: Container(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: id.isEmpty
+            ? null
+            : () {
+                ContentReportSheet.show(
+                  context,
+                  contentType: 'comment',
+                  contentId: id,
+                );
+              },
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 34,
+              height: 34,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(17),
+                child: avatar.isNotEmpty
+                    ? SafeNetworkImage(
+                        url: avatar,
+                        width: 34,
+                        height: 34,
+                        fit: BoxFit.cover,
+                        placeholder: Container(
+                          color:
+                              DesignTokens.instaPurple.withValues(alpha: 0.18),
+                          alignment: Alignment.center,
+                          child: const Icon(LucideIcons.user,
+                              color: Colors.white70, size: 18),
+                        ),
+                        errorWidget: Container(
+                          color:
+                              DesignTokens.instaPurple.withValues(alpha: 0.18),
+                          alignment: Alignment.center,
+                          child: Text(
+                            name.isEmpty ? 'U' : name[0].toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Container(
                         color: DesignTokens.instaPurple.withValues(alpha: 0.18),
                         alignment: Alignment.center,
                         child: Text(
@@ -450,123 +481,115 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
                           ),
                         ),
                       ),
-                    )
-                  : Container(
-                      color: DesignTokens.instaPurple.withValues(alpha: 0.18),
-                      alignment: Alignment.center,
-                      child: Text(
-                        name.isEmpty ? 'U' : name[0].toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    style: DefaultTextStyle.of(context).style.copyWith(
-                          fontSize: 13,
-                          height: 1.3,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RichText(
+                    text: TextSpan(
+                      style: DefaultTextStyle.of(context).style.copyWith(
+                            fontSize: 13,
+                            height: 1.3,
+                          ),
+                      children: [
+                        TextSpan(
+                          text: name.isEmpty ? 'User' : name,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
-                    children: [
-                      TextSpan(
-                        text: name.isEmpty ? 'User' : name,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const TextSpan(text: '  '),
-                      TextSpan(text: text.isEmpty ? '-' : text),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Text(
-                      _relative(created),
-                      style: Theme.of(context).textTheme.bodySmall,
+                        const TextSpan(text: '  '),
+                        TextSpan(text: text.isEmpty ? '-' : text),
+                      ],
                     ),
-                    if (likesCount > 0) ...[
-                      const SizedBox(width: 10),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
                       Text(
-                        '$likesCount ${likesCount == 1 ? 'like' : 'likes'}',
+                        _relative(created),
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
-                    ],
-                    const SizedBox(width: 10),
-                    TextButton(
-                      onPressed: id.isEmpty ? null : () => _startReply(c),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        'Reply',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                    ),
-                    if (mine) ...[
+                      if (likesCount > 0) ...[
+                        const SizedBox(width: 10),
+                        Text(
+                          '$likesCount ${likesCount == 1 ? 'like' : 'likes'}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                       const SizedBox(width: 10),
                       TextButton(
-                        onPressed: id.isEmpty
-                            ? null
-                            : () => unawaited(_deleteComment(
-                                  id,
-                                  isReply: parentId != null,
-                                  parentId: parentId,
-                                )),
+                        onPressed: id.isEmpty ? null : () => _startReply(c),
                         style: TextButton.styleFrom(
                           padding: EdgeInsets.zero,
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: Text(
-                          'Delete',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
+                          'Reply',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                         ),
                       ),
+                      if (mine) ...[
+                        const SizedBox(width: 10),
+                        TextButton(
+                          onPressed: id.isEmpty
+                              ? null
+                              : () => unawaited(_deleteComment(
+                                    id,
+                                    isReply: parentId != null,
+                                    parentId: parentId,
+                                  )),
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            'Delete',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 34,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  iconSize: 20,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-                  onPressed: id.isEmpty ? null : () => _toggleLike(id),
-                  icon: Icon(
-                    isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: isLiked ? DesignTokens.instaPink : Colors.grey,
                   ),
-                ),
-                if (likesCount > 0)
-                  Text(
-                    _fmt(likesCount),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 40,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints.tightFor(width: 34, height: 34),
+                    onPressed: id.isEmpty ? null : () => _toggleLike(id),
+                    icon: Icon(
+                      isLiked ? Icons.favorite : Icons.favorite_border,
+                      color: isLiked ? DesignTokens.instaPink : Colors.grey,
+                    ),
+                  ),
+                  if (likesCount > 0)
+                    Text(
+                      _fmt(likesCount),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -727,8 +750,7 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
                               style: TextButton.styleFrom(
                                 padding: EdgeInsets.zero,
                                 minimumSize: Size.zero,
-                                tapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               child: const Text('Cancel'),
                             ),
@@ -764,8 +786,8 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Icon(LucideIcons.send),
                           color: DesignTokens.instaPink,
