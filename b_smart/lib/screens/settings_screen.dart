@@ -1152,15 +1152,6 @@ class _HelpSupportScreen extends StatelessWidget {
                 const Divider(height: 1),
                 _actionRow(
                   context,
-                  icon: Icons.confirmation_num_outlined,
-                  title: 'settings_raise_ticket'.tr(),
-                  subtitle: 'settings_raise_ticket_subtitle'.tr(),
-                  onTap: () =>
-                      _showUnavailable(context, 'settings_raise_ticket'.tr()),
-                ),
-                const Divider(height: 1),
-                _actionRow(
-                  context,
                   icon: Icons.chat_bubble_outline,
                   title: 'settings_live_chat'.tr(),
                   subtitle: 'settings_live_chat_subtitle'.tr(),
