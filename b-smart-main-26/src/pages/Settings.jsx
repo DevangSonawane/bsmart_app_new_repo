@@ -27,8 +27,8 @@ const SETTINGS_GROUPS = [
   {
     group: 'Storage & Activity',
     items: [
-      { key: 'wallet',  label: 'Rewards & Wallet',      subLabel: 'Coins, transactions & wallet history', icon: Wallet,    to: '/wallet',            iconBg: 'bg-orange-50 dark:bg-gray-800', iconColor: 'text-orange-500', external: true },
-      { key: 'saved',   label: 'Saved',                   subLabel: 'Moments, bSparks, Spotlights & Boosts', icon: Bookmark,  to: '/settings/saved',   iconBg: 'bg-amber-50 dark:bg-gray-800', iconColor: 'text-amber-500' },
+      { key: 'wallet',  label: 'Vault',      subLabel: 'Coins, transactions & wallet history', icon: Wallet,    to: '/wallet',            iconBg: 'bg-orange-50 dark:bg-gray-800', iconColor: 'text-orange-500', external: true },
+      { key: 'saved',   label: 'Saved',                   subLabel: 'Moments, bSparks, Spotlights & Campaigns', icon: Bookmark,  to: '/settings/saved',   iconBg: 'bg-amber-50 dark:bg-gray-800', iconColor: 'text-amber-500' },
       { key: 'storage', label: 'Storage & Data',         subLabel: 'Cache, data usage & storage breakdown', icon: HardDrive, to: '/settings/storage', iconBg: 'bg-green-50 dark:bg-gray-800', iconColor: 'text-green-500' },
       { key: 'blocked', label: 'Blocked & Restricted',   subLabel: 'Blocked, restricted & muted accounts', icon: UserX,     to: '/settings/blocked', iconBg: 'bg-red-50 dark:bg-gray-800', iconColor: 'text-red-500' },
     ],

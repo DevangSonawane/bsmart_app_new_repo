@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Grid, Film, Megaphone, ShoppingBag, Heart, Eye, MessageCircle, Play, Image } from 'lucide-react';
+import { ArrowLeft, Loader2, Grid, Film, Megaphone, Rocket, Heart, Eye, MessageCircle, Play, Image } from 'lucide-react';
 import api from '../../lib/api';
 import PostDetailModal from '../../components/PostDetailModal';
 import TweetDetailModal from '../../components/TweetDetailModal';
@@ -43,7 +43,7 @@ const TABS = [
   { key: 'post', label: 'Moments', icon: Image },
   { key: 'reel', label: 'bSparks', icon: Film },
   { key: 'ad', label: 'Spotlights', icon: Megaphone },
-  { key: 'promote_reel', label: 'Boosts', icon: ShoppingBag },
+  { key: 'promote_reel', label: 'Campaigns', icon: Rocket },
 ];
 
 const SavedPosts = () => {
@@ -179,7 +179,7 @@ const SavedPosts = () => {
             </div>
             <p className="text-base font-semibold text-gray-900 dark:text-white">No saved items</p>
             <p className="text-sm text-gray-400">
-              {activeTab === 'all' ? 'Items you save will appear here' : `No saved ${{ post: 'Moments', reel: 'bSparks', ad: 'Spotlights', promote_reel: 'Boosts' }[activeTab] || activeTab}s yet`}
+              {activeTab === 'all' ? 'Items you save will appear here' : `No saved ${{ post: 'Moments', reel: 'bSparks', ad: 'Spotlights', promote_reel: 'Campaigns' }[activeTab] || activeTab}s yet`}
             </p>
           </div>
         ) : (
@@ -203,7 +203,7 @@ const SavedPosts = () => {
                     )}
                     {type === 'promote_reel' && (
                       <span className="text-[8px] font-bold bg-purple-500 text-white px-1.5 py-0.5 rounded-full shadow flex items-center gap-0.5">
-                        <ShoppingBag size={8} /> PROMO
+                        <Rocket size={8} /> PROMO
                       </span>
                     )}
                   </div>
@@ -219,7 +219,7 @@ const SavedPosts = () => {
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-800 dark:to-gray-700">
                       {type === 'ad' ? <Megaphone size={24} className="text-gray-400" />
-                        : type === 'promote_reel' ? <ShoppingBag size={24} className="text-gray-400" />
+                        : type === 'promote_reel' ? <Rocket size={24} className="text-gray-400" />
                         : type === 'reel' ? <Film size={24} className="text-gray-400" />
                         : <Image size={24} className="text-gray-400" />}
                     </div>

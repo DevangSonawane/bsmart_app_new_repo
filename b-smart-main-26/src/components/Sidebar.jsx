@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Home, PlusSquare, Clapperboard, User, Menu, Image, Video, Target, Megaphone, Moon, Sun, Search, Heart, Bell, MessageCircle, LayoutDashboard, FileText, CreditCard, Settings, CheckCheck, Trash2, Eye, Clock, X, Play, Loader2, ShoppingBag, LogOut } from 'lucide-react';
+import { Home, PlusSquare, Clapperboard, User, Menu, Image, Video, Target, Megaphone, Moon, Sun, Search, Heart, Bell, MessageCircle, LayoutDashboard, FileText, CreditCard, Settings, CheckCheck, Trash2, Eye, Clock, X, Play, Loader2, Rocket, LogOut } from 'lucide-react';
 import { toggleTheme } from '../store/themeSlice';
 import bsmartLogo from '../assets/bsmart.png';
 import bsmartIcon from '../assets/bsmart_logo.png';
@@ -520,12 +520,13 @@ const Sidebar = ({ onOpenCreateModal }) => {
     { icon: Home, label: 'Home', path: '/' },
     { icon: Search, label: 'Search', path: null, action: openSidebarSearch },
     { icon: PlusSquare, label: 'Create', path: null, action: () => setIsCreateDropdownOpen(!isCreateDropdownOpen) },
-    { icon: Clapperboard, label: 'bSparks', path: '/reels' },
-    { icon: ShoppingBag, label: 'Boosts', path: '/promote' },
-    { icon: MessageCircle, label: 'Messages', path: '/messages' },
     { icon: Target, label: 'Spotlights', path: '/ads' },
-    { icon: User, label: 'Profile', path: '/profile' },
+    { icon: Rocket, label: 'Campaigns', path: '/promote' },
+    { icon: Clapperboard, label: 'bSparks', path: '/reels' },
+    { icon: MessageCircle, label: 'Messages', path: '/messages' },
   ];
+
+  const profileNavItem = { icon: User, label: 'Profile', path: '/profile' };
 
   return (
     <>
@@ -617,8 +618,8 @@ const Sidebar = ({ onOpenCreateModal }) => {
                             onClick={() => { onOpenCreateModal('promote'); setIsCreateDropdownOpen(false); }}
                             className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-200"
                           >
-                            <ShoppingBag size={18} className="text-green-500" />
-                            <span>Boost Reel</span>
+                            <Rocket size={18} className="text-green-500" />
+                            <span>Create Campaign</span>
                             <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">NEW</span>
                           </button>
                         </>
@@ -765,6 +766,25 @@ const Sidebar = ({ onOpenCreateModal }) => {
               </div>
             )}
           </div>
+
+          {/* Profile — pinned after Notifications in the tab order */}
+          {!isVendor && (
+            <Link
+              to={profileNavItem.path}
+              className={`group flex items-center gap-4 p-3 rounded-xl transition-all duration-200 ${location.pathname.startsWith(profileNavItem.path) ? 'bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange text-white shadow-md' : 'hover:bg-gray-50 dark:hover:bg-gray-900 text-gray-900 dark:text-white'}`}
+            >
+              <div className="min-w-[24px] relative">
+                <User
+                  size={24}
+                  className={`${location.pathname.startsWith(profileNavItem.path) ? 'text-white' : 'text-gray-900 dark:text-white'} transition-transform duration-150 group-hover:scale-110 ${!location.pathname.startsWith(profileNavItem.path) && 'group-hover:text-black dark:group-hover:text-white'}`}
+                  strokeWidth={location.pathname.startsWith(profileNavItem.path) ? 2.5 : 2}
+                />
+              </div>
+              <span className={`text-base font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${!location.pathname.startsWith(profileNavItem.path) && 'group-hover:text-black dark:group-hover:text-white'} ${isHovered ? 'opacity-100 w-auto' : 'opacity-0 w-0'} ${location.pathname.startsWith(profileNavItem.path) ? 'text-white font-bold' : ''}`}>
+                {profileNavItem.label}
+              </span>
+            </Link>
+          )}
 
           {/* More dropdown */}
           <div className={`mt-auto pb-4 relative`} ref={moreDropdownRef}>

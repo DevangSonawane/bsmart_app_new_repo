@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 import {
   Heart, MessageCircle, Send, MoreHorizontal,
   Bookmark, ChevronLeft,
-  ShoppingBag, Loader2, UserPlus, UserCheck, X, Trash2,
+  ShoppingBag, Rocket, Loader2, UserPlus, UserCheck, X, Trash2,
   RefreshCw, Search, Volume2, VolumeX
 } from 'lucide-react';
 import promoteReelService from '../services/promoteReelService';
@@ -1056,7 +1056,7 @@ const Promote = () => {
                 
                 {!searchOpen && (
                   <div className="absolute left-1/2 -translate-x-1/2 text-gray-900 dark:text-white font-bold text-sm md:text-base">
-                    Boosts
+                    Campaigns
                   </div>
                 )}
 
@@ -1161,8 +1161,8 @@ const Promote = () => {
               <ChevronLeft size={22} className="text-white" />
             </button>
             <div className="flex items-center gap-1.5">
-              <ShoppingBag size={16} className="text-white" />
-              <span className="font-bold text-white text-sm">Boosts</span>
+              <Rocket size={16} className="text-white" />
+              <span className="font-bold text-white text-sm">Campaigns</span>
             </div>
           </div>
 

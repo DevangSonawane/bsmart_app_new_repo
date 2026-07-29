@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import EmojiPicker from 'emoji-picker-react';
 import promoteReelService from '../services/promoteReelService';
-import { Image, Images, Video, X, ArrowLeft, Maximize2, Search, Copy, ZoomIn, Plus, ChevronLeft, ChevronRight, UserPlus, ChevronDown, ChevronUp, Smile, Megaphone,
+import { Image, Images, Video, X, ArrowLeft, Maximize2, Search, Copy, ZoomIn, Plus, ChevronLeft, ChevronRight, UserPlus, ChevronDown, ChevronUp, Smile, Megaphone, Rocket,
   MousePointerClick, Target, Smartphone, Monitor, Calendar, Link2, Phone, Mail, MessageSquare,
   TestTube2, CalendarClock, Zap, ShieldCheck, Tag, Globe, MapPin, Coins, Pencil,
   ShoppingBag, Trash2, Volume2, VolumeX, Play, Pause
@@ -1918,7 +1918,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           {step === 'select' ? (
             <>
               <div className="w-10"></div>
-              <h2 className="font-semibold text-base text-center dark:text-white flex-1">Create new {postType === 'tweet' ? 'Buzz' : postType === 'reel' ? 'bSpark' : postType === 'ad' ? 'ad' : postType === 'promote' ? 'Boost' : 'Moment'}</h2>
+              <h2 className="font-semibold text-base text-center dark:text-white flex-1">Create new {postType === 'tweet' ? 'Buzz' : postType === 'reel' ? 'bSpark' : postType === 'ad' ? 'ad' : postType === 'promote' ? 'Campaign' : 'Moment'}</h2>
               <button onClick={handleClose} className="text-black dark:text-white md:hidden"><X size={24} /></button>
               <div className="w-10 md:block hidden"></div>
             </>
@@ -1942,7 +1942,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                 </button>
               </div>
               <h2 className="font-semibold text-base text-center dark:text-white flex-1">
-                {step === 'crop' ? 'Step 1 · Crop' : step === 'cover' ? 'Cover' : step === 'edit' ? 'Step 2 · Edit' : step === 'promoteProducts' ? 'Step 3 · Products' : step === 'adDetails' ? 'Step 3 · Ad Details' : step === 'share' && postType === 'ad' ? 'Ad Setup' : step === 'share' && postType === 'promote' ? 'Step 4 · Boost Details' : 'Share'}
+                {step === 'crop' ? 'Step 1 · Crop' : step === 'cover' ? 'Cover' : step === 'edit' ? 'Step 2 · Edit' : step === 'promoteProducts' ? 'Step 3 · Products' : step === 'adDetails' ? 'Step 3 · Ad Details' : step === 'share' && postType === 'ad' ? 'Ad Setup' : step === 'share' && postType === 'promote' ? 'Step 4 · Campaign Details' : 'Share'}
               </h2>
               <div className="w-auto min-w-[140px] flex justify-end items-center gap-2">
                   {step === 'share' && postType === 'ad' && (
@@ -2018,8 +2018,8 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                       onClick={() => setPostType('promote')}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl ${postType === 'promote' ? 'bg-white/20' : 'hover:bg-white/10'}`}
                     >
-                      <ShoppingBag size={18} className="text-green-400" />
-                      <span className="text-xs font-semibold">Boost</span>
+                      <Rocket size={18} className="text-green-400" />
+                      <span className="text-xs font-semibold">Campaign</span>
                     </button>
                   </>
                 )}
@@ -4151,7 +4151,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
                     : postType === 'reel'
                     ? 'bSpark Published! 🎉'
                     : postType === 'promote'
-                    ? 'Boost Published! 🎉'
+                    ? 'Campaign Published! 🎉'
                     : postType === 'ad'
                     ? adSubmitMode === 'draft'
                       ? 'Ad Saved as Draft'

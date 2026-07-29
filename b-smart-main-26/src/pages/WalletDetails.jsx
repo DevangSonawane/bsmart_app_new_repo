@@ -3,7 +3,7 @@ import {
   ArrowLeft, ChevronDown, SlidersHorizontal, ArrowUpRight, ShoppingCart,
   CheckCircle2, User, Mail, Phone, Building2, Globe, Coins,
   TrendingUp, TrendingDown, Heart, Eye, MessageCircle, Bookmark,
-  RefreshCw, Loader2, AlertCircle, Sparkles, Wallet
+  RefreshCw, Loader2, AlertCircle, Sparkles, Wallet, Gift, PackageSearch
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -92,6 +92,155 @@ const StatPill = ({ label, value, positive }) => (
   </div>
 );
 
+const Bullets = ({ items }) => (
+  <ul className="space-y-1.5 mt-1.5">
+    {items.map((t, i) => (
+      <li key={i} className="flex items-start gap-2">
+        <span className="text-orange-400 mt-0.5 shrink-0">•</span>
+        <span>{t}</span>
+      </li>
+    ))}
+  </ul>
+);
+
+// ─── Vault Help — FAQ content ──────────────────────────────────────────────
+const FAQ_ITEMS = [
+  {
+    q: 'How do I earn bCoins?',
+    body: (
+      <>
+        <p>You can earn Coins by:</p>
+        <Bullets items={[
+          'Watching eligible videos or content.',
+          'Participating in campaigns, challenges, or events.',
+          'Completing tasks and activities within the app.',
+          'Receiving promotional or bonus rewards during special events.',
+        ]} />
+      </>
+    ),
+  },
+  {
+    q: 'How do I redeem bCoins?',
+    body: (
+      <Bullets items={[
+        <>Go to <b className="text-gray-700 dark:text-white/80">Vault</b>.</>,
+        <>Tap <b className="text-gray-700 dark:text-white/80">Redeem Gift Cards</b>.</>,
+        'Choose your preferred gift card.',
+        'Select required Card Value.',
+        'Ensure you have the required number of Coins.',
+        'Confirm the redemption request.',
+        <>Your redemption status can be tracked under <b className="text-gray-700 dark:text-white/80">My Redemptions</b>.</>,
+      ]} />
+    ),
+  },
+  {
+    q: 'Why is my bCoin balance different?',
+    body: (
+      <>
+        <p>Your balance may change because:</p>
+        <Bullets items={[
+          'Coins were successfully redeemed.',
+          'New Coins were added after completing eligible activities.',
+          'Promotional or bonus Coins expired.',
+          'A transaction is still being processed.',
+        ]} />
+        <p className="mt-2">Check Transaction History for complete details.</p>
+      </>
+    ),
+  },
+  {
+    q: 'How long does redemption take?',
+    body: <p>Most redemption requests are processed within 2–72 hours. Processing time may vary depending on the reward provider.</p>,
+  },
+  {
+    q: 'How will I be notified after my voucher redemption is completed?',
+    body: (
+      <>
+        <p>Once your voucher redemption is successfully processed, you will be notified through one or more of the following channels, depending on your notification preferences and the service availability:</p>
+        <Bullets items={['In-App Notification', 'Email', 'SMS (Text Message)']} />
+        <p className="mt-2">You can also view the redemption status and voucher details anytime by navigating to <b className="text-gray-700 dark:text-white/80">Vault → My Redemptions</b>.</p>
+        <p className="mt-2">If you do not receive a notification or your voucher within the expected processing time, please contact Support by going to <b className="text-gray-700 dark:text-white/80">Profile → Settings → Help & Support → Raise a Ticket</b>.</p>
+      </>
+    ),
+  },
+  {
+    q: 'Where can I check my redemption status?',
+    body: (
+      <>
+        <p>Open My Redemptions to view:</p>
+        <Bullets items={['Pending requests', 'Processing requests', 'Successful redemptions', 'Failed or cancelled requests']} />
+      </>
+    ),
+  },
+  {
+    q: 'Do bCoins expire?',
+    body: <p>Some promotional or bonus Coins may have an expiry date. Please check the campaign or offer details to know the validity period.</p>,
+  },
+  {
+    q: 'Can I cancel a redemption request?',
+    body: <p>Once a redemption request has been submitted and is being processed, it cannot usually be cancelled. Contact support if you need assistance.</p>,
+  },
+  {
+    q: "Why can't I redeem my bCoins?",
+    body: (
+      <>
+        <p>Possible reasons include:</p>
+        <Bullets items={[
+          'Insufficient bCoins balance.',
+          'Temporary service maintenance.',
+          'Reward currently unavailable.',
+          'Account verification is incomplete.',
+          'Daily or monthly redemption limit has been reached.',
+        ]} />
+      </>
+    ),
+  },
+  {
+    q: 'Is there a minimum number of bCoins required for redemption?',
+    body: <p>Yes. Each gift card has its own minimum Coin requirement, which is displayed before you redeem.</p>,
+  },
+  {
+    q: 'How can I contact Support?',
+    body: (
+      <>
+        <p>If you experience any issues related to earning Coins, redeeming rewards, or wallet transactions, you can contact our support team by following these steps:</p>
+        <p className="mt-2 font-semibold text-gray-700 dark:text-white/70">Support Process:</p>
+        <ol className="space-y-1.5 mt-1.5 list-decimal list-inside">
+          <li>Go to Profile.</li>
+          <li>Open Settings.</li>
+          <li>Navigate to Help & Support.</li>
+          <li>Select Raise a Ticket or Contact Support.</li>
+          <li>Submit your issue with the required details, and our support team will review and assist you as soon as possible.</li>
+        </ol>
+      </>
+    ),
+  },
+];
+
+const VAULT_TIPS = [
+  'Complete your profile to unlock more earning opportunities.',
+  'Check the app regularly for bonus campaigns and limited-time offers.',
+  'Review your Transaction History to keep track of earned and redeemed Coins.',
+  'Ensure your account details are up to date before redeeming rewards.',
+  'Do not share your account credentials with anyone.',
+  "Follow the app's Terms & Conditions to avoid forfeiture of Coins due to policy violations.",
+];
+
+const FaqRow = ({ q, body, isOpen, onToggle }) => (
+  <div className="border-b border-gray-100 dark:border-white/[0.05] last:border-0">
+    <button onClick={onToggle}
+      className="w-full flex items-center justify-between gap-3 py-3 text-left">
+      <span className="text-sm font-semibold text-gray-800 dark:text-white/90">{q}</span>
+      <ChevronDown size={14} className={`shrink-0 text-gray-400 dark:text-white/30 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+    </button>
+    {isOpen && (
+      <div className="pb-4 text-xs text-gray-500 dark:text-white/50 leading-relaxed">
+        {body}
+      </div>
+    )}
+  </div>
+);
+
 const TxSkeleton = () => (
   <div className="space-y-3 min-h-[120px]">
     {[1, 2, 3].map(i => (
@@ -116,6 +265,7 @@ const WalletDetails = () => {
   const [filter, setFilter] = useState('All');
   const [isLifeTime, setIsLifeTime] = useState(true);
   const [openSection, setOpenSection] = useState('transaction');
+  const [openFaq, setOpenFaq] = useState(null);
  
 
   // API state
@@ -179,7 +329,7 @@ const WalletDetails = () => {
         </button>
         <div className="flex items-center gap-2">
           <Wallet size={16} className="text-orange-400" />
-          <h1 className="text-base font-bold text-gray-900 dark:text-white tracking-tight">Wallet & Coins</h1>
+          <h1 className="text-base font-bold text-gray-900 dark:text-white tracking-tight">Vault</h1>
         </div>
         <button onClick={fetchWalletHistory}
           className={`ml-auto w-8 h-8 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/[0.06] hover:bg-gray-200 dark:hover:bg-white/10 transition-colors text-gray-500 dark:text-white/60 ${loading ? 'animate-spin' : ''}`}>
@@ -246,6 +396,40 @@ const WalletDetails = () => {
             <StatPill label="Transactions"   value={totalTx}                     positive={null}  />
           </div>
         </div>
+
+        {/* ── Redeem Gift Cards button ── */}
+        <button
+          onClick={() => navigate('/gift-cards')}
+          className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border border-orange-200 dark:border-orange-500/20 bg-white dark:bg-[#0f0f0f] hover:bg-orange-50 dark:hover:bg-orange-500/5 transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-500/15 flex items-center justify-center flex-shrink-0">
+              <Gift size={18} className="text-orange-500" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-bold text-gray-900 dark:text-white">Redeem Gift Cards</p>
+              <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">Use bCoins to get Amazon, Flipkart & more</p>
+            </div>
+          </div>
+          <ArrowUpRight size={16} className="text-orange-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform flex-shrink-0" />
+        </button>
+
+        {/* ── My Redemptions button ── */}
+        <button
+          onClick={() => navigate('/gift-card-orders')}
+          className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-[#0f0f0f] hover:bg-gray-50 dark:hover:bg-white/[0.04] transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0">
+              <PackageSearch size={18} className="text-gray-500 dark:text-gray-400" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-bold text-gray-900 dark:text-white">My Redemptions</p>
+              <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">View your gift card order history</p>
+            </div>
+          </div>
+          <ArrowUpRight size={16} className="text-gray-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform flex-shrink-0" />
+        </button>
 
         {/* ── Error banner ── */}
         {error && (
@@ -430,13 +614,17 @@ const WalletDetails = () => {
 
         {/* ── Help Accordion ── */}
         <AccordionItem id="help" title="Help" openSection={openSection} setOpenSection={setOpenSection}>
-          <div className="space-y-1 mt-4">
-            {['How do coins work?', 'Why is my balance changed?', 'Contact support'].map((item) => (
-              <button key={item}
-                className="w-full text-left px-3 py-3 rounded-xl text-sm text-gray-500 dark:text-white/50 hover:text-gray-800 dark:hover:text-white/80 hover:bg-gray-100 dark:hover:bg-white/[0.04] transition-colors">
-                {item}
-              </button>
+          <div className="mt-2">
+            {FAQ_ITEMS.map((item, i) => (
+              <FaqRow key={item.q} q={item.q} body={item.body}
+                isOpen={openFaq === i} onToggle={() => setOpenFaq(openFaq === i ? null : i)} />
             ))}
+          </div>
+
+          {/* Tips */}
+          <div className="mt-5 pt-4 border-t border-gray-100 dark:border-white/[0.05]">
+            <p className="text-xs font-bold text-orange-500 uppercase tracking-widest mb-2">Tips</p>
+            <Bullets items={VAULT_TIPS} />
           </div>
         </AccordionItem>
 

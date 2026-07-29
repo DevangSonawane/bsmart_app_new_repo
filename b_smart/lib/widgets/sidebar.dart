@@ -50,7 +50,9 @@ class _SidebarState extends State<Sidebar> {
         width: _hovered ? _wideWidth : _narrowWidth,
         decoration: BoxDecoration(
           color: theme.scaffoldBackgroundColor,
-          border: Border(right: BorderSide(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200)),
+          border: Border(
+              right: BorderSide(
+                  color: isDark ? Colors.grey.shade800 : Colors.grey.shade200)),
         ),
         child: Column(
           children: [
@@ -67,17 +69,34 @@ class _SidebarState extends State<Sidebar> {
                             gradient: DesignTokens.instaGradient,
                             borderRadius: BorderRadius.circular(8),
                             boxShadow: [
-                              BoxShadow(color: Colors.black.withAlpha(40), blurRadius: 6, offset: const Offset(0, 2)),
+                              BoxShadow(
+                                  color: Colors.black.withAlpha(40),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2)),
                             ],
                           ),
-                          child: const Center(child: Text('b', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18))),
+                          child: const Center(
+                              child: Text('b',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18))),
                         ),
                         const SizedBox(width: 8),
                         ShaderMask(
                           shaderCallback: (bounds) => const LinearGradient(
-                            colors: [DesignTokens.instaPurple, DesignTokens.instaPink, DesignTokens.instaOrange],
+                            colors: [
+                              DesignTokens.instaPurple,
+                              DesignTokens.instaPink,
+                              DesignTokens.instaOrange
+                            ],
                           ).createShader(bounds),
-                          child: const Text('B-Smart', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22, fontFamily: 'Montserrat')),
+                          child: const Text('B-Smart',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 22,
+                                  fontFamily: 'Montserrat')),
                         ),
                       ],
                     )
@@ -88,10 +107,18 @@ class _SidebarState extends State<Sidebar> {
                         gradient: DesignTokens.instaGradient,
                         borderRadius: BorderRadius.circular(8),
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withAlpha(40), blurRadius: 6, offset: const Offset(0, 2)),
+                          BoxShadow(
+                              color: Colors.black.withAlpha(40),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2)),
                         ],
                       ),
-                      child: const Center(child: Text('b', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20))),
+                      child: const Center(
+                          child: Text('b',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 20))),
                     ),
             ),
             const SizedBox(height: 8),
@@ -99,15 +126,31 @@ class _SidebarState extends State<Sidebar> {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
-                  _NavItem(icon: LucideIcons.house, label: 'nav_home'.tr(), index: 0, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(0), inactiveColor: inactiveColor),
-                  _NavItem(icon: LucideIcons.target, label: 'nav_ads'.tr(), index: 1, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(1), inactiveColor: inactiveColor),
+                  _NavItem(
+                      icon: LucideIcons.house,
+                      label: 'nav_home'.tr(),
+                      index: 0,
+                      currentIndex: widget.currentIndex,
+                      hovered: _hovered,
+                      onTap: () => widget.onNavTap(0),
+                      inactiveColor: inactiveColor),
+                  _NavItem(
+                      icon: LucideIcons.target,
+                      label: 'nav_ads'.tr(),
+                      index: 1,
+                      currentIndex: widget.currentIndex,
+                      hovered: _hovered,
+                      onTap: () => widget.onNavTap(1),
+                      inactiveColor: inactiveColor),
                   _CreateItem(
                     currentIndex: widget.currentIndex,
                     isVendor: widget.isVendor,
                     hovered: _hovered,
                     dropdownOpen: _createDropdownOpen,
-                    onTap: () => setState(() => _createDropdownOpen = !_createDropdownOpen),
-                    onDismiss: () => setState(() => _createDropdownOpen = false),
+                    onTap: () => setState(
+                        () => _createDropdownOpen = !_createDropdownOpen),
+                    onDismiss: () =>
+                        setState(() => _createDropdownOpen = false),
                     onCreatePost: () {
                       setState(() => _createDropdownOpen = false);
                       widget.onCreatePost?.call();
@@ -121,11 +164,39 @@ class _SidebarState extends State<Sidebar> {
                       widget.onCreateAd?.call();
                     },
                   ),
-                  _NavItem(icon: LucideIcons.megaphone, label: 'nav_promote'.tr(), index: 3, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(3), inactiveColor: inactiveColor),
-                  _NavItem(icon: LucideIcons.clapperboard, label: 'nav_reels'.tr(), index: 4, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(4), inactiveColor: inactiveColor),
-                  _NavItem(icon: LucideIcons.user, label: 'nav_profile'.tr(), index: 5, currentIndex: widget.currentIndex, hovered: _hovered, onTap: () => widget.onNavTap(5), inactiveColor: inactiveColor),
+                  _NavItem(
+                      icon: LucideIcons.rocket,
+                      label: 'nav_promote'.tr(),
+                      index: 3,
+                      currentIndex: widget.currentIndex,
+                      hovered: _hovered,
+                      onTap: () => widget.onNavTap(3),
+                      inactiveColor: inactiveColor),
+                  _NavItem(
+                      icon: LucideIcons.clapperboard,
+                      label: 'nav_reels'.tr(),
+                      index: 4,
+                      currentIndex: widget.currentIndex,
+                      hovered: _hovered,
+                      onTap: () => widget.onNavTap(4),
+                      inactiveColor: inactiveColor),
+                  _NavItem(
+                      icon: LucideIcons.user,
+                      label: 'nav_profile'.tr(),
+                      index: 5,
+                      currentIndex: widget.currentIndex,
+                      hovered: _hovered,
+                      onTap: () => widget.onNavTap(5),
+                      inactiveColor: inactiveColor),
                   const SizedBox(height: 16),
-                  _NavItem(icon: LucideIcons.menu, label: 'nav_more'.tr(), index: -1, currentIndex: -2, hovered: _hovered, onTap: () {}, inactiveColor: inactiveColor),
+                  _NavItem(
+                      icon: LucideIcons.menu,
+                      label: 'nav_more'.tr(),
+                      index: -1,
+                      currentIndex: -2,
+                      hovered: _hovered,
+                      onTap: () {},
+                      inactiveColor: inactiveColor),
                 ],
               ),
             ),
@@ -137,14 +208,21 @@ class _SidebarState extends State<Sidebar> {
                   onTap: () => ThemeScope.of(context).toggle(),
                   borderRadius: BorderRadius.circular(12),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                     child: Row(
-                      mainAxisAlignment: _hovered ? MainAxisAlignment.start : MainAxisAlignment.center,
+                      mainAxisAlignment: _hovered
+                          ? MainAxisAlignment.start
+                          : MainAxisAlignment.center,
                       children: [
-                        Icon(isDark ? LucideIcons.moon : LucideIcons.sun, size: 22, color: inactiveColor),
+                        Icon(isDark ? LucideIcons.moon : LucideIcons.sun,
+                            size: 22, color: inactiveColor),
                         if (_hovered) ...[
                           const SizedBox(width: 12),
-                          Text('nav_appearance'.tr(), style: TextStyle(color: inactiveColor, fontWeight: FontWeight.w500)),
+                          Text('nav_appearance'.tr(),
+                              style: TextStyle(
+                                  color: inactiveColor,
+                                  fontWeight: FontWeight.w500)),
                           const Spacer(),
                           Switch(
                             value: isDark,
@@ -189,7 +267,8 @@ class _NavItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Material(
-        color: active ? DesignTokens.instaPink.withAlpha(25) : Colors.transparent,
+        color:
+            active ? DesignTokens.instaPink.withAlpha(25) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
@@ -198,7 +277,9 @@ class _NavItem extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
               children: [
-                Icon(icon, size: 24, color: active ? DesignTokens.instaPink : inactiveColor),
+                Icon(icon,
+                    size: 24,
+                    color: active ? DesignTokens.instaPink : inactiveColor),
                 if (hovered) ...[
                   const SizedBox(width: 16),
                   Expanded(
@@ -256,16 +337,23 @@ class _CreateItem extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Material(
-            color: active ? DesignTokens.instaPink.withAlpha(25) : Colors.transparent,
+            color: active
+                ? DesignTokens.instaPink.withAlpha(25)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               onTap: onTap,
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 child: Row(
                   children: [
-                    Icon(LucideIcons.squarePlus, size: 24, color: active ? DesignTokens.instaPink : Colors.grey.shade800),
+                    Icon(LucideIcons.squarePlus,
+                        size: 24,
+                        color: active
+                            ? DesignTokens.instaPink
+                            : Colors.grey.shade800),
                     if (hovered) ...[
                       const SizedBox(width: 16),
                       Expanded(
@@ -273,8 +361,11 @@ class _CreateItem extends StatelessWidget {
                           'nav_create'.tr(),
                           style: TextStyle(
                             fontSize: 16,
-                            fontWeight: active ? FontWeight.bold : FontWeight.w500,
-                            color: active ? DesignTokens.instaPink : Colors.grey.shade800,
+                            fontWeight:
+                                active ? FontWeight.bold : FontWeight.w500,
+                            color: active
+                                ? DesignTokens.instaPink
+                                : Colors.grey.shade800,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -296,9 +387,12 @@ class _CreateItem extends StatelessWidget {
                   width: 192,
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   decoration: BoxDecoration(
-                            color: theme.cardColor,
+                    color: theme.cardColor,
                     borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: isDark ? Colors.grey.shade800 : Colors.grey.shade100),
+                    border: Border.all(
+                        color: isDark
+                            ? Colors.grey.shade800
+                            : Colors.grey.shade100),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -306,18 +400,24 @@ class _CreateItem extends StatelessWidget {
                       if (isVendor)
                         ListTile(
                           leading: const Icon(LucideIcons.megaphone, size: 20),
-                          title: Text('nav_create_ads'.tr(), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          title: Text('nav_create_ads'.tr(),
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w500)),
                           onTap: onCreateAd,
                         )
                       else ...[
                         ListTile(
                           leading: const Icon(LucideIcons.image, size: 20),
-                          title: Text('nav_create_post'.tr(), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          title: Text('nav_create_post'.tr(),
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w500)),
                           onTap: onCreatePost,
                         ),
                         ListTile(
                           leading: const Icon(LucideIcons.video, size: 20),
-                          title: Text('nav_upload_reel'.tr(), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                          title: Text('nav_upload_reel'.tr(),
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w500)),
                           onTap: onUploadReel,
                         ),
                       ],

@@ -240,7 +240,7 @@ export default function VendorPublicProfile() {
   const sm             = profile.social_media_links || {};
 
   const renderAbout = () => (
-    <div className="space-y-3 px-4 py-4 max-w-2xl mx-auto lg:px-0">
+    <div className="space-y-3 py-4">
       {profile.company_description && (
         <div className="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
@@ -309,8 +309,8 @@ export default function VendorPublicProfile() {
   );
 
   const renderProducts = () => (
-    <div className="px-4 py-6 max-w-2xl mx-auto lg:px-0">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    <div className="py-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {[...Array(6)].map((_, i) => (
           <div key={i} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden shadow-sm">
             <div className="w-full aspect-square bg-gradient-to-br from-orange-50 to-pink-50 dark:from-orange-900/20 dark:to-pink-900/20 flex items-center justify-center">
@@ -334,7 +334,7 @@ export default function VendorPublicProfile() {
   );
 
   const renderGallery = () => (
-    <div className="px-4 py-4 max-w-2xl mx-auto lg:px-0">
+    <div className="py-4">
       {adsLoading ? (
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
           {[...Array(9)].map((_, i) => (
@@ -372,7 +372,7 @@ export default function VendorPublicProfile() {
   );
 
   const renderAds = () => (
-    <div className="px-4 py-4 max-w-2xl mx-auto lg:px-0">
+    <div className="py-4">
       {adsLoading ? (
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
           {[...Array(8)].map((_, i) => (
@@ -398,7 +398,7 @@ export default function VendorPublicProfile() {
   );
 
   const renderEvents = () => (
-    <div className="px-4 py-6 max-w-2xl mx-auto lg:px-0 space-y-3">
+    <div className="py-6 space-y-3">
       {[
         { title: 'Annual Sale Event',  date: 'Coming Soon', desc: 'Exciting deals and offers awaiting you',   gradient: 'from-orange-400 to-pink-500' },
         { title: 'New Product Launch', date: 'TBA',         desc: 'New collection unveiling ceremony',        gradient: 'from-purple-400 to-indigo-500' },
@@ -434,7 +434,7 @@ export default function VendorPublicProfile() {
   const renderLocations = () => {
     const addr = op.address;
     return (
-      <div className="px-4 py-6 max-w-2xl mx-auto lg:px-0 space-y-3">
+      <div className="py-6 space-y-3">
         {addr && (
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm">
             <div className="flex items-center gap-2.5 mb-4">
@@ -473,7 +473,7 @@ export default function VendorPublicProfile() {
   };
 
   const renderContact = () => (
-    <div className="px-4 py-6 max-w-2xl mx-auto lg:px-0 space-y-4">
+    <div className="py-6 space-y-4">
       <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden shadow-sm">
         <div className="px-6 pt-6 pb-2 flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
@@ -590,7 +590,7 @@ export default function VendorPublicProfile() {
 
       {/* Back button — desktop only */}
       <div className="absolute top-0 left-0 right-0 z-50 pointer-events-none hidden sm:block">
-        <div className="max-w-[1100px] mx-auto px-4 pt-3 pointer-events-auto">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-3 pointer-events-auto">
           <button
             onClick={() => navigate(-1)}
             className="w-9 h-9 rounded-full bg-black/30 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/50 transition-colors shadow-lg"
@@ -601,7 +601,7 @@ export default function VendorPublicProfile() {
       </div>
 
       {/* Cover + Avatar — avatar sits on the cover image */}
-      <div className="relative w-[73%] mx-auto h-[160px] sm:h-[220px] overflow-visible">
+      <div className="relative max-w-4xl mx-auto h-[160px] sm:h-[220px] overflow-visible">
         <div className="w-full h-full overflow-hidden">
           {coverImages.length > 0 ? (
             <Swiper
@@ -638,7 +638,7 @@ export default function VendorPublicProfile() {
 
       {/* Profile header */}
       <div className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800">
-        <div className="px-4 max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6">
 
           {/* Spacer for avatar overlap + follow button row */}
           <div className="flex items-start justify-between pt-11 sm:pt-14 pb-3">
@@ -710,7 +710,7 @@ export default function VendorPublicProfile() {
         {/* Tabs — horizontal scroll */}
         <div className="border-t border-gray-100 dark:border-gray-800">
           <div className="overflow-x-auto max-w-4xl mx-auto" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-            <div className="flex px-2 sm:px-4">
+            <div className="flex px-4 sm:px-6">
               {TABS.map((tab) => {
                 const IconComponent = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -734,8 +734,8 @@ export default function VendorPublicProfile() {
         </div>
       </div>
 
-      {/* Tab content */}
-      <div className="max-w-4xl mx-auto pb-10">
+      {/* Tab content — single source of horizontal alignment so every tab starts at the same left edge */}
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pb-10">
         {renderTabContent()}
       </div>
 

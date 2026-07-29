@@ -25,6 +25,7 @@ import 'privacy_screen.dart';
 import 'saved_items_screen.dart';
 import 'security_screen.dart';
 import 'contact_support_screen.dart';
+import 'bug_reports_screen.dart';
 import 'faq_screen.dart';
 import 'wallet_screen.dart';
 
@@ -149,6 +150,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _openContactSupportPage() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ContactSupportScreen()),
+    );
+  }
+
+  Future<void> _openBugReportsPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const BugReportsScreen()),
     );
   }
 
@@ -378,8 +385,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.help_outline,
             label: 'settings_help_support'.tr(),
             subLabel: 'settings_help_support_subtitle'.tr(),
-            onTap: () => _push(
-                _HelpSupportScreen(onContactSupport: _openContactSupportPage)),
+            onTap: () => _push(_HelpSupportScreen(
+              onContactSupport: _openContactSupportPage,
+              onReportBug: _openBugReportsPage,
+            )),
           ),
           _settingTile(
             icon: Icons.article_outlined,
@@ -1116,8 +1125,12 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
 
 class _HelpSupportScreen extends StatelessWidget {
   final Future<void> Function() onContactSupport;
+  final Future<void> Function() onReportBug;
 
-  const _HelpSupportScreen({required this.onContactSupport});
+  const _HelpSupportScreen({
+    required this.onContactSupport,
+    required this.onReportBug,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1204,8 +1217,9 @@ class _HelpSupportScreen extends StatelessWidget {
                   icon: Icons.bug_report_outlined,
                   title: 'settings_report_bug'.tr(),
                   subtitle: 'settings_report_bug_subtitle'.tr(),
-                  onTap: () =>
-                      _showUnavailable(context, 'settings_report_bug'.tr()),
+                  onTap: () async {
+                    await onReportBug();
+                  },
                 ),
                 const Divider(height: 1),
                 _actionRow(

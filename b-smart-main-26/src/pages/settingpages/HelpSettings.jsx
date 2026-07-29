@@ -110,7 +110,7 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-// ── Inline Submit Form (shared by Contact Support & Raise Ticket) ─────────
+// ── Inline Submit Form (used by Contact Support) ─────────
 const InlineSubmitForm = ({ onCreated, showNameFields }) => {
   const { userObject } = useSelector(s => s.auth);
   const [form, setForm] = useState({
@@ -199,7 +199,7 @@ const InlineSubmitForm = ({ onCreated, showNameFields }) => {
   );
 };
 
-// ── Queries list + new form panel (used by both Contact Support & Raise Ticket) ──
+// ── Queries list + new form panel (used by Contact Support) ──
 const QueriesWithFormPanel = ({ onOpenQuery, showNameFields, refreshKey }) => {
   const [queries, setQueries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -292,172 +292,6 @@ const QueriesWithFormPanel = ({ onOpenQuery, showNameFields, refreshKey }) => {
           ))}
         </div>
       )}
-    </div>
-  );
-};
-
-const _REMOVED_START = null; // marker
-const RaiseTicketForm = ({ onCreated }) => {
-  const { userObject } = useSelector(s => s.auth);
-  const [form, setForm] = useState({
-    name: userObject?.full_name || '',
-    email: userObject?.email || '',
-    phone: userObject?.phone || userObject?.mobile_number || '',
-    subject: '',
-    message: '',
-    category: 'general',
-  });
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState('');
-  const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
-
-  const handleSubmit = async () => {
-    if (!form.name.trim()) { setError('Please enter your name.'); return; }
-    if (!form.email.trim()) { setError('Please enter your email.'); return; }
-    if (!form.subject.trim() || !form.message.trim()) { setError('Please fill in subject and message.'); return; }
-    setSending(true); setError('');
-    try {
-      await api.post('/support-queries', {
-        subject: form.subject,
-        message: `Name: ${form.name}\nEmail: ${form.email}\nPhone: ${form.phone || 'N/A'}\n\n${form.message}`,
-        category: form.category,
-        app_source: 'bsmart',
-      });
-      setSent(true);
-      onCreated?.();
-    } catch (e) {
-      setError(e?.response?.data?.message || 'Failed to submit. Try again.');
-    } finally { setSending(false); }
-  };
-
-  if (sent) return (
-    <div className="flex flex-col items-center py-8 gap-3">
-      <div className="w-12 h-12 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center"><Check size={22} className="text-green-500" /></div>
-      <p className="text-sm font-bold text-gray-900 dark:text-white">Ticket Raised!</p>
-      <p className="text-xs text-gray-400 text-center">Track it above in your queries list.</p>
-      <button onClick={() => { setSent(false); setForm(p => ({ ...p, subject: '', message: '' })); }}
-        className="text-xs text-[#fa3f5e] font-semibold">Raise Another</button>
-    </div>
-  );
-
-  return (
-    <div className="space-y-3">
-      {error && <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs"><AlertOctagon size={13} /> {error}</div>}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Full Name <span className="text-red-400">*</span></label>
-          <input value={form.name} onChange={e => upd('name', e.target.value)} placeholder="Your full name" className={INPUT_CLS} />
-        </div>
-        <div>
-          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Email <span className="text-red-400">*</span></label>
-          <input value={form.email} onChange={e => upd('email', e.target.value)} placeholder="you@example.com" type="email" className={INPUT_CLS} />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Phone Number</label>
-          <input value={form.phone} onChange={e => upd('phone', e.target.value)} placeholder="+91 98765 43210" type="tel" className={INPUT_CLS} />
-        </div>
-        <div>
-          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Category <span className="text-red-400">*</span></label>
-          <Dropdown value={form.category} onChange={v => upd('category', v)} options={API_CATEGORIES} placeholder="Select category" />
-        </div>
-      </div>
-      <div>
-        <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Subject <span className="text-red-400">*</span></label>
-        <input value={form.subject} onChange={e => upd('subject', e.target.value)} placeholder="Brief subject" maxLength={200} className={INPUT_CLS} />
-      </div>
-      <div>
-        <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Message <span className="text-red-400">*</span></label>
-        <textarea value={form.message} onChange={e => upd('message', e.target.value)} rows={3} placeholder="Tell us about your needs..." maxLength={2000} className={`${INPUT_CLS} resize-none`} />
-      </div>
-      <button onClick={handleSubmit} disabled={sending}
-        className="w-full py-3 rounded-xl bg-[#fa3f5e] text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-60 hover:opacity-90 transition-opacity">
-        {sending ? <><Loader2 size={14} className="animate-spin" /> Submitting…</> : <><Send size={14} /> Raise Ticket</>}
-      </button>
-    </div>
-  );
-};
-
-const MyQueriesPanel = ({ onOpenQuery }) => {
-  const [queries, setQueries] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
-
-  const fetchQueries = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = { limit: 50 };
-      if (filter !== 'all') params.status = filter;
-      const { data } = await api.get('/support-queries/my', { params });
-      setQueries(data?.queries || []);
-    } catch { setQueries([]); }
-    finally { setLoading(false); }
-  }, [filter]);
-
-  useEffect(() => { fetchQueries(); }, [fetchQueries]);
-
-  const handleDelete = async (id, e) => {
-    e.stopPropagation();
-    try {
-      await api.delete(`/support-queries/my/${id}`);
-      setQueries(prev => prev.filter(q => q._id !== id));
-    } catch { /* silent */ }
-  };
-
-  const FILTERS = ['all', 'open', 'in_progress', 'resolved', 'closed'];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Your Queries ({queries.length})</p>
-      </div>
-
-      <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-        {FILTERS.map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap capitalize transition-all ${
-              filter === f ? 'bg-gray-900 dark:bg-white text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
-            }`}>
-            {f === 'all' ? 'All' : f.replace('_', ' ')}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
-      ) : queries.length === 0 ? (
-        <div className="text-center py-10">
-          <Ticket size={32} className="mx-auto mb-3 text-gray-300 dark:text-gray-700" />
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">No queries</p>
-          <p className="text-xs text-gray-400 mt-1">{filter === 'all' ? 'Raise a ticket below to get started' : `No ${filter.replace('_', ' ')} queries`}</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {queries.map(q => (
-            <div key={q._id} onClick={() => onOpenQuery(q._id)}
-              className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer group">
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <p className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-1 flex-1">{q.subject}</p>
-                <div className="flex items-center gap-2 shrink-0">
-                  <StatusBadge status={q.status} />
-                  <button onClick={(e) => handleDelete(q._id, e)}
-                    className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-0.5"><Trash2 size={13} /></button>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2">{q.message}</p>
-              <div className="flex items-center gap-3 text-[10px] text-gray-400">
-                <span className="capitalize">{q.category}</span>
-                <span>·</span>
-                <span>{timeAgo(q.createdAt)}</span>
-                {q.replies?.length > 0 && <><span>·</span><span>{q.replies.length} {q.replies.length === 1 ? 'reply' : 'replies'}</span></>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
     </div>
   );
 };
@@ -725,7 +559,7 @@ const HelpSettings = () => {
 
   // Sub-panel: contact, ticket, faq
   if (activePanel) {
-    const panelTitle = activePanel === 'contact' ? 'Contact Support' : activePanel === 'ticket' ? 'Raise a Ticket' : 'FAQs';
+    const panelTitle = activePanel === 'contact' ? 'Contact Support' : 'FAQs';
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-black pb-24">
         <div className="sticky top-0 bg-white dark:bg-black border-b border-gray-100 dark:border-gray-800 px-4 py-3 flex items-center justify-between z-40">
@@ -736,9 +570,6 @@ const HelpSettings = () => {
         <div className="max-w-2xl mx-auto">
           {activePanel === 'contact' && (
             <QueriesWithFormPanel onOpenQuery={(id) => setActiveQueryId(id)} showNameFields={false} />
-          )}
-          {activePanel === 'ticket' && (
-            <QueriesWithFormPanel onOpenQuery={(id) => setActiveQueryId(id)} showNameFields={true} />
           )}
           {activePanel === 'faq' && <FAQPanel />}
         </div>
@@ -761,8 +592,6 @@ const HelpSettings = () => {
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
             <Row icon={Mail} iconBg="bg-blue-50 dark:bg-blue-900/20" iconColor="text-blue-500"
               label="Contact Support" sublabel="Submit a query & view your tickets" onClick={() => setActivePanel('contact')} />
-            <Row icon={Ticket} iconBg="bg-purple-50 dark:bg-purple-900/20" iconColor="text-purple-500"
-              label="Raise a Ticket" sublabel="Submit a detailed support request" onClick={() => setActivePanel('ticket')} />
             <Row icon={MessageSquare} iconBg="bg-teal-50 dark:bg-teal-900/20" iconColor="text-teal-500"
               label="Live Chat" sublabel="Chat with our support team in real-time" badge="Coming Soon" />
           </div>

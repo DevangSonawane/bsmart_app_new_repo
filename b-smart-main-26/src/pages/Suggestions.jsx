@@ -9,6 +9,7 @@ import {
   cancelFollowRequest,
   FOLLOW_STATUS_CHANGED_EVENT,
 } from '../services/followService';
+import { getProfilePath } from '../utils/profilePath';
 
 const BASE_URL = 'https://api.bebsmart.in';
 
@@ -163,7 +164,7 @@ const Suggestions = () => {
               return (
                 <div
                   key={userId || i}
-                  onClick={() => navigate(`/profile/${userId}`)}
+                  onClick={() => navigate(getProfilePath(u))}
                   className="flex items-center gap-3 p-4 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer"
                 >
                   <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center shrink-0">

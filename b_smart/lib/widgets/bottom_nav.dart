@@ -45,7 +45,7 @@ class _BottomNavState extends State<BottomNav> {
                 _buildNavItem(context, 1, LucideIcons.target, 'Spotlights',
                     isActive: widget.currentIndex == 1),
                 _buildCreateButton(context),
-                _buildNavItem(context, 3, LucideIcons.megaphone, 'Boosts',
+                _buildNavItem(context, 3, LucideIcons.rocket, 'Boosts',
                     isActive: widget.currentIndex == 3),
                 _buildNavItem(context, 4, LucideIcons.clapperboard, 'bSparks',
                     isActive: widget.currentIndex == 4),
