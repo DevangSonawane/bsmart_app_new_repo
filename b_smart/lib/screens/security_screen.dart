@@ -50,8 +50,6 @@ class _SecurityScreenState extends State<SecurityScreen> {
   String _phone = '';
   bool _twoFAEnabled = false;
   String _twoFAMethod = 'email';
-  String _savedMethod = 'email';
-  bool _isEditing = false;
   bool _showChangePassword = false;
   bool _pwdLoading = false;
   String? _pwdSuccess;
@@ -167,7 +165,6 @@ class _SecurityScreenState extends State<SecurityScreen> {
         _phone = phone;
         _twoFAEnabled = enabled;
         _twoFAMethod = (method == null || method.isEmpty) ? 'email' : method;
-        _savedMethod = _twoFAMethod;
         _loading = false;
       });
     } catch (e) {
@@ -179,31 +176,322 @@ class _SecurityScreenState extends State<SecurityScreen> {
     }
   }
 
-  void _cancelEdit() {
-    setState(() {
-      _twoFAMethod = _savedMethod;
-      _isEditing = false;
-    });
+  List<Map<String, dynamic>> _twoFaMethods() {
+    return <Map<String, dynamic>>[
+      <String, dynamic>{
+        'key': 'email',
+        'label': 'Email OTP',
+        'sublabel': 'Code sent to ${_maskEmail(_email)}',
+        'icon': LucideIcons.mail,
+        'available': true,
+      },
+      <String, dynamic>{
+        'key': 'sms',
+        'label': 'SMS OTP',
+        'sublabel': _phone.isNotEmpty
+            ? 'Code sent to ${_formatPhone(_phone)}'
+            : 'No phone number added',
+        'icon': LucideIcons.messageSquare,
+        'available': _phone.isNotEmpty,
+      },
+      <String, dynamic>{
+        'key': 'app',
+        'label': 'Authenticator App',
+        'sublabel': 'Coming soon — Google/Microsoft Authenticator',
+        'icon': LucideIcons.smartphone,
+        'available': false,
+      },
+    ];
   }
 
-  Future<void> _saveEdit() async {
+  Future<void> _saveTwoFaMethod(String method) async {
     final userId = _userId?.trim();
     if (userId == null || userId.isEmpty) return;
     try {
       await SecurityApi().updateTwoFAMethod(
         userId: userId,
-        method: _twoFAMethod,
+        method: method,
       );
       if (!mounted) return;
-      setState(() {
-        _savedMethod = _twoFAMethod;
-        _isEditing = false;
-      });
+      setState(() => _twoFAMethod = method);
       _showToast('Security settings saved.');
     } catch (e) {
       if (!mounted) return;
       _showToast(_stripExceptionPrefix(e), error: true);
     }
+  }
+
+  Future<void> _openTwoFaMethodPicker() async {
+    if (!_twoFAEnabled) return;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final methods = _twoFaMethods();
+    var selected = _twoFAMethod;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: theme.dividerColor.withValues(alpha: 0.08),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Choose Authentication Method',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: isDark
+                                        ? const Color(0xFFE8E8E8)
+                                        : const Color(0xFF1F2937),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () =>
+                                    Navigator.of(sheetContext).pop(),
+                                icon: const Icon(Icons.close),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            'Pick how you want to receive your login code.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: isDark
+                                  ? const Color(0xFF9CA3AF)
+                                  : const Color(0xFF6B7280),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ...methods.map((item) {
+                            final key = item['key'] as String;
+                            final label = item['label'] as String;
+                            final sublabel = item['sublabel'] as String;
+                            final icon = item['icon'] as IconData;
+                            final available = item['available'] as bool;
+                            final selectedNow = selected == key;
+                            final disabled = !available;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: InkWell(
+                                onTap: disabled
+                                    ? null
+                                    : () => setModalState(() => selected = key),
+                                borderRadius: BorderRadius.circular(16),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 180),
+                                  curve: Curves.easeOut,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: selectedNow
+                                          ? _accent
+                                          : theme.dividerColor.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                      width: selectedNow ? 1.6 : 1,
+                                    ),
+                                    color: selectedNow
+                                        ? _accent.withValues(alpha: 0.06)
+                                        : theme.cardColor,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: selectedNow
+                                              ? _accent.withValues(alpha: 0.12)
+                                              : theme.dividerColor
+                                                  .withValues(alpha: 0.22),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          icon,
+                                          color: selectedNow
+                                              ? _accent
+                                              : (disabled
+                                                  ? (isDark
+                                                      ? const Color(0xFF6B7280)
+                                                      : const Color(0xFF9CA3AF))
+                                                  : (isDark
+                                                      ? const Color(0xFFE8E8E8)
+                                                      : const Color(
+                                                          0xFF374151))),
+                                          size: 18,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    label,
+                                                    style: theme
+                                                        .textTheme.bodyMedium
+                                                        ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      color: disabled
+                                                          ? (isDark
+                                                              ? const Color(
+                                                                  0xFF6B7280)
+                                                              : const Color(
+                                                                  0xFF9CA3AF))
+                                                          : (isDark
+                                                              ? const Color(
+                                                                  0xFFE8E8E8)
+                                                              : const Color(
+                                                                  0xFF1F2937)),
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (selectedNow)
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 3,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: _accent.withValues(
+                                                          alpha: 0.1),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                        999,
+                                                      ),
+                                                    ),
+                                                    child: const Text(
+                                                      'Selected',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: _accent,
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              sublabel,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: disabled
+                                                    ? (isDark
+                                                        ? const Color(
+                                                            0xFF6B7280)
+                                                        : const Color(
+                                                            0xFF9CA3AF))
+                                                    : (isDark
+                                                        ? const Color(
+                                                            0xFF9CA3AF)
+                                                        : const Color(
+                                                            0xFF6B7280)),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Container(
+                                        width: 18,
+                                        height: 18,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: selectedNow
+                                                ? _accent
+                                                : (isDark
+                                                    ? const Color(0xFF6B7280)
+                                                    : const Color(0xFFD1D5DB)),
+                                            width: 2,
+                                          ),
+                                        ),
+                                        child: selectedNow
+                                            ? Center(
+                                                child: Container(
+                                                  width: 8,
+                                                  height: 8,
+                                                  decoration:
+                                                      const BoxDecoration(
+                                                    color: _accent,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                ),
+                                              )
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: selected == _twoFAMethod
+                                  ? null
+                                  : () async {
+                                      Navigator.of(sheetContext).pop();
+                                      await _saveTwoFaMethod(selected);
+                                    },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _accent,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                              child: const Text('Save Changes'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _toggleTwoFa(bool enable) async {
@@ -751,31 +1039,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
     final statusFg = _twoFAEnabled
         ? (isDark ? const Color(0xFF34D399) : _green600)
         : hintColor;
-    final methods = <Map<String, dynamic>>[
-      <String, dynamic>{
-        'key': 'email',
-        'label': 'Email OTP',
-        'sublabel': 'Code sent to ${_maskEmail(_email)}',
-        'icon': LucideIcons.mail,
-        'available': true,
-      },
-      <String, dynamic>{
-        'key': 'sms',
-        'label': 'SMS OTP',
-        'sublabel': _phone.isNotEmpty
-            ? 'Code sent to ${_formatPhone(_phone)}'
-            : 'No phone number added',
-        'icon': LucideIcons.messageSquare,
-        'available': _phone.isNotEmpty,
-      },
-      <String, dynamic>{
-        'key': 'app',
-        'label': 'Authenticator App',
-        'sublabel': 'Coming soon — Google/Microsoft Authenticator',
-        'icon': LucideIcons.smartphone,
-        'available': false,
-      },
-    ];
+    final methods = _twoFaMethods();
 
     return _card(
       children: [
@@ -857,14 +1121,33 @@ class _SecurityScreenState extends State<SecurityScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Authentication Method ${_isEditing ? '' : '— tap Edit to change'}',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: _isEditing ? _accent : hintColor,
-                  letterSpacing: 0.7,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Authentication Method',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _twoFAEnabled ? _accent : hintColor,
+                        letterSpacing: 0.7,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _twoFAEnabled ? _openTwoFaMethodPicker : null,
+                    style: TextButton.styleFrom(
+                      foregroundColor: _accent,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                    ),
+                    icon: const Icon(LucideIcons.slidersHorizontal, size: 13),
+                    label: const Text('Change'),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
               ...methods.map((item) {
@@ -872,18 +1155,13 @@ class _SecurityScreenState extends State<SecurityScreen> {
                 final label = item['label'] as String;
                 final sublabel = item['sublabel'] as String;
                 final icon = item['icon'] as IconData;
-                final available = item['available'] as bool;
                 final selected = _twoFAMethod == key && _twoFAEnabled;
-                final enabled = available && _twoFAEnabled && _isEditing;
-                final canSelect = available && _twoFAEnabled && _isEditing;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: canSelect
-                          ? () => setState(() => _twoFAMethod = key)
-                          : null,
+                      onTap: _twoFAEnabled ? _openTwoFaMethodPicker : null,
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -924,10 +1202,10 @@ class _SecurityScreenState extends State<SecurityScreen> {
                                     label,
                                     style: TextStyle(
                                       fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: enabled || selected
-                                          ? labelColor
-                                          : hintColor,
+                                      fontWeight: selected
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
+                                      color: selected ? labelColor : hintColor,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -970,23 +1248,6 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   ),
                 );
               }),
-              if (_isEditing)
-                Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: _cancelEdit,
-                      icon: const Icon(LucideIcons.x, size: 13),
-                      label: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton.icon(
-                      onPressed: _saveEdit,
-                      style: FilledButton.styleFrom(backgroundColor: _accent),
-                      icon: const Icon(LucideIcons.check, size: 13),
-                      label: const Text('Save'),
-                    ),
-                  ],
-                ),
               if (_twoFAEnabled) ...[
                 const SizedBox(height: 10),
                 Container(
@@ -1600,35 +1861,6 @@ class _SecurityScreenState extends State<SecurityScreen> {
                       style: const TextStyle(color: Colors.red),
                     ),
                   ),
-                if (_isEditing) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: _accent.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(14),
-                      border:
-                          Border.all(color: _accent.withValues(alpha: 0.20)),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(LucideIcons.pencil, size: 12, color: _accent),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            "Editing - tap Save when you're done",
-                            style: TextStyle(
-                              color: _accent,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
                 _sectionTitle('Password'),
                 _changePasswordCard(),
                 const SizedBox(height: 12),
