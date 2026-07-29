@@ -35,6 +35,7 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
     _RedemptionRequest(
       name: 'Amazon Gift Card',
       amountLabel: '₹500',
+      amount: 500,
       dateLabel: '21st July 2024',
       status: 'Pending',
       assetPath: 'assets/giftcards/amazongiftcard.webp',
@@ -42,6 +43,7 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
     _RedemptionRequest(
       name: 'Flipkart Gift Card',
       amountLabel: '₹1,000',
+      amount: 1000,
       dateLabel: '20th July 2024',
       status: 'Completed',
       assetPath: 'assets/giftcards/flipkartgiftcard.avif',
@@ -60,6 +62,7 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
     _RedemptionRequest(
       name: 'Myntra Gift Card',
       amountLabel: '₹500',
+      amount: 500,
       dateLabel: '18th July 2024',
       status: 'Cancelled',
       assetPath: 'assets/giftcards/myntra.jpeg',
@@ -67,6 +70,7 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
     _RedemptionRequest(
       name: 'Zomato Gift Card',
       amountLabel: '₹100',
+      amount: 100,
       dateLabel: '16th July 2024',
       status: 'Pending',
       assetPath: 'assets/giftcards/zomatogiftcard.avif',
@@ -569,6 +573,7 @@ class _RequestCard extends StatelessWidget {
                         arguments: {
                           'brandName': request.name,
                           'amountLabel': request.amountLabel,
+                          'amount': request.amount,
                           'assetPath': request.assetPath,
                           'voucherCode':
                               request.voucherCode ?? 'FLIP-8742-2211-ABCD',
@@ -890,6 +895,7 @@ class _RedemptionRequest {
   final String name;
   final String? vendor;
   final String amountLabel;
+  final num? amount;
   final String dateLabel;
   final String status;
   final String assetPath;
@@ -907,6 +913,7 @@ class _RedemptionRequest {
     required this.name,
     this.vendor,
     required this.amountLabel,
+    this.amount,
     required this.dateLabel,
     required this.status,
     required this.assetPath,
@@ -944,6 +951,20 @@ class _RedemptionRequest {
         ]) ??
         _pickString(source, const ['vendor', 'merchant', 'brand']);
     final amountLabel = _resolveAmountLabel(json, source);
+    final amount = _pickDouble(json, const [
+          'amount',
+          'value',
+          'denomination',
+          'price',
+          'rupees',
+        ]) ??
+        _pickDouble(source, const [
+          'amount',
+          'value',
+          'denomination',
+          'price',
+          'rupees',
+        ]);
     final status = _formatStatus(
       _pickString(json, const ['status', 'state', 'order_status']) ?? 'pending',
     );
@@ -979,6 +1000,7 @@ class _RedemptionRequest {
       name: name,
       vendor: vendor,
       amountLabel: amountLabel,
+      amount: amount,
       dateLabel: dateLabel,
       status: status,
       assetPath: assetPath,
@@ -1061,6 +1083,24 @@ String _resolveAmountLabel(
   Map<String, dynamic> order,
   Map<String, dynamic> source,
 ) {
+  final rupees = _pickDouble(order, const [
+        'amount',
+        'value',
+        'denomination',
+        'price',
+        'rupees',
+      ]) ??
+      _pickDouble(source, const [
+        'amount',
+        'value',
+        'denomination',
+        'price',
+        'rupees',
+      ]);
+  if (rupees != null && rupees > 0) {
+    return '₹${_formatCoins(rupees.round())}';
+  }
+
   final coins = _pickDouble(order, const [
         'bcoins',
         'coins',
@@ -1075,17 +1115,6 @@ String _resolveAmountLabel(
       ]);
   if (coins != null && coins > 0) {
     return '${_formatCoins(coins.round())} bCoins';
-  }
-
-  final rupees = _pickDouble(source, const [
-    'amount',
-    'value',
-    'denomination',
-    'price',
-    'rupees',
-  ]);
-  if (rupees != null && rupees > 0) {
-    return '₹${_formatCoins(rupees.round())}';
   }
 
   return 'Gift Card';

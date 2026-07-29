@@ -234,17 +234,24 @@ class VoucherDetailsScreen extends StatelessWidget {
 }
 
 String? _resolveAmountLabel(Map<String, dynamic> data) {
-  final explicitLabel = (data['amountLabel'] as String?)?.trim();
-  if (explicitLabel != null && explicitLabel.isNotEmpty) return explicitLabel;
-
-  final amount = _pickNumber(
-      data, const ['amount', 'value', 'denomination', 'price', 'rupees']);
+  final amount = _pickNumber(data, const [
+    'amount',
+    'value',
+    'denomination',
+    'price',
+    'rupees',
+  ]);
   if (amount != null && amount > 0) {
     return '₹${_formatAmount(amount)}';
   }
 
-  final coins =
-      _pickNumber(data, const ['bcoins', 'coins', 'coin_amount', 'coinAmount']);
+  final explicitLabel = (data['amountLabel'] as String?)?.trim();
+  if (explicitLabel != null && explicitLabel.isNotEmpty) return explicitLabel;
+
+  final coins = _pickNumber(
+    data,
+    const ['bcoins', 'coins', 'coin_amount', 'coinAmount'],
+  );
   if (coins != null && coins > 0) {
     return '₹${_formatAmount(coins / 5)}';
   }
