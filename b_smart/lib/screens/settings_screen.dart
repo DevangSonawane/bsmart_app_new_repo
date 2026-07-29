@@ -1241,15 +1241,6 @@ class _HelpSupportScreen extends StatelessWidget {
                     await onReportContent();
                   },
                 ),
-                const Divider(height: 1),
-                _actionRow(
-                  context,
-                  icon: Icons.person_off_outlined,
-                  title: 'settings_report_user'.tr(),
-                  subtitle: 'settings_report_user_subtitle'.tr(),
-                  onTap: () =>
-                      _showUnavailable(context, 'settings_report_user'.tr()),
-                ),
               ],
             ),
             const SizedBox(height: 20),
