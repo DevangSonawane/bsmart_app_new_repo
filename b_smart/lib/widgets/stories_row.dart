@@ -42,7 +42,7 @@ class StoriesRow extends StatelessWidget {
           final offset = showYourStory ? 1 : 0;
           if (showYourStory && index == 0) {
             return _StoryItem(
-              label: 'Your Story',
+              label: 'Your Glimpses',
               avatarUrl: yourAvatarUrl,
               ringGradient: yourStoryHasActive
                   ? DesignTokens.instaGradient
@@ -207,7 +207,10 @@ class _StoryItem extends StatelessWidget {
             label,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface),
+            style: TextStyle(
+              fontSize: label == 'Your Glimpses' ? 10.5 : 12,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
         ),
       ],
