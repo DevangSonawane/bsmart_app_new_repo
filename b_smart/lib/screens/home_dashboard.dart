@@ -8,6 +8,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:redux/redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/feed_service.dart';
 import '../services/notification_service.dart';
 import '../services/media_playback_registry.dart';
@@ -4441,9 +4442,9 @@ class _SuggestedAdsPlaceholder extends StatelessWidget {
               children: [
                 Text(
                   'Suggested spotlights',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+                  style: GoogleFonts.montserrat(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
                     color: titleColor,
                   ),
                 ),
@@ -4516,10 +4517,10 @@ class _SuggestedReelsPlaceholder extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Suggested reels',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+                  'Suggested bSparks',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
                     color: titleColor,
                   ),
                 ),

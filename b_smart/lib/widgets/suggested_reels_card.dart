@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../models/reel_model.dart';
 import 'safe_network_image.dart';
@@ -46,11 +47,11 @@ class SuggestedReelsCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Suggested reels',
-                    style: TextStyle(
+                    'Suggested bSparks',
+                    style: GoogleFonts.montserrat(
                       color: titleColor,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
                     ),
                   ),
                 ),
@@ -59,7 +60,8 @@ class SuggestedReelsCard extends StatelessWidget {
                   icon: const Icon(LucideIcons.ellipsis, size: 18),
                   color: titleColor.withValues(alpha: 0.75),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                  constraints:
+                      const BoxConstraints.tightFor(width: 32, height: 32),
                 ),
               ],
             ),
@@ -106,7 +108,8 @@ class _ReelSuggestionTile extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final border = Colors.white.withValues(alpha: isDark ? 0.10 : 0.14);
     final caption = (reel.caption ?? '').trim();
-    final username = reel.userName.trim().isNotEmpty ? reel.userName.trim() : 'reel';
+    final username =
+        reel.userName.trim().isNotEmpty ? reel.userName.trim() : 'reel';
 
     return GestureDetector(
       onTap: onTap,
@@ -129,7 +132,8 @@ class _ReelSuggestionTile extends StatelessWidget {
           child: Stack(
             children: [
               Positioned.fill(
-                child: reel.thumbnailUrl != null && reel.thumbnailUrl!.trim().isNotEmpty
+                child: reel.thumbnailUrl != null &&
+                        reel.thumbnailUrl!.trim().isNotEmpty
                     ? SafeNetworkImage(
                         url: reel.thumbnailUrl!,
                         headers: imageHeaders,
@@ -172,7 +176,8 @@ class _ReelSuggestionTile extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.45),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.14)),
                   ),
                   child: const Icon(
                     LucideIcons.ellipsis,
@@ -288,4 +293,3 @@ class _Avatar extends StatelessWidget {
     );
   }
 }
-
