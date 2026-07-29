@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class VoucherDetailsScreen extends StatelessWidget {
   const VoucherDetailsScreen({super.key});
@@ -14,13 +14,14 @@ class VoucherDetailsScreen extends StatelessWidget {
         args is Map ? Map<String, dynamic>.from(args) : <String, dynamic>{};
 
     final brandName = (data['brandName'] as String?) ?? 'Flipkart Gift Card';
-    final amountLabel = (data['amountLabel'] as String?) ?? '₹1,000';
+    final amountLabel = _resolveAmountLabel(data) ?? '₹1,000';
     final assetPath = (data['assetPath'] as String?) ??
         'assets/giftcards/flipkartgiftcard.avif';
     final voucherCode =
         (data['voucherCode'] as String?) ?? 'FLIP-8742-2211-ABCD';
     final pin = (data['pin'] as String?) ?? '4589';
-    final expiryLabel = (data['expiryLabel'] as String?) ?? '31 Dec 2026';
+    final expiryLabel =
+        _formatDisplayDate((data['expiryLabel'] as String?) ?? '31 Dec 2026');
     final redeemSteps = (data['redeemSteps'] as List?)
             ?.map((item) => item.toString())
             .toList() ??
@@ -30,9 +31,7 @@ class VoucherDetailsScreen extends StatelessWidget {
           'Choose gift card / voucher option',
           'Enter the voucher code and PIN to pay',
         ];
-    final actionLabel = (data['actionLabel'] as String?) ?? 'Go to Flipkart';
-    final actionUrl =
-        (data['actionUrl'] as String?) ?? 'https://www.flipkart.com/';
+    final brandTitleWidth = MediaQuery.of(context).size.width * 0.72;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -81,20 +80,26 @@ class VoucherDetailsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            Text(
-              brandName,
-              style: GoogleFonts.montserrat(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                color: const Color(0xFF111111),
+            SizedBox(
+              width: brandTitleWidth,
+              child: Text(
+                brandName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.montserrat(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  height: 1.15,
+                  color: const Color(0xFF111111),
+                ),
               ),
             ),
             const SizedBox(height: 4),
             Text(
               amountLabel,
               style: GoogleFonts.montserrat(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
                 color: const Color(0xFF111111),
               ),
             ),
@@ -153,17 +158,23 @@ class VoucherDetailsScreen extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Text(
-                            '•',
-                            style: GoogleFonts.montserrat(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF111111),
+                          SizedBox(
+                            width: 16,
+                            child: Center(
+                              child: Text(
+                                '•',
+                                style: GoogleFonts.montserrat(
+                                  fontSize: 18,
+                                  height: 1.0,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF111111),
+                                ),
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               step,
@@ -187,19 +198,9 @@ class VoucherDetailsScreen extends StatelessWidget {
               width: double.infinity,
               height: 54,
               child: ElevatedButton(
-                onPressed: () async {
-                  final uri = Uri.tryParse(actionUrl);
-                  if (uri == null) return;
-                  final ok = await launchUrl(
-                    uri,
-                    mode: LaunchMode.externalApplication,
-                  );
-                  if (!ok && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Could not open link')),
-                    );
-                  }
-                },
+                onPressed: () => Navigator.of(context).pushReplacementNamed(
+                  '/wallet/redeem-gift-cards',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFF97316),
                   foregroundColor: Colors.white,
@@ -209,7 +210,7 @@ class VoucherDetailsScreen extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  actionLabel,
+                  'Back to Redeem Gift Cards',
                   style: GoogleFonts.montserrat(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
@@ -229,6 +230,95 @@ class VoucherDetailsScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Copied to clipboard')),
     );
+  }
+}
+
+String? _resolveAmountLabel(Map<String, dynamic> data) {
+  final explicitLabel = (data['amountLabel'] as String?)?.trim();
+  if (explicitLabel != null && explicitLabel.isNotEmpty) return explicitLabel;
+
+  final amount = _pickNumber(
+      data, const ['amount', 'value', 'denomination', 'price', 'rupees']);
+  if (amount != null && amount > 0) {
+    return '₹${_formatAmount(amount)}';
+  }
+
+  final coins =
+      _pickNumber(data, const ['bcoins', 'coins', 'coin_amount', 'coinAmount']);
+  if (coins != null && coins > 0) {
+    return '₹${_formatAmount(coins / 5)}';
+  }
+
+  return null;
+}
+
+num? _pickNumber(Map<String, dynamic> data, List<String> keys) {
+  for (final key in keys) {
+    final value = data[key];
+    if (value is num) return value;
+    if (value is String) {
+      final parsed = num.tryParse(value.replaceAll(RegExp(r'[^0-9.]'), ''));
+      if (parsed != null) return parsed;
+    }
+  }
+  return null;
+}
+
+String _formatAmount(num value) {
+  if (value == value.roundToDouble()) {
+    return value.round().toString();
+  }
+  return value.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+}
+
+String _formatDisplayDate(String raw) {
+  final parsed = _parseDateTimeFlexible(raw);
+  if (parsed == null) return raw;
+  final local = parsed.toLocal();
+  return '${_ordinalDay(local.day)} ${DateFormat('MMMM').format(local)} ${local.year}';
+}
+
+DateTime? _parseDateTimeFlexible(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty) return null;
+
+  final formats = <DateFormat>[
+    DateFormat('yyyy-MM-ddTHH:mm:ss.SSSZ'),
+    DateFormat('yyyy-MM-ddTHH:mm:ssZ'),
+    DateFormat('yyyy-MM-dd HH:mm:ss'),
+    DateFormat('yyyy-MM-dd'),
+    DateFormat('d MMM yyyy, hh:mm a'),
+    DateFormat('d MMM yyyy, h:mm a'),
+    DateFormat('dd MMM yyyy, hh:mm a'),
+    DateFormat('dd MMM yyyy, h:mm a'),
+    DateFormat('d MMM yyyy'),
+    DateFormat('dd MMM yyyy'),
+    DateFormat('d MMMM yyyy'),
+    DateFormat('dd MMMM yyyy'),
+  ];
+
+  for (final format in formats) {
+    try {
+      return format.parseStrict(value);
+    } catch (_) {
+      // Try the next known date shape.
+    }
+  }
+
+  return DateTime.tryParse(value);
+}
+
+String _ordinalDay(int day) {
+  if (day >= 11 && day <= 13) return '${day}th';
+  switch (day % 10) {
+    case 1:
+      return '${day}st';
+    case 2:
+      return '${day}nd';
+    case 3:
+      return '${day}rd';
+    default:
+      return '${day}th';
   }
 }
 

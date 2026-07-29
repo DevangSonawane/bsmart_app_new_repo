@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:intl/intl.dart';
 
 import '../api/api_exceptions.dart';
 import '../api/gift_cards_api.dart';
@@ -34,19 +35,19 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
     _RedemptionRequest(
       name: 'Amazon Gift Card',
       amountLabel: '₹500',
-      dateLabel: '21 Jul 2024, 02:53 PM',
+      dateLabel: '21st July 2024',
       status: 'Pending',
       assetPath: 'assets/giftcards/amazongiftcard.webp',
     ),
     _RedemptionRequest(
       name: 'Flipkart Gift Card',
       amountLabel: '₹1,000',
-      dateLabel: '20 Jul 2024, 11:20 AM',
+      dateLabel: '20th July 2024',
       status: 'Completed',
       assetPath: 'assets/giftcards/flipkartgiftcard.avif',
       voucherCode: 'FLIP-8742-2211-ABCD',
       pin: '4589',
-      expiryLabel: '31 Dec 2026',
+      expiryLabel: '31st December 2026',
       redeemSteps: <String>[
         'Visit flipkart.com',
         'Add products to cart and go to payment',
@@ -59,14 +60,14 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
     _RedemptionRequest(
       name: 'Myntra Gift Card',
       amountLabel: '₹500',
-      dateLabel: '18 Jul 2024, 09:15 AM',
+      dateLabel: '18th July 2024',
       status: 'Cancelled',
       assetPath: 'assets/giftcards/myntra.jpeg',
     ),
     _RedemptionRequest(
       name: 'Zomato Gift Card',
       amountLabel: '₹100',
-      dateLabel: '16 Jul 2024, 08:45 PM',
+      dateLabel: '16th July 2024',
       status: 'Pending',
       assetPath: 'assets/giftcards/zomatogiftcard.avif',
     ),
@@ -1146,28 +1147,54 @@ Map<String, dynamic> _completedVoucherDetails(
 
 String _formatDateLabel(String raw) {
   if (raw.trim().isEmpty) return 'Just now';
-  final parsed = DateTime.tryParse(raw);
+  final parsed = _parseDateTimeFlexible(raw);
   if (parsed == null) return raw;
   final local = parsed.toLocal();
-  const months = <String>[
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
+  return '${_ordinalDay(local.day)} ${DateFormat('MMMM').format(local)} ${local.year}';
+}
+
+DateTime? _parseDateTimeFlexible(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty) return null;
+
+  final formats = <DateFormat>[
+    DateFormat('yyyy-MM-ddTHH:mm:ss.SSSZ'),
+    DateFormat('yyyy-MM-ddTHH:mm:ssZ'),
+    DateFormat('yyyy-MM-dd HH:mm:ss'),
+    DateFormat('yyyy-MM-dd'),
+    DateFormat('d MMM yyyy, hh:mm a'),
+    DateFormat('d MMM yyyy, h:mm a'),
+    DateFormat('dd MMM yyyy, hh:mm a'),
+    DateFormat('dd MMM yyyy, h:mm a'),
+    DateFormat('d MMM yyyy'),
+    DateFormat('dd MMM yyyy'),
+    DateFormat('d MMMM yyyy'),
+    DateFormat('dd MMMM yyyy'),
   ];
-  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-  final minute = local.minute.toString().padLeft(2, '0');
-  final amPm = local.hour >= 12 ? 'PM' : 'AM';
-  return '${local.day} ${months[local.month - 1]} ${local.year}, '
-      '${hour.toString().padLeft(2, '0')}:$minute $amPm';
+
+  for (final format in formats) {
+    try {
+      return format.parseStrict(value);
+    } catch (_) {
+      // Try the next known date shape.
+    }
+  }
+
+  return DateTime.tryParse(value);
+}
+
+String _ordinalDay(int day) {
+  if (day >= 11 && day <= 13) return '${day}th';
+  switch (day % 10) {
+    case 1:
+      return '${day}st';
+    case 2:
+      return '${day}nd';
+    case 3:
+      return '${day}rd';
+    default:
+      return '${day}th';
+  }
 }
 
 String _assetPathForName(String name, {String? vendor}) {
