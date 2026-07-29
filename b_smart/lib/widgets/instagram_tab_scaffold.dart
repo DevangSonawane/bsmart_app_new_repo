@@ -38,18 +38,17 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
   static const Duration _pillAnimDuration = Duration(milliseconds: 420);
   static const double _pillOuterPadH = 8;
   static const double _pillOuterPadV = 6;
-  static const double _pillItemPadH = 4;
+  static const double _pillItemPadH = 2;
   static const double _pillItemPadV = 2;
-  static const double _pillItemMarginH = 1;
+  static const double _pillItemMarginH = 0;
   static const double _pillBorderWidth = 1;
-  static const double _pillFontSize = 14;
-  static const double _pillLetterSpacing = 1.2;
+  static const double _pillFontSize = 13.5;
+  static const double _pillLetterSpacing = 0.7;
   static const double _pillHeight = 36;
 
   late final PageController _controller;
   double _pageValue = 0.0;
   int _currentIndex = 0;
-  bool _isDragging = false;
 
   @override
   void initState() {
@@ -93,9 +92,6 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onHorizontalDragStart: (_) {
-        _isDragging = true;
-      },
       onHorizontalDragUpdate: (details) {
         if (!_controller.hasClients) return;
         _controller.jumpTo(
@@ -115,7 +111,6 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
         } else {
           targetPage = _pageValue.round().clamp(0, widget.pages.length - 1);
         }
-        _isDragging = false;
         _controller.animateToPage(
           targetPage,
           duration: const Duration(milliseconds: 250),
@@ -156,26 +151,29 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                     builder: (context, constraints) {
                       final labels = widget.labels;
                       final maxWidth = constraints.maxWidth;
-                      const textSafetyWidth = 4.0;
-                      final baseTextStyle = TextStyle(
+                      const textSafetyWidth = 2.0;
+                      const baseTextStyle = TextStyle(
                         fontSize: _pillFontSize,
                         fontWeight: FontWeight.w700,
                         letterSpacing: _pillLetterSpacing,
                       );
+                      final labelWidths = <double>[];
+                      final itemWidths = <double>[];
                       final centers = <double>[];
-                      double totalWidth = 0;
+                      var totalWidth = _pillOuterPadH * 2;
                       for (var i = 0; i < labels.length; i++) {
                         final textWidth =
                             _measureTextWidth(labels[i], baseTextStyle);
-                        final itemWidth = textWidth +
-                            textSafetyWidth +
+                        final labelWidth = textWidth + textSafetyWidth;
+                        final itemWidth = labelWidth +
                             (_pillItemPadH * 2) +
                             (_pillItemMarginH * 2) +
                             (_pillBorderWidth * 2);
+                        labelWidths.add(labelWidth);
+                        itemWidths.add(itemWidth);
                         centers.add(totalWidth + (itemWidth / 2));
                         totalWidth += itemWidth;
                       }
-                      totalWidth += _pillOuterPadH * 2;
                       final scale = totalWidth > maxWidth
                           ? (maxWidth / totalWidth).clamp(0.0, 1.0)
                           : 1.0;
@@ -184,30 +182,6 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                       final effectiveLetterSpacing =
                           (_pillLetterSpacing * scale)
                               .clamp(0.0, _pillLetterSpacing);
-                      final textStyle = TextStyle(
-                        fontSize: effectiveFontSize,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: effectiveLetterSpacing,
-                      );
-                      final textWidths = <double>[];
-                      totalWidth = 0;
-                      centers.clear();
-                      for (var i = 0; i < labels.length; i++) {
-                        final textWidth =
-                            _measureTextWidth(labels[i], textStyle);
-                        textWidths.add(textWidth + textSafetyWidth);
-                        final itemWidth = textWidth +
-                            textSafetyWidth +
-                            (_pillItemPadH * 2) +
-                            (_pillItemMarginH * 2) +
-                            (_pillBorderWidth * 2);
-                        centers.add(totalWidth + (itemWidth / 2));
-                        totalWidth += itemWidth;
-                      }
-                      totalWidth += _pillOuterPadH * 2;
-                      for (var i = 0; i < centers.length; i++) {
-                        centers[i] += _pillOuterPadH;
-                      }
                       final scaledWidth = totalWidth * scale;
 
                       return SizedBox(
@@ -245,7 +219,7 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                                         .pillBackgroundColorForIndex
                                         ?.call(_currentIndex) ??
                                     Colors.black.withValues(alpha: 0.6);
-                                final hasBackground = bgColor.alpha > 0;
+                                final hasBackground = bgColor.a > 0;
 
                                 final pill = Container(
                                   color: bgColor,
@@ -278,7 +252,7 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                                             opacity: _opacityForIndex(
                                                 pagePos, index),
                                             child: SizedBox(
-                                              width: textWidths[index],
+                                              width: labelWidths[index],
                                               child: Center(
                                                 child: FittedBox(
                                                   fit: BoxFit.scaleDown,
@@ -347,15 +321,5 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
         ],
       ),
     );
-  }
-}
-
-class _AlwaysScrollablePageScrollPhysics extends PageScrollPhysics {
-  const _AlwaysScrollablePageScrollPhysics()
-      : super(parent: const AlwaysScrollableScrollPhysics());
-
-  @override
-  _AlwaysScrollablePageScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return const _AlwaysScrollablePageScrollPhysics();
   }
 }

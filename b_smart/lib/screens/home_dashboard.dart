@@ -3612,7 +3612,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                         child: Text(
                                           'Suggested ad',
                                           style: TextStyle(
-                                            fontWeight: FontWeight.w700,
+                                            fontWeight: FontWeight.bold,
                                             fontSize: 13,
                                           ),
                                         ),
@@ -4443,7 +4443,7 @@ class _SuggestedAdsPlaceholder extends StatelessWidget {
                   'Suggested spotlights',
                   style: TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.bold,
                     color: titleColor,
                   ),
                 ),
@@ -4519,7 +4519,7 @@ class _SuggestedReelsPlaceholder extends StatelessWidget {
                   'Suggested reels',
                   style: TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.bold,
                     color: titleColor,
                   ),
                 ),

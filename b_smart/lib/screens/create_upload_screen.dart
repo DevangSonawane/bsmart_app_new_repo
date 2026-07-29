@@ -528,7 +528,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
           ..add(asset.id);
         _selectedOrder
           ..clear()
-        ..add(asset.id);
+          ..add(asset.id);
       }
     });
     _prefetchAssetFile(asset);
@@ -698,13 +698,13 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
   String _titleForMode() {
     switch (_mode) {
       case UploadMode.post:
-        return 'New post';
+        return 'New Moments';
       case UploadMode.story:
-        return 'New story';
+        return 'New Glimpses';
       case UploadMode.reel:
-        return 'New reel';
+        return 'New bSparks';
       case UploadMode.live:
-        return 'New tweet';
+        return 'New Buzz';
     }
   }
 
@@ -785,6 +785,7 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                 return InstagramTabScaffold(
                   initialIndex: _indexForMode(_mode),
                   onTabChanged: (index) => _onModeTap(_modeForIndex(index)),
+                  labels: const ['Moments', 'Glimpses', 'bSparks', 'Buzz'],
                   bottomPaddingForIndex: (index) => 20,
                   pillBackgroundColorForIndex: (index) => (index == 1)
                       ? Colors.transparent
@@ -827,16 +828,20 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                               ?.findRenderObject();
                           if (box is RenderBox) {
                             final pos = box.localToGlobal(Offset.zero);
-                            final screenHeight = MediaQuery.sizeOf(context).height;
+                            final screenHeight =
+                                MediaQuery.sizeOf(context).height;
                             const menuHeight = 220.0;
                             const gap = 6.0;
-                            final openDown = pos.dy + box.size.height + gap + menuHeight <
-                                screenHeight - MediaQuery.paddingOf(context).bottom;
+                            final openDown =
+                                pos.dy + box.size.height + gap + menuHeight <
+                                    screenHeight -
+                                        MediaQuery.paddingOf(context).bottom;
                             _sourceMenuPosition = Offset(
                               pos.dx,
                               openDown
                                   ? pos.dy + box.size.height + gap
-                                  : (pos.dy - menuHeight - gap).clamp(12.0, double.infinity),
+                                  : (pos.dy - menuHeight - gap)
+                                      .clamp(12.0, double.infinity),
                             );
                           }
                           setState(() {
@@ -908,7 +913,8 @@ class _CreateUploadScreenState extends State<CreateUploadScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF1F1F1F).withValues(alpha: 0.98),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.10)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.25),
