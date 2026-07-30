@@ -42,7 +42,8 @@ class _BottomNavState extends State<BottomNav> {
               children: [
                 _buildNavItem(context, 0, LucideIcons.house, 'Home',
                     isActive: widget.currentIndex == 0),
-                _buildNavItem(context, 1, LucideIcons.target, 'Spotlights',
+                _buildNavItem(
+                    context, 1, LucideIcons.badgeDollarSign, 'Spotlights',
                     isActive: widget.currentIndex == 1),
                 _buildCreateButton(context),
                 _buildNavItem(context, 3, LucideIcons.rocket, 'Boosts',
