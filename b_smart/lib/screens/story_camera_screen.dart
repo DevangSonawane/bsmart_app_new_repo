@@ -919,8 +919,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       return;
     }
     try {
-      final bool useScreenFlash =
-          _isFrontCamera && _flashMode != FlashMode.off;
+      final bool useScreenFlash = _isFrontCamera && _flashMode != FlashMode.off;
       if (useScreenFlash && mounted) {
         _startScreenFlash(opacity: 1.0, durationMs: 140);
         await Future.delayed(const Duration(milliseconds: 60));
@@ -1564,114 +1563,91 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          GestureDetector(
-            onTap: allowSwitch
-                ? () async {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const CreateUploadScreen(),
-                      ),
-                    );
-                  }
-                : null,
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 180),
-              style: TextStyle(
-                color: _mode == UploadMode.post
-                    ? Colors.white
-                    : (allowSwitch ? Colors.white54 : Colors.white38),
-                fontWeight: _mode == UploadMode.post
-                    ? FontWeight.bold
-                    : FontWeight.w500,
-                letterSpacing: 1.2,
-              ),
-              child: const Text('POST'),
-            ),
+          _buildModeTab(
+            label: 'Moments',
+            selected: _mode == UploadMode.post,
+            enabled: allowSwitch,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const CreateUploadScreen(),
+                ),
+              );
+            },
           ),
           const SizedBox(width: 14),
-          GestureDetector(
-            onTap: allowSwitch
-                ? () {
-                    setState(() {
-                      _mode = UploadMode.story;
-                    });
-                  }
-                : () {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                        builder: (context) => const StoryCameraScreen(
-                          initialMode: UploadMode.story,
-                        ),
-                      ),
-                    );
-                  },
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 180),
-              style: TextStyle(
-                color:
-                    _mode == UploadMode.story ? Colors.white : Colors.white54,
-                fontWeight: _mode == UploadMode.story
-                    ? FontWeight.bold
-                    : FontWeight.w500,
-                letterSpacing: 1.2,
-              ),
-              child: const Text('STORY'),
-            ),
+          _buildModeTab(
+            label: 'Glimpses',
+            selected: _mode == UploadMode.story,
+            enabled: allowSwitch,
+            onTap: () {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => const CreateUploadScreen(
+                    initialMode: UploadMode.story,
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(width: 14),
-          GestureDetector(
-            onTap: allowSwitch
-                ? () {
-                    setState(() {
-                      _mode = UploadMode.reel;
-                    });
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const CreateUploadScreen(
-                          initialMode: UploadMode.reel,
-                        ),
-                      ),
-                    );
-                  }
-                : null,
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 180),
-              style: TextStyle(
-                color: _mode == UploadMode.reel
-                    ? Colors.white
-                    : (allowSwitch ? Colors.white54 : Colors.white38),
-                fontWeight: _mode == UploadMode.reel
-                    ? FontWeight.bold
-                    : FontWeight.w500,
-                letterSpacing: 1.2,
-              ),
-              child: const Text('REEL'),
-            ),
+          _buildModeTab(
+            label: 'bSparks',
+            selected: _mode == UploadMode.reel,
+            enabled: allowSwitch,
+            onTap: () {
+              setState(() {
+                _mode = UploadMode.reel;
+              });
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const CreateUploadScreen(
+                    initialMode: UploadMode.reel,
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(width: 14),
-          GestureDetector(
-            onTap: allowSwitch
-                ? () {
-                    setState(() {
-                      _mode = UploadMode.live;
-                    });
-                  }
-                : null,
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 180),
-              style: TextStyle(
-                color: _mode == UploadMode.live
-                    ? Colors.white
-                    : (allowSwitch ? Colors.white54 : Colors.white38),
-                fontWeight: _mode == UploadMode.live
-                    ? FontWeight.bold
-                    : FontWeight.w500,
-                letterSpacing: 1.2,
-              ),
-              child: const Text('TWEET'),
-            ),
+          _buildModeTab(
+            label: 'Buzz',
+            selected: _mode == UploadMode.live,
+            enabled: allowSwitch,
+            onTap: () {
+              setState(() {
+                _mode = UploadMode.live;
+              });
+            },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildModeTab({
+    required String label,
+    required bool selected,
+    required bool enabled,
+    required VoidCallback onTap,
+    VoidCallback? onDisabledTap,
+  }) {
+    final color =
+        selected ? Colors.white : (enabled ? Colors.white54 : Colors.white38);
+    return GestureDetector(
+      onTap: enabled ? onTap : onDisabledTap,
+      child: AnimatedDefaultTextStyle(
+        duration: const Duration(milliseconds: 180),
+        style: TextStyle(
+          color: color,
+          fontSize: selected ? 14.5 : 13.5,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.7,
+          height: 1.0,
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(label),
+        ),
       ),
     );
   }
@@ -4952,8 +4928,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         attempts++;
         debugPrint('Upload attempt $attempts of $maxRetries');
 
-        final response = await StoriesApi()
-            .uploadFile(file.path);
+        final response = await StoriesApi().uploadFile(file.path);
 
         debugPrint('✓ Upload successful on attempt $attempts');
         return response;

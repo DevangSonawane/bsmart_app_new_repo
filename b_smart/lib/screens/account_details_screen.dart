@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
@@ -11,11 +12,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/auth_api.dart';
 import '../api/account_verification_api.dart';
 import '../api/upload_api.dart';
+import '../models/location_place.dart';
 import '../api/users_api.dart';
 import '../theme/design_tokens.dart';
 import '../utils/app_error_handler.dart';
 import '../utils/url_helper.dart';
 import '../utils/validators.dart';
+import 'location_search_screen.dart';
 import '../widgets/ad_interests_sheet.dart';
 import '../widgets/safe_network_image.dart';
 
@@ -257,8 +260,8 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   }
 
   String _locationFromUser(Map<String, dynamic> user) {
-    final location = _pickString(user, ['location']);
-    if (location != null) return location;
+    final location = _locationDisplayText(user['location']);
+    if (location.isNotEmpty) return location;
 
     final address = user['address'];
     if (address is Map) {
@@ -273,6 +276,44 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
       if (parts.isNotEmpty) return parts.join(', ');
     }
     return '';
+  }
+
+  String _locationDisplayText(dynamic value) {
+    if (value == null) return '';
+
+    dynamic decoded = value;
+    if (value is String) {
+      final raw = value.trim();
+      if (raw.isEmpty) return '';
+      if ((raw.startsWith('{') && raw.endsWith('}')) ||
+          (raw.startsWith('[') && raw.endsWith(']'))) {
+        try {
+          decoded = jsonDecode(raw);
+        } catch (_) {
+          return raw;
+        }
+      } else {
+        return raw;
+      }
+    }
+
+    if (decoded is Map) {
+      final map = Map<String, dynamic>.from(decoded);
+      final place = LocationPlace.fromJson(map);
+      final label = place.displayText.isNotEmpty
+          ? place.displayText
+          : (place.fullText.isNotEmpty ? place.fullText : '');
+      if (label.isNotEmpty) return label;
+
+      final parts = <String>[
+        _pickString(map, ['name']) ?? '',
+        _pickString(map, ['address']) ?? '',
+        _pickString(map, ['fullText', 'full_text']) ?? '',
+      ].where((e) => e.trim().isNotEmpty).toList();
+      if (parts.isNotEmpty) return parts.first;
+    }
+
+    return decoded.toString().trim();
   }
 
   String _genderLabel(String raw) {
@@ -413,6 +454,22 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         SnackBar(content: Text('Failed to load account: $e')),
       );
     }
+  }
+
+  Future<void> _openLocationSearch() async {
+    final selected = await Navigator.of(context).push<LocationPlace>(
+      MaterialPageRoute(builder: (_) => const LocationSearchScreen()),
+    );
+    if (!mounted || selected == null) return;
+    setState(() {
+      _locationController.text = _locationLabelFromPlace(selected);
+    });
+  }
+
+  String _locationLabelFromPlace(LocationPlace place) {
+    if (place.displayText.isNotEmpty) return place.displayText;
+    if (place.fullText.isNotEmpty) return place.fullText;
+    return '';
   }
 
   Future<void> _pickAvatar() async {
@@ -996,12 +1053,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                   _interestTile(),
                   const SizedBox(height: 10),
                   _sectionTitle('Location'),
-                  _inlineFieldCard(
-                    icon: LucideIcons.mapPin,
-                    label: 'Location',
-                    controller: _locationController,
-                    hintText: 'City, State, Country',
-                  ),
+                  _locationSelectorCard(),
                   const SizedBox(height: 10),
                   _sectionTitle('Contact Information'),
                   _contactCard(),
@@ -1698,6 +1750,68 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _locationSelectorCard() {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final fillColor = theme.cardColor;
+    final borderColor = cs.onSurface.withValues(alpha: 0.08);
+    final titleColor = cs.onSurface;
+    final valueColor = cs.onSurface.withValues(alpha: 0.65);
+    final value = _locationController.text.trim();
+
+    return InkWell(
+      onTap: _openLocationSearch,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: fillColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor, width: 1),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: DesignTokens.instaPink.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                LucideIcons.mapPin,
+                color: DesignTokens.instaPink,
+                size: 16,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                value.isEmpty ? 'Select location' : value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: TextStyle(
+                  color: value.isEmpty ? valueColor : titleColor,
+                  fontSize: 14,
+                  height: 1.2,
+                  fontWeight: value.isEmpty ? FontWeight.w400 : FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: Color(0xFF526071),
+              size: 22,
+            ),
+          ],
+        ),
       ),
     );
   }

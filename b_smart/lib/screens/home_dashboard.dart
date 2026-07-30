@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -9,6 +10,8 @@ import 'package:flutter_redux/flutter_redux.dart';
 import 'package:redux/redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../services/feed_service.dart';
 import '../services/notification_service.dart';
 import '../services/media_playback_registry.dart';
@@ -56,8 +59,9 @@ import '../widgets/dynamic_media_widget.dart';
 import '../widgets/floating_message_overlay.dart';
 import '../widgets/suggestion_follow.dart';
 import '../widgets/suggested_reels_card.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
+import '../models/location_place.dart';
+import 'location_search_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'profile_screen.dart';
 import '../routes.dart';
@@ -135,9 +139,8 @@ class _FeedHeader extends StatelessWidget {
                         TextSpan(
                           text: currentLocation == null
                               ? (locationLoading
-                                  ? 'home_dashboard_detecting_location'.tr()
-                                  : 'home_dashboard_tap_to_detect_location'
-                                      .tr())
+                                  ? 'Restoring location...'
+                                  : 'Tap to search location')
                               : currentLocation!,
                           style: TextStyle(
                             color: isDark ? Colors.white70 : Colors.black54,
@@ -244,143 +247,6 @@ class HomeDashboard extends StatefulWidget {
   State<HomeDashboard> createState() => _HomeDashboardState();
 }
 
-class _LocationCard extends StatelessWidget {
-  final String name;
-  final String line1;
-  final String line2;
-  final String city;
-  final String tag;
-  final bool highlight;
-
-  const _LocationCard({
-    required this.name,
-    required this.line1,
-    required this.line2,
-    required this.city,
-    required this.tag,
-    this.highlight = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final borderColor = highlight
-        ? const Color(0xFFEA8A4A)
-        : (isDark ? Colors.white24 : Colors.black12);
-    return Container(
-      width: 160,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF232323) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: borderColor, width: highlight ? 1.5 : 1),
-        boxShadow: [
-          if (!isDark)
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            name,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            line1,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: isDark ? Colors.white60 : Colors.black54,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Text(
-            line2,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: isDark ? Colors.white60 : Colors.black54,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Text(
-            city,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: isDark ? Colors.white70 : Colors.black87,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const Spacer(),
-          if (tag.trim().isNotEmpty)
-            Text(
-              tag,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: isDark ? Colors.white54 : Colors.black45,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SheetAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _SheetAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            ShaderMask(
-              blendMode: BlendMode.srcIn,
-              shaderCallback: (bounds) =>
-                  DesignTokens.instaGradient.createShader(bounds),
-              child: Icon(
-                icon,
-                size: 18,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                label,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: isDark ? Colors.white70 : Colors.black87,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _HomeDashboardState extends State<HomeDashboard>
     with RouteAware, WidgetsBindingObserver {
   final FeedService _feedService = FeedService();
@@ -420,30 +286,6 @@ class _HomeDashboardState extends State<HomeDashboard>
   int _unreadNotificationCount = 0;
   StreamSubscription<List<NotificationItem>>? _notificationSub;
   Timer? _notificationRefreshTimer;
-
-  final List<Map<String, String>> _mockLocations = const [
-    {
-      'name': 'Devang',
-      'line1': '701, I wing, Rashmi',
-      'line2': 'Tanmay, Mira Road...',
-      'city': 'MUMBAI 401107',
-      'tag': 'Default address',
-    },
-    {
-      'name': 'Aman Pandey',
-      'line1': '502, 2B, Om',
-      'line2': 'Shivaya, Near Cin...',
-      'city': 'THANE 401107',
-      'tag': '',
-    },
-    {
-      'name': 'Madh',
-      'line1': '21 Aarti Wada, D',
-      'line2': 'Behind factory',
-      'city': 'DHULE',
-      'tag': '',
-    },
-  ];
 
   final ScrollController _feedScrollController = ScrollController();
   final int _pageSize = 25;
@@ -644,8 +486,123 @@ class _HomeDashboardState extends State<HomeDashboard>
       unawaited(_loadVendorSuggestions());
       unawaited(_loadAdSuggestions());
       unawaited(_loadReelSuggestions(force: true));
-      _fetchCurrentLocation();
+      unawaited(_restoreSavedLocation());
     });
+  }
+
+  static const String _savedLocationPrefsKey =
+      'home_dashboard_selected_location';
+
+  Future<void> _restoreSavedLocation() async {
+    try {
+      if (mounted) {
+        setState(() => _locationLoading = true);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_savedLocationPrefsKey);
+      if (raw == null || raw.trim().isEmpty) {
+        if (mounted) setState(() => _locationLoading = false);
+        unawaited(_selectCurrentLocation());
+        return;
+      }
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        if (mounted) setState(() => _locationLoading = false);
+        unawaited(_selectCurrentLocation());
+        return;
+      }
+      final place = LocationPlace.fromJson(Map<String, dynamic>.from(decoded));
+      if (!mounted) return;
+      setState(() {
+        _currentLocation = place.fullText.isNotEmpty
+            ? place.fullText
+            : (place.displayText.isNotEmpty ? place.displayText : null);
+        _locationLoading = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _locationLoading = false);
+        unawaited(_selectCurrentLocation());
+      }
+    }
+  }
+
+  Future<void> _saveSelectedLocation(LocationPlace place) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_savedLocationPrefsKey, jsonEncode(place.toJson()));
+    } catch (_) {
+      // Non-fatal. The selection still updates immediately in memory.
+    }
+  }
+
+  Future<void> _selectCurrentLocation() async {
+    try {
+      if (mounted) {
+        setState(() => _locationLoading = true);
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) {
+        if (mounted) setState(() => _locationLoading = false);
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+      );
+      final placemarks =
+          await placemarkFromCoordinates(pos.latitude, pos.longitude);
+
+      String name = '';
+      String address = '';
+      String fullText = '';
+
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        final parts = <String>[
+          if ((p.name ?? '').isNotEmpty) p.name!,
+          if ((p.subLocality ?? '').isNotEmpty) p.subLocality!,
+          if ((p.locality ?? '').isNotEmpty) p.locality!,
+          if ((p.administrativeArea ?? '').isNotEmpty) p.administrativeArea!,
+          if ((p.country ?? '').isNotEmpty) p.country!,
+        ];
+        fullText = parts.where((e) => e.trim().isNotEmpty).toList().join(', ');
+        name = (p.locality ?? p.subLocality ?? p.name ?? '').trim();
+        address = [
+          if ((p.subLocality ?? '').isNotEmpty) p.subLocality,
+          if ((p.locality ?? '').isNotEmpty) p.locality,
+          if ((p.administrativeArea ?? '').isNotEmpty) p.administrativeArea,
+          if ((p.country ?? '').isNotEmpty) p.country,
+        ].whereType<String>().where((e) => e.trim().isNotEmpty).join(', ');
+      }
+
+      fullText = fullText.isNotEmpty
+          ? fullText
+          : '${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}';
+      name = name.isNotEmpty ? name : fullText;
+      address = address.isNotEmpty ? address : fullText;
+
+      final place = LocationPlace(
+        placeId: 'current-location',
+        name: name,
+        address: address,
+        fullText: fullText,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _currentLocation = place.fullText;
+        _locationLoading = false;
+      });
+      unawaited(_saveSelectedLocation(place));
+    } catch (_) {
+      if (mounted) setState(() => _locationLoading = false);
+    }
   }
 
   Future<void> _loadUnreadNotificationCount() async {
@@ -2159,133 +2116,18 @@ class _HomeDashboardState extends State<HomeDashboard>
     }
   }
 
-  void _showLocationSheet() {
-    if (!mounted) return;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: false,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black54,
-      isDismissible: true,
-      enableDrag: true,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        final isDark = theme.brightness == Brightness.dark;
-        return SafeArea(
-          top: false,
-          child: Container(
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1B1B1B) : Colors.white,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(18)),
-            ),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white24 : Colors.black12,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Choose your location',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 118,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _mockLocations.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
-                    itemBuilder: (context, index) {
-                      final item = _mockLocations[index];
-                      return _LocationCard(
-                        name: item['name'] ?? '',
-                        line1: item['line1'] ?? '',
-                        line2: item['line2'] ?? '',
-                        city: item['city'] ?? '',
-                        tag: item['tag'] ?? '',
-                        highlight: index == 0,
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _SheetAction(
-                  icon: LucideIcons.mapPin,
-                  label: 'Enter an Indian pincode',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                  },
-                ),
-                const SizedBox(height: 4),
-                _SheetAction(
-                  icon: LucideIcons.locateFixed,
-                  label: 'Use my current location',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _fetchCurrentLocation();
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+  Future<void> _openLocationSearch() async {
+    final selected = await Navigator.of(context).push<LocationPlace>(
+      MaterialPageRoute(builder: (_) => const LocationSearchScreen()),
     );
-  }
-
-  Future<void> _fetchCurrentLocation() async {
-    try {
-      if (mounted) setState(() => _locationLoading = true);
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.deniedForever ||
-          permission == LocationPermission.denied) {
-        if (mounted) setState(() => _locationLoading = false);
-        return;
-      }
-      final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.low);
-      final placemarks =
-          await placemarkFromCoordinates(pos.latitude, pos.longitude);
-      String loc;
-      if (placemarks.isNotEmpty) {
-        final p = placemarks.first;
-        final parts = <String>[
-          if ((p.name ?? '').isNotEmpty) p.name!,
-          if ((p.subLocality ?? '').isNotEmpty) p.subLocality!,
-          if ((p.locality ?? '').isNotEmpty) p.locality!,
-          if ((p.administrativeArea ?? '').isNotEmpty) p.administrativeArea!,
-          if ((p.country ?? '').isNotEmpty) p.country!,
-        ];
-        loc = parts.where((e) => e.trim().isNotEmpty).toList().join(', ');
-      } else {
-        loc =
-            '${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}';
-      }
-      if (mounted) {
-        setState(() {
-          _currentLocation = loc;
-          _locationLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _locationLoading = false);
-    }
+    if (!mounted || selected == null) return;
+    setState(() {
+      _currentLocation = selected.fullText.isNotEmpty
+          ? selected.fullText
+          : (selected.displayText.isNotEmpty ? selected.displayText : null);
+      _locationLoading = false;
+    });
+    unawaited(_saveSelectedLocation(selected));
   }
 
   // Like toggle - same as React PostCard: update post.likes array on posts table
@@ -2765,70 +2607,6 @@ class _HomeDashboardState extends State<HomeDashboard>
     );
   }
 
-  Widget _buildLocationSelector({required bool isDark}) {
-    return InkWell(
-      onTap: () {
-        _fetchCurrentLocation();
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
-          border: Border(
-            bottom: BorderSide(
-                color: isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade200),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              LucideIcons.house,
-              size: 16,
-              color: isDark ? Colors.white70 : Colors.black87,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: '${'home_dashboard_home'.tr().toUpperCase()} ',
-                      style: TextStyle(
-                        color: isDark ? Colors.white : Colors.black87,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                    TextSpan(
-                      text: _currentLocation == null
-                          ? (_locationLoading
-                              ? 'home_dashboard_detecting_location'.tr()
-                              : 'home_dashboard_tap_to_detect_location'.tr())
-                          : _currentLocation!,
-                      style: TextStyle(
-                        color: isDark ? Colors.white70 : Colors.black54,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              LucideIcons.chevronDown,
-              size: 16,
-              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   List<StoryGroup> _buildStoryGroupsFromUsers(
       List<Map<String, dynamic>> users) {
     final now = DateTime.now();
@@ -2949,7 +2727,14 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   Future<void> _openStoryCamera() async {
-    await Navigator.of(context).pushNamed('/story-camera');
+    _pendingHomeRefreshAfterRoute = true;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const CreateUploadScreen(
+          initialMode: UploadMode.story,
+        ),
+      ),
+    );
     if (!mounted) return;
     await _onSilentRefresh();
   }
@@ -3437,7 +3222,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                         onYourStoryAddTap: _openStoryCamera,
                         onUserStoryTap:
                             _storyGroups.isEmpty ? null : _onStoryTap,
-                        onLocationTap: _showLocationSheet,
+                        onLocationTap: _openLocationSearch,
                       ),
                     ),
                     if (posts.isEmpty && showFeedSkeleton)

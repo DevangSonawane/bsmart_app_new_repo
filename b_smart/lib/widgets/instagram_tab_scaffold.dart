@@ -14,7 +14,7 @@ class InstagramTabScaffold extends StatefulWidget {
   const InstagramTabScaffold({
     super.key,
     required this.pages,
-    this.labels = const ['POST', 'STORY', 'REEL', 'TWEET'],
+    this.labels = const ['Moments', 'Glimpses', 'bSparks', 'Buzz'],
     this.onTabChanged,
     this.initialIndex = 0,
     this.bottomPaddingForIndex,
@@ -266,13 +266,16 @@ class _InstagramTabScaffoldState extends State<InstagramTabScaffold> {
                                                       color: isSelected
                                                           ? Colors.white
                                                           : Colors.white70,
-                                                      fontSize:
-                                                          effectiveFontSize,
+                                                      fontSize: isSelected
+                                                          ? effectiveFontSize +
+                                                              0.9
+                                                          : effectiveFontSize,
                                                       fontWeight: isSelected
-                                                          ? FontWeight.w700
+                                                          ? FontWeight.w900
                                                           : FontWeight.w500,
                                                       letterSpacing:
                                                           effectiveLetterSpacing,
+                                                      height: 1.0,
                                                     ),
                                                   ),
                                                 ),
