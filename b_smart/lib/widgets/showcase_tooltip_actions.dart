@@ -4,26 +4,26 @@ import 'package:showcaseview/showcaseview.dart';
 List<TooltipActionButton> buildOnboardingTooltipActions() {
   return [
     TooltipActionButton.custom(
-      button: _GradientActionButton(
-        label: 'Skip',
+      button: _ArrowActionButton(
+        icon: Icons.arrow_back_rounded,
         onTap: () => ShowcaseView.get().dismiss(),
       ),
     ),
     TooltipActionButton.custom(
-      button: _GradientActionButton(
-        label: 'Next',
+      button: _ArrowActionButton(
+        icon: Icons.arrow_forward_rounded,
         onTap: () => ShowcaseView.get().next(),
       ),
     ),
   ];
 }
 
-class _GradientActionButton extends StatelessWidget {
-  final String label;
+class _ArrowActionButton extends StatelessWidget {
+  final IconData icon;
   final VoidCallback onTap;
 
-  const _GradientActionButton({
-    required this.label,
+  const _ArrowActionButton({
+    required this.icon,
     required this.onTap,
   });
 
@@ -35,7 +35,8 @@ class _GradientActionButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          width: 38,
+          height: 38,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.centerLeft,
@@ -51,18 +52,14 @@ class _GradientActionButton extends StatelessWidget {
               BoxShadow(
                 color: const Color(0xFFF97316).withValues(alpha: 0.35),
                 blurRadius: 12,
-                offset: const Offset(0, 5),
+                offset: const Offset(0, 4),
               ),
             ],
           ),
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
-              letterSpacing: 0.2,
-            ),
+          child: Icon(
+            icon,
+            color: Colors.white,
+            size: 18,
           ),
         ),
       ),

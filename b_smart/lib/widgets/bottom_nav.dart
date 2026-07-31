@@ -267,7 +267,7 @@ class _BottomNavState extends State<BottomNav> {
         ? DesignTokens.instaPink
         : (isDark ? Colors.white : Colors.black);
 
-    return _buildAssetIcon(
+    return _buildBoldAssetIcon(
       'assets/bsmart_icons/2.png',
       color: color,
     );
@@ -283,33 +283,51 @@ class _BottomNavState extends State<BottomNav> {
         ? DesignTokens.instaPink
         : (isDark ? Colors.white : Colors.black);
 
-    return _buildAssetIcon(
+    return _buildBoldAssetIcon(
       'assets/bsmart_icons/1.png',
       color: color,
     );
   }
 
-  Widget _buildAssetIcon(
+  Widget _buildBoldAssetIcon(
     String assetPath, {
     required Color color,
   }) {
     return SizedBox(
-      width: 30,
-      height: 30,
+      width: 34,
+      height: 34,
       child: ClipRect(
-        child: Center(
-          child: Transform.scale(
-            scale: 1.75,
-            child: Image.asset(
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            for (final offset in const [
+              Offset(-0.6, 0),
+              Offset(0.6, 0),
+              Offset(0, -0.6),
+              Offset(0, 0.6),
+            ])
+              Transform.translate(
+                offset: offset,
+                child: Image.asset(
+                  assetPath,
+                  width: 30,
+                  height: 30,
+                  fit: BoxFit.contain,
+                  color: color.withValues(alpha: 0.8),
+                  colorBlendMode: BlendMode.srcIn,
+                  filterQuality: FilterQuality.high,
+                ),
+              ),
+            Image.asset(
               assetPath,
-              width: 20,
-              height: 20,
+              width: 30,
+              height: 30,
               fit: BoxFit.contain,
               color: color,
               colorBlendMode: BlendMode.srcIn,
               filterQuality: FilterQuality.high,
             ),
-          ),
+          ],
         ),
       ),
     );

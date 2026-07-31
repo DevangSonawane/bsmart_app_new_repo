@@ -272,7 +272,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   );
   final HomeOnboardingStep _adsStep = HomeOnboardingStep(
     key: GlobalKey(),
-    title: '📢 Advertisements',
+    title: '📢 Spotlights',
     description:
         'Explore sponsored offers, promotions, and featured opportunities from businesses.',
     tooltipPosition: TooltipPosition.top,
@@ -287,21 +287,21 @@ class _HomeDashboardState extends State<HomeDashboard>
   );
   final HomeOnboardingStep _rocketStep = HomeOnboardingStep(
     key: GlobalKey(),
-    title: '🚀 Discover',
+    title: '🚀 Campaigns',
     description:
         'Find trending creators, popular content, and exciting communities waiting for you.',
     tooltipPosition: TooltipPosition.top,
   );
   final HomeOnboardingStep _reelsStep = HomeOnboardingStep(
     key: GlobalKey(),
-    title: '🎬 Reels',
+    title: '🎬 B.Sparks',
     description:
         'Watch engaging short videos and discover entertaining content from creators.',
     tooltipPosition: TooltipPosition.top,
   );
   final HomeOnboardingStep _walletStep = HomeOnboardingStep(
     key: GlobalKey(),
-    title: '💰 Wallet',
+    title: '💰 Vault',
     description:
         'Track your earnings, rewards, transactions, and redeem available benefits.',
     tooltipPosition: TooltipPosition.bottom,
